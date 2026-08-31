@@ -57,7 +57,41 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .ipynb_checkpoints/
+
+# ── Flutter / Dart ──────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.packages
+android/local.properties
+android/key.properties
+*.jks
+
+# ── 로컬 음성 처리와 사용자 데이터 ─────────────────
+# 실제 녹음, 전사 원문, 로컬 DB와 내려받은 STT 모델은 저장소에 반입하지 않습니다.
+recordings/
+transcripts/
+models/
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+*.bin
+*.gguf
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.tflite
 
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/
@@ -68,5 +102,6 @@ target/
 
 # ── 기타 ────────────────────────────────────────────
 *.sqlite3
+*.sqlite
 *.db
 .terraform/
