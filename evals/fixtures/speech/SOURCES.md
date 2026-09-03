@@ -12,6 +12,12 @@
 | `04_overlapping_speech.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립 2개를 겹쳐 이어붙임 | 아니오 |
 | `05_too_short.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립을 0.4초로 잘라냄 | 아니오 |
 
+## 사용 중인 자료
+
+| 데이터셋 | 라이선스 | 사용 범위 |
+|---|---|---|
+| [kresnik/zeroth_korean](https://huggingface.co/datasets/kresnik/zeroth_korean) | 자유 사용, 출처 표기 필수 | STT 평가 케이스 음성 자료로 사용 |
+
 ## 검토했지만 현재 사용하지 않는 자료
 
 | 데이터셋 | 상태 | 사유 |
