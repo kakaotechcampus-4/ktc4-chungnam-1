@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-001-quiet-two-speaker",
+  "area": "sttProcessing",
+  "description": "배경 소음 없이 등록된 화자 2명이 또렷하게 대화하는 기준(baseline) 케이스. 나머지 실패 케이스와 비교하는 기준선 역할.",
+  "inputRef": "fixtures/speech/00_baseline_quiet.wav",
+  "expectedRef": "expected/stt-001-quiet-two-speaker.json",
+  "tags": ["stt", "baseline", "speakerDiarization"]
+}

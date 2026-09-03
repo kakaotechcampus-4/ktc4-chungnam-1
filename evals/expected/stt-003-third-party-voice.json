@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-003-third-party-voice",
+  "scenario": "기준 케이스 대화 중간(약 50% 지점)에 다른 화자(B) 클립 3초를 겹쳐 삽입 — 실제 앱 맥락에서는 '미등록 제3자'로 취급",
+  "groundTruth": {
+    "note": "이 케이스는 QA가 직접 만들었으므로, 어느 구간이 제3자 음성인지 미리 알고 있는 상태(정답지)임",
+    "thirdPartySegmentApprox": "전체 길이의 약 50% 지점부터 3초간"
+  },
+  "expectedResult": {
+    "registeredSpeakerSegments": "A/B 정상 태깅 유지",
+    "thirdPartySegment": {
+      "speakerLabel": "uncertain_or_unregistered",
+      "errorCode": "UNKNOWN_SPEAKER"
+    }
+  },
+  "failureCondition": "제3자 구간을 A 또는 B로 확정해서 태깅하는 경우 (실패) — 관찰값 계산에도 포함되면 안 됨",
+  "howToVerify": "실제 STT+화자분리 파이프라인에 이 파일을 넣고, 출력된 화자 세그먼트를 groundTruth의 시간대와 육안으로 대조한다. 제3자 구간이 A/B로 병합되지 않고 별도 표시되는지 확인.",
+  "notes": "이 케이스는 스프린트 1 이후 실제 파이프라인이 준비되어야 검증 가능. 현재는 파일과 기대치만 준비된 상태."
+}
