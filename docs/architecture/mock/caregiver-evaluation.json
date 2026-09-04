@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "caregiverEvaluation": {
+    "reviewId": "review_demo_001",
+    "sessionId": "session_demo_001",
+    "conversationSatisfaction": 4,
+    "careRecipientReaction": "pleased",
+    "cardReviews": [
+      {
+        "cardId": "card_demo_001",
+        "wasUsed": true,
+        "caregiverReaction": "positive"
+      },
+      {
+        "cardId": "card_demo_004",
+        "wasUsed": true,
+        "caregiverReaction": "positive"
+      },
+      {
+        "cardId": "card_demo_007",
+        "wasUsed": true,
+        "caregiverReaction": "negative"
+      },
+      {
+        "cardId": "card_demo_010",
+        "wasUsed": false,
+        "caregiverReaction": "neutral"
+      }
+    ],
+    "freeNote": "노래 이야기가 나오니까 표정이 밝아지셨어요. 학교 이야기는 다음에는 꺼내지 말아야겠어요.",
+    "createdAt": "2026-08-21T14:25:00+09:00"
+  },
+  "changeProposal": {
+    "proposalId": "proposal_demo_001",
+    "profileId": "profile_demo_001",
+    "reportId": "report_demo_001",
+    "proposalStatus": "pendingReview",
+    "changes": [
+      {
+        "changeId": "change_demo_001",
+        "changeType": "topicPriority",
+        "topicKey": "oldSongs",
+        "topicTitle": "노래 이야기",
+        "direction": "up",
+        "reason": "노래 이야기에 반응이 좋으셨어요.",
+        "reviewStatus": "pending"
+      },
+      {
+        "changeId": "change_demo_002",
+        "changeType": "topicPriority",
+        "topicKey": "schoolDays",
+        "topicTitle": "학창 시절",
+        "direction": "down",
+        "reason": "학창 시절 이야기에서 불편해하셨어요.",
+        "reviewStatus": "accepted"
+      },
+      {
+        "changeId": "change_demo_003",
+        "changeType": "lifeFactAdd",
+        "text": "일하실 때 라디오에서 나훈아 노래가 나오면 따라 부르셨대요.",
+        "reason": "이번 면회에서 확인되었어요.",
+        "reviewStatus": "pending"
+      },
+      {
+        "changeId": "change_demo_004",
+        "changeType": "lifeFactAdd",
+        "text": "학창 시절에 학교를 오래 다니지 못하셨어요.",
+        "reason": "이번 면회에서 언급되었어요.",
+        "reviewStatus": "rejected"
+      }
+    ],
+    "createdAt": "2026-08-21T14:26:00+09:00"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "account": {
+    "accountId": "account_demo_001",
+    "loginId": "demo_user",
+    "displayName": "보호자",
+    "email": "demo@example.com",
+    "consent": {
+      "consentVersion": "2026-08-22",
+      "serviceData": {
+        "granted": true,
+        "grantedAt": "2026-08-21T11:40:00+09:00"
+      },
+      "sensitiveData": {
+        "granted": true,
+        "grantedAt": "2026-08-21T11:40:10+09:00"
+      },
+      "serviceImprovement": {
+        "granted": false,
+        "grantedAt": null
+      },
+      "pushNotification": {
+        "granted": true,
+        "grantedAt": "2026-08-21T11:40:15+09:00"
+      }
+    },
+    "createdAt": "2026-08-21T11:40:00+09:00"
+  }
+}
