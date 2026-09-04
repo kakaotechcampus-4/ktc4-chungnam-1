@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "visitReport": {
+    "reportId": "report_demo_001",
+    "sessionId": "session_demo_001",
+    "reviewId": "review_demo_001",
+    "reportStatus": "ready",
+    "title": "노래 한 자락에 웃으신 날",
+    "visitDate": "2026-08-21",
+    "mood": "normal",
+    "photoId": "visit_photo_demo_001",
+    "summaryText": "오늘은 재봉 일을 하시던 시절 이야기로 문을 열었어요. 동인천 수선집에서 한복을 만드시던 때를 떠올리시며 오래 말씀해주셨고, 함께 일하던 분들 이야기가 나올 때는 표정이 밝아지셨어요. 노래 이야기에서는 라디오에서 나훈아 노래가 나오면 따라 부르셨다며 웃으셨고요. 학창 시절 이야기는 꺼내자마자 말수가 줄어드셔서 오래 이어가지 못했어요. 명절 음식 이야기는 준비해뒀지만 시간이 모자라 다음으로 미뤘습니다. 오늘은 대체로 이야기가 잘 풀린 날이었어요.",
+    "cardSummaries": [
+      {
+        "cardId": "card_demo_001",
+        "topicTitle": "재봉 일",
+        "summary": "한복을 주로 만드셨고 단골들 이야기를 오래 하셨어요."
+      },
+      {
+        "cardId": "card_demo_004",
+        "topicTitle": "노래 이야기",
+        "summary": "라디오에서 나오던 옛날 노래를 따라 부르셨다며 웃으셨어요."
+      },
+      {
+        "cardId": "card_demo_007",
+        "topicTitle": "학창 시절",
+        "summary": "이야기를 꺼내자 말수가 줄어들어 오래 이어가지 못했어요."
+      },
+      {
+        "cardId": "card_demo_010",
+        "topicTitle": "명절 음식",
+        "summary": "준비했지만 이번 면회에서는 다루지 못했어요."
+      }
+    ]
+  }
+}

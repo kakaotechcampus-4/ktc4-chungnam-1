@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "profileId": "profile_demo_001",
+    "localOnly": {
+      "name": "김○○",
+      "gender": "female",
+      "birthDate": "1943-03-12"
+    },
+    "ageRange": "80s",
+    "condition": {
+      "stage": "mildCognitiveImpairment",
+      "symptomNote": "같은 이야기를 반복하실 때가 있고, 어제 일은 잘 기억하지 못하세요."
+    },
+    "lifeFactIds": [
+      "fact_demo_001",
+      "fact_demo_002",
+      "fact_demo_003"
+    ],
+    "photoIds": [
+      "profile_photo_demo_001"
+    ],
+    "createdAt": "2026-08-21T12:00:00+09:00",
+    "updatedAt": "2026-08-21T12:22:00+09:00"
+  },
+  "lifeFacts": [
+    {
+      "factId": "fact_demo_001",
+      "profileId": "profile_demo_001",
+      "category": "occupation",
+      "text": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨고 단골도 많았대요.",
+      "sourceType": "caregiverVoiceInput",
+      "sourceSessionId": null,
+      "createdAt": "2026-08-21T12:10:00+09:00",
+      "updatedAt": "2026-08-21T12:10:00+09:00"
+    },
+    {
+      "factId": "fact_demo_002",
+      "profileId": "profile_demo_001",
+      "category": "hobby",
+      "text": "옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요.",
+      "sourceType": "caregiverTextInput",
+      "sourceSessionId": null,
+      "createdAt": "2026-08-21T12:15:00+09:00",
+      "updatedAt": "2026-08-21T12:15:00+09:00"
+    },
+    {
+      "factId": "fact_demo_003",
+      "profileId": "profile_demo_001",
+      "category": "family",
+      "text": "스물셋에 결혼하셨고 아들 둘을 키우셨어요. 명절이면 온 식구가 모여서 음식을 하셨대요.",
+      "sourceType": "caregiverVoiceInput",
+      "sourceSessionId": null,
+      "createdAt": "2026-08-21T12:18:00+09:00",
+      "updatedAt": "2026-08-21T12:18:00+09:00"
+    }
+  ],
+  "lifeFactCollectionState": {
+    "profileId": "profile_demo_001",
+    "categories": [
+      {
+        "category": "occupation",
+        "status": "collected",
+        "attemptCount": 1
+      },
+      {
+        "category": "hometown",
+        "status": "skipped",
+        "attemptCount": 0
+      },
+      {
+        "category": "hobby",
+        "status": "manualFallback",
+        "attemptCount": 2
+      },
+      {
+        "category": "family",
+        "status": "collected",
+        "attemptCount": 1
+      }
+    ]
+  },
+  "profilePhoto": {
+    "photoId": "profile_photo_demo_001",
+    "profileId": "profile_demo_001",
+    "localUri": "local://gallery/profile_photo_demo_001",
+    "acceptedTags": [
+      "한복"
+    ],
+    "createdAt": "2026-08-21T12:20:00+09:00"
+  },
+  "imageAnalysisCandidate": {
+    "photoId": "profile_photo_demo_001",
+    "profileId": "profile_demo_001",
+    "analysisStatus": "completed",
+    "candidates": [
+      {
+        "candidateId": "candidate_demo_001",
+        "text": "한복",
+        "confidence": 0.92,
+        "reviewStatus": "accepted"
+      },
+      {
+        "candidateId": "candidate_demo_002",
+        "text": "결혼식",
+        "confidence": 0.78,
+        "reviewStatus": "rejected"
+      },
+      {
+        "candidateId": "candidate_demo_003",
+        "text": "바닷가",
+        "confidence": 0.31,
+        "reviewStatus": "pending"
+      }
+    ],
+    "error": null
+  }
+}

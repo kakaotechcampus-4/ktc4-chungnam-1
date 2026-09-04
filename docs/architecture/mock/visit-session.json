@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "visitSession": {
+    "sessionId": "session_demo_001",
+    "profileId": "profile_demo_001",
+    "selectedCardIds": [
+      "card_demo_001",
+      "card_demo_004",
+      "card_demo_007",
+      "card_demo_010"
+    ],
+    "sessionStatus": "completed",
+    "photoId": "visit_photo_demo_001",
+    "consent": {
+      "consentVersion": "2026-08-22",
+      "serviceData": {
+        "granted": true,
+        "grantedAt": "2026-08-21T11:40:00+09:00"
+      },
+      "sensitiveData": {
+        "granted": true,
+        "grantedAt": "2026-08-21T11:40:10+09:00"
+      },
+      "careRecipientConfirmation": {
+        "confirmed": true,
+        "confirmedAt": "2026-08-21T13:59:30+09:00"
+      }
+    },
+    "recordingAuthorization": {
+      "granted": true,
+      "grantedAt": "2026-08-21T14:00:00+09:00"
+    },
+    "startedAt": "2026-08-21T14:00:00+09:00",
+    "endedAt": "2026-08-21T14:22:00+09:00"
+  },
+  "visitPhoto": {
+    "photoId": "visit_photo_demo_001",
+    "sessionId": "session_demo_001",
+    "localUri": "local://visit/visit_photo_demo_001",
+    "capturedAt": "2026-08-21T13:58:00+09:00",
+    "skipped": false
+  }
+}
