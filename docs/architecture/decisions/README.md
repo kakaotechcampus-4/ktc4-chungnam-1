@@ -56,3 +56,4 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | --- | --- | --- |
 | [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted | 동의 구조와 원본 자료의 최대 24시간 서버 임시 처리 경계 |
 | [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID를 `com.saelog.app`으로 통일 |
+| [ADR-003](ADR-003-parallel-stt-validation.md) | proposed | Python 기준 환경과 온디바이스 STT 병렬 검증 제안 |
