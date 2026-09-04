@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-004-unclear-speech",
+  "area": "sttProcessing",
+  "description": "마이크에서 먼 발화, 낮은 볼륨, 불명확한 발음 상태에서 신뢰도 미달 시 텍스트를 추측 생성하지 않고 수동 입력으로 전환되는지 확인한다.",
+  "inputRef": "fixtures/speech/03_unclear_speech.wav",
+  "expectedRef": "expected/stt-004-unclear-speech.json",
+  "tags": ["stt", "lowVolume", "confidence"]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-003-third-party-voice",
+  "area": "sttProcessing",
+  "description": "등록된 화자 2명의 대화 중 미등록 제3자 목소리가 짧게 섞인 상태에서, 화자 분리가 제3자를 A/B로 잘못 배정하지 않는지 확인한다.",
+  "inputRef": "fixtures/speech/02_third_party_voice.wav",
+  "expectedRef": "expected/stt-003-third-party-voice.json",
+  "tags": ["stt", "speakerDiarization", "unknownSpeaker"]
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-004-unclear-speech",
+  "scenario": "기준 케이스 음성에 저역통과 필터(먹먹함) + 볼륨 감소 적용",
+  "expectedResult": {
+    "transcript": null,
+    "confidenceRange": [0.0, 0.3],
+    "errorCode": "LOW_CONFIDENCE_UNCLEAR"
+  },
+  "failureCondition": "낮은 신뢰도인데도 확정된 텍스트를 억지로 반환하는 경우 (가장 위험한 실패 유형)",
+  "onFailureFallback": {
+    "uiBehavior": "보호자가 카드 사용 여부와 반응을 직접 입력하는 화면으로 전환"
+  },
+  "notes": "이 케이스는 '정상적으로 텍스트가 나오는 것'이 오히려 비정상입니다. 신뢰도 임계값(0.3)은 예시값."
+}
