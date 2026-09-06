@@ -316,7 +316,7 @@
       "cardId": "card_demo_001",
       "topicKey": "sewing",
       "topicTitle": "재봉 일",
-      "topicDescription": "미싱으로 만드셨던 옷 중에 제일 손이 많이 가고 정성을 들인 옷은 무엇인지 물어보기",
+      "topicDescription": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요.",
       "primaryQuestion": "어떤 옷을 주로 만드셨어요?",
       "followUpQuestions": [
         "일할 때 자주 쓰던 도구가 있었어요?",
@@ -333,7 +333,7 @@
 
 - `generationStatus` 값은 `pending`, `processing`, `completed`, `failed`이다.
 - `topicKey`는 주제를 회차 간에 잇는 식별자이며, 같은 주제는 회차가 달라도 같은 값을 쓴다.
-- `topicDescription`은 보호자가 카드를 보고 그대로 읽을 수 있게 풀어 쓴 질문 안내다.
+- `topicDescription`은 이 카드가 어떤 주제인지 보호자에게 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.
 - `selectionStatus` 값은 `unselected`와 `selected`이며 선택하지 않은 카드도 삭제하지 않는다.
 - `followUpQuestions`는 카드마다 3개를 기본으로 한다.
   - 한 회차에 12장을 만들며 선택 화면에서 9장을 보여주고 나머지 3장은 면회 중 보충용으로 남긴다.
