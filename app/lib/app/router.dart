@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/auth/login_screen.dart';
+import '../features/auth/signup_screen.dart';
+import '../features/auth/splash_screen.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_states.dart';
 import 'routes.dart';
@@ -15,27 +18,15 @@ GoRouter buildRouter() {
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        builder: (context, state) => const _Upcoming(
-          unit: 2,
-          screen: '스플래시',
-          title: 'A-1',
-        ),
+        builder: (context, state) => const SplashScreen(),
       ),
       GoRoute(
         path: AppRoutes.login,
-        builder: (context, state) => const _Upcoming(
-          unit: 2,
-          screen: '로그인',
-          title: 'A-2',
-        ),
+        builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
         path: AppRoutes.signup,
-        builder: (context, state) => const _Upcoming(
-          unit: 2,
-          screen: '회원가입과 동의',
-          title: 'A-3',
-        ),
+        builder: (context, state) => const SignupScreen(),
       ),
       GoRoute(
         path: AppRoutes.onboarding,
@@ -159,10 +150,7 @@ class _Upcoming extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppTopBar(
-        title: title,
-        onBack: context.canPop() ? context.pop : null,
-      ),
+      appBar: AppTopBar(title: title),
       body: PlaceholderView.upcoming(unit: unit, screen: screen),
     );
   }

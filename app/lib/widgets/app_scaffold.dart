@@ -4,12 +4,22 @@ import '../design/tokens.dart';
 
 /// 뒤로가기와 제목만 있는 상단바다.
 class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
-  const AppTopBar({this.title, this.onBack, this.actions, super.key});
+  const AppTopBar({
+    this.title,
+    this.onBack,
+    this.showBack = true,
+    this.actions,
+    super.key,
+  });
 
   final String? title;
 
-  /// `null` 이면 뒤로가기를 보여주지 않는다.
+  /// 지정하지 않으면 이전 화면으로 돌아간다.
   final VoidCallback? onBack;
+
+  /// 돌아갈 곳이 없으면 [showBack] 이 `true` 라도 버튼을 그리지 않는다.
+  final bool showBack;
+
   final List<Widget>? actions;
 
   @override
@@ -17,14 +27,17 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+    final visible = showBack && (onBack != null || canPop);
+
     return AppBar(
-      leading: onBack == null
-          ? null
-          : IconButton(
-              onPressed: onBack,
+      leading: visible
+          ? IconButton(
+              onPressed: onBack ?? () => Navigator.maybePop(context),
               icon: const Icon(Icons.arrow_back_ios_new, size: 22),
               tooltip: '뒤로',
-            ),
+            )
+          : null,
       title: title == null ? null : Text(title!),
       actions: actions,
     );
