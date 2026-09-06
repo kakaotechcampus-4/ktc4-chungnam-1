@@ -73,7 +73,16 @@ class ScreenBody extends StatelessWidget {
         children: [
           Expanded(
             child: scrollable
-                ? SingleChildScrollView(child: padded)
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: IntrinsicHeight(child: padded),
+                      ),
+                    ),
+                  )
                 : padded,
           ),
           if (bottom != null)

@@ -140,6 +140,40 @@ class LifeFact {
   final String sourceType;
 }
 
+/// 생애 정보 수집 단계의 상태. `collected`, `skipped`, `manualFallback`, `pending`.
+enum CollectionStatus {
+  pending,
+  collected,
+  skipped,
+  manualFallback;
+
+  static CollectionStatus parse(String raw) => values.firstWhere(
+    (v) => v.name == raw,
+    orElse: () => CollectionStatus.pending,
+  );
+}
+
+class CategoryCollectionState {
+  const CategoryCollectionState({
+    required this.category,
+    required this.status,
+    required this.attemptCount,
+  });
+
+  factory CategoryCollectionState.fromJson(Map<String, dynamic> json) =>
+      CategoryCollectionState(
+        category: json['category'] as String,
+        status: CollectionStatus.parse(json['status'] as String),
+        attemptCount: json['attemptCount'] as int,
+      );
+
+  final String category;
+  final CollectionStatus status;
+
+  /// 음성 인식을 시도한 횟수. 2회 실패하면 직접 입력으로 넘어간다.
+  final int attemptCount;
+}
+
 class ProfilePhoto {
   const ProfilePhoto({
     required this.photoId,
@@ -192,16 +226,21 @@ class ProfileBundle {
   const ProfileBundle({
     required this.profile,
     required this.lifeFacts,
+    required this.collectionStates,
     required this.photo,
     required this.tagCandidates,
   });
 
   factory ProfileBundle.fromJson(Map<String, dynamic> json) {
     final candidate = json['imageAnalysisCandidate'] as Map<String, dynamic>;
+    final collection = json['lifeFactCollectionState'] as Map<String, dynamic>;
     return ProfileBundle(
       profile: Profile.fromJson(json['profile'] as Map<String, dynamic>),
       lifeFacts: (json['lifeFacts'] as List)
           .map((e) => LifeFact.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      collectionStates: (collection['categories'] as List)
+          .map((e) => CategoryCollectionState.fromJson(e as Map<String, dynamic>))
           .toList(),
       photo: ProfilePhoto.fromJson(json['profilePhoto'] as Map<String, dynamic>),
       tagCandidates: (candidate['candidates'] as List)
@@ -212,8 +251,15 @@ class ProfileBundle {
 
   final Profile profile;
   final List<LifeFact> lifeFacts;
+  final List<CategoryCollectionState> collectionStates;
   final ProfilePhoto photo;
   final List<ImageTagCandidate> tagCandidates;
+
+  LifeFact? factOf(String category) =>
+      lifeFacts.where((f) => f.category == category).firstOrNull;
+
+  CategoryCollectionState? stateOf(String category) =>
+      collectionStates.where((s) => s.category == category).firstOrNull;
 }
 
 // ── 대화 카드 ───────────────────────────────────────

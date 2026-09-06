@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
+import '../features/profile_setup/onboarding_screen.dart';
+import '../features/profile_setup/profile_setup_screen.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_states.dart';
 import 'routes.dart';
@@ -30,19 +32,11 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.onboarding,
-        builder: (context, state) => const _Upcoming(
-          unit: 3,
-          screen: '처음 오셨네요',
-          title: 'B-1',
-        ),
+        builder: (context, state) => const OnboardingScreen(),
       ),
       GoRoute(
         path: AppRoutes.profileCreate,
-        builder: (context, state) => const _Upcoming(
-          unit: 3,
-          screen: '환자 정보 입력',
-          title: 'B-2 ~ B-8',
-        ),
+        builder: (context, state) => const ProfileSetupScreen(),
       ),
       GoRoute(
         path: AppRoutes.home,
