@@ -45,7 +45,7 @@ void main() {
     expect(cards.take(9), hasLength(9));
     for (final card in cards) {
       expect(card.followUpQuestions, hasLength(3));
-      expect(card.topicDescription, endsWith('물어보기'));
+      expect(card.topicDescription, isNotEmpty);
     }
   });
 

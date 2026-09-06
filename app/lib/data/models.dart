@@ -291,7 +291,8 @@ class ConversationCard {
   final String topicKey;
   final String topicTitle;
 
-  /// 보호자가 카드를 보고 그대로 읽을 수 있게 풀어 쓴 질문 안내다.
+  /// 이 카드가 어떤 주제인지 보호자에게 알려주는 설명이다.
+  /// 어르신에게 그대로 여쭙는 문장은 [primaryQuestion] 이다.
   final String topicDescription;
   final String primaryQuestion;
   final List<String> followUpQuestions;

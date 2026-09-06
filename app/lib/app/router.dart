@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
+import '../features/cards/cards_screen.dart';
+import '../features/home/home_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../widgets/app_scaffold.dart';
@@ -40,19 +42,11 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.home,
-        builder: (context, state) => const _Upcoming(
-          unit: 4,
-          screen: '홈',
-          title: '홈',
-        ),
+        builder: (context, state) => const HomeScreen(),
       ),
       GoRoute(
         path: AppRoutes.cards,
-        builder: (context, state) => const _Upcoming(
-          unit: 4,
-          screen: '오늘의 대화 카드',
-          title: 'C',
-        ),
+        builder: (context, state) => const CardsScreen(),
       ),
       GoRoute(
         path: AppRoutes.visitPhoto,
