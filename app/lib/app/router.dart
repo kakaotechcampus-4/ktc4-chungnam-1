@@ -8,6 +8,9 @@ import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
+import '../features/visit/add_cards_screen.dart';
+import '../features/visit/record_screen.dart';
+import '../features/visit/visit_photo_screen.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_states.dart';
 import 'routes.dart';
@@ -50,19 +53,15 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.visitPhoto,
-        builder: (context, state) => const _Upcoming(
-          unit: 5,
-          screen: '면회 전 사진 촬영',
-          title: 'D',
-        ),
+        builder: (context, state) => const VisitPhotoScreen(),
       ),
       GoRoute(
         path: AppRoutes.visitRecord,
-        builder: (context, state) => const _Upcoming(
-          unit: 5,
-          screen: '녹음과 면회 중 대화 카드',
-          title: 'E',
-        ),
+        builder: (context, state) => const RecordScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.visitAddCards,
+        builder: (context, state) => const AddCardsScreen(),
       ),
       GoRoute(
         path: AppRoutes.visitReview,

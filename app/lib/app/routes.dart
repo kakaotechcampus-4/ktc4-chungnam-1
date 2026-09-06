@@ -29,8 +29,13 @@ abstract final class AppRoutes {
   /// D 면회 전 사진 촬영.
   static const visitPhoto = '/visit/photo';
 
-  /// E 녹음과 면회 중 대화 카드.
+  /// E-1, E-2 녹음 안내와 녹음 중.
   static const visitRecord = '/visit/record';
+
+  /// E-5 면회 중 대화 카드 추가.
+  ///
+  /// E-3, E-4 면회 중 대화 카드는 녹음 화면 위로 올라오는 팝업이라 경로가 없다.
+  static const visitAddCards = '/visit/cards/add';
 
   /// F 보호자 소감 작성.
   static const visitReview = '/visit/review';
