@@ -2,7 +2,9 @@
 
 담당 리더: 이서형
 
-상태: Flutter 프로젝트 골격과 세부 기술은 FE 리더 검증 후 확정
+상태: Flutter 프로젝트 골격과 기술 선택 확정. 권한 흐름은 미정
+
+개발 환경 세팅은 [`SETUP.md`](SETUP.md)를 따른다.
 
 ## 담당 범위
 
@@ -28,14 +30,41 @@
 - 필수 동의는 서비스 제공을 위한 개인정보 처리, 건강 관련 민감정보 처리, 피보호자 동의 확인의 세 항목
 - 이미지 분석은 기능 이용 시 별도 확인, 서비스 품질 개선과 푸시 알림은 선택 동의
 
+## 확정된 기술
+
+| 항목 | 값 |
+| --- | --- |
+| Flutter | 3.44.8 (stable) |
+| Dart | 3.12.2 |
+| `compileSdk` | 36 |
+| `targetSdk` | 36 |
+| `minSdk` | 26 |
+| JDK | 21 (Android Studio 번들) |
+| Gradle | 9.1.0 |
+| Android Gradle Plugin | 9.0.1 |
+| Kotlin | 2.3.20 |
+| 상태 관리 | `flutter_riverpod` 3.4.3 |
+| 화면 이동 | `go_router` 18.0.1 |
+
+**선택 이유**
+
+- Flutter 3.44.8은 세팅 시점의 설치본이다. 12주 안에 버전을 올리며 생기는 위험을 만들지 않기 위해 고정했다.
+- `minSdk` 26은 백그라운드 녹음에 쓰는 포그라운드 서비스의 분기를 줄이기 위해 골랐다. Flutter 기본값은 24다.
+- SDK 세 값은 상수로 적었다. `flutter.*` 변수를 그대로 두면 Flutter를 올릴 때 값이 함께 바뀐다.
+- JDK, Gradle, AGP, Kotlin은 Flutter 템플릿이 생성한 조합을 그대로 쓴다. 임의로 맞춘 조합보다 충돌이 적다.
+- 상태 관리와 화면 이동의 선택 이유와 검토한 대안은 [ADR-003](../docs/architecture/decisions/ADR-003-flutter-state-management-and-routing.md)에 있다.
+
+**검증 환경** — Windows 11, Galaxy S23+ (SM S916N), Android 15 (API 35), arm64 실기기. 2026-09-06에 `flutter build apk --debug`와 실기기 실행을 확인했다.
+
+**재검토 조건**
+
+- Flutter 또는 의존성의 보안 수정이 필요하면 버전 고정을 다시 판단한다.
+- `minSdk` 26으로 배제되는 기기가 문제가 되면 24로 낮추고 분기 비용을 감수한다.
+- 배포 정책이 상위 `targetSdk`를 요구하면 함께 올린다.
+
 ## FE 리더가 정할 사항
 
-- Flutter와 Dart 버전
-- Android `compileSdk`, `targetSdk`, `minSdk`
-- JDK, Gradle과 Android Gradle Plugin 버전
-- 상태 관리와 화면 이동 방식
 - 권한 거부, 중단과 복구 흐름
-- 실행, 테스트, 정적 검사와 빌드 명령
 
 선택 결과에는 버전, 선택 이유, 검토한 대안, 검증 환경과 재검토 조건을 기록한다. 구조를 바꾸는 선택은 ADR도 작성한다.
 
@@ -55,4 +84,23 @@
 
 ## 실행과 테스트
 
-Flutter 프로젝트가 생성된 첫 PR에서 실제로 검증한 명령을 기록한다. 현재는 실행 명령을 임의로 작성하지 않는다.
+`app/`에서 실행한다. 아래는 2026-09-06 검증 환경에서 실제로 확인한 명령이다.
+
+| 명령 | 용도 |
+| --- | --- |
+| `flutter pub get` | 의존성 설치 |
+| `flutter run` | 연결된 기기에서 실행 |
+| `flutter test` | 테스트 실행 |
+| `flutter analyze` | 정적 검사 |
+| `flutter build apk --debug` | 디버그 APK 빌드 |
+
+푸시 전에 `flutter analyze`와 `flutter test`를 실행한다. `flutter run`은 테스트를 함께 실행하지 않는다.
+
+세팅 절차와 자주 막히는 지점은 [`SETUP.md`](SETUP.md)에 있다.
+
+## 목 데이터
+
+    docs/architecture/mock/   원본. 공통 데이터 계약과 함께 관리한다
+    app/assets/mock/          사본. Flutter 가 패키지 루트 밖을 asset 으로 읽지 못해 복사한다
+
+계약이 바뀌면 두 곳을 같은 PR에서 함께 갱신한다. `test/mock_data_sync_test.dart`가 두 벌이 같은지 확인하며, 원본이 브랜치에 없으면 건너뛰고 들어오면 코드 수정 없이 비교를 시작한다.
