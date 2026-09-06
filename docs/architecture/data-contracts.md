@@ -130,7 +130,7 @@
 
 - `localOnly`는 단말에만 두며 외부 AI 요청과 서버 임시 처리 요청에 포함하지 않는다.
 - `ageRange`는 `birthDate`에서 계산한다.
-- `condition.stage` 값은 `mildCognitiveImpairment`, `mildDementia`, `moderateDementia`, `severeDementia`, `unknown`이다.
+- `condition.stage` 값은 `mildCognitiveImpairment`, `mildDementia`, `unknown`이다.
 
 **없어도 되는 값** — `condition.symptomNote`
 
