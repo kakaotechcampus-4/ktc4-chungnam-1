@@ -48,6 +48,12 @@ abstract final class AppRoutes {
 
   static String reportOf(String reportId) => '/report/$reportId';
 
+  /// G-2 변경 사항 확인.
+  static const reportChanges = '/report/:reportId/changes';
+
+  static String reportChangesOf(String reportId) =>
+      '/report/$reportId/changes';
+
   /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
   static const profile = '/profile';
 

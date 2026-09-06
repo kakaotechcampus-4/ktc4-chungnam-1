@@ -380,7 +380,7 @@ class VisitReport {
     reportStatus: json['reportStatus'] as String,
     title: json['title'] as String,
     visitDate: json['visitDate'] as String,
-    mood: json['mood'] as String,
+    mood: VisitMood.parse(json['mood'] as String),
     photoId: json['photoId'] as String?,
     summaryText: json['summaryText'] as String,
     cardSummaries: (json['cardSummaries'] as List)
@@ -393,13 +393,68 @@ class VisitReport {
   final String reportStatus;
   final String title;
   final String visitDate;
-  final String mood;
+  final VisitMood mood;
   final String? photoId;
   final String summaryText;
   final List<CardSummary> cardSummaries;
 }
 
 // ── 보호자 평가와 변경 제안 ─────────────────────────
+
+/// `careRecipientReaction` 값. 계약에 정의된 다섯이다.
+enum CareRecipientReaction {
+  pleased('기뻐하셨어요'),
+  calm('차분하셨어요'),
+  angry('언짢아하셨어요'),
+  lowEnergy('기운이 없으셨어요'),
+  unknown('잘 모르겠어요');
+
+  const CareRecipientReaction(this.label);
+
+  final String label;
+
+  static CareRecipientReaction parse(String raw) => values.firstWhere(
+    (v) => v.name == raw,
+    orElse: () => CareRecipientReaction.unknown,
+  );
+}
+
+/// `caregiverReaction` 값. 카드 한 장에 대한 보호자의 평가다.
+enum CaregiverReaction {
+  positive('좋았어요'),
+  neutral('보통이에요'),
+  negative('아쉬웠어요');
+
+  const CaregiverReaction(this.label);
+
+  final String label;
+
+  static CaregiverReaction parse(String raw) => values.firstWhere(
+    (v) => v.name == raw,
+    orElse: () => CaregiverReaction.neutral,
+  );
+}
+
+/// `VisitReport.mood`. 보호자가 따로 입력하지 않고 대화 만족도에서 계산한다.
+enum VisitMood {
+  hard('힘든 만남'),
+  normal('잔잔한 만남'),
+  good('좋은 만남');
+
+  const VisitMood(this.label);
+
+  final String label;
+
+  static VisitMood parse(String raw) =>
+      values.firstWhere((v) => v.name == raw, orElse: () => VisitMood.normal);
+
+  /// 1이면 `hard`, 2~4는 `normal`, 5면 `good` 이다.
+  static VisitMood fromSatisfaction(int satisfaction) => switch (satisfaction) {
+    <= 1 => VisitMood.hard,
+    >= 5 => VisitMood.good,
+    _ => VisitMood.normal,
+  };
+}
 
 class CardReview {
   const CardReview({
@@ -411,12 +466,13 @@ class CardReview {
   factory CardReview.fromJson(Map<String, dynamic> json) => CardReview(
     cardId: json['cardId'] as String,
     wasUsed: json['wasUsed'] as bool,
-    caregiverReaction: json['caregiverReaction'] as String,
+    caregiverReaction:
+        CaregiverReaction.parse(json['caregiverReaction'] as String),
   );
 
   final String cardId;
   final bool wasUsed;
-  final String caregiverReaction;
+  final CaregiverReaction caregiverReaction;
 }
 
 class CaregiverEvaluation {
@@ -434,7 +490,9 @@ class CaregiverEvaluation {
         reviewId: json['reviewId'] as String,
         sessionId: json['sessionId'] as String,
         conversationSatisfaction: json['conversationSatisfaction'] as int,
-        careRecipientReaction: json['careRecipientReaction'] as String,
+        careRecipientReaction: CareRecipientReaction.parse(
+          json['careRecipientReaction'] as String,
+        ),
         cardReviews: (json['cardReviews'] as List)
             .map((e) => CardReview.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -443,8 +501,10 @@ class CaregiverEvaluation {
 
   final String reviewId;
   final String sessionId;
+  /// 1 이상 5 이하의 정수다.
   final int conversationSatisfaction;
-  final String careRecipientReaction;
+
+  final CareRecipientReaction careRecipientReaction;
   final List<CardReview> cardReviews;
   final String? freeNote;
 }

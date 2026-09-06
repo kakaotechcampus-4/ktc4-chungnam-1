@@ -7,6 +7,10 @@ import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
+import '../features/report/changes_screen.dart';
+import '../features/report/report_screen.dart';
+import '../features/review/processing_screen.dart';
+import '../features/review/review_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
 import '../features/visit/record_screen.dart';
@@ -65,26 +69,22 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.visitReview,
-        builder: (context, state) => const _Upcoming(
-          unit: 6,
-          screen: '보호자 소감 작성',
-          title: 'F',
-        ),
+        builder: (context, state) => const ReviewScreen(),
       ),
       GoRoute(
         path: AppRoutes.visitProcessing,
-        builder: (context, state) => const _Upcoming(
-          unit: 6,
-          screen: '리포트를 만드는 중',
-          title: '로딩',
-        ),
+        builder: (context, state) => const ProcessingScreen(),
       ),
       GoRoute(
         path: AppRoutes.report,
-        builder: (context, state) => const _Upcoming(
-          unit: 6,
-          screen: '리포트',
-          title: 'G',
+        builder: (context, state) => ReportScreen(
+          reportId: state.pathParameters['reportId'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.reportChanges,
+        builder: (context, state) => ReportChangesScreen(
+          reportId: state.pathParameters['reportId'] ?? '',
         ),
       ),
       GoRoute(
