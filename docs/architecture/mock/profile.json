@@ -85,7 +85,8 @@
     "profileId": "profile_demo_001",
     "localUri": "local://gallery/profile_photo_demo_001",
     "acceptedTags": [
-      "한복"
+      "한복",
+      "가족사진"
     ],
     "createdAt": "2026-08-21T12:20:00+09:00"
   },
@@ -97,19 +98,31 @@
       {
         "candidateId": "candidate_demo_001",
         "text": "한복",
-        "confidence": 0.92,
         "reviewStatus": "accepted"
       },
       {
         "candidateId": "candidate_demo_002",
         "text": "결혼식",
-        "confidence": 0.78,
         "reviewStatus": "rejected"
       },
       {
         "candidateId": "candidate_demo_003",
+        "text": "가족사진",
+        "reviewStatus": "accepted"
+      },
+      {
+        "candidateId": "candidate_demo_004",
+        "text": "꽃다발",
+        "reviewStatus": "pending"
+      },
+      {
+        "candidateId": "candidate_demo_005",
+        "text": "정원",
+        "reviewStatus": "rejected"
+      },
+      {
+        "candidateId": "candidate_demo_006",
         "text": "바닷가",
-        "confidence": 0.31,
         "reviewStatus": "pending"
       }
     ],

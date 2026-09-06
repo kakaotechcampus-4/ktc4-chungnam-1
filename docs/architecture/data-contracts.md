@@ -240,19 +240,16 @@
     {
       "candidateId": "candidate_demo_001",
       "text": "한복",
-      "confidence": 0.92,
       "reviewStatus": "accepted"
     },
     {
       "candidateId": "candidate_demo_002",
       "text": "결혼식",
-      "confidence": 0.78,
       "reviewStatus": "pending"
     },
     {
       "candidateId": "candidate_demo_003",
       "text": "바닷가",
-      "confidence": 0.31,
       "reviewStatus": "pending"
     }
   ],
@@ -262,6 +259,7 @@
 
 - `analysisStatus` 값은 `pending`, `processing`, `completed`, `failed`이다.
   - 분석에 실패해도 프로필 입력을 계속 진행할 수 있어야 한다.
+- `candidates`는 AI가 신뢰도 높은 순으로 정렬해 상위 6개만 반환하며, 배열 순서가 곧 추천 순위다.
 - `reviewStatus` 값은 `pending`, `accepted`, `rejected`이며 `ChangeProposal.changes[].reviewStatus`와 같은 값을 쓴다.
   - `accepted`가 된 후보만 `ProfilePhoto.acceptedTags`에 저장하며, 확인하지 않고 넘어간 `pending`도 저장하지 않는다.
 - 태그는 단어 그대로 저장한다. 태그의 의미를 카드 생성에서 어떻게 사용할지는 AI 영역에서 정한다.
