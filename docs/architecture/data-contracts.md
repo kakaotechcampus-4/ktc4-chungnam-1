@@ -73,7 +73,7 @@
   "displayName": "보호자",
   "email": "demo@example.com",
   "consent": {
-    "consentVersion": "2026-08-22",
+    "consentVersion": "2026-09-06",
     "serviceData": {
       "granted": true,
       "grantedAt": "2026-08-21T11:40:00+09:00"
@@ -87,16 +87,16 @@
       "grantedAt": null
     },
     "pushNotification": {
-      "granted": false,
-      "grantedAt": null
+      "granted": true,
+      "grantedAt": "2026-08-21T11:40:15+09:00"
     }
   },
   "createdAt": "2026-08-21T11:40:00+09:00"
 }
 ```
 
-- `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
-- 나머지 둘(데이터를 서비스 개선에 활용, 알림 수신)은 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
+- `serviceData`(개인정보 수집 동의), `sensitiveData`(민감정보 수집 동의)와 `pushNotification`(알림 수신 동의)은 필수 동의 사항이며 거부하면 가입을 진행하지 않는다. `pushNotification`은 리포트 도착을 알리는 데 필요하다.
+- 나머지 하나(`serviceImprovement` 데이터를 서비스 개선에 활용)는 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
 - 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
 
 **없어도 되는 값** — 선택 동의 항목의 `grantedAt`
@@ -358,7 +358,7 @@
   "sessionStatus": "processing",
   "photoId": "visit_photo_demo_001",
   "consent": {
-    "consentVersion": "2026-08-22",
+    "consentVersion": "2026-09-06",
     "serviceData": {
       "granted": true,
       "grantedAt": "2026-08-21T13:55:00+09:00"
