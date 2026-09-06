@@ -534,6 +534,7 @@
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
+- 변경 사항 확인 화면에서 체크한 항목은 `accepted`, 체크하지 않은 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
 <br>
 

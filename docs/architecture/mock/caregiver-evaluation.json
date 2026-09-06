@@ -34,7 +34,7 @@
     "proposalId": "proposal_demo_001",
     "profileId": "profile_demo_001",
     "reportId": "report_demo_001",
-    "proposalStatus": "pendingReview",
+    "proposalStatus": "reviewed",
     "changes": [
       {
         "changeId": "change_demo_001",
@@ -43,7 +43,7 @@
         "topicTitle": "노래 이야기",
         "direction": "up",
         "reason": "노래 이야기에 반응이 좋으셨어요.",
-        "reviewStatus": "pending"
+        "reviewStatus": "accepted"
       },
       {
         "changeId": "change_demo_002",
@@ -59,7 +59,7 @@
         "changeType": "lifeFactAdd",
         "text": "일하실 때 라디오에서 나훈아 노래가 나오면 따라 부르셨대요.",
         "reason": "이번 면회에서 확인되었어요.",
-        "reviewStatus": "pending"
+        "reviewStatus": "accepted"
       },
       {
         "changeId": "change_demo_004",

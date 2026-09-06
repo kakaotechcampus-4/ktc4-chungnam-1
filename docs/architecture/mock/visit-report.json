@@ -4,7 +4,7 @@
     "reportId": "report_demo_001",
     "sessionId": "session_demo_001",
     "reviewId": "review_demo_001",
-    "reportStatus": "ready",
+    "reportStatus": "acknowledged",
     "title": "노래 한 자락에 웃으신 날",
     "visitDate": "2026-08-21",
     "mood": "normal",
