@@ -16,9 +16,17 @@ import '../../widgets/app_surfaces.dart';
 /// 일기 형식의 본문과 카드별 반응을 보여준다. 계약대로 의료적 해석과 대화 품질
 /// 점수를 만들지 않는다.
 class ReportScreen extends ConsumerWidget {
-  const ReportScreen({required this.reportId, super.key});
+  const ReportScreen({
+    required this.reportId,
+    this.fromHistory = false,
+    super.key,
+  });
 
   final String reportId;
+
+  /// 리포트 기록에서 들어왔는지. 이미 반영을 마친 회차라 변경 사항을 다시
+  /// 묻지 않는다.
+  final bool fromHistory;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,26 +40,30 @@ class ReportScreen extends ConsumerWidget {
           message: '리포트를 불러오지 못했어요.',
           onRetry: () => ref.invalidate(visitReportProvider),
         ),
-        data: (data) => _Body(report: data),
+        data: (data) => _Body(report: data, fromHistory: fromHistory),
       ),
     );
   }
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.report});
+  const _Body({required this.report, required this.fromHistory});
 
   final VisitReport report;
+  final bool fromHistory;
 
   @override
   Widget build(BuildContext context) {
     return ScreenBody(
       scrollable: true,
-      bottom: PrimaryButton(
-        label: '변경 사항 확인하기',
-        onPressed: () =>
-            context.push(AppRoutes.reportChangesOf(report.reportId)),
-      ),
+      // 이미 반영을 마친 회차에는 변경 사항을 다시 묻지 않는다.
+      bottom: fromHistory
+          ? null
+          : PrimaryButton(
+              label: '변경 사항 확인하기',
+              onPressed: () =>
+                  context.push(AppRoutes.reportChangesOf(report.reportId)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

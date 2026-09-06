@@ -38,10 +38,10 @@ class HomeScreen extends ConsumerWidget {
                     _ReportNotice(
                       // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
                       date: report.value?.visitDate,
+                      // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
                       onTap: () {
                         final id = report.value?.reportId;
                         if (id == null) return;
-                        ref.read(reportNoticeProvider.notifier).dismiss();
                         context.push(AppRoutes.reportOf(id));
                       },
                     ),
@@ -136,10 +136,15 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
               ),
+              // 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
               IconButton(
-                onPressed: () => showMyPageMenu(context),
+                onPressed: null,
                 tooltip: '메뉴',
-                icon: const Icon(Icons.menu, size: 26),
+                icon: Icon(
+                  Icons.menu,
+                  size: 26,
+                  color: AppColors.textDisabled,
+                ),
               ),
             ],
           ),

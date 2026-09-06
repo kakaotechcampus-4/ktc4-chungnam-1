@@ -6,8 +6,10 @@ import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
+import '../features/report/report_list_screen.dart';
 import '../features/report/report_screen.dart';
 import '../features/review/processing_screen.dart';
 import '../features/review/review_screen.dart';
@@ -20,9 +22,6 @@ import '../widgets/app_states.dart';
 import 'routes.dart';
 
 /// 화면 이동을 한곳에 선언한다. 화면이 늘어나면 여기에 경로도 함께 등록한다.
-///
-/// 아직 만들지 않은 화면은 [PlaceholderView.upcoming] 으로 자리를 잡아 두었다.
-/// 그 화면을 만들 때 이 파일의 `builder` 를 실제 화면으로 바꾼다.
 GoRouter buildRouter() {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -79,6 +78,7 @@ GoRouter buildRouter() {
         path: AppRoutes.report,
         builder: (context, state) => ReportScreen(
           reportId: state.pathParameters['reportId'] ?? '',
+          fromHistory: state.uri.queryParameters['from'] == 'history',
         ),
       ),
       GoRoute(
@@ -89,19 +89,11 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.profile,
-        builder: (context, state) => const _Upcoming(
-          unit: 7,
-          screen: '프로필 설정',
-          title: '프로필 설정',
-        ),
+        builder: (context, state) => const ProfileScreen(),
       ),
       GoRoute(
         path: AppRoutes.reports,
-        builder: (context, state) => const _Upcoming(
-          unit: 7,
-          screen: '리포트 기록',
-          title: '리포트 기록',
-        ),
+        builder: (context, state) => const ReportListScreen(),
       ),
       // H 일대기는 기획이 보류된 화면이라 안내만 보여준다. 구현 대상이 아니다.
       GoRoute(
@@ -120,25 +112,4 @@ GoRouter buildRouter() {
       ),
     ),
   );
-}
-
-/// 아직 만들지 않은 화면의 자리다. 단위 7이 끝나면 이 위젯은 사라진다.
-class _Upcoming extends StatelessWidget {
-  const _Upcoming({
-    required this.unit,
-    required this.screen,
-    required this.title,
-  });
-
-  final int unit;
-  final String screen;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppTopBar(title: title),
-      body: PlaceholderView.upcoming(unit: unit, screen: screen),
-    );
-  }
 }

@@ -97,12 +97,30 @@ void main() {
   });
 
   group('홈 알림', () {
-    test('처음에는 알림이 있고 확인하면 사라진다', () {
+    test('처음 들어온 사용자에게는 보이지 않는다', () {
       final container = makeContainer();
 
+      expect(
+        container.read(reportNoticeProvider),
+        isFalse,
+        reason: '리포트가 만들어지기 전에는 알릴 것이 없다',
+      );
+    });
+
+    test('리포트가 만들어지면 뜨고 변경 사항을 반영해야 사라진다', () {
+      final container = makeContainer();
+      final notice = container.read(reportNoticeProvider.notifier);
+
+      // 로딩 화면이 끝나며 알린다.
+      notice.show();
       expect(container.read(reportNoticeProvider), isTrue);
 
-      container.read(reportNoticeProvider.notifier).dismiss();
+      // 리포트를 읽기만 해서는 지우지 않는다. 홈 화면은 알림을 눌러도
+      // dismiss 를 부르지 않고 리포트로 보내기만 한다.
+      expect(container.read(reportNoticeProvider), isTrue);
+
+      // 변경 사항 확인을 마치면 사라진다.
+      notice.dismiss();
       expect(container.read(reportNoticeProvider), isFalse);
     });
   });

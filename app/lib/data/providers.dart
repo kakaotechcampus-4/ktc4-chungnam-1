@@ -43,14 +43,19 @@ final changeProposalProvider = FutureProvider<ChangeProposal>(
 
 /// 홈 화면의 리포트 도착 알림 상태다.
 ///
-/// 계약상 `VisitReport.reportStatus` 가 `ready` 이면 알림을 표시하고, 사용자가
-/// 리포트를 확인하면 사라진다. 스켈레톤에서는 이 값으로 흉내낸다.
+/// 리포트가 만들어진 뒤에만 뜬다. 회원가입하고 처음 들어온 사용자에게는
+/// 보이지 않는다. 계약상 `VisitReport.reportStatus` 가 `ready` 가 되는 시점에
+/// 해당한다.
+///
+/// 리포트를 읽는 것만으로는 사라지지 않고, 변경 사항까지 확인해야 사라진다.
 class ReportNoticeNotifier extends Notifier<bool> {
   @override
-  bool build() => true;
+  bool build() => false;
 
+  /// 변경 사항 확인을 마쳤다.
   void dismiss() => state = false;
 
+  /// 리포트가 만들어졌다.
   void show() => state = true;
 }
 

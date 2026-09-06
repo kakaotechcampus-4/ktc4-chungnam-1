@@ -153,6 +153,26 @@ void main() {
       expect(container.read(visitControllerProvider).value!.recording, isTrue);
     });
 
+    test('새 회차를 시작하면 지난 회차의 상태가 남지 않는다', () async {
+      final container = await withSelection(1);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      controller.startRecording();
+      controller.nextFollowUp();
+      expect(container.read(visitControllerProvider).value!.started, isTrue);
+
+      // 대화 시작하기를 누를 때 화면이 하는 일과 같다.
+      container.invalidate(visitControllerProvider);
+      final fresh = await container.read(visitControllerProvider.future);
+
+      expect(fresh.started, isFalse);
+      expect(fresh.recording, isFalse);
+      expect(fresh.elapsed, Duration.zero);
+      expect(fresh.followUpIndex, 0);
+      expect(fresh.careRecipientConfirmed, isFalse);
+    });
+
     test('시간 표시는 시분초 형태다', () async {
       final container = await withSelection(1);
       final state = await container.read(visitControllerProvider.future);

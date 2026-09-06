@@ -97,6 +97,25 @@ void main() {
       expect(evaluation.freeNote, isNull);
     });
 
+    test('새 회차를 시작하면 지난 소감이 남지 않는다', () {
+      final container = makeContainer();
+      final controller = container.read(reviewControllerProvider.notifier);
+
+      controller.setSatisfaction(5);
+      controller.setReaction(CareRecipientReaction.pleased);
+      controller.setFreeNote('지난 회차 소감');
+      expect(container.read(reviewControllerProvider).canSubmit, isTrue);
+
+      // 대화 시작하기를 누를 때 화면이 하는 일과 같다.
+      container.invalidate(reviewControllerProvider);
+      final fresh = container.read(reviewControllerProvider);
+
+      expect(fresh.satisfaction, isNull);
+      expect(fresh.reaction, isNull);
+      expect(fresh.freeNote, isEmpty);
+      expect(fresh.canSubmit, isFalse);
+    });
+
     test('답하지 않으면 계약 객체를 만들지 않는다', () {
       final container = makeContainer();
       final controller = container.read(reviewControllerProvider.notifier);
