@@ -8,7 +8,7 @@
         "cardId": "card_demo_001",
         "topicKey": "sewing",
         "topicTitle": "재봉 일",
-        "topicDescription": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요.",
+        "topicDescription": "미싱으로 만드셨던 옷 중에 제일 손이 많이 가고 정성을 들인 옷은 무엇인지 물어보기",
         "primaryQuestion": "어떤 옷을 주로 만드셨어요?",
         "followUpQuestions": [
           "일할 때 자주 쓰던 도구가 있었어요?",
@@ -24,7 +24,7 @@
         "cardId": "card_demo_002",
         "topicKey": "hanbok",
         "topicTitle": "한복 이야기",
-        "topicDescription": "한복을 만드시던 손길과 기억을 여쭤보는 주제예요.",
+        "topicDescription": "한복을 지으실 때 어떤 색과 옷감을 제일 마음에 들어 하셨는지 물어보기",
         "primaryQuestion": "한복은 어떤 색이 제일 예뻤어요?",
         "followUpQuestions": [
           "고르기 어려운 옷감도 있었어요?",
@@ -40,7 +40,7 @@
         "cardId": "card_demo_003",
         "topicKey": "workmates",
         "topicTitle": "같이 일하던 사람들",
-        "topicDescription": "일터에서 만난 사람들과의 시간을 여쭤보는 주제예요.",
+        "topicDescription": "같이 일하시던 분들 중에 특히 기억에 남는 분이 누구였는지 물어보기",
         "primaryQuestion": "같이 일하시던 분 중에 기억나는 분이 있으세요?",
         "followUpQuestions": [
           "점심은 다 같이 드셨어요?",
@@ -56,7 +56,7 @@
         "cardId": "card_demo_004",
         "topicKey": "oldSongs",
         "topicTitle": "노래 이야기",
-        "topicDescription": "좋아하시던 노래와 그때의 분위기를 여쭤보는 주제예요.",
+        "topicDescription": "제일 좋아하시던 노래가 무엇이었는지, 그 노래를 주로 어디서 들으셨는지 물어보기",
         "primaryQuestion": "제일 좋아하시던 노래가 뭐예요?",
         "followUpQuestions": [
           "그 노래는 어디서 자주 들으셨어요?",
@@ -72,7 +72,7 @@
         "cardId": "card_demo_005",
         "topicKey": "radio",
         "topicTitle": "라디오 켜두던 시간",
-        "topicDescription": "라디오를 들으며 보내신 시간을 여쭤보는 주제예요.",
+        "topicDescription": "라디오를 주로 언제 켜두셨는지, 어떤 방송을 즐겨 들으셨는지 물어보기",
         "primaryQuestion": "라디오는 주로 언제 들으셨어요?",
         "followUpQuestions": [
           "어떤 방송을 자주 들으셨어요?",
@@ -88,7 +88,7 @@
         "cardId": "card_demo_006",
         "topicKey": "wedding",
         "topicTitle": "결혼하던 무렵",
-        "topicDescription": "결혼 무렵의 기억을 여쭤보는 주제예요.",
+        "topicDescription": "결혼하시던 무렵이 어떤 계절이었는지, 그날 분위기가 어땠는지 물어보기",
         "primaryQuestion": "결혼하실 때는 어떤 계절이었어요?",
         "followUpQuestions": [
           "그날 날씨는 어땠어요?",
@@ -104,7 +104,7 @@
         "cardId": "card_demo_007",
         "topicKey": "schoolDays",
         "topicTitle": "학창 시절",
-        "topicDescription": "학교에 다니시던 때를 여쭤보는 주제예요.",
+        "topicDescription": "학교에 어떻게 다니셨는지, 학교 가는 길이 어땠는지 물어보기",
         "primaryQuestion": "학교는 어떻게 다니셨어요?",
         "followUpQuestions": [
           "학교 가는 길은 멀었어요?",
@@ -118,7 +118,7 @@
         "cardId": "card_demo_008",
         "topicKey": "children",
         "topicTitle": "아이들 키우던 시절",
-        "topicDescription": "아이들을 키우시던 때의 이야기를 여쭤보는 주제예요.",
+        "topicDescription": "아이들이 어릴 때 어떤 모습이었는지, 언제 제일 손이 많이 갔는지 물어보기",
         "primaryQuestion": "아이들 어릴 때는 어떤 모습이었어요?",
         "followUpQuestions": [
           "제일 손이 많이 가던 때가 언제였어요?",
@@ -134,7 +134,7 @@
         "cardId": "card_demo_009",
         "topicKey": "market",
         "topicTitle": "시장 나들이",
-        "topicDescription": "장을 보러 다니시던 이야기를 여쭤보는 주제예요.",
+        "topicDescription": "장을 주로 어디로 보러 다니셨는지, 자주 들르시던 가게가 있었는지 물어보기",
         "primaryQuestion": "장은 주로 어디로 보러 가셨어요?",
         "followUpQuestions": [
           "자주 사시던 게 있었어요?",
@@ -148,7 +148,7 @@
         "cardId": "card_demo_010",
         "topicKey": "familyMeals",
         "topicTitle": "명절 음식",
-        "topicDescription": "명절에 만드시던 음식 이야기를 여쭤보는 주제예요.",
+        "topicDescription": "명절에 어떤 음식을 제일 많이 하셨는지, 그중 손이 제일 많이 가던 음식은 무엇이었는지 물어보기",
         "primaryQuestion": "명절에는 무슨 음식을 제일 많이 하셨어요?",
         "followUpQuestions": [
           "누구랑 같이 만드셨어요?",
@@ -164,7 +164,7 @@
         "cardId": "card_demo_011",
         "topicKey": "neighbors",
         "topicTitle": "이웃 이야기",
-        "topicDescription": "가까이 지내던 이웃들에 대해 여쭤보는 주제예요.",
+        "topicDescription": "가까이 지내던 이웃들이 어떤 분들이었는지, 서로 나눠 드시던 것이 있었는지 물어보기",
         "primaryQuestion": "옆집에는 어떤 분들이 사셨어요?",
         "followUpQuestions": [
           "서로 나눠 드시던 것도 있었어요?",
@@ -178,7 +178,7 @@
         "cardId": "card_demo_012",
         "topicKey": "seasons",
         "topicTitle": "계절 이야기",
-        "topicDescription": "좋아하시던 계절과 그때의 기억을 여쭤보는 주제예요.",
+        "topicDescription": "어느 계절을 제일 좋아하셨는지, 그 계절에 주로 무엇을 하셨는지 물어보기",
         "primaryQuestion": "어느 계절을 제일 좋아하셨어요?",
         "followUpQuestions": [
           "그 계절에는 주로 뭘 하셨어요?",
