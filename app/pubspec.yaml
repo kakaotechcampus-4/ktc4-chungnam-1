@@ -64,6 +64,7 @@ flutter:
   # 원본이 바뀌면 함께 갱신한다. test/mock_data_sync_test.dart 가 확인한다.
   assets:
     - assets/mock/
+    - assets/images/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

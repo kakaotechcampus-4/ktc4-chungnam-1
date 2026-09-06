@@ -4,7 +4,7 @@
 
 상태: Flutter 프로젝트 골격과 기술 선택 확정. 권한 흐름은 미정
 
-개발 환경 세팅은 [`SETUP.md`](SETUP.md)를 따른다.
+개발 환경 세팅은 [`SETUP.md`](SETUP.md), 화면 디자인 기준은 [`DESIGN.md`](DESIGN.md)를 따른다.
 
 ## 담당 범위
 
