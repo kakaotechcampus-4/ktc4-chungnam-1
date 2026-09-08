@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁
 
-상태: 별도 백엔드 배포 여부와 처리 기술은 BE 리더 검증 후 확정, 서버 임시 처리의 법적 경계는 ADR-001로 확정
+상태: ADR-004 제안 범위의 로컬 FastAPI 기준 골격 구성, 별도 백엔드 배포 여부는 미확정, 서버 임시 처리의 법적 경계는 ADR-001로 확정
 
 ## 담당 범위
 
@@ -56,4 +56,40 @@ BE는 실행 위치와 데이터 흐름을 정한다. 모델 선택과 품질 �
 
 ## 실행과 테스트
 
-실행 구조가 확정된 첫 PR에서 실제로 검증한 명령을 기록한다. 현재는 서버나 배포 환경을 임의로 정하지 않는다.
+현재 골격은 Python 3.12, FastAPI와 Uvicorn을 사용한다. 의존성과 가상 환경은 `uv`로 관리하고 테스트는 `pytest`로 실행한다. 실제 사용자 자료와 마스킹한 실제 자료는 이 환경에서 사용하지 않는다.
+
+`backend/`에서 최초 환경설정을 수행한다.
+
+```powershell
+cd backend
+uv python install 3.12
+uv sync
+uv run python --version
+```
+
+최초 환경설정 후 다음과 같이 서버를 활성화한다.
+```powershell
+cd backend
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-access-log
+```
+
+Android 에뮬레이터 또는 허가된 개발 단말에서 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
+
+```powershell
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+```
+
+테스트는 다음 명령으로 실행한다.
+
+```powershell
+uv run pytest
+```
+
+상태 확인 API는 다음과 같다.
+
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `GET` | `/health/live` | 프로세스 생존 확인 |
+| `GET` | `/health/ready` | 요청 처리 준비 상태 확인 |
+
+로컬 API 문서는 서버 실행 후 `http://127.0.0.1:8000/docs`에서 확인한다. 현재 readiness는 외부 의존성이 없는 골격의 준비 상태만 나타내며, 모델과 저장소가 추가되면 실제 의존성 점검을 연결한다.
