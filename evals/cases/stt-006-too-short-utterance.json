@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-006-too-short-utterance",
+  "area": "sttProcessing",
+  "description": "발화가 0.4초 수준으로 극단적으로 짧아 분석 자체가 부적절한 상태에서, 관찰값 생성을 시도하지 않고 즉시 계산 불가로 처리하는지 확인한다.",
+  "inputRef": "fixtures/speech/05_too_short.wav",
+  "expectedRef": "expected/stt-006-too-short-utterance.json",
+  "tags": ["stt", "shortUtterance"]
+}

@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "conversationCards": {
+    "requestId": "request_demo_001",
+    "generationStatus": "completed",
+    "cards": [
+      {
+        "cardId": "card_demo_001",
+        "topicKey": "sewing",
+        "topicTitle": "재봉 일",
+        "topicDescription": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요.",
+        "primaryQuestion": "어떤 옷을 주로 만드셨어요?",
+        "followUpQuestions": [
+          "일할 때 자주 쓰던 도구가 있었어요?",
+          "함께 일하던 분들은 어떤 분들이었어요?",
+          "가장 기억에 남는 옷은 무엇이었어요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_001"
+        ],
+        "selectionStatus": "selected"
+      },
+      {
+        "cardId": "card_demo_002",
+        "topicKey": "hanbok",
+        "topicTitle": "한복 이야기",
+        "topicDescription": "한복을 만드시던 손길과 기억을 여쭤보는 주제예요.",
+        "primaryQuestion": "한복은 어떤 색이 제일 예뻤어요?",
+        "followUpQuestions": [
+          "고르기 어려운 옷감도 있었어요?",
+          "한복을 맞추러 오시던 분들은 어떤 날에 오셨어요?",
+          "직접 입어보신 한복도 있으셨어요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_001"
+        ],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_003",
+        "topicKey": "workmates",
+        "topicTitle": "같이 일하던 사람들",
+        "topicDescription": "일터에서 만난 사람들과의 시간을 여쭤보는 주제예요.",
+        "primaryQuestion": "같이 일하시던 분 중에 기억나는 분이 있으세요?",
+        "followUpQuestions": [
+          "점심은 다 같이 드셨어요?",
+          "일 끝나고 함께 하시던 일이 있었어요?",
+          "가장 오래 함께 일한 분은 누구셨어요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_001"
+        ],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_004",
+        "topicKey": "oldSongs",
+        "topicTitle": "노래 이야기",
+        "topicDescription": "좋아하시던 노래와 그때의 분위기를 여쭤보는 주제예요.",
+        "primaryQuestion": "제일 좋아하시던 노래가 뭐예요?",
+        "followUpQuestions": [
+          "그 노래는 어디서 자주 들으셨어요?",
+          "따라 부르시던 노래도 있으셨어요?",
+          "노래를 들으면 떠오르는 날이 있으세요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_002"
+        ],
+        "selectionStatus": "selected"
+      },
+      {
+        "cardId": "card_demo_005",
+        "topicKey": "radio",
+        "topicTitle": "라디오 켜두던 시간",
+        "topicDescription": "라디오를 들으며 보내신 시간을 여쭤보는 주제예요.",
+        "primaryQuestion": "라디오는 주로 언제 들으셨어요?",
+        "followUpQuestions": [
+          "어떤 방송을 자주 들으셨어요?",
+          "라디오 소리가 나면 어떤 기분이셨어요?",
+          "사연을 보내보신 적도 있으세요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_002"
+        ],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_006",
+        "topicKey": "wedding",
+        "topicTitle": "결혼하던 무렵",
+        "topicDescription": "결혼 무렵의 기억을 여쭤보는 주제예요.",
+        "primaryQuestion": "결혼하실 때는 어떤 계절이었어요?",
+        "followUpQuestions": [
+          "그날 날씨는 어땠어요?",
+          "결혼식에 누가 제일 반가웠어요?",
+          "신혼 때 사시던 집은 어떤 집이었어요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_003"
+        ],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_007",
+        "topicKey": "schoolDays",
+        "topicTitle": "학창 시절",
+        "topicDescription": "학교에 다니시던 때를 여쭤보는 주제예요.",
+        "primaryQuestion": "학교는 어떻게 다니셨어요?",
+        "followUpQuestions": [
+          "학교 가는 길은 멀었어요?",
+          "친하게 지내던 친구가 있으셨어요?",
+          "좋아하시던 과목이 있었어요?"
+        ],
+        "evidenceRefs": [],
+        "selectionStatus": "selected"
+      },
+      {
+        "cardId": "card_demo_008",
+        "topicKey": "children",
+        "topicTitle": "아이들 키우던 시절",
+        "topicDescription": "아이들을 키우시던 때의 이야기를 여쭤보는 주제예요.",
+        "primaryQuestion": "아이들 어릴 때는 어떤 모습이었어요?",
+        "followUpQuestions": [
+          "제일 손이 많이 가던 때가 언제였어요?",
+          "아이들이 좋아하던 음식이 있었어요?",
+          "같이 어디 나들이도 가셨어요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_003"
+        ],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_009",
+        "topicKey": "market",
+        "topicTitle": "시장 나들이",
+        "topicDescription": "장을 보러 다니시던 이야기를 여쭤보는 주제예요.",
+        "primaryQuestion": "장은 주로 어디로 보러 가셨어요?",
+        "followUpQuestions": [
+          "자주 사시던 게 있었어요?",
+          "단골 가게가 있으셨어요?",
+          "장에 가시면 꼭 들르던 곳이 있었어요?"
+        ],
+        "evidenceRefs": [],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_010",
+        "topicKey": "familyMeals",
+        "topicTitle": "명절 음식",
+        "topicDescription": "명절에 만드시던 음식 이야기를 여쭤보는 주제예요.",
+        "primaryQuestion": "명절에는 무슨 음식을 제일 많이 하셨어요?",
+        "followUpQuestions": [
+          "누구랑 같이 만드셨어요?",
+          "만들기 제일 손이 많이 가던 음식은 뭐였어요?",
+          "식구들이 제일 좋아하던 음식은요?"
+        ],
+        "evidenceRefs": [
+          "fact_demo_003"
+        ],
+        "selectionStatus": "selected"
+      },
+      {
+        "cardId": "card_demo_011",
+        "topicKey": "neighbors",
+        "topicTitle": "이웃 이야기",
+        "topicDescription": "가까이 지내던 이웃들에 대해 여쭤보는 주제예요.",
+        "primaryQuestion": "옆집에는 어떤 분들이 사셨어요?",
+        "followUpQuestions": [
+          "서로 나눠 드시던 것도 있었어요?",
+          "같이 다니시던 곳이 있으셨어요?",
+          "지금도 생각나는 분이 계세요?"
+        ],
+        "evidenceRefs": [],
+        "selectionStatus": "unselected"
+      },
+      {
+        "cardId": "card_demo_012",
+        "topicKey": "seasons",
+        "topicTitle": "계절 이야기",
+        "topicDescription": "좋아하시던 계절과 그때의 기억을 여쭤보는 주제예요.",
+        "primaryQuestion": "어느 계절을 제일 좋아하셨어요?",
+        "followUpQuestions": [
+          "그 계절에는 주로 뭘 하셨어요?",
+          "계절이 바뀌면 집에서 하시던 일이 있었어요?",
+          "제일 견디기 힘든 계절은 언제였어요?"
+        ],
+        "evidenceRefs": [],
+        "selectionStatus": "unselected"
+      }
+    ],
+    "error": null
+  }
+}
