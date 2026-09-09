@@ -1,0 +1,73 @@
+name: Notify team Discord on internal PR
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, reopened, ready_for_review, synchronize, closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send PR status to team Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.TEAM_DISCORD_PR_WEBHOOK }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "::error::TEAM_DISCORD_PR_WEBHOOK secret is not configured"
+            exit 1
+          fi
+
+          case "$ACTION" in
+            opened) STATUS="열림" ;;
+            reopened) STATUS="다시 열림" ;;
+            ready_for_review) STATUS="리뷰 준비" ;;
+            synchronize) STATUS="새 커밋 반영" ;;
+            closed)
+              if [ "$MERGED" = "true" ]; then
+                STATUS="병합됨"
+              else
+                STATUS="닫힘"
+              fi
+              ;;
+            *) STATUS="$ACTION" ;;
+          esac
+          export STATUS
+
+          PAYLOAD=$(python3 - <<'PY'
+          import json
+          import os
+
+          message = (
+              f"**PR {os.environ['STATUS']}**  #{os.environ['PR_NUMBER']} "
+              f"{os.environ['PR_TITLE']}\n"
+              f"{os.environ['HEAD_REF']} -> {os.environ['BASE_REF']}  "
+              f"작성자: {os.environ['PR_AUTHOR']}\n"
+              f"{os.environ['PR_URL']}"
+          )
+          print(json.dumps({"content": message}, ensure_ascii=False))
+          PY
+          )
+
+          curl \
+            --fail-with-body \
+            --retry 3 \
+            --retry-all-errors \
+            --header "Content-Type: application/json" \
+            --data "$PAYLOAD" \
+            "$DISCORD_WEBHOOK"

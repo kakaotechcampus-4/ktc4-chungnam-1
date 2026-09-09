@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-002-background-noise",
+  "scenario": "기준 케이스(stt-001) 음성에 화이트노이즈를 낮은 볼륨으로 오버레이한 상태",
+  "expectedResult": {
+    "transcript": "not_null_but_lower_confidence_than_baseline",
+    "confidenceRange": [0.5, 0.75],
+    "speakerLabel": "A_and_B_correctly_separated",
+    "errorCode": null
+  },
+  "failureCondition": "신뢰도가 임계값(예시: 0.5) 미만으로 떨어질 경우",
+  "onFailure": {
+    "transcript": null,
+    "errorCode": "LOW_CONFIDENCE_NOISE",
+    "uiMessage": "잡음이 심해 인식이 어려워요. 직접 입력해주세요."
+  },
+  "notes": "신뢰도 구간(0.5~0.75)과 임계값(0.5)은 예시값. 실제 채택 모델 검증 후 확정 필요"
+}

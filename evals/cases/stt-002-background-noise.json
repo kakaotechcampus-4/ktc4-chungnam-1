@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-002-background-noise",
+  "area": "sttProcessing",
+  "description": "배경 소음(TV/생활소음 수준)이 섞인 상태에서 STT 신뢰도 저하 및 실패 처리를 확인한다.",
+  "inputRef": "fixtures/speech/01_background_noise.wav",
+  "expectedRef": "expected/stt-002-background-noise.json",
+  "tags": ["stt", "noise", "confidence"]
+}
