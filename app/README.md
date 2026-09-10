@@ -52,7 +52,7 @@
 - `minSdk` 26은 백그라운드 녹음에 쓰는 포그라운드 서비스의 분기를 줄이기 위해 골랐다. Flutter 기본값은 24다.
 - SDK 세 값은 상수로 적었다. `flutter.*` 변수를 그대로 두면 Flutter를 올릴 때 값이 함께 바뀐다.
 - JDK, Gradle, AGP, Kotlin은 Flutter 템플릿이 생성한 조합을 그대로 쓴다. 임의로 맞춘 조합보다 충돌이 적다.
-- 상태 관리와 화면 이동의 선택 이유와 검토한 대안은 [ADR-003](../docs/architecture/decisions/ADR-003-flutter-state-management-and-routing.md)에 있다.
+- 상태 관리와 화면 이동의 선택 이유와 검토한 대안은 [ADR-005](../docs/architecture/decisions/ADR-005-flutter-state-management-and-routing.md)에 있다.
 
 **검증 환경** — Windows 11, Galaxy S23+ (SM S916N), Android 15 (API 35), arm64 실기기. 2026-09-06에 `flutter build apk --debug`와 실기기 실행을 확인했다.
 
