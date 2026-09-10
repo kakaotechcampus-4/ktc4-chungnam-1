@@ -263,6 +263,8 @@
 - `reviewStatus` 값은 `pending`, `accepted`, `rejected`이며 `ChangeProposal.changes[].reviewStatus`와 같은 값을 쓴다.
   - `accepted`가 된 후보만 `ProfilePhoto.acceptedTags`에 저장하며, 확인하지 않고 넘어간 `pending`도 저장하지 않는다.
 - 태그는 단어 그대로 저장한다. 태그의 의미를 카드 생성에서 어떻게 사용할지는 AI 영역에서 정한다.
+- 사진 메타데이터는 이 객체의 확정값이 아니라 AI 분석에 제공할 수 있는 보조 입력이다. 누락되거나 원래 사건과 다른 값일 수 있으므로 메타데이터만으로 후보, 생애 사실과 스토리를 확정하지 않는다.
+- AI 태그와 문맥 정보도 보호자가 확인하기 전에는 후보로만 취급한다. 메타데이터를 보조 입력으로 제한하는 측정 근거는 [사진 메타데이터 추출 보고서](../../local_ai/docs/image_tagging/metadata-extraction-report.md)에 기록한다.
 
 **없어도 되는 값** — `candidates`, `error`
 
