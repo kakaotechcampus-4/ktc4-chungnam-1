@@ -1,0 +1,898 @@
+[
+  {
+    "imageFileName": "1970s_01_bus_conductor.png",
+    "format": "PNG",
+    "width": 1300,
+    "height": 1959,
+    "fileSizeBytes": 2424148,
+    "hasExif": false,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": null
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": false,
+      "iptc": false,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 0,
+      "exifIfd": 0,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1970s_02_medicine_hawker.png",
+    "format": "PNG",
+    "width": 2157,
+    "height": 1608,
+    "fileSizeBytes": 3040158,
+    "hasExif": false,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": null
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": false,
+      "iptc": false,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 0,
+      "exifIfd": 0,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1970s_03_saemaul_roof.jpg",
+    "format": "JPEG",
+    "width": 3024,
+    "height": 2067,
+    "fileSizeBytes": 920990,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": "Adobe Photoshop CS4 Windows"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": "2011:09:26 11:22:13",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 7,
+      "exifIfd": 3,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1980s_01_olympics_opening.jpg",
+    "format": "JPEG",
+    "width": 1988,
+    "height": 2966,
+    "fileSizeBytes": 2605818,
+    "hasExif": false,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": null
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": false,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 0,
+      "exifIfd": 0,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1980s_02_rice_harvest.jpg",
+    "format": "JPEG",
+    "width": 1268,
+    "height": 1012,
+    "fileSizeBytes": 1035046,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": null
+    },
+    "artist": "SRA Jeffrey Allen",
+    "copyright": null,
+    "description": "Villagers from Tae Song Dong harvest rice from rice paddies outside of the village. Tae Song Dong, also known as Freedom Village, is one of two villages that stand inside the DMZ and the only one to stand on the South Korean side of the Military Demarkation Line (DML).  The DML is the line that divides North and South Korea.",
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": false,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 5,
+      "exifIfd": 2,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1980s_03_olympics_fireworks.jpg",
+    "format": "JPEG",
+    "width": 1900,
+    "height": 2830,
+    "fileSizeBytes": 2547404,
+    "hasExif": false,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": null
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": false,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 0,
+      "exifIfd": 0,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1990s_01_jagalchi_market.jpg",
+    "format": "JPEG",
+    "width": 2953,
+    "height": 1941,
+    "fileSizeBytes": 5174365,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": "Adobe Photoshop CS6 (Macintosh)"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": "2018:11:13 15:04:06",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 12,
+      "exifIfd": 4,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "1990s_02_seoul_fire_safety.jpg",
+    "format": "JPEG",
+    "width": 4088,
+    "height": 2920,
+    "fileSizeBytes": 5792640,
+    "hasExif": true,
+    "isScannedPhoto": true,
+    "device": {
+      "Make": "HP",
+      "Model": "HP ScanJet 5590",
+      "Software": null
+    },
+    "artist": null,
+    "copyright": null,
+    "description": "서울특별시 소방재난본부 소장 사진.\nphotos of Seoul Metropolitan Fire & Disaster Headquarters.",
+    "dateTimeOriginal": "1990:01:01 20:52:19",
+    "dateTimeDigitized": null,
+    "dateTimeModified": null,
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 9,
+      "exifIfd": 7,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "2000s_01_worldcup_cheering.jpg",
+    "format": "JPEG",
+    "width": 4025,
+    "height": 6270,
+    "fileSizeBytes": 4068021,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": "Microsoft Windows Photo Viewer 6.1.7600.16385"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": "2019:02:01 10:11:25",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 15,
+      "exifIfd": 4,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "2000s_02_worldcup_flag.jpg",
+    "format": "JPEG",
+    "width": 6270,
+    "height": 4025,
+    "fileSizeBytes": 25684035,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": null,
+      "Model": null,
+      "Software": "Adobe Photoshop CS2 Windows"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": null,
+    "dateTimeDigitized": null,
+    "dateTimeModified": "2009:01:23 00:25:31",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {},
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 14,
+      "exifIfd": 3,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "2000s_03_chuseok_table.jpg",
+    "format": "JPEG",
+    "width": 2736,
+    "height": 3648,
+    "fileSizeBytes": 4223070,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "NIKON",
+      "Model": "COOLPIX P7100",
+      "Software": "Microsoft Windows Photo Viewer 6.1.7600.16385"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": "2012:09:30 02:35:12",
+    "dateTimeDigitized": "2012:09:30 02:35:12",
+    "dateTimeModified": "2012:10:20 18:44:14",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.03333333333333333",
+      "FNumber": "2.8",
+      "ISOSpeedRatings": "180",
+      "FocalLength": "6.0",
+      "Flash": "16"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": false,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 12,
+      "exifIfd": 36,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "2010s_01_kimchi_festival.jpg",
+    "format": "JPEG",
+    "width": 5760,
+    "height": 3840,
+    "fileSizeBytes": 20804937,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Canon",
+      "Model": "Canon EOS 5D Mark III",
+      "Software": "Adobe Photoshop CS6 (Windows)"
+    },
+    "artist": "Jeon Han",
+    "copyright": null,
+    "description": "2014 Seoul Kimchi Making & Sharing Festival\n\nNovember 14, 2014\n\nSeoul Plaza, Seoul  \n\nMinistry of Culture, Sports and Tourism\nKorean Culture and Information Service\nKorea.net (<a href=\"http://www.korea.net\" rel=\"nofollow\">www.korea.net</a>)\nOfficial Photographer: Jeon Han\n\nThis official Republic of Korea photograph is being made available only for publication by news organizations and/or for personal printing by the subject(s) of the photograph. The photograph may not be manipulated in any way. Also, it may not be used in any type of commercial, advertisement, product or promotion that in any way suggests approval or endorsement from the government of the Republic of Korea. \n\n--------------------------------------------\n\n2014 서울김장문화재\n\n2014-11-14\n\n서울광장\n\n문화체육관광부\n해외문화홍보원\n코리아넷\n전한",
+    "dateTimeOriginal": "2014:11:14 14:24:05",
+    "dateTimeDigitized": "2014:11:14 14:24:05",
+    "dateTimeModified": "2014:11:14 17:50:40",
+    "gps": {
+      "hasBlock": true,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": [
+        0
+      ]
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.003125",
+      "FNumber": "7.1",
+      "ISOSpeedRatings": "100",
+      "FocalLength": "200.0",
+      "Flash": "16",
+      "LensModel": "EF70-200mm f/2.8L IS II USM"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 18,
+      "exifIfd": 38,
+      "gps": 1
+    }
+  },
+  {
+    "imageFileName": "2010s_02_gwangjang_market.jpg",
+    "format": "JPEG",
+    "width": 4374,
+    "height": 2692,
+    "fileSizeBytes": 11096861,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Canon",
+      "Model": "Canon EOS-1D X",
+      "Software": "Adobe Photoshop CS6 (Windows)"
+    },
+    "artist": "Jeon Han",
+    "copyright": null,
+    "description": "Gwangjang Market Eats\n\nBindaetteok\n\n2014.04.10.\n\nGwangjang Market, Seoul \n\nMinistry of Culture, Sports and Tourism\nKorean Culture and Information Service\nKorea.net(<a href=\"http://www.korea.net\" rel=\"nofollow\">www.korea.net</a>)\nJEON HAN\n-----------------------------------------------\n\n광장시장 먹거리\n\n빈대떡\n\n2014-04-10\n\n광장시장\n\n문화체육관광부\n해외문화홍보원\n코리아넷\n전한",
+    "dateTimeOriginal": "2014:04:10 16:49:46",
+    "dateTimeDigitized": "2014:04:10 16:49:46",
+    "dateTimeModified": "2014:04:16 09:49:45",
+    "gps": {
+      "hasBlock": true,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": [
+        0
+      ]
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.005",
+      "FNumber": "5.0",
+      "ISOSpeedRatings": "800",
+      "FocalLength": "16.0",
+      "Flash": "16",
+      "LensModel": "EF16-35mm f/2.8L II USM"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 18,
+      "exifIfd": 38,
+      "gps": 1
+    }
+  },
+  {
+    "imageFileName": "2010s_03_jeongseon_market.jpg",
+    "format": "JPEG",
+    "width": 4232,
+    "height": 2136,
+    "fileSizeBytes": 5997209,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Canon",
+      "Model": "Canon EOS-1D X",
+      "Software": "Adobe Photoshop CS6 (Windows)"
+    },
+    "artist": "Jeon Han",
+    "copyright": null,
+    "description": "Jeongseon Traditional Market \n\nJune 7, 2014\n\nJeongseon-gun, Gangwon-do  \n\nMinistry of Culture, Sports and Tourism\nKorean Culture and Information Service\nKorea.net (www.korea.net)\nOfficial Photographer: Jeon Han\n\n---------------------------------------------------------------\n\n팔도장터 관광열차 – 강원도 정선 아리랑시장\n\n정선 5일장\n\n2014-06-07\n\n강원도 정선군\n\n문화체육관광부\n해외문화홍보원\n코리아넷\n전한",
+    "dateTimeOriginal": "2014:06:07 13:35:52",
+    "dateTimeDigitized": "2014:06:07 13:35:52",
+    "dateTimeModified": "2014:06:10 14:50:53",
+    "gps": {
+      "hasBlock": true,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": [
+        0
+      ]
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.01",
+      "FNumber": "3.5",
+      "ISOSpeedRatings": "400",
+      "FocalLength": "16.0",
+      "Flash": "16",
+      "LensModel": "EF16-35mm f/2.8L II USM"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 18,
+      "exifIfd": 38,
+      "gps": 1
+    }
+  },
+  {
+    "imageFileName": "2020s_01_lantern_festival.jpg",
+    "format": "JPEG",
+    "width": 5261,
+    "height": 3096,
+    "fileSizeBytes": 8937275,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Canon",
+      "Model": "Canon EOS R3",
+      "Software": "Adobe Photoshop Lightroom Classic 12.3 (Macintosh)"
+    },
+    "artist": "KIM SUN JOO",
+    "copyright": null,
+    "description": "2023 Lotus Lantern Festival \n\nMAY 20, 2023\n\nJongno-gu, Seoul \n\nKOCIS(Korean Culture and Informatioon Service)\nOfficial Photographer :  KIM SUNJOO \n\nAll photographs in the official Flickr account of the Republic of Korea are available only for publication by news organizations and/or for public purposes with proper attribution to the correct source (photographer and organizations mentioned above).\n\nAny distortion to the original meaning of a photograph for provision to a third party through posting and resale, partial reproduction, falsification or use of the photograph with other images is strictly prohibited without the express written permission of the government of the Republic of Korea.\nThank you.\n\n----------------------------------------------------\n\n2023 연등회\n\n2023-05-20\n\n국립서울현충원\n\n코시스(해외문화홍보원)\n김순주\n\n플리커 채널 'Republic of Korea'에 게재되는 대한민국정부 사진은 올바른 저작권 이름 (촬영자 / 상기 명기된 기관)으로 표기한 이후 보도 혹은 공익목적으로 사용하실 수 있습니다. \n\n의미를 왜곡하는 맥락에서 사진을 게시하고 재판매, 부분 복제, 변조 또는 다른 이미지에 통합하는 것과 같은 사진의 모든 수정, 자료를 제3자에게 제공하는 것은 대한민국정부(운영자/저작권자)의 명시적인 허가 없이 금지됩니다.",
+    "dateTimeOriginal": "2023:05:20 19:39:56",
+    "dateTimeDigitized": "2023:05:20 19:39:56",
+    "dateTimeModified": "2023:05:20 22:29:14",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.008",
+      "FNumber": "2.8",
+      "ISOSpeedRatings": "1600",
+      "FocalLength": "187.0",
+      "Flash": "0",
+      "LensModel": "RF70-200mm F2.8 L IS USM"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 10,
+      "exifIfd": 33,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "2020s_02_lantern_crowd.jpg",
+    "format": "JPEG",
+    "width": 5104,
+    "height": 3067,
+    "fileSizeBytes": 8001050,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Canon",
+      "Model": "Canon EOS R3",
+      "Software": "Adobe Photoshop 21.2 (Macintosh)"
+    },
+    "artist": "JEON HAN",
+    "copyright": null,
+    "description": "Lotus Lantern Festival 2022\n\nApril 30, 2022\n\nJongno-gu, Seoul\n\nMinistry of Culture, Sports and Tourism\nKorean Culture and Information Service\nKorea.net (<a href=\"http://www.korea.net\" rel=\"noreferrer nofollow\">www.korea.net</a>)\nOfficial Photographer : Jeon Han\n\nThis official Republic of Korea photograph is being made available only for publication by news organizations and/or for personal printing by the subject(s) of the photograph. The photograph may not be manipulated in any way. Also, it may not be used in any type of commercial, advertisement, product or promotion that in any way suggests approval or endorsement from the government of the Republic of Korea. \n\n-------------------------------------------------\n\n2022 연등회\n\n2022-04-30\n\n종로구\n\n문화체육관광부\n해외문화홍보원\n코리아넷 \n전한",
+    "dateTimeOriginal": "2022:04:30 19:50:18",
+    "dateTimeDigitized": "2022:04:30 19:50:18",
+    "dateTimeModified": "2022:04:30 20:38:30",
+    "gps": {
+      "hasBlock": true,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": [
+        0
+      ]
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.004",
+      "FNumber": "2.8",
+      "ISOSpeedRatings": "2500",
+      "FocalLength": "75.0",
+      "Flash": "0",
+      "LensModel": "RF70-200mm F2.8 L IS USM"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 18,
+      "exifIfd": 41,
+      "gps": 1
+    }
+  },
+  {
+    "imageFileName": "2020s_03_hiking_outing.jpg",
+    "format": "JPEG",
+    "width": 4200,
+    "height": 2800,
+    "fileSizeBytes": 6813248,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "Panasonic",
+      "Model": "DC-S5M2",
+      "Software": "Adobe Photoshop Lightroom Classic 12.3 (Macintosh)"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": "2023:04:22 14:36:46",
+    "dateTimeDigitized": "2023:04:22 14:36:46",
+    "dateTimeModified": "2023:04:25 00:18:14",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.0002",
+      "FNumber": "2.8",
+      "ISOSpeedRatings": "200",
+      "FocalLength": "116.0",
+      "Flash": "16",
+      "LensModel": "LUMIX S 70-200/F2.8"
+    },
+    "sidecar": {
+      "xmp": true,
+      "iptc": true,
+      "iccProfile": true,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 8,
+      "exifIfd": 42,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "20260909_205724.jpg",
+    "format": "JPEG",
+    "width": 4032,
+    "height": 3024,
+    "fileSizeBytes": 1625110,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "samsung",
+      "Model": "SM-G996N",
+      "Software": "G996NKSSCHZA9"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": "2026:09:09 20:57:24",
+    "dateTimeDigitized": "2026:09:09 20:57:24",
+    "dateTimeModified": "2026:09:09 20:57:24",
+    "gps": {
+      "hasBlock": false,
+      "hasCoordinates": false,
+      "latitude": null,
+      "longitude": null,
+      "altitude": null,
+      "processingMethod": null,
+      "gpsDateStamp": null,
+      "gpsTimeStamp": null,
+      "tags": []
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.1",
+      "FNumber": "1.8",
+      "ISOSpeedRatings": "2000",
+      "FocalLength": "5.4",
+      "Flash": "0"
+    },
+    "sidecar": {
+      "xmp": false,
+      "iptc": false,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 12,
+      "exifIfd": 29,
+      "gps": 0
+    }
+  },
+  {
+    "imageFileName": "20260911_003035.jpg",
+    "format": "JPEG",
+    "width": 4032,
+    "height": 3024,
+    "fileSizeBytes": 2244047,
+    "hasExif": true,
+    "isScannedPhoto": false,
+    "device": {
+      "Make": "samsung",
+      "Model": "SM-G996N",
+      "Software": "G996NKSSCHZA9"
+    },
+    "artist": null,
+    "copyright": null,
+    "description": null,
+    "dateTimeOriginal": "2026:09:11 00:30:36",
+    "dateTimeDigitized": "2026:09:11 00:30:36",
+    "dateTimeModified": "2026:09:11 00:30:36",
+    "gps": {
+      "hasBlock": true,
+      "hasCoordinates": true,
+      "latitude": 36.375228,
+      "longitude": 127.347482,
+      "altitude": 141.0,
+      "processingMethod": "CELLID",
+      "gpsDateStamp": "2026:09:10",
+      "gpsTimeStamp": "15:30:34",
+      "tags": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        27,
+        29
+      ]
+    },
+    "shootingParameters": {
+      "ExposureTime": "0.008333333333333333",
+      "FNumber": "1.8",
+      "ISOSpeedRatings": "100",
+      "FocalLength": "5.4",
+      "Flash": "0"
+    },
+    "sidecar": {
+      "xmp": false,
+      "iptc": false,
+      "iccProfile": false,
+      "thumbnail": false
+    },
+    "tagCount": {
+      "ifd0": 11,
+      "exifIfd": 39,
+      "gps": 10
+    }
+  }
+]
