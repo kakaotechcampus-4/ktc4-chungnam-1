@@ -1,7 +1,7 @@
 /// 화면은 이 provider 들만 본다. 목 데이터인지 서버 응답인지 알지 못한다.
 ///
 /// 데이터 출처를 바꿀 때는 `mockRepositoryProvider` 를 override 한다.
-/// 테스트에서 다른 값을 주입할 때도 같은 방법을 쓴다. `ADR-003` 참고.
+/// 테스트에서 다른 값을 주입할 때도 같은 방법을 쓴다. `ADR-005` 참고.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
