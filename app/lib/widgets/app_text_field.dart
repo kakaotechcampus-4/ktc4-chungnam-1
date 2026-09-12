@@ -52,16 +52,18 @@ class AppTextField extends StatelessWidget {
             errorStyle: AppTypography.caption.copyWith(color: AppColors.danger),
             suffixIcon: suffix,
             filled: true,
-            fillColor: AppColors.background,
+            // 평소에는 크림 면이고 초점이 오면 배경 면으로 밝아진다.
+            fillColor: AppColors.surface,
+            focusColor: AppColors.background,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,
               vertical: AppSpacing.lg,
             ),
             border: _border(AppColors.line),
             enabledBorder: _border(AppColors.line),
-            focusedBorder: _border(AppColors.ink, width: 2),
+            focusedBorder: _border(AppColors.accent, width: 1.5),
             errorBorder: _border(AppColors.danger),
-            focusedErrorBorder: _border(AppColors.danger, width: 2),
+            focusedErrorBorder: _border(AppColors.danger, width: 1.5),
           ),
         ),
       ],
@@ -70,7 +72,8 @@ class AppTextField extends StatelessWidget {
 
   static OutlineInputBorder _border(Color color, {double width = 1}) {
     return OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppRadius.card),
+      // 높이 56 이라 모서리는 16 이다.
+      borderRadius: BorderRadius.circular(AppRadius.control56),
       borderSide: BorderSide(color: color, width: width),
     );
   }

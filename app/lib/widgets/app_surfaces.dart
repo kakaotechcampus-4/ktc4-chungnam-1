@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../design/tokens.dart';
 
-/// 흰 면에 옅은 그림자를 둔 카드다.
+/// 크림 면에 옅은 그림자와 테두리를 둔 카드다.
 ///
-/// 선택할 수 있는 카드는 [selected] 로 상태를 나타낸다. 색이 아니라 테두리 굵기로
-/// 구분한다. `app/DESIGN.md` 의 상태 규칙을 따른다.
+/// 밝은 면끼리는 대비가 1.1 안팎이라 면만으로는 배경과 구분되지 않는다.
+/// 그래서 테두리를 함께 쓴다. 선택된 카드는 세이지 면에 굵은 포레스트
+/// 테두리와 체크 표시로 알린다. `app/DESIGN.md` 의 상태 규칙을 따른다.
 class AppCard extends StatelessWidget {
   const AppCard({
     required this.child,
@@ -22,16 +23,18 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Container(
+    final content = AnimatedContainer(
+      duration: AppMotion.base,
+      curve: AppMotion.curve,
       padding: padding,
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: selected ? AppColors.accentSurface : AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: selected ? AppColors.ink : AppColors.line,
+          color: selected ? AppColors.accent : AppColors.line,
           width: selected ? 2 : 1,
         ),
-        boxShadow: AppShadows.low,
+        boxShadow: AppShadows.level1,
       ),
       child: child,
     );
@@ -43,13 +46,17 @@ class AppCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        splashColor: AppColors.pressOverlay,
+        highlightColor: AppColors.pressOverlay,
         child: content,
       ),
     );
   }
 }
 
-/// 옅은 회색 면이다. 안내 문단처럼 본문과 구분해야 하는 영역에 쓴다.
+/// 크림 면이다. 안내 문단처럼 본문과 구분해야 하는 영역에 쓴다.
+///
+/// 그림자 없이 테두리로만 배경과 나눈다.
 class AppSurfaceBox extends StatelessWidget {
   const AppSurfaceBox({
     required this.child,
@@ -68,21 +75,22 @@ class AppSurfaceBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: AppColors.line),
       ),
       child: child,
     );
   }
 }
 
-/// 칩의 강조 단계. 색이 하나뿐이라 형태로 구분한다.
+/// 칩의 강조 단계.
 enum ChipTone {
-  /// 검정 면에 흰 글자.
+  /// 포레스트 면에 아이보리 글자.
   strong,
 
-  /// 검정 테두리에 검정 글자.
+  /// 배경 면에 포레스트 테두리와 포레스트 글자.
   normal,
 
-  /// 연한 테두리에 흐린 글자.
+  /// 배경 면에 라인 테두리와 흐린 글자.
   weak,
 }
 
@@ -95,8 +103,16 @@ class AppChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (background, foreground, border) = switch (tone) {
-      ChipTone.strong => (AppColors.ink, AppColors.background, AppColors.ink),
-      ChipTone.normal => (AppColors.background, AppColors.ink, AppColors.ink),
+      ChipTone.strong => (
+        AppColors.accent,
+        AppColors.onAccent,
+        AppColors.accent,
+      ),
+      ChipTone.normal => (
+        AppColors.background,
+        AppColors.ink,
+        AppColors.accent,
+      ),
       ChipTone.weak => (
         AppColors.background,
         AppColors.textDisabled,
@@ -104,7 +120,9 @@ class AppChip extends StatelessWidget {
       ),
     };
 
-    return Container(
+    return AnimatedContainer(
+      duration: AppMotion.base,
+      curve: AppMotion.curve,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       height: 30,
       alignment: Alignment.center,
@@ -124,7 +142,10 @@ class AppChip extends StatelessWidget {
   }
 }
 
-/// 선택 여부를 나타내는 원형 표시다. 선택되면 검정 원 안의 체크가 된다.
+/// 선택 여부를 나타내는 원형 표시다.
+///
+/// 선택되면 포레스트 원 안의 체크가 된다. 색만으로 알리지 않기 위해
+/// 체크 표시를 함께 쓴다.
 class SelectionMark extends StatelessWidget {
   const SelectionMark({required this.selected, this.size = 28, super.key});
 
@@ -133,19 +154,21 @@ class SelectionMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: AppMotion.base,
+      curve: AppMotion.curve,
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: selected ? AppColors.ink : AppColors.background,
+        color: selected ? AppColors.accent : AppColors.background,
         shape: BoxShape.circle,
         border: Border.all(
-          color: selected ? AppColors.ink : AppColors.line,
+          color: selected ? AppColors.accent : AppColors.line,
           width: 2,
         ),
       ),
       child: selected
-          ? Icon(Icons.check, size: size * 0.62, color: AppColors.background)
+          ? Icon(Icons.check, size: size * 0.62, color: AppColors.onAccent)
           : null,
     );
   }

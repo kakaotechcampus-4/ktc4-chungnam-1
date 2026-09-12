@@ -86,12 +86,21 @@ class ScreenBody extends StatelessWidget {
                 : padded,
           ),
           if (bottom != null)
-            Padding(
+            Container(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen,
                 AppSpacing.lg,
                 AppSpacing.screen,
                 AppSpacing.xxl,
+              ),
+              // 스크롤되는 내용이 버튼에 닿아 겹쳐 보이지 않도록 위쪽을 가린다.
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00FFFBF7), AppColors.background],
+                  stops: [0, 0.4],
+                ),
               ),
               child: bottom,
             ),
@@ -120,7 +129,7 @@ class AppBottomNav extends StatelessWidget {
       decoration: const BoxDecoration(
         color: AppColors.background,
         border: Border(top: BorderSide(color: AppColors.line)),
-        boxShadow: AppShadows.high,
+        boxShadow: AppShadows.level3,
       ),
       child: SafeArea(
         top: false,
@@ -131,6 +140,7 @@ class AppBottomNav extends StatelessWidget {
               _Item(
                 tab: AppTab.album,
                 icon: Icons.menu_book_outlined,
+                selectedIcon: Icons.menu_book,
                 label: '일대기',
                 current: current,
                 onSelected: onSelected,
@@ -146,6 +156,7 @@ class AppBottomNav extends StatelessWidget {
               _Item(
                 tab: AppTab.myPage,
                 icon: Icons.person_outline,
+                selectedIcon: Icons.person,
                 label: '마이페이지',
                 current: current,
                 onSelected: onSelected,
@@ -178,7 +189,8 @@ class _Item extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = tab == current;
-    final color = selected ? AppColors.ink : AppColors.textDisabled;
+    // 지금 탭은 포레스트에 채운 아이콘, 나머지는 흐린 글자에 선 아이콘이다.
+    final color = selected ? AppColors.accent : AppColors.textDisabled;
 
     return Expanded(
       child: InkWell(

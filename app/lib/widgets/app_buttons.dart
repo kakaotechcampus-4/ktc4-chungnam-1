@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../design/tokens.dart';
 
-/// 화면에서 가장 중요한 행동 하나에만 쓴다. 검정 면에 흰 글자다.
+/// 화면에서 가장 중요한 행동 하나에만 쓴다. 포레스트 면에 아이보리 글자다.
+///
+/// 비활성은 색을 바꾸지 않고 전체 투명도를 낮춘다. `app/DESIGN.md` 의
+/// 눌림과 비활성 규칙을 따른다.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     required this.label,
@@ -27,30 +30,38 @@ class PrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
-          foregroundColor: AppColors.background,
-          disabledBackgroundColor: AppColors.line,
-          disabledForegroundColor: AppColors.textDisabled,
+          backgroundColor: AppColors.accent,
+          foregroundColor: AppColors.onAccent,
+          // 비활성도 같은 색을 쓰고 투명도로만 구분한다.
+          disabledBackgroundColor: AppColors.accent,
+          disabledForegroundColor: AppColors.onAccent,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
+            borderRadius: BorderRadius.all(
+              Radius.circular(AppRadius.control56),
+            ),
           ),
           textStyle: AppTypography.button,
         ),
         child: Text(
           label,
-          style: AppTypography.button.copyWith(
-            color: enabled ? AppColors.background : AppColors.textDisabled,
-          ),
+          style: AppTypography.button.copyWith(color: AppColors.onAccent),
         ),
       ),
     );
-    return expand ? SizedBox(width: double.infinity, child: button) : button;
+
+    final sized = expand
+        ? SizedBox(width: double.infinity, child: button)
+        : button;
+
+    return enabled
+        ? sized
+        : Opacity(opacity: kDisabledOpacity, child: sized);
   }
 }
 
-/// 주 버튼보다 약한 행동에 쓴다. 흰 면에 테두리다.
+/// 주 버튼보다 약한 행동에 쓴다. 배경 면에 포레스트 테두리다.
 class SecondaryButton extends StatelessWidget {
   const SecondaryButton({
     required this.label,
@@ -65,24 +76,34 @@ class SecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onPressed != null;
     final button = SizedBox(
       height: AppSizes.control,
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.ink,
-          disabledForegroundColor: AppColors.textDisabled,
+          disabledForegroundColor: AppColors.ink,
           backgroundColor: AppColors.background,
-          side: const BorderSide(color: AppColors.line),
+          side: const BorderSide(color: AppColors.accent),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
+            borderRadius: BorderRadius.all(
+              Radius.circular(AppRadius.control56),
+            ),
           ),
         ),
         child: Text(label, style: AppTypography.button),
       ),
     );
-    return expand ? SizedBox(width: double.infinity, child: button) : button;
+
+    final sized = expand
+        ? SizedBox(width: double.infinity, child: button)
+        : button;
+
+    return enabled
+        ? sized
+        : Opacity(opacity: kDisabledOpacity, child: sized);
   }
 }
 
@@ -95,12 +116,14 @@ class AppTextButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    final enabled = onPressed != null;
+    final button = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
       child: TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
           foregroundColor: AppColors.ink,
+          disabledForegroundColor: AppColors.ink,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
         ),
@@ -113,5 +136,9 @@ class AppTextButton extends StatelessWidget {
         ),
       ),
     );
+
+    return enabled
+        ? button
+        : Opacity(opacity: kDisabledOpacity, child: button);
   }
 }
