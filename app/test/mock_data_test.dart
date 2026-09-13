@@ -64,7 +64,7 @@ void main() {
 
     expect(evaluation.cardReviews, hasLength(4));
     // 반영이 끝난 상태라 pending 이 남아 있지 않다.
-    expect(proposal.proposalStatus, 'reviewed');
+    expect(proposal.proposalStatus, ProposalStatus.reviewed);
     expect(
       proposal.changes.where((c) => c.reviewStatus == ReviewStatus.pending),
       isEmpty,

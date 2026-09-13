@@ -321,6 +321,20 @@ class ConversationCard {
 
 // ── 면회 회차 ───────────────────────────────────────
 
+/// `sessionStatus` 값. 계약에 정의된 일곱이다.
+enum SessionStatus {
+  ready,
+  recording,
+  paused,
+  ended,
+  processing,
+  completed,
+  failed;
+
+  static SessionStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class VisitSession {
   const VisitSession({
     required this.sessionId,
@@ -336,7 +350,7 @@ class VisitSession {
     sessionId: json['sessionId'] as String,
     profileId: json['profileId'] as String,
     selectedCardIds: (json['selectedCardIds'] as List).cast<String>(),
-    sessionStatus: json['sessionStatus'] as String,
+    sessionStatus: SessionStatus.parse(json['sessionStatus'] as String),
     photoId: json['photoId'] as String?,
     startedAt: json['startedAt'] as String,
     endedAt: json['endedAt'] as String?,
@@ -345,7 +359,7 @@ class VisitSession {
   final String sessionId;
   final String profileId;
   final List<String> selectedCardIds;
-  final String sessionStatus;
+  final SessionStatus? sessionStatus;
   final String? photoId;
   final String startedAt;
   final String? endedAt;
@@ -371,6 +385,17 @@ class CardSummary {
   final String summary;
 }
 
+/// `reportStatus` 값. 계약에 정의된 넷이다.
+enum ReportStatus {
+  generating,
+  ready,
+  reviewed,
+  acknowledged;
+
+  static ReportStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class VisitReport {
   const VisitReport({
     required this.reportId,
@@ -387,7 +412,7 @@ class VisitReport {
   factory VisitReport.fromJson(Map<String, dynamic> json) => VisitReport(
     reportId: json['reportId'] as String,
     sessionId: json['sessionId'] as String,
-    reportStatus: json['reportStatus'] as String,
+    reportStatus: ReportStatus.parse(json['reportStatus'] as String),
     title: json['title'] as String,
     visitDate: json['visitDate'] as String,
     mood: VisitMood.parse(json['mood'] as String),
@@ -400,7 +425,7 @@ class VisitReport {
 
   final String reportId;
   final String sessionId;
-  final String reportStatus;
+  final ReportStatus? reportStatus;
   final String title;
   final String visitDate;
   final VisitMood? mood;
@@ -555,6 +580,15 @@ class ProposedChange {
   final ReviewStatus? reviewStatus;
 }
 
+/// `proposalStatus` 값. 계약에 정의된 둘이다.
+enum ProposalStatus {
+  pendingReview,
+  reviewed;
+
+  static ProposalStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class ChangeProposal {
   const ChangeProposal({
     required this.proposalId,
@@ -566,7 +600,7 @@ class ChangeProposal {
   factory ChangeProposal.fromJson(Map<String, dynamic> json) => ChangeProposal(
     proposalId: json['proposalId'] as String,
     reportId: json['reportId'] as String,
-    proposalStatus: json['proposalStatus'] as String,
+    proposalStatus: ProposalStatus.parse(json['proposalStatus'] as String),
     changes: (json['changes'] as List)
         .map((e) => ProposedChange.fromJson(e as Map<String, dynamic>))
         .toList(),
@@ -574,6 +608,6 @@ class ChangeProposal {
 
   final String proposalId;
   final String reportId;
-  final String proposalStatus;
+  final ProposalStatus? proposalStatus;
   final List<ProposedChange> changes;
 }
