@@ -6,7 +6,8 @@
        화자 클립 2개를 받아 SOURCE_DIR(./source_clips)에 저장한다.
        (수동으로 다른 .wav 클립을 넣어도 되며, 최소 2개 이상의 서로 다른 화자를 권장)
     2. python generate_test_cases.py 실행
-    3. OUTPUT_DIR 아래에 케이스별 파일이 생성된다.
+    3. 결과 파일이 evals/fixtures/speech/ 바로 아래에 생성된다 (케이스의
+       inputRef가 가리키는 위치와 동일 — 별도로 옮길 필요 없음).
 
 이 스크립트는 "배경 소음", "제3자 음성 포함", "작은 음성/불명확 발화",
 "중첩 발화(부분)", "발화 너무 짧음", "전체 구간 완전 중첩(화자 구분 전체 불가)"
@@ -24,7 +25,7 @@ from pydub import AudioSegment
 from pydub.generators import WhiteNoise
 
 SOURCE_DIR = "./source_clips"      # 원본 wav 클립 폴더 (팀에서 채워 넣을 위치)
-OUTPUT_DIR = "./generated_cases"   # 생성된 케이스가 저장될 폴더
+OUTPUT_DIR = "."                   # 케이스가 저장될 폴더 (fixtures/speech/ 자신 — inputRef와 일치)
 
 random.seed(42)
 

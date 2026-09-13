@@ -9,13 +9,16 @@ source_clips/ 에 있는 wav 클립 중 파일명 정렬 기준 처음 2개를 �
 
 download_samples.py 실행 후, 같은 폴더(evals/fixtures/speech/)에서 실행한다:
     python make_baseline.py
+
+결과 파일은 evals/fixtures/speech/ 바로 아래(00_baseline_quiet.wav)에 생기며,
+케이스의 inputRef가 가리키는 위치와 동일하다. 별도로 파일을 옮길 필요는 없다.
 """
 
 import os
 from pydub import AudioSegment
 
 SOURCE_DIR = "./source_clips"
-OUTPUT_DIR = "./generated_cases"
+OUTPUT_DIR = "."
 
 
 def main():
