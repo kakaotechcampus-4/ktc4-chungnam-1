@@ -67,6 +67,10 @@ class ReviewController extends Notifier<ReviewDraft> {
   /// 화면에서 모은 값을 계약 객체로 바꾼다.
   ///
   /// 카드를 다루지 않았으면 `wasUsed` 가 `false` 이고 평가는 `neutral` 이다.
+  ///
+  /// **아직 화면에서 부르지 않는다.** 지금은 테스트가 계약 형태를 확인하는 데만
+  /// 쓰고, 소감 화면의 제출 버튼은 처리 중 화면으로 이동만 한다. 저장 인터페이스가
+  /// 정해지면 그 버튼에서 이 메서드를 부른다.
   CaregiverEvaluation? toEvaluation({
     required String reviewId,
     required String sessionId,
