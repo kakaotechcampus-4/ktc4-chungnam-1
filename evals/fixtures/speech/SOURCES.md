@@ -17,6 +17,9 @@
 | `03_unclear_speech.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립에 저역통과 필터+볼륨 감소 적용 | 아니오 |
 | `04_overlapping_speech.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립 2개를 겹쳐 이어붙임 | 아니오 |
 | `05_too_short.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립을 0.4초로 잘라냄 | 아니오 |
+| `06_empty_file.wav` | 합성 자료 (원본 없음) | 없음 | 해당 없음 | 원본 없이 `make_invalid_files.py`로 0바이트 파일 생성 | 아니오 |
+| `07_corrupted_file.wav` | 합성 자료 (원본 없음) | 없음 | 해당 없음 | 원본 없이 `make_invalid_files.py`로 유효하지 않은 RIFF 헤더 + 임의 바이트 생성. Python wave 모듈 기준 파싱 실패(`Error: not a WAVE file`) 확인함 | 아니오 |
+| `08_full_overlap_indeterminate.wav` | 공개 데이터셋 가공 | Zeroth-Korean (동일) | CC BY 4.0 | Zeroth 원본 클립 2개를 처음부터 끝까지(전체 길이) 완전히 겹침(`generate_test_cases.py`의 `case_full_overlap_indeterminate`). `04_overlapping_speech.wav`(일부 구간만 겹침)와 짝을 이루는 케이스 | 아니오 |
 
 ## 사용 중인 자료
 
@@ -35,7 +38,8 @@
 
 - 원본 다운로드: `download_samples.py`
 - 기준 케이스 합성: `make_baseline.py`
-- 나머지 케이스 합성: `generate_test_cases.py`
+- 나머지 합성 케이스(01~05, 08): `generate_test_cases.py`
+- 무효 파일 케이스(06, 07): `make_invalid_files.py` (원본/인터넷 불필요)
 - 의존성: `requirements.txt` (`pip install -r requirements.txt`). wav 입출력만 사용하므로 ffmpeg는 불필요함
 
 이 스크립트들은 `evals/README.md`의 `scripts/`(평가 실행·비교 코드)가 아니라 `fixtures/`에 속한

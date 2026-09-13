@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-008-corrupted-file",
+  "scenario": "파일은 존재하고 크기도 0바이트가 아니지만, wav 헤더가 손상되어 오디오로 디코딩할 수 없는 경우",
+  "expectedResult": {
+    "transcript": null,
+    "confidenceRange": null,
+    "errorCode": "CORRUPTED_AUDIO_FILE"
+  },
+  "failureCondition": "디코딩 실패를 무시하고 빈 결과나 낮은 신뢰도 결과로 대체하는 경우, 또는 stt-007(EMPTY_AUDIO_FILE)과 구분 없이 같은 오류 코드를 반환하는 경우 — 두 경우 모두 '재입력 필요'로 이어지더라도, 원인이 다르면 로그·통계에서는 구분되어야 함",
+  "uiMessage": "녹음 파일을 확인할 수 없어요. 다시 녹음해주세요.",
+  "notes": "errorCode 값(CORRUPTED_AUDIO_FILE)은 예시이며, 실제 채택 명칭은 #24에서 STT 결과 형식이 확정된 뒤 맞춘다. fixtures/speech/07_corrupted_file.wav는 RIFF 헤더 4바이트 뒤에 임의 바이트를 이어붙여 만든 파일로, Python wave 모듈 기준 'not a WAVE file' 오류가 남을 확인함."
+}

@@ -9,8 +9,10 @@
     3. OUTPUT_DIR 아래에 케이스별 파일이 생성된다.
 
 이 스크립트는 "배경 소음", "제3자 음성 포함", "작은 음성/불명확 발화",
-"중첩 발화", "발화 너무 짧음" 5개 케이스를 원본 클립으로부터 합성한다.
-("조용한 2인 대화" 기준 케이스는 팀원 직접 녹음을 권장하므로 이 스크립트 대상에서 제외)
+"중첩 발화(부분)", "발화 너무 짧음", "전체 구간 완전 중첩(화자 구분 전체 불가)"
+6개 케이스를 원본 클립으로부터 합성한다.
+("조용한 2인 대화" 기준 케이스는 팀원 직접 녹음을 권장하므로 이 스크립트 대상에서 제외.
+0바이트/손상 파일 케이스는 합성이 아니라 별도로 만든 고정 파일이라 이 스크립트 대상이 아님)
 
 출처 표기 필요: 최종 evals/README.md에 "Zeroth-Korean (CC BY 4.0, https://openslr.org/40/)
 클립을 가공하여 생성함"과 같이 명시할 것.
@@ -74,6 +76,13 @@ def case_too_short(clip, snippet_ms=400):
     return clip[mid: mid + snippet_ms]
 
 
+def case_full_overlap_indeterminate(clip_a, clip_b):
+    """전체 구간 완전 중첩: case_overlapping_speech(부분 중첩)와 달리, 처음부터
+    끝까지 두 화자가 동시에 발화해 어느 구간도 화자를 구분할 수 없는 상태를 만든다."""
+    min_len = min(len(clip_a), len(clip_b))
+    return clip_a[:min_len].overlay(clip_b[:min_len])
+
+
 def main():
     clips = load_clips(SOURCE_DIR)
     if len(clips) < 2:
@@ -90,6 +99,7 @@ def main():
         "03_unclear_speech.wav": case_unclear_speech(clip_a),
         "04_overlapping_speech.wav": case_overlapping_speech(clip_a, clip_b),
         "05_too_short.wav": case_too_short(clip_a),
+        "08_full_overlap_indeterminate.wav": case_full_overlap_indeterminate(clip_a, clip_b),
     }
 
     for fname, segment in outputs.items():

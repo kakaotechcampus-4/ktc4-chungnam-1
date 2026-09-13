@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-008-corrupted-file",
+  "area": "sttProcessing",
+  "description": "wav 헤더가 손상되어 오디오로 해석할 수 없는 파일이 입력됐을 때, 분석을 시도하지 않고 파일 자체의 오류로 즉시 처리하는지 확인한다.",
+  "inputRef": "fixtures/speech/07_corrupted_file.wav",
+  "expectedRef": "expected/stt-008-corrupted-file.json",
+  "tags": ["stt", "invalidFile", "errorHandling"]
+}
