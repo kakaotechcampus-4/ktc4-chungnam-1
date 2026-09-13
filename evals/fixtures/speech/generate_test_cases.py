@@ -2,10 +2,11 @@
 새록 QA 이슈 #8 - 음성 테스트 케이스 자동 생성 스크립트
 
 사용법:
-    1. Zeroth-Korean(CC BY 4.0) 등에서 다운로드한 .wav 클립들을 아래 SOURCE_DIR에 넣는다.
-       (최소 2개 이상의 서로 다른 화자 클립을 권장)
+    1. python download_samples.py 실행 — Zeroth-Korean(CC BY 4.0)에서 서로 다른
+       화자 클립 2개를 받아 SOURCE_DIR(./source_clips)에 저장한다.
+       (수동으로 다른 .wav 클립을 넣어도 되며, 최소 2개 이상의 서로 다른 화자를 권장)
     2. python generate_test_cases.py 실행
-    3. OUTPUT_DIR 아래에 케이스별 폴더가 생성된다.
+    3. OUTPUT_DIR 아래에 케이스별 파일이 생성된다.
 
 이 스크립트는 "배경 소음", "제3자 음성 포함", "작은 음성/불명확 발화",
 "중첩 발화", "발화 너무 짧음" 5개 케이스를 원본 클립으로부터 합성한다.
