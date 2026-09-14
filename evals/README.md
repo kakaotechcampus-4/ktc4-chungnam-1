@@ -52,7 +52,7 @@ STT 케이스(`stt-001`~`stt-009`)가 참조하는 wav 파일은 **저장소에 
 ```bash
 cd evals/fixtures/speech
 pip install -r requirements.txt      # datasets, soundfile, pydub
-python download_samples.py           # source_clips/ 에 서로 다른 화자 클립 2개 저장 (인터넷 필요)
+python download_samples.py           # source_clips/ 에 고정된 화자·발화 2개 저장 (인터넷 필요)
 python make_baseline.py              # 00_baseline_quiet.wav 생성
 python generate_test_cases.py        # 01_*.wav ~ 05_*.wav, 08_full_overlap_indeterminate.wav 생성
 python make_invalid_files.py         # 06_empty_file.wav, 07_corrupted_file.wav 생성 (인터넷 불필요)
@@ -63,9 +63,12 @@ python make_invalid_files.py         # 06_empty_file.wav, 07_corrupted_file.wav 
   `make_baseline.py` → `generate_test_cases.py`로 만든 6개 파일이 이전에 로컬에 있던 파일과
   MD5까지 동일함 (재현 확인됨). `make_invalid_files.py`가 만드는 2개 파일도 Python `wave` 모듈로
   열었을 때 각각 `EOFError`, `Error: not a WAVE file`이 나 실제로 무효한 파일임을 확인함
-- `download_samples.py`는 스트리밍 순회 중 처음 만나는 서로 다른 화자 2명을 저장하므로, 실행마다
-  어떤 화자가 저장될지는 보장되지 않는다. 나머지 스크립트는 특정 화자 ID를 가정하지 않고
-  `source_clips/`의 파일명 정렬 기준 처음 2개를 사용하므로 이 비결정성에 영향받지 않는다.
+- `download_samples.py`는 화자·발화 ID(`187_003_0011`, `191_003_0006`)와 데이터셋 리비전
+  (`1fe937899f828af822293d05e086200946088bdf`)을 코드에 고정해뒀다. 누가, 언제 실행해도 완전히
+  같은 음성이 나온다 (PR #29 리뷰 반영 — 화자가 실행마다 달라지면 `expected/`의
+  `confidenceRange` 같은 수치 기준이 팀원마다 다르게 적용돼 결과 비교가 어려워지는 문제가
+  있었음). 나머지 스크립트는 이 고정된 화자 ID를 직접 참조하지 않고 `source_clips/`의 파일명
+  정렬 기준 처음 2개를 사용하므로, 향후 화자를 교체해도 코드 수정 없이 그대로 동작한다.
 - 이 파이프라인은 wav 입출력과 pydub의 순수 파이썬 신호 처리(필터, 화이트노이즈)만 사용하므로
   ffmpeg 설치 없이도 동작함을 확인함
 - 실제 환자·보호자 음성은 어떤 경우에도 이 절차에 사용하지 않는다
