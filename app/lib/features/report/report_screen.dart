@@ -75,7 +75,7 @@ class _Body extends StatelessWidget {
             children: [
               Text(_friendlyDate(report.visitDate), style: AppTypography.sub),
               const SizedBox(width: AppSpacing.md),
-              AppChip(report.mood.label),
+              AppChip(report.mood?.label ?? unsupportedValueLabel),
             ],
           ),
           const SizedBox(height: AppSpacing.xl),

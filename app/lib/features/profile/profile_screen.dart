@@ -92,7 +92,10 @@ class _Body extends StatelessWidget {
                 _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
                 _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
                 _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-                _InfoRow(label: '현재 상태', value: profile.stage.label),
+                _InfoRow(
+                  label: '현재 상태',
+                  value: profile.stage?.label ?? unsupportedValueLabel,
+                ),
                 if (profile.symptomNote != null)
                   _InfoRow(label: '메모', value: profile.symptomNote!),
               ],

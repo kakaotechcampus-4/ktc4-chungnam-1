@@ -3,6 +3,11 @@
 /// 필드 이름과 enum 값은 계약을 그대로 따른다. 계약이 바뀌면 이 파일과
 /// `assets/mock/` 의 목 데이터를 같은 변경에서 갱신한다.
 /// 계약에 없는 필드를 여기서 만들지 않는다.
+///
+/// **enum 의 `parse` 는 계약에 없는 값을 만나면 `null` 을 돌려준다.** 정상 값으로
+/// 바꿔 두면 계약 버전 차이로 들어온 값이 보호자가 고른 답처럼 화면에 나간다.
+/// 그래서 값을 담는 필드도 nullable 이며, 화면은 `null` 을 정상 답변으로 보여주지
+/// 않는다. `app/CLAUDE.md` 의 실패 표시 규칙과 테크스펙 NFR-005 를 따른다.
 library;
 
 // ── 계정 ────────────────────────────────────────────
@@ -61,6 +66,9 @@ class Account {
 // ── 프로필 ──────────────────────────────────────────
 
 /// `condition.stage` 값. 계약에 정의된 셋뿐이다.
+///
+/// [unknown] 은 보호자가 직접 고른 "잘 모르겠어요" 다. 계약에 없는 값을 이것으로
+/// 바꾸면 둘을 구분할 수 없어 [parse] 는 `null` 을 준다.
 enum ConditionStage {
   mildCognitiveImpairment('경도 인지장애'),
   mildDementia('경도 치매'),
@@ -70,10 +78,8 @@ enum ConditionStage {
 
   final String label;
 
-  static ConditionStage parse(String raw) => values.firstWhere(
-    (v) => v.name == raw,
-    orElse: () => ConditionStage.unknown,
-  );
+  static ConditionStage? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 class Profile {
@@ -113,7 +119,7 @@ class Profile {
   final String birthDate;
 
   final String ageRange;
-  final ConditionStage stage;
+  final ConditionStage? stage;
   final String? symptomNote;
   final List<String> lifeFactIds;
   final List<String> photoIds;
@@ -140,17 +146,15 @@ class LifeFact {
   final String sourceType;
 }
 
-/// 생애 정보 수집 단계의 상태. `collected`, `skipped`, `manualFallback`, `pending`.
+/// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.
 enum CollectionStatus {
   pending,
   collected,
   skipped,
   manualFallback;
 
-  static CollectionStatus parse(String raw) => values.firstWhere(
-    (v) => v.name == raw,
-    orElse: () => CollectionStatus.pending,
-  );
+  static CollectionStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 class CategoryCollectionState {
@@ -168,7 +172,7 @@ class CategoryCollectionState {
       );
 
   final String category;
-  final CollectionStatus status;
+  final CollectionStatus? status;
 
   /// 음성 인식을 시도한 횟수. 2회 실패하면 직접 입력으로 넘어간다.
   final int attemptCount;
@@ -192,14 +196,17 @@ class ProfilePhoto {
   final List<String> acceptedTags;
 }
 
-/// `pending`, `accepted`, `rejected`. `ChangeProposal` 과 같은 값을 쓴다.
-enum ReviewStatus {
+/// 이미지 분석 후보 하나의 검토 상태. 계약에 정의된 셋이다.
+///
+/// 변경 제안의 [ChangeReviewStatus] 와 값 이름은 겹치지만 같은 타입이 아니다.
+/// 후보는 되돌릴 대상이 없어 `reverted` 를 갖지 않는다.
+enum TagReviewStatus {
   pending,
   accepted,
   rejected;
 
-  static ReviewStatus parse(String raw) =>
-      values.firstWhere((v) => v.name == raw, orElse: () => ReviewStatus.pending);
+  static TagReviewStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 class ImageTagCandidate {
@@ -213,12 +220,12 @@ class ImageTagCandidate {
       ImageTagCandidate(
         candidateId: json['candidateId'] as String,
         text: json['text'] as String,
-        reviewStatus: ReviewStatus.parse(json['reviewStatus'] as String),
+        reviewStatus: TagReviewStatus.parse(json['reviewStatus'] as String),
       );
 
   final String candidateId;
   final String text;
-  final ReviewStatus reviewStatus;
+  final TagReviewStatus? reviewStatus;
 }
 
 /// 프로필 화면이 한 번에 쓰는 묶음이다. `assets/mock/profile.json` 한 파일에 해당한다.
@@ -311,6 +318,20 @@ class ConversationCard {
 
 // ── 면회 회차 ───────────────────────────────────────
 
+/// `sessionStatus` 값. 계약에 정의된 일곱이다.
+enum SessionStatus {
+  ready,
+  recording,
+  paused,
+  ended,
+  processing,
+  completed,
+  failed;
+
+  static SessionStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class VisitSession {
   const VisitSession({
     required this.sessionId,
@@ -326,7 +347,7 @@ class VisitSession {
     sessionId: json['sessionId'] as String,
     profileId: json['profileId'] as String,
     selectedCardIds: (json['selectedCardIds'] as List).cast<String>(),
-    sessionStatus: json['sessionStatus'] as String,
+    sessionStatus: SessionStatus.parse(json['sessionStatus'] as String),
     photoId: json['photoId'] as String?,
     startedAt: json['startedAt'] as String,
     endedAt: json['endedAt'] as String?,
@@ -335,7 +356,7 @@ class VisitSession {
   final String sessionId;
   final String profileId;
   final List<String> selectedCardIds;
-  final String sessionStatus;
+  final SessionStatus? sessionStatus;
   final String? photoId;
   final String startedAt;
   final String? endedAt;
@@ -361,6 +382,17 @@ class CardSummary {
   final String summary;
 }
 
+/// `reportStatus` 값. 계약에 정의된 넷이다.
+enum ReportStatus {
+  generating,
+  ready,
+  reviewed,
+  acknowledged;
+
+  static ReportStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class VisitReport {
   const VisitReport({
     required this.reportId,
@@ -377,7 +409,7 @@ class VisitReport {
   factory VisitReport.fromJson(Map<String, dynamic> json) => VisitReport(
     reportId: json['reportId'] as String,
     sessionId: json['sessionId'] as String,
-    reportStatus: json['reportStatus'] as String,
+    reportStatus: ReportStatus.parse(json['reportStatus'] as String),
     title: json['title'] as String,
     visitDate: json['visitDate'] as String,
     mood: VisitMood.parse(json['mood'] as String),
@@ -390,10 +422,10 @@ class VisitReport {
 
   final String reportId;
   final String sessionId;
-  final String reportStatus;
+  final ReportStatus? reportStatus;
   final String title;
   final String visitDate;
-  final VisitMood mood;
+  final VisitMood? mood;
   final String? photoId;
   final String summaryText;
   final List<CardSummary> cardSummaries;
@@ -402,6 +434,9 @@ class VisitReport {
 // ── 보호자 평가와 변경 제안 ─────────────────────────
 
 /// `careRecipientReaction` 값. 계약에 정의된 다섯이다.
+///
+/// [ConditionStage] 와 같은 이유로, 보호자가 고른 [unknown] 과 알 수 없는 값을
+/// 구분한다.
 enum CareRecipientReaction {
   pleased('기뻐하셨어요'),
   calm('차분하셨어요'),
@@ -413,13 +448,14 @@ enum CareRecipientReaction {
 
   final String label;
 
-  static CareRecipientReaction parse(String raw) => values.firstWhere(
-    (v) => v.name == raw,
-    orElse: () => CareRecipientReaction.unknown,
-  );
+  static CareRecipientReaction? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 /// `caregiverReaction` 값. 카드 한 장에 대한 보호자의 평가다.
+///
+/// 계약에 "모르겠다" 에 해당하는 값이 없다. 알 수 없는 값을 [neutral] 로 바꾸면
+/// 보호자가 하지 않은 평가가 "보통이에요" 로 화면에 나가므로 `null` 을 준다.
 enum CaregiverReaction {
   positive('좋았어요'),
   neutral('보통이에요'),
@@ -429,10 +465,8 @@ enum CaregiverReaction {
 
   final String label;
 
-  static CaregiverReaction parse(String raw) => values.firstWhere(
-    (v) => v.name == raw,
-    orElse: () => CaregiverReaction.neutral,
-  );
+  static CaregiverReaction? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 /// `VisitReport.mood`. 보호자가 따로 입력하지 않고 대화 만족도에서 계산한다.
@@ -445,8 +479,8 @@ enum VisitMood {
 
   final String label;
 
-  static VisitMood parse(String raw) =>
-      values.firstWhere((v) => v.name == raw, orElse: () => VisitMood.normal);
+  static VisitMood? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 
   /// 1이면 `hard`, 2~4는 `normal`, 5면 `good` 이다.
   static VisitMood fromSatisfaction(int satisfaction) => switch (satisfaction) {
@@ -472,7 +506,7 @@ class CardReview {
 
   final String cardId;
   final bool wasUsed;
-  final CaregiverReaction caregiverReaction;
+  final CaregiverReaction? caregiverReaction;
 }
 
 class CaregiverEvaluation {
@@ -504,9 +538,24 @@ class CaregiverEvaluation {
   /// 1 이상 5 이하의 정수다.
   final int conversationSatisfaction;
 
-  final CareRecipientReaction careRecipientReaction;
+  final CareRecipientReaction? careRecipientReaction;
   final List<CardReview> cardReviews;
   final String? freeNote;
+}
+
+/// 변경 제안 하나의 검토 상태. 계약에 정의된 넷이다.
+///
+/// [reverted] 는 보호자가 승인해 프로필에 반영한 변경을 나중에 되돌린 정상
+/// 상태이며, 값을 읽지 못한 경우가 아니다. 이미지 분석 후보의
+/// [TagReviewStatus] 에는 이 값이 없다.
+enum ChangeReviewStatus {
+  pending,
+  accepted,
+  rejected,
+  reverted;
+
+  static ChangeReviewStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 class ProposedChange {
@@ -527,7 +576,7 @@ class ProposedChange {
     direction: json['direction'] as String?,
     text: json['text'] as String?,
     reason: json['reason'] as String,
-    reviewStatus: ReviewStatus.parse(json['reviewStatus'] as String),
+    reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
   );
 
   final String changeId;
@@ -538,7 +587,17 @@ class ProposedChange {
   final String? direction;
   final String? text;
   final String reason;
-  final ReviewStatus reviewStatus;
+
+  final ChangeReviewStatus? reviewStatus;
+}
+
+/// `proposalStatus` 값. 계약에 정의된 둘이다.
+enum ProposalStatus {
+  pendingReview,
+  reviewed;
+
+  static ProposalStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
 }
 
 class ChangeProposal {
@@ -552,7 +611,7 @@ class ChangeProposal {
   factory ChangeProposal.fromJson(Map<String, dynamic> json) => ChangeProposal(
     proposalId: json['proposalId'] as String,
     reportId: json['reportId'] as String,
-    proposalStatus: json['proposalStatus'] as String,
+    proposalStatus: ProposalStatus.parse(json['proposalStatus'] as String),
     changes: (json['changes'] as List)
         .map((e) => ProposedChange.fromJson(e as Map<String, dynamic>))
         .toList(),
@@ -560,6 +619,6 @@ class ChangeProposal {
 
   final String proposalId;
   final String reportId;
-  final String proposalStatus;
+  final ProposalStatus? proposalStatus;
   final List<ProposedChange> changes;
 }
