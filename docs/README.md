@@ -7,7 +7,7 @@
 | 알고 싶은 내용 | 먼저 읽을 문서 | 상세 문서 |
 | --- | --- | --- |
 | 제품 대상, 범위와 미정 사항 | [PM 제품 기준](pm/README.md) | [테크스펙](tech-spec.md) |
-| 주차별 목표와 운영 | [12주 목표](pm/12-week-team-goals.md) | [주간 운영](pm/weekly-operations.md) |
+| 이번 주 담당 작업과 운영 | [GitHub 이슈](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues) | [주간 운영](pm/weekly-operations.md), [12주 학습 목표](pm/12-week-team-goals.md) |
 | Flutter 구현과 실행 | [FE README](../app/README.md) | [환경 설정](../app/SETUP.md), [디자인 기준](../app/DESIGN.md) |
 | FastAPI 구현과 실행 | [BE README](../backend/README.md) | 코드와 테스트 |
 | STT와 이미지 분석 | [AI README](../local_ai/README.md) | [이미지 분석 실험](../local_ai/docs/image_tagging/README.md) |
@@ -16,7 +16,7 @@
 | 기술 결정과 변경 이유 | [ADR 목록](architecture/decisions/README.md) | 개별 ADR |
 | 개인정보와 동의 | [법률 검토](legal/README.md) | [동의안](legal/consent-draft.md), [기능 대응표](legal/consent-mapping.md) |
 | Git과 PR 절차 | [협업 규칙](../CONTRIBUTING.md) | PR 템플릿 |
-| 발표 준비 | [발표 예상 질문](pm/presentation-qna.md) | 없음 |
+| 발표 준비 | [발표 예상 질문](pm/presentation-qna.md) | 과거 준비 자료, 현재 구현 정본 아님 |
 
 ## 문서의 역할
 
@@ -27,14 +27,6 @@
 | 데이터 계약 | 객체, 필드, 상태와 변경 규칙 | 제품 소개와 실험 결과 |
 | ADR | 하나의 기술 결정, 이유와 대안 | 계속 바뀌는 작업 목록 |
 | 실험 보고서 | 입력, 조건, 결과, 한계와 재현 정보 | 제품의 최종 결정인 것처럼 쓴 권고 |
-
-## 읽기 원칙
-
-- 현재 구현을 파악할 때는 루트와 영역별 README를 먼저 본다.
-- 상세 필드가 필요할 때만 데이터 계약을 연다.
-- 결정의 이유나 이전 선택이 필요할 때만 ADR을 연다.
-- 전체 모델 출력은 실험 근거이므로 일반 개발 흐름에서는 읽지 않는다.
-- 문서의 제안과 실험 권고는 PM 또는 담당 영역이 확정한 결정과 구분한다.
 
 ## 갱신 원칙
 

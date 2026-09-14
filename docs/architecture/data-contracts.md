@@ -1,9 +1,24 @@
 # 공통 데이터 계약
 
-- 상태: v0.1, FE, AI와 BE가 함께 사용하는 기준
+- 상태: v0.1, 현재 목 화면과 합성 데이터의 기준. 실제 저장과 모델 연동에 필요한 미결 항목 포함
 - 아래 예시는 모두 합성 데이터다. 구현 과정에서 변경할 수 있지만 필드와 enum 변경은 세 영역이 공동 검토한다.
 
-<br>
+## 현재 적용 범위
+
+JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음 차이는 실제 연동 전에 FE, AI, BE와 PM이 함께 맞춰야 하며, 이 문서 정리에서는 필드와 데이터를 바꾸지 않았다.
+
+| 항목 | 현재 계약 또는 목 화면 | 적용할 기준과 남은 일 |
+| --- | --- | --- |
+| 알림 동의 | 계정 절에 필수로 기재 | [PM 기준](../pm/README.md#처리와-동의)은 선택. 거부해도 가입과 기본 기능을 허용하도록 화면과 계약 정합성 확인 |
+| 사진 전송 | ProfilePhoto 절에서 서버 요청 제외 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)은 동의한 원본의 임시 처리를 허용. 업로드 요청과 삭제 상태 계약은 별도 설계 필요 |
+| 카드 수와 선택 | 12장 생성, 9장 제시와 3장 보충, 보호자 선택으로 명시 | [PM 미결 항목](../pm/README.md#검토-중인-제품-결정)과 달라 확정 여부 확인 필요. 이번 정리에서 수치와 선택 규칙은 변경하지 않음 |
+| 이미지 출력 | 단어 태그와 acceptedTags | 태그, 설명과 결합 출력 비교 중. 확정 후 계약과 화면을 함께 변경 |
+| 피보호자 동의 | 본인 확인 필드만 존재 | 대리 동의의 자격과 확인 절차는 법률 검토 필요 |
+| 저장과 상태 전이 | 값 정의는 있으나 영속 저장 미연결 | [이슈 18](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/18)에서 저장 경계와 갱신 주체 합의 |
+| 보호자 평가 | 모든 카드 평가를 채우는 현재 형식 | 사용하지 않음, 미응답과 중립 평가를 구분할지 공동 조율 |
+| 리포트 | 일기형 요약과 카드별 요약 | 테크스펙의 관찰값과 계산 불가 이유를 어떤 필드로 전달할지 조율 |
+
+공통 규칙과 [객체 목록](#객체와-담당)에서 필요한 항목으로 이동한다. [결정 대기 항목](#결정-대기-항목)의 카드 생성, STT와 주제 갱신은 아직 완성된 처리 계약이 아니다.
 
 ## 공통 규칙
 
@@ -42,20 +57,20 @@
 
 | 객체 | 만드는 쪽 | 읽는 쪽 |
 | --- | --- | --- |
-| `Account` | FE | FE |
-| `Profile` | FE | FE, AI |
-| `LifeFact` | FE | FE, AI |
-| `LifeFactCollectionState` | FE | FE |
-| `ProfilePhoto` | FE | FE |
-| `ImageAnalysisCandidate` | AI | FE |
-| `CardGenerationRequest` | FE | AI |
-| `ConversationCard` | AI | FE |
-| `VisitSession` | FE | FE, AI |
-| `VisitPhoto` | FE | FE |
-| `SpeechAnalysisResult` | AI | AI |
-| `CaregiverEvaluation` | FE | AI |
-| `VisitReport` | AI | FE |
-| `ChangeProposal` | AI | FE |
+| [Account](#계정-account) | FE | FE |
+| [Profile](#프로필-profile) | FE | FE, AI |
+| [LifeFact](#확인된-생애-사실-lifefact) | FE | FE, AI |
+| [LifeFactCollectionState](#생애-정보-입력-상태-lifefactcollectionstate) | FE | FE |
+| [ProfilePhoto](#프로필-사진-profilephoto) | FE | FE |
+| [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate) | AI | FE |
+| [CardGenerationRequest](#카드-생성-요청-cardgenerationrequest) | FE | AI |
+| [ConversationCard](#대화-카드-결과-conversationcard) | AI | FE |
+| [VisitSession](#면회-회차-visitsession) | FE | FE, AI |
+| [VisitPhoto](#면회-사진-visitphoto) | FE | FE |
+| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | AI |
+| [CaregiverEvaluation](#보호자-평가-caregiverevaluation) | FE | AI |
+| [VisitReport](#리포트-초안-visitreport) | AI | FE |
+| [ChangeProposal](#변경-제안-changeproposal) | AI | FE |
 
 - 모든 객체의 단말 저장과 로컬 DB 구조는 BE가 소유하며, 저장과 전달 방식은 BE 계약을 따른다.
 - `selectionStatus`와 `reviewStatus`처럼 사용자가 확인해서 바꾸는 필드는 AI가 만든 객체라도 FE가 갱신한다.
@@ -95,8 +110,8 @@
 }
 ```
 
-- `serviceData`(개인정보 수집 동의), `sensitiveData`(민감정보 수집 동의)와 `pushNotification`(알림 수신 동의)은 필수 동의 사항이며 거부하면 가입을 진행하지 않는다. `pushNotification`은 리포트 도착을 알리는 데 필요하다.
-- 나머지 하나(`serviceImprovement` 데이터를 서비스 개선에 활용)는 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
+- 현재 목 화면은 `serviceData`, `sensitiveData`와 `pushNotification`을 필수로 처리한다. 이 중 알림을 필수로 처리하는 동작은 선택 동의라는 제품 기준과 다르며 수정 대상이다.
+- 제품 기준에서 `pushNotification`과 `serviceImprovement`는 선택 동의다. 거부해도 가입과 핵심 기능을 차단하지 않는다. 위 JSON 필드와 예시는 유지하며 화면 동작 변경은 별도 구현에서 확인한다.
 - 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
 
 **없어도 되는 값** — 선택 동의 항목의 `grantedAt`
@@ -219,7 +234,7 @@
 }
 ```
 
-- 사진 원본은 단말에 두며 외부 AI 요청과 서버 임시 처리 요청에 포함하지 않는다.
+- 이 객체는 사진 원본의 단말 보관 정보를 표현하며 원본 업로드 요청이 아니다. 동의 범위의 서버 임시 처리는 ADR-006을 따르고, 전송과 만료 및 삭제 상태를 전달할 별도 계약은 아직 정하지 않았다.
 - `acceptedTags`는 사용자가 수락한 태그이며 갤러리에서 사진과 함께 표시한다.
 
 **없어도 되는 값** — `acceptedTags`
@@ -545,22 +560,7 @@
 
 ## 변경 절차
 
-다음 객체의 이름과 enum은 첫 구현 전에 FE, AI와 BE가 함께 확인한다.
-
-1. `Account`
-2. `Profile`
-3. `LifeFact`
-4. `LifeFactCollectionState`
-5. `ProfilePhoto`
-6. `ImageAnalysisCandidate`
-7. `CardGenerationRequest`
-8. `ConversationCard`
-9. `VisitSession`
-10. `VisitPhoto`
-11. `SpeechAnalysisResult`
-12. `CaregiverEvaluation`
-13. `VisitReport`
-14. `ChangeProposal`
+[객체 목록](#객체와-담당)의 이름과 enum은 연동 전에 FE, AI, BE가 함께 확인한다.
 
 - 필드 추가와 enum 값 추가도 계약 변경으로 본다. 한 영역이 단독으로 변경하지 않는다.
 - 계약을 변경하면 `mock/`의 합성 데이터를 같은 PR에서 함께 갱신한다.
