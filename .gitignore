@@ -93,9 +93,7 @@ models/
 *.pth
 *.tflite
 
-# STT 테스트 데이터는 지정한 WAV 파일 하나만 예외로 허용
 /local_ai/docs/stt-mobile-benchmark/data/*
-!/local_ai/docs/stt-mobile-benchmark/data/테스트 녹음본.wav
 
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/
