@@ -1,7 +1,7 @@
 # ADR-004: 로컬 FastAPI 기준 환경과 온디바이스 처리 병렬 검증
 
 상태: superseded by ADR-006
-담당: PM, BE, AI, FE  
+담당: PM, BE, AI, FE
 결정일: 2026-09-11 대체
 관련 Issue: #6, #7, #9
 
