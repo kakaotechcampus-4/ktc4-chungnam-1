@@ -59,4 +59,4 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | [ADR-003](ADR-003-parallel-stt-validation.md) | superseded | Python 기준 환경과 온디바이스 STT 병렬 검증 제안, ADR-006으로 대체 |
 | [ADR-004](ADR-004-python-fastapi-reference-environment.md) | superseded | 로컬 FastAPI와 온디바이스 병렬 검증 제안, ADR-006으로 대체 |
 | [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Flutter 상태 관리는 Riverpod, 화면 이동은 go_router |
-| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 서버 측에서 처리하고 원본은 동의 범위에서 임시 처리 |
+| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | MVP의 STT와 VLM은 온프레미스 GPU 1대에서 처리 |
