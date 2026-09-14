@@ -45,7 +45,7 @@
 - `uncertainties`: 사진만으로 확인할 수 없는 내용 1개에서 3개
 - `conversationOpeners`: 최근 기억을 시험하거나 사실을 전제하지 않는 열린 질문 2개
 
-프롬프트 SHA-256은 `3d603b1096a253937c24dc22e521002acb173996790c79c7484643defd15a85d`다.
+사용한 [프롬프트 원문](context-prompt.txt)의 SHA-256은 `3d603b1096a253937c24dc22e521002acb173996790c79c7484643defd15a85d`다. 출력 형식은 [JSON Schema](context-output-schema.json)에서 확인할 수 있다.
 
 ## 시간, 토큰과 비용
 

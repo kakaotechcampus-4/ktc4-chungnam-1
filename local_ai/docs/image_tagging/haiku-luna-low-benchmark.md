@@ -39,7 +39,7 @@
 {"topics":["키워드1","키워드2","키워드3"]}
 ```
 
-프롬프트 SHA-256은 `9746307bb7b46fa901419b97e358eff5f5e14ca00648141dda67e9ee1448ffd6`이다. 사용한 이미지는 기존 보고서의 `target-image/`에 있는 공개 이미지 17장이다.
+사용한 [프롬프트 원문](keyword-prompt.txt)의 SHA-256은 `9746307bb7b46fa901419b97e358eff5f5e14ca00648141dda67e9ee1448ffd6`이다. 출력 형식은 [JSON Schema](keyword-output-schema.json)에서 확인할 수 있다. 사용한 이미지는 기존 보고서의 `target-image/`에 있는 공개 이미지 17장이다.
 
 ## 시간, 토큰과 비용
 

@@ -12,7 +12,8 @@
 - 모든 호출에 같은 고정 프롬프트와 같은 JSON Schema 사용
 - 사진별 설명, 질문, 정답, 출처 문구와 참조 설명을 입력하지 않음
 - `conversationOpeners`의 질문은 입력이 아니라 모델 출력
-- 프롬프트 SHA-256: `3d603b1096a253937c24dc22e521002acb173996790c79c7484643defd15a85d`
+- 프롬프트: [원문](context-prompt.txt), SHA-256 `3d603b1096a253937c24dc22e521002acb173996790c79c7484643defd15a85d`
+- 출력 형식: [JSON Schema](context-output-schema.json)
 - 이미지당 각 조건 1회 실행이므로 일반적인 성능 차이로 확정하지 않음
 - 비용은 API 정가 환산값이며 구독형 Codex 세션의 실제 추가 청구액이 아님
 
