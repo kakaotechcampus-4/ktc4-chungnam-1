@@ -1,9 +1,11 @@
 # ADR-003: Python 기준 환경과 온디바이스 STT 병렬 검증
 
-상태: proposed
+상태: superseded
 담당: PM, BE, AI
 결정일: 결정 대기
 관련 Issue: #6, #7, #9
+
+> [ADR-006](ADR-006-on-premise-gpu-inference.md)로 대체되었다. 아래 내용은 당시 제안의 이력이다.
 
 ## 배경
 
