@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "run_id": "whisper-tiny-q8_0__kcsc__android-SM-G991N__20260909-015714-409",
+  "status": "completed",
+  "command": "mobile-import",
+  "dataset": "kcsc",
+  "dataset_root": null,
+  "model": "whisper-tiny-q8_0",
+  "adapter": "mobile_bench",
+  "checkpoint": "whisper-tiny-q8_0",
+  "requested_device": "android-SM-G991N",
+  "language": "ko",
+  "limit": 1,
+  "started_at": "2026-09-09T01:57:14+00:00",
+  "resumed_at": null,
+  "platform": "android samsung SM-G991N (Android 15 (API 35))",
+  "python": null,
+  "finished_at": "2026-09-09T02:00:39+00:00",
+  "actual_devices": [
+    "android-SM-G991N"
+  ],
+  "summary": "runs/tiny-01/summary.json",
+  "mobile_source": {
+    "run_id": "whisper-tiny-q8_0-20260909T015714409700-ae33ef",
+    "batch_id": "whisper-tiny-q8_0-20260909T015714371042-a9f258",
+    "sample_id": "A0051_S0001_0_G0101.wav",
+    "model_path": "/data/user/0/com.moonyoung.sttbench.mobile_bench/files/models/ggml-tiny-q8_0.bin",
+    "threads": 6,
+    "device": {
+      "platform": "android",
+      "manufacturer": "samsung",
+      "model": "SM-G991N",
+      "osVersion": "Android 15 (API 35)",
+      "logicalCpuCores": 8,
+      "totalMemoryBytes": 7550722048
+    },
+    "cancel_requested": false,
+    "telemetry_summary": {
+      "sample_count": 411,
+      "average_cpu_core_equivalent_percent": 490.9857297355837,
+      "peak_cpu_core_equivalent_percent": 800.0,
+      "average_cpu_device_normalized_percent": 61.37321621694796,
+      "peak_cpu_device_normalized_percent": 100.0,
+      "average_memory_mb": 448.44857428710503,
+      "peak_memory_mb": 463.67846399999996,
+      "average_native_heap_mb": 805.4895624720192,
+      "peak_native_heap_mb": 843.308528,
+      "maximum_thermal_status": "light",
+      "maximum_thermal_headroom": 0.9166666865348816,
+      "maximum_battery_temperature_c": 37.8,
+      "initial_battery_level_percent": 97.0,
+      "final_battery_level_percent": 100.0,
+      "minimum_battery_level_percent": 97.0
+    }
+  }
+}

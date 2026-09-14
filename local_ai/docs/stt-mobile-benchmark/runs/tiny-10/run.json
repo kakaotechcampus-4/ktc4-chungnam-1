@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "run_id": "whisper-tiny-q8_0__kcsc__android-SM-G991N__20260909-022637-155",
+  "status": "completed",
+  "command": "mobile-import",
+  "dataset": "kcsc",
+  "dataset_root": null,
+  "model": "whisper-tiny-q8_0",
+  "adapter": "mobile_bench",
+  "checkpoint": "whisper-tiny-q8_0",
+  "requested_device": "android-SM-G991N",
+  "language": "ko",
+  "limit": 1,
+  "started_at": "2026-09-09T02:26:37+00:00",
+  "resumed_at": null,
+  "platform": "android samsung SM-G991N (Android 15 (API 35))",
+  "python": null,
+  "finished_at": "2026-09-09T02:29:08+00:00",
+  "actual_devices": [
+    "android-SM-G991N"
+  ],
+  "summary": "runs/tiny-10/summary.json",
+  "mobile_source": {
+    "run_id": "whisper-tiny-q8_0-20260909T022637154946-caa66e",
+    "batch_id": "whisper-tiny-q8_0-20260909T015714371042-a9f258",
+    "sample_id": "A0066_S0003_0_G0132.wav",
+    "model_path": "/data/user/0/com.moonyoung.sttbench.mobile_bench/files/models/ggml-tiny-q8_0.bin",
+    "threads": 6,
+    "device": {
+      "platform": "android",
+      "manufacturer": "samsung",
+      "model": "SM-G991N",
+      "osVersion": "Android 15 (API 35)",
+      "logicalCpuCores": 8,
+      "totalMemoryBytes": 7550722048
+    },
+    "cancel_requested": false,
+    "telemetry_summary": {
+      "sample_count": 304,
+      "average_cpu_core_equivalent_percent": 507.2603957287637,
+      "peak_cpu_core_equivalent_percent": 800.0,
+      "average_cpu_device_normalized_percent": 63.40754946609546,
+      "peak_cpu_device_normalized_percent": 100.0,
+      "average_memory_mb": 513.6281431578946,
+      "peak_memory_mb": 535.07584,
+      "average_native_heap_mb": 789.3615261578946,
+      "peak_native_heap_mb": 846.244736,
+      "maximum_thermal_status": "moderate",
+      "maximum_thermal_headroom": 0.9966667294502258,
+      "maximum_battery_temperature_c": 39.6,
+      "initial_battery_level_percent": 100.0,
+      "final_battery_level_percent": 100.0,
+      "minimum_battery_level_percent": 100.0
+    }
+  }
+}

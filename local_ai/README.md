@@ -53,3 +53,5 @@ AI는 녹음 라이브러리와 STT 연결, 모델과 품질 기준을 정한다
 ## 실행과 평가
 
 모델과 평가 스크립트가 병합된 첫 PR에서 실제로 검증한 명령을 기록한다. 현재는 명령과 성능 수치를 임의로 작성하지 않는다.
+
+- [모바일 STT 벤치마크](docs/stt-mobile-benchmark/README.md): Android에서 실행한 Whisper Small·Tiny의 전사 품질, 처리 시간과 온프레미스 전환 검토 근거

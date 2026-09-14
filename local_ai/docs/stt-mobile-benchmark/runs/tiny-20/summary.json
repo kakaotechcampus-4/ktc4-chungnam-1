@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "run_id": "whisper-tiny-q8_0__kcsc__android-SM-G991N__20260909-025805-585",
+  "status": "completed",
+  "dataset": "kcsc",
+  "model": "whisper-tiny-q8_0",
+  "requested_device": "android-SM-G991N",
+  "actual_devices": [
+    "android-SM-G991N"
+  ],
+  "language": "ko",
+  "total_samples": 1,
+  "completed_samples": 1,
+  "failed_samples": 0,
+  "total_audio_seconds": 912.661,
+  "total_transcribe_seconds": 309.394,
+  "model_load_seconds": 0.0,
+  "total_seconds": 309.394,
+  "rtf": 0.33900210483410603,
+  "cer": {
+    "micro": 1.0,
+    "macro": 1.0,
+    "median": 1.0,
+    "errors": 1544,
+    "reference_units": 1544
+  },
+  "wer": {
+    "micro": 1.0,
+    "macro": 1.0,
+    "median": 1.0,
+    "errors": 632,
+    "reference_units": 632
+  },
+  "samples": [
+    {
+      "sample_id": "A0180_S0007_0_G0360",
+      "status": "completed",
+      "device": "android-SM-G991N",
+      "audio_seconds": 912.661,
+      "transcribe_seconds": 309.394,
+      "model_load_seconds": 0.0,
+      "telemetry_summary": {
+        "sample_count": 621,
+        "average_cpu_core_equivalent_percent": 483.4048031191976,
+        "peak_cpu_core_equivalent_percent": 800.0,
+        "average_cpu_device_normalized_percent": 60.4256003898997,
+        "peak_cpu_device_normalized_percent": 100.0,
+        "average_memory_mb": 487.318679703704,
+        "peak_memory_mb": 515.9987199999999,
+        "average_native_heap_mb": 811.474235851852,
+        "peak_native_heap_mb": 847.642096,
+        "maximum_thermal_status": "severe",
+        "maximum_thermal_headroom": 1.03000009059906,
+        "maximum_battery_temperature_c": 41.9,
+        "initial_battery_level_percent": 91.0,
+        "final_battery_level_percent": 91.0,
+        "minimum_battery_level_percent": 91.0
+      },
+      "character_errors": 1544,
+      "reference_characters": 1544,
+      "cer": 1.0,
+      "word_errors": 632,
+      "reference_words": 632,
+      "wer": 1.0
+    }
+  ]
+}

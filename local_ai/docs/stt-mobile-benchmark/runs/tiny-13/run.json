@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "run_id": "whisper-tiny-q8_0__kcsc__android-SM-G991N__20260909-023541-932",
+  "status": "completed",
+  "command": "mobile-import",
+  "dataset": "kcsc",
+  "dataset_root": null,
+  "model": "whisper-tiny-q8_0",
+  "adapter": "mobile_bench",
+  "checkpoint": "whisper-tiny-q8_0",
+  "requested_device": "android-SM-G991N",
+  "language": "ko",
+  "limit": 1,
+  "started_at": "2026-09-09T02:35:41+00:00",
+  "resumed_at": null,
+  "platform": "android samsung SM-G991N (Android 15 (API 35))",
+  "python": null,
+  "finished_at": "2026-09-09T02:37:47+00:00",
+  "actual_devices": [
+    "android-SM-G991N"
+  ],
+  "summary": "runs/tiny-13/summary.json",
+  "mobile_source": {
+    "run_id": "whisper-tiny-q8_0-20260909T023541932488-6c8bbd",
+    "batch_id": "whisper-tiny-q8_0-20260909T015714371042-a9f258",
+    "sample_id": "A0072_S0001_0_G0143.wav",
+    "model_path": "/data/user/0/com.moonyoung.sttbench.mobile_bench/files/models/ggml-tiny-q8_0.bin",
+    "threads": 6,
+    "device": {
+      "platform": "android",
+      "manufacturer": "samsung",
+      "model": "SM-G991N",
+      "osVersion": "Android 15 (API 35)",
+      "logicalCpuCores": 8,
+      "totalMemoryBytes": 7550722048
+    },
+    "cancel_requested": false,
+    "telemetry_summary": {
+      "sample_count": 252,
+      "average_cpu_core_equivalent_percent": 513.4456988522828,
+      "peak_cpu_core_equivalent_percent": 800.0,
+      "average_cpu_device_normalized_percent": 64.18071235653535,
+      "peak_cpu_device_normalized_percent": 100.0,
+      "average_memory_mb": 486.92145168253995,
+      "peak_memory_mb": 515.51744,
+      "average_native_heap_mb": 803.6154264126981,
+      "peak_native_heap_mb": 846.53992,
+      "maximum_thermal_status": "severe",
+      "maximum_thermal_headroom": 1.059999942779541,
+      "maximum_battery_temperature_c": 42.2,
+      "initial_battery_level_percent": 100.0,
+      "final_battery_level_percent": 100.0,
+      "minimum_battery_level_percent": 100.0
+    }
+  }
+}

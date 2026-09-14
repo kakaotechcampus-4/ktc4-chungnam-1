@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "run_id": "whisper-tiny-q8_0__kcsc__android-SM-G991N__20260909-021157-027",
+  "status": "completed",
+  "dataset": "kcsc",
+  "model": "whisper-tiny-q8_0",
+  "requested_device": "android-SM-G991N",
+  "actual_devices": [
+    "android-SM-G991N"
+  ],
+  "language": "ko",
+  "total_samples": 1,
+  "completed_samples": 1,
+  "failed_samples": 0,
+  "total_audio_seconds": 902.985,
+  "total_transcribe_seconds": 221.219,
+  "model_load_seconds": 0.0,
+  "total_seconds": 221.219,
+  "rtf": 0.24498635082531825,
+  "cer": {
+    "micro": 0.21756576014266607,
+    "macro": 0.21756576014266607,
+    "median": 0.21756576014266607,
+    "errors": 488,
+    "reference_units": 2243
+  },
+  "wer": {
+    "micro": 0.4162330905306972,
+    "macro": 0.4162330905306972,
+    "median": 0.4162330905306972,
+    "errors": 400,
+    "reference_units": 961
+  },
+  "samples": [
+    {
+      "sample_id": "A0051_S0003_0_G0102",
+      "status": "completed",
+      "device": "android-SM-G991N",
+      "audio_seconds": 902.985,
+      "transcribe_seconds": 221.219,
+      "model_load_seconds": 0.0,
+      "telemetry_summary": {
+        "sample_count": 444,
+        "average_cpu_core_equivalent_percent": 485.33085573039426,
+        "peak_cpu_core_equivalent_percent": 800.0,
+        "average_cpu_device_normalized_percent": 60.66635696629928,
+        "peak_cpu_device_normalized_percent": 100.0,
+        "average_memory_mb": 484.3555194234236,
+        "peak_memory_mb": 517.231616,
+        "average_native_heap_mb": 805.3884487927927,
+        "peak_native_heap_mb": 843.739712,
+        "maximum_thermal_status": "light",
+        "maximum_thermal_headroom": 0.9266666173934937,
+        "maximum_battery_temperature_c": 37.8,
+        "initial_battery_level_percent": 100.0,
+        "final_battery_level_percent": 100.0,
+        "minimum_battery_level_percent": 100.0
+      },
+      "character_errors": 488,
+      "reference_characters": 2243,
+      "cer": 0.21756576014266607,
+      "word_errors": 400,
+      "reference_words": 961,
+      "wer": 0.4162330905306972
+    }
+  ]
+}
