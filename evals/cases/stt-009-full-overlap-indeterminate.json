@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-009-full-overlap-indeterminate",
+  "area": "sttProcessing",
+  "description": "stt-005(부분 중첩)와 달리 처음부터 끝까지 두 화자가 동시에 발화해, 전체 발화를 환자 또는 보호자로 구분할 수 없는 상태에서 부분 구간이라도 억지로 정상 반환하지 않는지 확인한다.",
+  "inputRef": "fixtures/speech/08_full_overlap_indeterminate.wav",
+  "expectedRef": "expected/stt-009-full-overlap-indeterminate.json",
+  "tags": ["stt", "speakerDiarization", "overlap"]
+}
