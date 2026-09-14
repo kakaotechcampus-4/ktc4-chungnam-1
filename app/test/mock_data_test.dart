@@ -31,7 +31,7 @@ void main() {
     expect(bundle.lifeFacts, hasLength(3));
     // accepted 된 후보만 acceptedTags 에 담긴다.
     final accepted = bundle.tagCandidates
-        .where((c) => c.reviewStatus == ReviewStatus.accepted)
+        .where((c) => c.reviewStatus == TagReviewStatus.accepted)
         .map((c) => c.text)
         .toList();
     expect(accepted, bundle.photo.acceptedTags);
@@ -66,7 +66,9 @@ void main() {
     // 반영이 끝난 상태라 pending 이 남아 있지 않다.
     expect(proposal.proposalStatus, ProposalStatus.reviewed);
     expect(
-      proposal.changes.where((c) => c.reviewStatus == ReviewStatus.pending),
+      proposal.changes.where(
+        (c) => c.reviewStatus == ChangeReviewStatus.pending,
+      ),
       isEmpty,
     );
   });

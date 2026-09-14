@@ -196,19 +196,16 @@ class ProfilePhoto {
   final List<String> acceptedTags;
 }
 
-/// `pending`, `accepted`, `rejected`.
+/// 이미지 분석 후보 하나의 검토 상태. 계약에 정의된 셋이다.
 ///
-/// [ImageTagCandidate] 와 [ProposedChange] 가 함께 쓴다.
-///
-/// TODO(#20): 계약이 두 곳을 다르게 적고 있다. 이미지 분석 후보는 셋(263행),
-/// 변경 제안은 `reverted` 를 더한 넷(537행)이다. 사진 태그 선택 흐름의 존폐가
-/// 협의 중이라 결론이 난 뒤 계약과 함께 맞춘다.
-enum ReviewStatus {
+/// 변경 제안의 [ChangeReviewStatus] 와 값 이름은 겹치지만 같은 타입이 아니다.
+/// 후보는 되돌릴 대상이 없어 `reverted` 를 갖지 않는다.
+enum TagReviewStatus {
   pending,
   accepted,
   rejected;
 
-  static ReviewStatus? parse(String raw) =>
+  static TagReviewStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
@@ -223,12 +220,12 @@ class ImageTagCandidate {
       ImageTagCandidate(
         candidateId: json['candidateId'] as String,
         text: json['text'] as String,
-        reviewStatus: ReviewStatus.parse(json['reviewStatus'] as String),
+        reviewStatus: TagReviewStatus.parse(json['reviewStatus'] as String),
       );
 
   final String candidateId;
   final String text;
-  final ReviewStatus? reviewStatus;
+  final TagReviewStatus? reviewStatus;
 }
 
 /// 프로필 화면이 한 번에 쓰는 묶음이다. `assets/mock/profile.json` 한 파일에 해당한다.
@@ -546,6 +543,21 @@ class CaregiverEvaluation {
   final String? freeNote;
 }
 
+/// 변경 제안 하나의 검토 상태. 계약에 정의된 넷이다.
+///
+/// [reverted] 는 보호자가 승인해 프로필에 반영한 변경을 나중에 되돌린 정상
+/// 상태이며, 값을 읽지 못한 경우가 아니다. 이미지 분석 후보의
+/// [TagReviewStatus] 에는 이 값이 없다.
+enum ChangeReviewStatus {
+  pending,
+  accepted,
+  rejected,
+  reverted;
+
+  static ChangeReviewStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class ProposedChange {
   const ProposedChange({
     required this.changeId,
@@ -564,7 +576,7 @@ class ProposedChange {
     direction: json['direction'] as String?,
     text: json['text'] as String?,
     reason: json['reason'] as String,
-    reviewStatus: ReviewStatus.parse(json['reviewStatus'] as String),
+    reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
   );
 
   final String changeId;
@@ -576,8 +588,7 @@ class ProposedChange {
   final String? text;
   final String reason;
 
-  /// 계약의 `reverted` 는 [ReviewStatus] 에 없어 `null` 이 된다. 그쪽 TODO 참고.
-  final ReviewStatus? reviewStatus;
+  final ChangeReviewStatus? reviewStatus;
 }
 
 /// `proposalStatus` 값. 계약에 정의된 둘이다.
