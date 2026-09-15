@@ -73,7 +73,9 @@ class _SignupScreenState extends State<SignupScreen> {
       showDragHandle: true,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
       ),
       builder: (context) => SafeArea(
         child: Padding(
@@ -120,27 +122,10 @@ class _SignupScreenState extends State<SignupScreen> {
       appBar: const AppTopBar(),
       body: ScreenBody(
         scrollable: true,
-        bottom: Column(
-          children: [
-            PrimaryButton(
-              label: '회원가입',
-              // 필수 동의를 모두 수락해야 가입을 진행한다.
-              onPressed: canSubmit ? () => context.go(AppRoutes.onboarding) : null,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('이미 계정이 있으신가요?', style: AppTypography.sub),
-                const SizedBox(width: AppSpacing.sm),
-                AppTextButton(
-                  label: '로그인',
-                  onPressed: () => context.go(AppRoutes.login),
-                ),
-              ],
-            ),
-          ],
-        ),
+        // 가입 버튼과 로그인 안내를 아래에 고정하지 않고 본문과 함께 흘려보낸다.
+        // 입력칸이 넷이라 키보드가 올라오면 남는 높이가 얼마 없는데, 고정 영역이
+        // 156dp 를 가져가 입력칸이 두 개밖에 보이지 않았다. 이 화면은 약관까지
+        // 읽고 내려와야 가입할 수 있어 버튼이 늘 보일 이유도 없다.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -230,7 +215,29 @@ class _SignupScreenState extends State<SignupScreen> {
               const _RequiredNotice(),
             ],
 
+            const SizedBox(height: AppSpacing.xxl),
+
+            PrimaryButton(
+              label: '회원가입',
+              // 필수 동의를 모두 수락해야 가입을 진행한다.
+              onPressed: canSubmit
+                  ? () => context.go(AppRoutes.onboarding)
+                  : null,
+            ),
             const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('이미 계정이 있으신가요?', style: AppTypography.sub),
+                const SizedBox(width: AppSpacing.sm),
+                AppTextButton(
+                  label: '로그인',
+                  onPressed: () => context.go(AppRoutes.login),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: AppSpacing.xxl),
           ],
         ),
       ),

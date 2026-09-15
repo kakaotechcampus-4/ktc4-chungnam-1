@@ -55,6 +55,70 @@ void main() {
     expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
   });
 
+  testWidgets('로그인 버튼도 고정하지 않아 작은 화면에서 입력칸이 살아 있다', (tester) async {
+    const dpr = 3.0;
+    // 화면이 작고 키보드가 큰 경우다. 고정 영역이 있으면 비밀번호 칸이 밀렸다.
+    tester.view.physicalSize = const Size(360 * dpr, 780 * dpr);
+    tester.view.devicePixelRatio = dpr;
+    tester.view.padding = const FakeViewPadding(top: 24 * dpr);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320 * dpr);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_wrap(const LoginScreen()));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(SingleChildScrollView),
+        matching: find.widgetWithText(FilledButton, '로그인'),
+      ),
+      findsOneWidget,
+    );
+
+    final viewport = tester.getRect(find.byType(SingleChildScrollView).first);
+    final password = tester.getRect(find.byType(TextField).at(1));
+
+    expect(
+      password.bottom,
+      lessThanOrEqualTo(viewport.bottom),
+      reason: '비밀번호 칸이 스크롤 영역 밖으로 밀리면 안 된다',
+    );
+  });
+
+  testWidgets('가입 버튼은 아래에 고정하지 않고 본문과 함께 흐른다', (tester) async {
+    const dpr = 3.0;
+    tester.view.physicalSize = const Size(411 * dpr, 891 * dpr);
+    tester.view.devicePixelRatio = dpr;
+    tester.view.padding = const FakeViewPadding(top: 24 * dpr);
+    // 한글 키보드가 올라온 상태다.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300 * dpr);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_wrap(const SignupScreen()));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(SingleChildScrollView),
+        matching: find.widgetWithText(FilledButton, '회원가입'),
+      ),
+      findsOneWidget,
+      reason: '고정 영역에 두면 키보드가 올라왔을 때 입력칸을 가린다',
+    );
+
+    final viewport = tester.getRect(find.byType(SingleChildScrollView).first);
+    final visible = find.byType(TextField).evaluate().where((element) {
+      final rect = tester.getRect(find.byWidget(element.widget));
+      return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+    }).length;
+
+    expect(
+      visible,
+      greaterThanOrEqualTo(3),
+      reason: '키보드 위에서 입력칸이 세 개는 보여야 한다',
+    );
+  });
+
   testWidgets('필수 동의만 하면 회원가입을 누를 수 있다', (tester) async {
     tester.view.physicalSize = const Size(1236, 4800);
     tester.view.devicePixelRatio = 3;
