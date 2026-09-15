@@ -62,7 +62,19 @@ void main() {
     final evaluation = await repository.loadCaregiverEvaluation();
     final proposal = await repository.loadChangeProposal();
 
-    expect(evaluation.cardReviews, hasLength(4));
+    // 리포트에는 카드 넷이 오는데 평가는 셋이다. 답하지 않고 넘어간 카드는
+    // 목록에 담지 않는다. 그것이 미응답이다.
+    expect(evaluation.cardReviews.map((r) => r.cardId), [
+      'card_demo_001',
+      'card_demo_004',
+      'card_demo_010',
+    ]);
+    expect(
+      evaluation.cardReviews.last.wasUsed,
+      isFalse,
+      reason: '명절 음식은 쓰지 않았다고 답한 카드다',
+    );
+    expect(evaluation.cardReviews.last.caregiverReaction, isNull);
     // 반영이 끝난 상태라 pending 이 남아 있지 않다.
     expect(proposal.proposalStatus, ProposalStatus.reviewed);
     expect(

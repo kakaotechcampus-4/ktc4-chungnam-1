@@ -105,25 +105,59 @@ class _TypeSet {
   );
 }
 
-class _Body extends StatefulWidget {
+class _Body extends ConsumerStatefulWidget {
   const _Body({required this.report, required this.fromHistory});
 
   final VisitReport report;
   final bool fromHistory;
 
   @override
-  State<_Body> createState() => _BodyState();
+  ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<_Body> {
+/// 카드 한 장을 리포트에서 어떻게 보여줄지.
+enum _CardOutcome {
+  /// 보호자가 쓰고 평가했다. AI 가 쓴 요약을 보여준다.
+  summarized(''),
+
+  /// 쓰지 않았다고 답했다.
+  notUsed('이번 면회에서 다루지 않았어요'),
+
+  /// 답하지 않고 넘어갔다.
+  unanswered('확인하지 못했어요');
+
+  const _CardOutcome(this.text);
+
+  /// 요약 자리에 대신 적을 말.
+  final String text;
+}
+
+class _BodyState extends ConsumerState<_Body> {
   /// 이 화면에 머무는 동안만 기억한다. 앱 전체로 넓히거나 저장하는 것은
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
+
+  /// 보호자 평가를 보고 카드 한 장을 어떻게 보여줄지 정한다.
+  ///
+  /// 평가를 아직 읽지 못했으면 AI 요약을 그대로 둔다. 읽지 못했다는 이유로
+  /// `확인하지 못했어요` 를 띄우면 보호자가 답을 했는데도 안 했다고 말하게 된다.
+  _CardOutcome _outcomeOf(String cardId, CaregiverEvaluation? evaluation) {
+    if (evaluation == null) return _CardOutcome.summarized;
+
+    final review = evaluation.cardReviews
+        .where((r) => r.cardId == cardId)
+        .firstOrNull;
+
+    if (review == null) return _CardOutcome.unanswered;
+    return review.wasUsed ? _CardOutcome.summarized : _CardOutcome.notUsed;
+  }
 
   @override
   Widget build(BuildContext context) {
     final report = widget.report;
     final set = _easy ? _TypeSet.easy : _TypeSet.normal;
+    // 보호자가 무엇이라 답했는지에 따라 카드별 반응의 표시가 갈린다.
+    final evaluation = ref.watch(caregiverEvaluationProvider).value;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     // ScreenBody 의 bottom 슬롯이 차지하는 높이다. 그 위에 버튼을 띄운다.
@@ -189,7 +223,11 @@ class _BodyState extends State<_Body> {
                 )
               else
                 for (final summary in report.cardSummaries) ...[
-                  _CardSummaryTile(summary: summary, set: set),
+                  _CardSummaryTile(
+                    summary: summary,
+                    outcome: _outcomeOf(summary.cardId, evaluation),
+                    set: set,
+                  ),
                   const SizedBox(height: AppSpacing.lg),
                 ],
 
@@ -298,9 +336,14 @@ class _MetaLine extends StatelessWidget {
 /// 카드 하나의 반응. 글이 짧아도 상자 높이가 들쭉날쭉하지 않게 두 줄 자리를
 /// 확보한다. 글이 길면 그만큼 늘어난다.
 class _CardSummaryTile extends StatelessWidget {
-  const _CardSummaryTile({required this.summary, required this.set});
+  const _CardSummaryTile({
+    required this.summary,
+    required this.outcome,
+    required this.set,
+  });
 
   final CardSummary summary;
+  final _CardOutcome outcome;
   final _TypeSet set;
 
   @override
@@ -309,6 +352,7 @@ class _CardSummaryTile extends StatelessWidget {
     final lineHeight = style.fontSize! * style.height!;
     // 글자 크기를 키운 기기에서도 두 줄을 유지한다.
     final twoLines = MediaQuery.textScalerOf(context).scale(lineHeight) * 2;
+    final summarized = outcome == _CardOutcome.summarized;
 
     return AppCard(
       padding: EdgeInsets.all(set.cardPadding),
@@ -321,7 +365,12 @@ class _CardSummaryTile extends StatelessWidget {
             constraints: BoxConstraints(minHeight: twoLines),
             child: SizedBox(
               width: double.infinity,
-              child: Text(summary.summary, style: style),
+              // 다루지 않은 카드에는 분석 결과가 없다. 요약 자리에 그 사실을
+              // 대신 적는다.
+              child: Text(
+                summarized ? summary.summary : outcome.text,
+                style: style,
+              ),
             ),
           ),
         ],

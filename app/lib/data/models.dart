@@ -46,7 +46,9 @@ class Account {
       consent: {
         for (final entry in consent.entries)
           if (entry.value is Map<String, dynamic>)
-            entry.key: ConsentItem.fromJson(entry.value as Map<String, dynamic>),
+            entry.key: ConsentItem.fromJson(
+              entry.value as Map<String, dynamic>,
+            ),
       },
       createdAt: json['createdAt'] as String,
     );
@@ -247,9 +249,13 @@ class ProfileBundle {
           .map((e) => LifeFact.fromJson(e as Map<String, dynamic>))
           .toList(),
       collectionStates: (collection['categories'] as List)
-          .map((e) => CategoryCollectionState.fromJson(e as Map<String, dynamic>))
+          .map(
+            (e) => CategoryCollectionState.fromJson(e as Map<String, dynamic>),
+          )
           .toList(),
-      photo: ProfilePhoto.fromJson(json['profilePhoto'] as Map<String, dynamic>),
+      photo: ProfilePhoto.fromJson(
+        json['profilePhoto'] as Map<String, dynamic>,
+      ),
       tagCandidates: (candidate['candidates'] as List)
           .map((e) => ImageTagCandidate.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -289,8 +295,7 @@ class ConversationCard {
         topicTitle: json['topicTitle'] as String,
         topicDescription: json['topicDescription'] as String,
         primaryQuestion: json['primaryQuestion'] as String,
-        followUpQuestions:
-            (json['followUpQuestions'] as List).cast<String>(),
+        followUpQuestions: (json['followUpQuestions'] as List).cast<String>(),
         selected: json['selectionStatus'] == 'selected',
       );
 
@@ -490,22 +495,34 @@ enum VisitMood {
   };
 }
 
+/// 카드 한 장에 보호자가 남긴 답이다.
+///
+/// 답하지 않은 카드는 이 목록에 담지 않는다. 담지 않는 것이 미응답이고,
+/// [wasUsed] 가 `false` 인 것이 미사용이다. 둘은 다음 회차 우선순위에 다르게
+/// 쓰이므로 뭉개지 않는다(`docs/architecture/data-contracts.md`).
 class CardReview {
   const CardReview({
     required this.cardId,
     required this.wasUsed,
-    required this.caregiverReaction,
+    this.caregiverReaction,
   });
 
-  factory CardReview.fromJson(Map<String, dynamic> json) => CardReview(
-    cardId: json['cardId'] as String,
-    wasUsed: json['wasUsed'] as bool,
-    caregiverReaction:
-        CaregiverReaction.parse(json['caregiverReaction'] as String),
-  );
+  factory CardReview.fromJson(Map<String, dynamic> json) {
+    // 쓰지 않은 카드에는 평가가 없다. 계약의 없어도 되는 값이다.
+    final reaction = json['caregiverReaction'] as String?;
+    return CardReview(
+      cardId: json['cardId'] as String,
+      wasUsed: json['wasUsed'] as bool,
+      caregiverReaction: reaction == null
+          ? null
+          : CaregiverReaction.parse(reaction),
+    );
+  }
 
   final String cardId;
   final bool wasUsed;
+
+  /// 쓰지 않은 카드에는 없다.
   final CaregiverReaction? caregiverReaction;
 }
 
@@ -535,6 +552,7 @@ class CaregiverEvaluation {
 
   final String reviewId;
   final String sessionId;
+
   /// 1 이상 5 이하의 정수다.
   final int conversationSatisfaction;
 

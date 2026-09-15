@@ -443,6 +443,11 @@
       "cardId": "card_demo_001",
       "wasUsed": true,
       "caregiverReaction": "positive"
+    },
+    {
+      "cardId": "card_demo_010",
+      "wasUsed": false,
+      "caregiverReaction": null
     }
   ],
   "freeNote": null,
@@ -453,8 +458,18 @@
 - `conversationSatisfaction`은 1 이상 5 이하의 정수다.
 - `careRecipientReaction` 값은 `pleased`, `calm`, `angry`, `lowEnergy`, `unknown`이다.
 - `caregiverReaction` 값은 `positive`, `neutral`, `negative`이다.
+- `cardReviews`는 **미사용과 미응답을 구분한다.** 둘은 다음 회차 우선순위에 다르게 쓴다.
 
-**없어도 되는 값** — `freeNote`
+| 보호자가 한 일 | `cardReviews` | 우선순위 |
+| --- | --- | --- |
+| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 평가대로 반영한다 |
+| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 보호자가 고르지 않은 주제이므로 낮춘다 |
+| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 판단할 근거가 없으므로 건드리지 않는다 |
+
+- 미응답을 미사용으로 읽지 않는다. 답하지 않은 것을 "쓰지 않았다"로 보면 보호자가 하지 않은 판단을 대신 만들어 우선순위를 낮추게 된다.
+- 리포트의 `cardSummaries`에는 세 경우가 모두 올 수 있다. 화면은 미사용과 미응답을 분석 결과 대신 그 사실로 표시한다.
+
+**없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`
 
 <br>
 
@@ -538,7 +553,7 @@
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
-- 변경 사항 확인 화면에서 체크한 항목은 `accepted`, 체크하지 않은 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
+- 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
 <br>
 

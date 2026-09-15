@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/design/theme.dart';
+import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/report/report_screen.dart';
 
@@ -16,6 +19,7 @@ void main() {
   Future<void> openReport(
     WidgetTester tester, {
     bool fromHistory = false,
+    List<CardReview>? cardReviews,
   }) async {
     tester.view.physicalSize = const Size(1236, 2751);
     tester.view.devicePixelRatio = 3;
@@ -23,8 +27,22 @@ void main() {
 
     // 목 데이터는 asset 에서 읽으므로 실제 비동기 처리를 기다린다.
     await tester.runAsync(() async {
+      final base = await const MockRepository().loadCaregiverEvaluation();
+
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            if (cardReviews != null)
+              caregiverEvaluationProvider.overrideWith(
+                (ref) async => CaregiverEvaluation(
+                  reviewId: base.reviewId,
+                  sessionId: base.sessionId,
+                  conversationSatisfaction: base.conversationSatisfaction,
+                  careRecipientReaction: base.careRecipientReaction,
+                  cardReviews: cardReviews,
+                ),
+              ),
+          ],
           child: MaterialApp(
             theme: buildAppTheme(),
             home: ReportScreen(reportId: 'r-001', fromHistory: fromHistory),
@@ -133,6 +151,62 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(styleOf(tester, '오늘의 만남').fontSize, before);
+    });
+  });
+
+  group('대화 카드별 반응', () {
+    // 보호자가 답한 대로 표시한다. 쓰지 않았다는 답과 답하지 않은 것은 다르다.
+
+    testWidgets('쓰고 평가한 카드는 요약을 그대로 보여준다', (tester) async {
+      await openReport(tester);
+
+      expect(find.textContaining('한복을 주로 만드셨고'), findsOneWidget);
+    });
+
+    testWidgets('쓰지 않았다고 답한 카드는 그 사실을 적는다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: const [
+          CardReview(cardId: 'card_demo_001', wasUsed: false),
+        ],
+      );
+
+      expect(find.text('이번 면회에서 다루지 않았어요'), findsOneWidget);
+      expect(
+        find.textContaining('한복을 주로 만드셨고'),
+        findsNothing,
+        reason: '쓰지 않은 카드에 분석 결과를 붙이지 않는다',
+      );
+    });
+
+    testWidgets('답하지 않은 카드는 확인하지 못한 것으로 적는다', (tester) async {
+      // 목록에 담기지 않은 것이 미응답이다.
+      await openReport(tester, cardReviews: const []);
+
+      expect(find.text('확인하지 못했어요'), findsWidgets);
+      expect(find.text('이번 면회에서 다루지 않았어요'), findsNothing);
+    });
+
+    testWidgets('미사용과 미응답을 뭉개지 않는다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: const [
+          CardReview(cardId: 'card_demo_001', wasUsed: false),
+          CardReview(
+            cardId: 'card_demo_004',
+            wasUsed: true,
+            caregiverReaction: CaregiverReaction.positive,
+          ),
+        ],
+      );
+
+      expect(find.text('이번 면회에서 다루지 않았어요'), findsOneWidget);
+      expect(find.textContaining('옛날 노래를 따라 부르셨다며'), findsOneWidget);
+      expect(
+        find.text('확인하지 못했어요'),
+        findsWidgets,
+        reason: '목록에 없는 나머지 카드는 미응답이다',
+      );
     });
   });
 }

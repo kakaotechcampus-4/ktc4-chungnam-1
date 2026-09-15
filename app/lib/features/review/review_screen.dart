@@ -87,7 +87,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             _Question(
               number: 'Q3',
               title: '대화 카드는 어떠셨나요?',
-              detail: '다루지 않은 카드는 비워두셔도 돼요.',
+              detail: '답하지 않고 넘어가셔도 돼요.',
               child: cards.when(
                 loading: () =>
                     const SizedBox(height: 120, child: LoadingView()),
@@ -103,9 +103,14 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                           for (final card in list) ...[
                             _CardReactionRow(
                               title: card.topicTitle,
-                              value: draft.cardReactions[card.cardId],
+                              answered: draft.cardAnswers.containsKey(
+                                card.cardId,
+                              ),
+                              value: draft.cardAnswers[card.cardId],
                               onChanged: (reaction) => controller
                                   .setCardReaction(card.cardId, reaction),
+                              onNotUsed: () =>
+                                  controller.setCardNotUsed(card.cardId),
                             ),
                             const SizedBox(height: AppSpacing.md),
                           ],
@@ -310,20 +315,35 @@ class _ReactionPicker extends StatelessWidget {
   }
 }
 
-/// Q3. 카드 한 장에 대한 평가다. 고르지 않으면 다루지 않은 것으로 본다.
+/// Q3. 카드 한 장에 대한 답이다.
+///
+/// 세 평가와 별개로 `쓰지 않았어요` 를 따로 둔다. 비워두는 것은 답하지 않은
+/// 것(미응답)이고 쓰지 않았다고 고르는 것은 미사용이다. 둘은 다음 회차 우선순위에
+/// 다르게 쓰이므로 화면에서도 갈라 받는다(`docs/architecture/data-contracts.md`).
 class _CardReactionRow extends StatelessWidget {
   const _CardReactionRow({
     required this.title,
+    required this.answered,
     required this.value,
     required this.onChanged,
+    required this.onNotUsed,
   });
 
   final String title;
+
+  /// 이 카드에 답을 했는지. 안 했으면 아무것도 고르지 않은 상태다.
+  final bool answered;
+
+  /// 고른 평가. `answered` 가 `true` 인데 `null` 이면 쓰지 않았다는 답이다.
   final CaregiverReaction? value;
+
   final ValueChanged<CaregiverReaction> onChanged;
+  final VoidCallback onNotUsed;
 
   @override
   Widget build(BuildContext context) {
+    final notUsed = answered && value == null;
+
     return AppSurfaceBox(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -334,35 +354,10 @@ class _CardReactionRow extends StatelessWidget {
             children: [
               for (final reaction in CaregiverReaction.values) ...[
                 Expanded(
-                  child: InkWell(
+                  child: _Choice(
+                    label: reaction.label,
+                    selected: value == reaction,
                     onTap: () => onChanged(reaction),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    child: Container(
-                      height: AppSizes.minTouch,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: value == reaction
-                            ? AppColors.ink
-                            : AppColors.background,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(
-                          color: value == reaction
-                              ? AppColors.ink
-                              : AppColors.line,
-                        ),
-                      ),
-                      child: Text(
-                        reaction.label,
-                        style: AppTypography.sub.copyWith(
-                          color: value == reaction
-                              ? AppColors.background
-                              : AppColors.textSub,
-                          fontWeight: value == reaction
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                      ),
-                    ),
                   ),
                 ),
                 if (reaction != CaregiverReaction.values.last)
@@ -370,7 +365,47 @@ class _CardReactionRow extends StatelessWidget {
               ],
             ],
           ),
+          const SizedBox(height: AppSpacing.sm),
+          // 평가와는 다른 종류의 답이라 줄을 나눈다.
+          _Choice(label: '이 카드는 쓰지 않았어요', selected: notUsed, onTap: onNotUsed),
         ],
+      ),
+    );
+  }
+}
+
+/// Q3 의 고르는 칸 하나다.
+class _Choice extends StatelessWidget {
+  const _Choice({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: Container(
+        height: AppSizes.minTouch,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.ink : AppColors.background,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(color: selected ? AppColors.ink : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: AppTypography.sub.copyWith(
+            color: selected ? AppColors.background : AppColors.textSub,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
       ),
     );
   }

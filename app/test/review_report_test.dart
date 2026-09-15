@@ -58,7 +58,7 @@ void main() {
       expect(draft.mood, VisitMood.normal);
     });
 
-    test('고르지 않은 카드는 다루지 않은 것으로 기록한다', () async {
+    test('미사용과 미응답을 갈라 기록한다', () async {
       final container = makeContainer();
       final controller = container.read(reviewControllerProvider.notifier);
       final cards = await const MockRepository().loadConversationCards();
@@ -66,10 +66,14 @@ void main() {
 
       controller.setSatisfaction(4);
       controller.setReaction(CareRecipientReaction.pleased);
+
+      // 첫 장은 쓰고 평가했고, 둘째 장은 쓰지 않았다고 답했다.
+      // 셋째 장은 답하지 않고 넘어갔다.
       controller.setCardReaction(
         three.first.cardId,
         CaregiverReaction.positive,
       );
+      controller.setCardNotUsed(three[1].cardId);
 
       final evaluation = controller.toEvaluation(
         reviewId: 'review_demo_001',
@@ -77,16 +81,46 @@ void main() {
         cards: three,
       )!;
 
-      expect(evaluation.cardReviews, hasLength(3));
-      expect(evaluation.cardReviews.first.wasUsed, isTrue);
       expect(
-        evaluation.cardReviews.first.caregiverReaction,
-        CaregiverReaction.positive,
+        evaluation.cardReviews.map((r) => r.cardId),
+        [three.first.cardId, three[1].cardId],
+        reason: '답하지 않은 카드는 담지 않는다. 담지 않는 것이 미응답이다',
       );
-      expect(evaluation.cardReviews.last.wasUsed, isFalse);
+
+      final used = evaluation.cardReviews.first;
+      expect(used.wasUsed, isTrue);
+      expect(used.caregiverReaction, CaregiverReaction.positive);
+
+      final notUsed = evaluation.cardReviews.last;
+      expect(notUsed.wasUsed, isFalse);
       expect(
-        evaluation.cardReviews.last.caregiverReaction,
-        CaregiverReaction.neutral,
+        notUsed.caregiverReaction,
+        isNull,
+        reason: '쓰지 않은 카드에 보호자가 하지 않은 평가를 대신 만들지 않는다',
+      );
+    });
+
+    test('쓰지 않았다고 답한 뒤 다시 평가할 수 있다', () async {
+      final container = makeContainer();
+      final controller = container.read(reviewControllerProvider.notifier);
+      final cards = await const MockRepository().loadConversationCards();
+      final one = cards.take(1).toList();
+
+      controller.setSatisfaction(4);
+      controller.setReaction(CareRecipientReaction.pleased);
+      controller.setCardNotUsed(one.first.cardId);
+      controller.setCardReaction(one.first.cardId, CaregiverReaction.negative);
+
+      final evaluation = controller.toEvaluation(
+        reviewId: 'review_demo_001',
+        sessionId: 'session_demo_001',
+        cards: one,
+      )!;
+
+      expect(evaluation.cardReviews.single.wasUsed, isTrue);
+      expect(
+        evaluation.cardReviews.single.caregiverReaction,
+        CaregiverReaction.negative,
       );
     });
 
