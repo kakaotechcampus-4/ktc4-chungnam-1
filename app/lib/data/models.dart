@@ -27,7 +27,7 @@ class ConsentItem {
 class Account {
   const Account({
     required this.accountId,
-    required this.loginId,
+    required this.authProvider,
     required this.displayName,
     required this.email,
     required this.consentVersion,
@@ -39,7 +39,7 @@ class Account {
     final consent = json['consent'] as Map<String, dynamic>;
     return Account(
       accountId: json['accountId'] as String,
-      loginId: json['loginId'] as String,
+      authProvider: json['authProvider'] as String,
       displayName: json['displayName'] as String,
       email: json['email'] as String,
       consentVersion: consent['consentVersion'] as String,
@@ -53,7 +53,8 @@ class Account {
   }
 
   final String accountId;
-  final String loginId;
+  /// `google` 하나뿐이다. 계약에 다른 제공자를 더하는 것은 계약 변경으로 본다.
+  final String authProvider;
   final String displayName;
   final String email;
   final String consentVersion;
