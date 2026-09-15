@@ -183,7 +183,9 @@ class _SignupScreenState extends State<SignupScreen> {
                 onChanged: (value) => _toggle(term.key, value),
                 onDetails: () => _showDetails(term),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              // 항목 안쪽 간격보다는 넓게 두어 자세히 보기가 어느 항목의
+              // 것인지 읽히게 한다.
+              const SizedBox(height: AppSpacing.xs),
             ],
 
             const Padding(
@@ -258,45 +260,94 @@ class _ConsentRow extends StatelessWidget {
   final ValueChanged<bool?> onChanged;
   final VoidCallback onDetails;
 
+  /// 항목 이름을 체크박스 한가운데에 맞추는 높이.
+  ///
+  /// 이름을 체크박스와 같은 줄(Row)에 두면 48 짜리 체크박스가 줄 높이를 정해
+  /// 이름 아래에 11dp 가 남는다. 이름부터 자세히 보기까지를 한 세로 묶음으로
+  /// 두고 그 빈 자리를 이 값으로 직접 정한다.
+  static const _labelOffset = 12.0;
+
+  /// 자세히 보기의 높이. 누르는 요소 최소 48 의 예외다(`app/DESIGN.md`).
+  static const _detailsHeight = 28.0;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Checkbox(
-          value: checked,
-          onChanged: onChanged,
-          activeColor: AppColors.ink,
-          side: const BorderSide(color: AppColors.line, width: 2),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(!checked),
-            behavior: HitTestBehavior.opaque,
-            child: Text.rich(
-              TextSpan(
-                children: [
+    // 항목 전체가 체크 영역이다. 자세히 보기는 제 몫의 누름을 따로 받는다.
+    return InkWell(
+      onTap: () => onChanged(!checked),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            value: checked,
+            onChanged: onChanged,
+            activeColor: AppColors.ink,
+            side: const BorderSide(color: AppColors.line, width: 2),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: _labelOffset),
+                Text.rich(
                   TextSpan(
-                    text: term.required ? '[필수] ' : '[선택] ',
-                    style: AppTypography.body.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: term.required
-                          ? AppColors.danger
-                          : AppColors.textSub,
-                    ),
+                    children: [
+                      TextSpan(
+                        text: term.required ? '[필수] ' : '[선택] ',
+                        style: AppTypography.body.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: term.required
+                              ? AppColors.danger
+                              : AppColors.textSub,
+                        ),
+                      ),
+                      TextSpan(text: term.label, style: AppTypography.body),
+                    ],
                   ),
-                  TextSpan(text: term.label, style: AppTypography.body),
+                ),
+
+                if (term.note != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(term.note!, style: AppTypography.sub),
                 ],
-              ),
+
+                const SizedBox(height: AppSpacing.sm),
+
+                // 자세히 보기를 이름과 같은 줄에 두면 이름이 쓸 수 있는 폭이
+                // 316 에서 245 로 줄어 네 항목 중 셋이 줄바꿈된다. 아래 줄로
+                // 내리고 글자를 한 단계 흐리게 둔다.
+                TextButton(
+                  onPressed: onDetails,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textDisabled,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerLeft,
+                    minimumSize: const Size(0, _detailsHeight),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '자세히 보기',
+                        style: AppTypography.sub.copyWith(
+                          color: AppColors.textDisabled,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.textDisabled,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        IconButton(
-          onPressed: onDetails,
-          icon: const Icon(Icons.chevron_right, color: AppColors.textSub),
-          tooltip: '자세히 보기',
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

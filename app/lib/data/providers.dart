@@ -4,6 +4,8 @@
 /// 테스트에서 다른 값을 주입할 때도 같은 방법을 쓴다. `ADR-005` 참고.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'mock_repository.dart';
@@ -49,14 +51,35 @@ final changeProposalProvider = FutureProvider<ChangeProposal>(
 ///
 /// 리포트를 읽는 것만으로는 사라지지 않고, 변경 사항까지 확인해야 사라진다.
 class ReportNoticeNotifier extends Notifier<bool> {
+  Timer? _pending;
+
   @override
-  bool build() => false;
+  bool build() {
+    ref.onDispose(() => _pending?.cancel());
+    return false;
+  }
 
   /// 변경 사항 확인을 마쳤다.
-  void dismiss() => state = false;
+  void dismiss() {
+    _pending?.cancel();
+    state = false;
+  }
 
   /// 리포트가 만들어졌다.
-  void show() => state = true;
+  void show() {
+    _pending?.cancel();
+    state = true;
+  }
+
+  /// [delay] 뒤에 리포트가 만들어진 것으로 한다.
+  ///
+  /// 기다림을 화면이 아니라 여기서 센다. 사용자가 로딩 화면을 먼저 떠나도 리포트
+  /// 도착은 알려야 하기 때문이다. 실제로는 서버가 알려주고, 목 데이터에서는 이
+  /// 타이머가 그 자리를 대신한다.
+  void showAfter(Duration delay) {
+    _pending?.cancel();
+    _pending = Timer(delay, show);
+  }
 }
 
 final reportNoticeProvider = NotifierProvider<ReportNoticeNotifier, bool>(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/providers.dart';
 import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -15,6 +16,11 @@ import 'review_controller.dart';
 ///
 /// 피그마의 네 물음을 계약의 `CaregiverEvaluation` 필드에 그대로 맞춘다.
 /// Q1 대화 만족도, Q2 어르신 반응, Q3 카드별 평가, Q4 남기고 싶은 말.
+/// 리포트가 만들어지기까지 걸리는 시간이다.
+///
+/// 실제 분석 시간은 AI 영역이 정한다. 목 데이터에서는 이만큼만 기다린다.
+const _reportDelay = Duration(seconds: 3);
+
 class ReviewScreen extends ConsumerStatefulWidget {
   const ReviewScreen({super.key});
 
@@ -44,7 +50,14 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         bottom: PrimaryButton(
           label: '리포트 만들기',
           onPressed: draft.canSubmit
-              ? () => context.go(AppRoutes.visitProcessing)
+              ? () {
+                  // 기다리는 화면을 두지 않는다. 리포트가 만들어지면 홈에서
+                  // 알린다.
+                  ref
+                      .read(reportNoticeProvider.notifier)
+                      .showAfter(_reportDelay);
+                  context.go(AppRoutes.home);
+                }
               : null,
         ),
         child: Column(
@@ -53,10 +66,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             const SizedBox(height: AppSpacing.sm),
             const Text('오늘 만남은\n어떠셨나요?', style: AppTypography.screenTitle),
             const SizedBox(height: AppSpacing.md),
-            const Text(
-              '남겨주신 이야기로 리포트를 만들어요.',
-              style: AppTypography.body,
-            ),
+            const Text('남겨주신 이야기로 리포트를 만들어요.', style: AppTypography.body),
             const SizedBox(height: AppSpacing.section),
 
             _Question(
@@ -86,13 +96,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               title: '대화 카드는 어떠셨나요?',
               detail: '다루지 않은 카드는 비워두셔도 돼요.',
               child: cards.when(
-                loading: () => const SizedBox(
-                  height: 120,
-                  child: LoadingView(),
-                ),
-                error: (error, _) => const ErrorStateView(
-                  message: '카드를 불러오지 못했어요.',
-                ),
+                loading: () =>
+                    const SizedBox(height: 120, child: LoadingView()),
+                error: (error, _) =>
+                    const ErrorStateView(message: '카드를 불러오지 못했어요.'),
                 data: (list) => list.isEmpty
                     ? const EmptyStateView(
                         message: '이번 만남에서 다룬 카드가 없어요.',
@@ -138,7 +145,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.ink, width: 2),
+                    borderSide: const BorderSide(
+                      color: AppColors.ink,
+                      width: 2,
+                    ),
                   ),
                 ),
               ),
@@ -231,9 +241,7 @@ class _SatisfactionPicker extends StatelessWidget {
                           : AppColors.background,
                       borderRadius: BorderRadius.circular(AppRadius.card),
                       border: Border.all(
-                        color: value == score
-                            ? AppColors.ink
-                            : AppColors.line,
+                        color: value == score ? AppColors.ink : AppColors.line,
                         width: value == score ? 2 : 1,
                       ),
                     ),
@@ -284,9 +292,7 @@ class _ReactionPicker extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: value == reaction
-                    ? AppColors.ink
-                    : AppColors.background,
+                color: value == reaction ? AppColors.ink : AppColors.background,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
                 border: Border.all(
                   color: value == reaction ? AppColors.ink : AppColors.line,

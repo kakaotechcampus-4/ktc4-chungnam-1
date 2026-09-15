@@ -4,6 +4,11 @@
 /// 문구는 `docs/legal/consent-draft.md` 를 그대로 따른다. **여기서 문구를 새로
 /// 쓰지 않는다.** 법률 문서가 바뀌면 이 파일을 같은 변경에서 갱신한다.
 ///
+/// 알림 수신 동의는 지금 한 군데가 어긋나 있다. 법률 문서는 목적을 `면회 준비와
+/// 리포트 처리 완료 알림 제공` 이라고 적지만 면회 준비 알림은 제공하지 않는다.
+/// 여기는 실제로 보내는 것만 적었고, 문서를 좁히는 일은 PM 확인이 필요해
+/// PR 에 남겨 두었다(`CONTRIBUTING.md` 의 검토 책임).
+///
 /// 계약에 없는 동의 항목은 이 화면에서 받지 않는다.
 /// - 피보호자 동의 확인은 `VisitSession.consent.careRecipientConfirmation` 이라
 ///   면회를 시작할 때 받는다.
@@ -17,6 +22,7 @@ class ConsentTerm {
     required this.label,
     required this.statement,
     required this.details,
+    this.note,
   });
 
   /// `Account.consent` 의 필드 이름.
@@ -25,7 +31,15 @@ class ConsentTerm {
   final bool required;
 
   /// 목록에 보이는 짧은 이름.
+  ///
+  /// 한 줄에 들어갈 만큼 짧게 둔다. `[필수]` 표시와 함께 놓이므로 길면 줄바꿈되어
+  /// 읽기 어려워진다. 온전한 동의문은 [statement] 에 있다.
   final String label;
+
+  /// 목록에서 이름 아래 한 줄로 보여줄 쓰임새.
+  ///
+  /// 자세히 보기를 열지 않아도 무엇에 쓰는지 알아야 고를 수 있는 항목에만 둔다.
+  final String? note;
 
   /// 동의문 본문. `docs/legal/consent-draft.md` 에서 옮겼다.
   final String statement;
@@ -50,7 +64,7 @@ const consentTerms = <ConsentTerm>[
   ConsentTerm(
     key: 'sensitiveData',
     required: true,
-    label: '건강 관련 민감정보 처리 동의',
+    label: '건강 민감정보 처리 동의',
     statement: '건강 관련 민감정보 처리에 동의합니다.',
     details: [
       '목적: 피보호자에게 적합한 질문 구성, 부적절한 질문 방지',
@@ -65,9 +79,12 @@ const consentTerms = <ConsentTerm>[
     // 화면에서도 알 수 있다.
     required: false,
     label: '알림 수신 동의',
-    statement: '면회 준비와 리포트 완료 알림을 받는 것에 동의합니다.',
+    // 이 항목만 쓰임새를 목록에 드러낸다. 끄면 리포트가 언제 다 됐는지 알기
+    // 어려워지는데, 자세히 보기를 열어야 알 수 있으면 모르고 지나친다.
+    note: '만남 리포트가 완성되면 알려드려요.',
+    statement: '리포트 완료 알림을 받는 것에 동의합니다.',
     details: [
-      '목적: 면회 준비와 리포트 처리 완료 알림 제공',
+      '목적: 리포트 처리 완료 알림 제공',
       '항목: 앱 기기 토큰, 알림 설정, 알림 발송 기록',
       '알림 내용: 환자 이름, 건강정보, 전사 내용과 리포트 세부내용을 포함하지 않음',
       '보유 기간: 알림 동의 철회, 로그아웃 또는 회원 탈퇴 시까지',
@@ -76,7 +93,7 @@ const consentTerms = <ConsentTerm>[
   ConsentTerm(
     key: 'serviceImprovement',
     required: false,
-    label: '서비스 품질 개선 활용 동의',
+    label: '서비스 개선 활용 동의',
     statement:
         '새록이 더 나은 대화 카드와 리포트를 제공할 수 있도록, 가명처리된 정보를 서비스 품질 개선에 활용하는 것에 동의합니다.',
     details: [

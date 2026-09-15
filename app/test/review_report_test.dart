@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/review/review_controller.dart';
 
 void main() {
@@ -17,14 +18,18 @@ void main() {
 
   group('보호자 평가', () {
     test('계약의 enum 값을 그대로 쓴다', () {
-      expect(
-        CareRecipientReaction.values.map((v) => v.name),
-        ['pleased', 'calm', 'angry', 'lowEnergy', 'unknown'],
-      );
-      expect(
-        CaregiverReaction.values.map((v) => v.name),
-        ['positive', 'neutral', 'negative'],
-      );
+      expect(CareRecipientReaction.values.map((v) => v.name), [
+        'pleased',
+        'calm',
+        'angry',
+        'lowEnergy',
+        'unknown',
+      ]);
+      expect(CaregiverReaction.values.map((v) => v.name), [
+        'positive',
+        'neutral',
+        'negative',
+      ]);
       expect(VisitMood.values.map((v) => v.name), ['hard', 'normal', 'good']);
     });
 
@@ -59,7 +64,10 @@ void main() {
 
       controller.setSatisfaction(4);
       controller.setReaction(CareRecipientReaction.pleased);
-      controller.setCardReaction(three.first.cardId, CaregiverReaction.positive);
+      controller.setCardReaction(
+        three.first.cardId,
+        CaregiverReaction.positive,
+      );
 
       final evaluation = controller.toEvaluation(
         reviewId: 'review_demo_001',
@@ -162,6 +170,43 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  group('리포트 도착 알림', () {
+    // 기다리는 화면을 없앴다. 소감을 제출하면 바로 홈으로 돌아가고, 리포트가
+    // 만들어지면 홈에서 알린다. 그래서 기다림은 화면이 아니라 알림 상태가 센다.
+
+    test('정해진 시간이 지나면 알림이 뜬다', () async {
+      final container = makeContainer();
+
+      expect(container.read(reportNoticeProvider), isFalse);
+
+      container
+          .read(reportNoticeProvider.notifier)
+          .showAfter(const Duration(milliseconds: 40));
+
+      expect(container.read(reportNoticeProvider), isFalse, reason: '아직 이르다');
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(container.read(reportNoticeProvider), isTrue);
+    });
+
+    test('확인을 마치면 예약도 함께 지운다', () async {
+      final container = makeContainer();
+
+      final notice = container.read(reportNoticeProvider.notifier);
+      notice.showAfter(const Duration(milliseconds: 40));
+      notice.dismiss();
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(
+        container.read(reportNoticeProvider),
+        isFalse,
+        reason: '지운 뒤에 예약이 살아나면 안 된다',
+      );
     });
   });
 }
