@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-005-overlapping-speech",
+  "area": "sttProcessing",
+  "description": "두 화자가 동시에 발화하는 구간이 포함된 대화에서, 겹친 구간을 억지로 하나로 합치지 않고 계산 불가로 처리하는지 확인한다.",
+  "inputRef": "fixtures/speech/04_overlapping_speech.wav",
+  "expectedRef": "expected/stt-005-overlapping-speech.json",
+  "tags": ["stt", "speakerDiarization", "overlap"]
+}

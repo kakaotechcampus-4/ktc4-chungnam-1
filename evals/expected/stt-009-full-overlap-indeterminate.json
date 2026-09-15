@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-009-full-overlap-indeterminate",
+  "scenario": "A 클립과 B 클립을 처음부터 끝까지(전체 길이) 완전히 겹쳐 재생 — stt-005는 대화 중 일부 구간(약 4초)만 겹치지만, 이 케이스는 시작부터 끝까지 전 구간이 겹침",
+  "groundTruth": {
+    "overlapCoverage": "전체 구간의 100%, 화자를 구분할 수 있는 단일 발화 구간이 존재하지 않음"
+  },
+  "expectedResult": {
+    "transcript": null,
+    "speakerLabel": null,
+    "errorCode": "SPEAKER_ASSIGNMENT_FAILED"
+  },
+  "failureCondition": "일부 구간이라도 A 또는 B로 확정 태깅해서 반환하는 경우. stt-005처럼 '일부 구간 정상, 일부 구간 실패'로 처리하는 경우도 실패 — 이 케이스는 애초에 정상 반환 가능한 구간이 없음",
+  "howToVerify": "실제 STT+화자분리 파이프라인에 이 파일을 넣었을 때, stt-005와 달리 정상 반환되는 구간이 전혀 없이 전체가 계산 불가로 처리되는지 확인한다.",
+  "notes": "stt-005(부분 중첩)와 짝을 이루는 케이스 — 005는 부분 중첩, 009는 전체 중첩. 이 케이스는 스프린트 1 이후 실제 파이프라인이 준비되어야 검증 가능. 현재는 파일과 기대치만 준비된 상태."
+}
