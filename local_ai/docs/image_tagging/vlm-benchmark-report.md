@@ -9,6 +9,8 @@
 
 > **후속 비교**: 동일한 공개 이미지 17장과 같은 키워드 프롬프트로 Claude Haiku 4.5 low와 GPT-5.6 Luna low를 비교한 결과는 [Haiku 4.5와 Luna low 비교 보고서](haiku-luna-low-benchmark.md)에서 확인할 수 있다. 이 후속 실험은 구독형 CLI에서 실행했으므로 기존 로컬 모델 벤치마크와 실행 환경 및 토큰 문맥이 다르다.
 
+> **API 후속 비교**: PR #33과 동일한 이미지, 프롬프트, JSON Schema로 7개 모델의 9개 API 조건을 비교한 결과는 [API VLM 비교 보고서](vlm-api-benchmark-report.md)에서 확인할 수 있다.
+
 ---
 
 ## 1. 핵심 결론
