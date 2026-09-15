@@ -87,10 +87,19 @@ enum ChipTone {
 }
 
 class AppChip extends StatelessWidget {
-  const AppChip(this.label, {this.tone = ChipTone.normal, super.key});
+  const AppChip(
+    this.label, {
+    this.tone = ChipTone.normal,
+    this.style,
+    super.key,
+  });
 
   final String label;
   final ChipTone tone;
+
+  /// 글자 묶음을 바꿔 끼울 때 쓴다. 색과 굵기는 [tone] 이 정하므로 크기만
+  /// 넘기면 된다. 지정하지 않으면 캡션이다.
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -105,8 +114,13 @@ class AppChip extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      height: 30,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      // 높이를 못 박으면 글자를 키웠을 때 잘린다(`app/DESIGN.md` 접근성).
+      // 캡션에서는 이 최소 높이가 이겨서 예전과 같은 30 이 된다.
+      constraints: const BoxConstraints(minHeight: 30),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: background,
@@ -115,7 +129,7 @@ class AppChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: AppTypography.caption.copyWith(
+        style: (style ?? AppTypography.caption).copyWith(
           color: foreground,
           fontWeight: FontWeight.w600,
         ),

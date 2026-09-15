@@ -1,9 +1,12 @@
 // F, G 화면(보호자 소감과 리포트, 변경 사항 확인)의 규칙을 확인한다.
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/review/review_controller.dart';
 
 void main() {
@@ -17,23 +20,36 @@ void main() {
 
   group('보호자 평가', () {
     test('계약의 enum 값을 그대로 쓴다', () {
-      expect(
-        CareRecipientReaction.values.map((v) => v.name),
-        ['pleased', 'calm', 'angry', 'lowEnergy', 'unknown'],
-      );
-      expect(
-        CaregiverReaction.values.map((v) => v.name),
-        ['positive', 'neutral', 'negative'],
-      );
+      expect(CareRecipientReaction.values.map((v) => v.name), [
+        'pleased',
+        'calm',
+        'angry',
+        'lowEnergy',
+        'unknown',
+      ]);
+      expect(CaregiverReaction.values.map((v) => v.name), [
+        'positive',
+        'neutral',
+        'negative',
+      ]);
       expect(VisitMood.values.map((v) => v.name), ['hard', 'normal', 'good']);
     });
 
     test('보호자 감정은 대화 만족도에서 계산한다', () {
-      // 1이면 hard, 2~4는 normal, 5면 good 이다.
+      // 1~2 는 hard, 3 은 normal, 4~5 는 good 이다.
       expect(VisitMood.fromSatisfaction(1), VisitMood.hard);
-      expect(VisitMood.fromSatisfaction(2), VisitMood.normal);
-      expect(VisitMood.fromSatisfaction(4), VisitMood.normal);
+      expect(VisitMood.fromSatisfaction(2), VisitMood.hard);
+      expect(VisitMood.fromSatisfaction(3), VisitMood.normal);
+      expect(VisitMood.fromSatisfaction(4), VisitMood.good);
       expect(VisitMood.fromSatisfaction(5), VisitMood.good);
+    });
+
+    test('보호자가 고른 답과 리포트의 기분이 이어진다', () {
+      // 예전에는 2~4 를 모두 normal 로 묶어, 아쉬웠다고 답한 보호자에게도
+      // 평범한 만남이었다고 적었다.
+      expect(VisitMood.fromSatisfaction(2).label, '아쉬운 만남');
+      expect(VisitMood.fromSatisfaction(3).label, '평범한 만남');
+      expect(VisitMood.fromSatisfaction(4).label, '즐거운 만남');
     });
 
     test('앞의 두 물음에 답해야 제출할 수 있다', () {
@@ -48,10 +64,10 @@ void main() {
       controller.setReaction(CareRecipientReaction.pleased);
       final draft = container.read(reviewControllerProvider);
       expect(draft.canSubmit, isTrue);
-      expect(draft.mood, VisitMood.normal);
+      expect(draft.mood, VisitMood.good);
     });
 
-    test('고르지 않은 카드는 다루지 않은 것으로 기록한다', () async {
+    test('미사용과 미응답을 갈라 기록한다', () async {
       final container = makeContainer();
       final controller = container.read(reviewControllerProvider.notifier);
       final cards = await const MockRepository().loadConversationCards();
@@ -59,7 +75,14 @@ void main() {
 
       controller.setSatisfaction(4);
       controller.setReaction(CareRecipientReaction.pleased);
-      controller.setCardReaction(three.first.cardId, CaregiverReaction.positive);
+
+      // 첫 장은 쓰고 평가했고, 둘째 장은 쓰지 않았다고 답했다.
+      // 셋째 장은 답하지 않고 넘어갔다.
+      controller.setCardReaction(
+        three.first.cardId,
+        CaregiverReaction.positive,
+      );
+      controller.setCardNotUsed(three[1].cardId);
 
       final evaluation = controller.toEvaluation(
         reviewId: 'review_demo_001',
@@ -67,16 +90,46 @@ void main() {
         cards: three,
       )!;
 
-      expect(evaluation.cardReviews, hasLength(3));
-      expect(evaluation.cardReviews.first.wasUsed, isTrue);
       expect(
-        evaluation.cardReviews.first.caregiverReaction,
-        CaregiverReaction.positive,
+        evaluation.cardReviews.map((r) => r.cardId),
+        [three.first.cardId, three[1].cardId],
+        reason: '답하지 않은 카드는 담지 않는다. 담지 않는 것이 미응답이다',
       );
-      expect(evaluation.cardReviews.last.wasUsed, isFalse);
+
+      final used = evaluation.cardReviews.first;
+      expect(used.wasUsed, isTrue);
+      expect(used.caregiverReaction, CaregiverReaction.positive);
+
+      final notUsed = evaluation.cardReviews.last;
+      expect(notUsed.wasUsed, isFalse);
       expect(
-        evaluation.cardReviews.last.caregiverReaction,
-        CaregiverReaction.neutral,
+        notUsed.caregiverReaction,
+        isNull,
+        reason: '쓰지 않은 카드에 보호자가 하지 않은 평가를 대신 만들지 않는다',
+      );
+    });
+
+    test('쓰지 않았다고 답한 뒤 다시 평가할 수 있다', () async {
+      final container = makeContainer();
+      final controller = container.read(reviewControllerProvider.notifier);
+      final cards = await const MockRepository().loadConversationCards();
+      final one = cards.take(1).toList();
+
+      controller.setSatisfaction(4);
+      controller.setReaction(CareRecipientReaction.pleased);
+      controller.setCardNotUsed(one.first.cardId);
+      controller.setCardReaction(one.first.cardId, CaregiverReaction.negative);
+
+      final evaluation = controller.toEvaluation(
+        reviewId: 'review_demo_001',
+        sessionId: 'session_demo_001',
+        cards: one,
+      )!;
+
+      expect(evaluation.cardReviews.single.wasUsed, isTrue);
+      expect(
+        evaluation.cardReviews.single.caregiverReaction,
+        CaregiverReaction.negative,
       );
     });
 
@@ -164,4 +217,69 @@ void main() {
       }
     });
   });
+
+  /// 도착 시점을 테스트가 직접 정하는 저장소를 끼운 통을 만든다.
+  (ProviderContainer, Completer<void>) makeWaitingContainer() {
+    final ready = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        mockRepositoryProvider.overrideWithValue(_WaitingRepository(ready)),
+      ],
+    );
+    addTearDown(container.dispose);
+    return (container, ready);
+  }
+
+  group('리포트 알림', () {
+    // 기다리는 화면을 없앴다. 소감을 제출하면 바로 홈으로 돌아가고, 만드는
+    // 중과 도착을 모두 홈에서 알린다. 그래서 기다림은 화면이 아니라 알림
+    // 상태가 센다.
+
+    test('제출하면 곧바로 만드는 중이 되고 저장소가 알리면 도착으로 바뀐다', () async {
+      final (container, ready) = makeWaitingContainer();
+
+      expect(container.read(reportNoticeProvider), isNull);
+
+      container.read(reportNoticeProvider.notifier).startGenerating();
+
+      expect(
+        container.read(reportNoticeProvider),
+        ReportNotice.generating,
+        reason: '홈에 돌아갔을 때 빈 화면이 아니라 만드는 중이 보여야 한다',
+      );
+
+      // 얼마나 걸리는지는 저장소가 정한다. 서버를 붙여도 이 자리만 바뀐다.
+      ready.complete();
+      await Future<void>.value();
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+    });
+
+    test('확인을 마치면 기다리던 결과도 버린다', () async {
+      final (container, ready) = makeWaitingContainer();
+
+      final notice = container.read(reportNoticeProvider.notifier);
+      notice.startGenerating();
+      notice.dismiss();
+
+      ready.complete();
+      await Future<void>.value();
+
+      expect(
+        container.read(reportNoticeProvider),
+        isNull,
+        reason: '지운 뒤에 지난 기다림이 살아나면 안 된다',
+      );
+    });
+  });
+}
+
+/// 리포트 도착 시점을 테스트가 직접 정하는 저장소다.
+class _WaitingRepository extends MockRepository {
+  const _WaitingRepository(this._ready);
+
+  final Completer<void> _ready;
+
+  @override
+  Future<void> awaitReportReady() => _ready.future;
 }
