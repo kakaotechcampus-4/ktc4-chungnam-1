@@ -5,7 +5,7 @@
 대체 결정일: 2026-09-14 (ADR-006)
 관련 Issue: #6, #7, #9
 
-현재 STT와 VLM 실행 위치는 [ADR-006](ADR-006-server-side-ai-processing.md)을 따른다. 아래는 당시 제안 기록이다. 합성 자료, 공통 계약, 실패 상태와 로컬 FastAPI 검증 원칙은 유지한다.
+현재 STT와 VLM 실행 위치 및 서버 중심 데이터 관리 방향은 [ADR-006](ADR-006-server-side-ai-processing.md)을 따른다. 아래는 당시 제안 기록이며 단말 우선 저장은 현재 기준이 아니다. 합성 자료, 공통 계약, 실패 상태와 로컬 FastAPI 검증 원칙은 유지한다.
 
 <details>
 <summary>이전 제안과 검토 근거 펼치기</summary>

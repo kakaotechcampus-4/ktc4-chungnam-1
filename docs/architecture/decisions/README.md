@@ -9,7 +9,7 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted | 동의 구조와 원본 자료의 최대 24시간 임시 처리 |
 | [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID는 `com.saelog.app` |
 | [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Riverpod 상태 관리와 go_router 화면 이동 |
-| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리 |
+| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리, 데이터 관리는 서버 중심으로 전환. 세부 저장 계약은 미정 |
 
 accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다.
 
@@ -18,8 +18,8 @@ accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 �
 
 | 문서 | 상태 | 대체 관계 |
 | --- | --- | --- |
-| [ADR-003](ADR-003-parallel-stt-validation.md) | superseded | 온디바이스 STT 병렬 검증, ADR-006으로 대체 |
-| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | superseded | FastAPI와 온디바이스 병렬 검증, ADR-006으로 대체. 로컬 검증 원칙 유지 |
+| [ADR-003](ADR-003-parallel-stt-validation.md) | superseded | 온디바이스 STT 병렬 검증과 단말 우선 저장, ADR-006으로 대체 |
+| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | superseded | 온디바이스 병렬 검증과 단말 우선 저장, ADR-006으로 대체. 로컬 FastAPI 검증 원칙 유지 |
 
 </details>
 
