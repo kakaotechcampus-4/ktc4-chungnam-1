@@ -36,11 +36,20 @@ void main() {
     });
 
     test('보호자 감정은 대화 만족도에서 계산한다', () {
-      // 1이면 hard, 2~4는 normal, 5면 good 이다.
+      // 1~2 는 hard, 3 은 normal, 4~5 는 good 이다.
       expect(VisitMood.fromSatisfaction(1), VisitMood.hard);
-      expect(VisitMood.fromSatisfaction(2), VisitMood.normal);
-      expect(VisitMood.fromSatisfaction(4), VisitMood.normal);
+      expect(VisitMood.fromSatisfaction(2), VisitMood.hard);
+      expect(VisitMood.fromSatisfaction(3), VisitMood.normal);
+      expect(VisitMood.fromSatisfaction(4), VisitMood.good);
       expect(VisitMood.fromSatisfaction(5), VisitMood.good);
+    });
+
+    test('보호자가 고른 답과 리포트의 기분이 이어진다', () {
+      // 예전에는 2~4 를 모두 normal 로 묶어, 아쉬웠다고 답한 보호자에게도
+      // 평범한 만남이었다고 적었다.
+      expect(VisitMood.fromSatisfaction(2).label, '아쉬운 만남');
+      expect(VisitMood.fromSatisfaction(3).label, '평범한 만남');
+      expect(VisitMood.fromSatisfaction(4).label, '즐거운 만남');
     });
 
     test('앞의 두 물음에 답해야 제출할 수 있다', () {
@@ -55,7 +64,7 @@ void main() {
       controller.setReaction(CareRecipientReaction.pleased);
       final draft = container.read(reviewControllerProvider);
       expect(draft.canSubmit, isTrue);
-      expect(draft.mood, VisitMood.normal);
+      expect(draft.mood, VisitMood.good);
     });
 
     test('미사용과 미응답을 갈라 기록한다', () async {

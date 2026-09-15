@@ -486,7 +486,7 @@
   "reportStatus": "ready",
   "title": "재봉 일 이야기를 나눈 날",
   "visitDate": "2026-08-21",
-  "mood": "normal",
+  "mood": "good",
   "photoId": "visit_photo_demo_001",
   "summaryText": "오늘은 재봉 일을 하시던 시절 이야기를 나눴어요. 동인천 수선집에서 한복을 만드시던 때를 떠올리시며 오래 말씀해주셨고, 함께 일하던 분들 이야기가 나올 때는 기분이 좋아 보이셨어요. 오늘은 이야기가 잘 풀린 날이었어요.",
   "cardSummaries": [
@@ -504,7 +504,7 @@
 - `summaryText`는 일기 형식의 본문이다.
   - 보호자 평가에서 입력받은 값을 모두 재료로 사용하며, 입력하지 않은 값은 빼고 작성한다.
 - `mood`는 보호자의 감정이며 별도로 입력받지 않고 `conversationSatisfaction`에서 계산한다.
-  - 값은 `hard`, `normal`, `good`이며 1이면 `hard`, 2~4는 `normal`, 5면 `good`이다.
+  - 값은 `hard`, `normal`, `good`이며 1~2는 `hard`, 3은 `normal`, 4~5는 `good`이다.
 - 리포트는 보호자 평가와 대화 내용을 정리해 보여주며 의료적 해석과 대화 품질 점수를 만들지 않는다.
 
 **없어도 되는 값** — `photoId`

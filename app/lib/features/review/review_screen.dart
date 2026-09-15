@@ -64,7 +64,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
             _Question(
               number: 'Q1',
-              title: '오늘 대화는 어떠셨나요?',
+              title: '오늘 나눈 대화는 어떠셨나요?',
+              // 카드 한 장씩에 대한 평가는 Q3 에서 따로 받는다. 둘을 헷갈리면
+              // 같은 것을 두 번 묻는 화면이 된다.
+              detail: '오늘 만남 전체를 떠올려 주세요.',
               required: true,
               child: _SatisfactionPicker(
                 value: draft.satisfaction,

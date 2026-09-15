@@ -476,9 +476,9 @@ enum CaregiverReaction {
 
 /// `VisitReport.mood`. 보호자가 따로 입력하지 않고 대화 만족도에서 계산한다.
 enum VisitMood {
-  hard('힘든 만남'),
-  normal('잔잔한 만남'),
-  good('좋은 만남');
+  hard('아쉬운 만남'),
+  normal('평범한 만남'),
+  good('즐거운 만남');
 
   const VisitMood(this.label);
 
@@ -487,10 +487,14 @@ enum VisitMood {
   static VisitMood? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 
-  /// 1이면 `hard`, 2~4는 `normal`, 5면 `good` 이다.
+  /// 1~2는 `hard`, 3은 `normal`, 4~5는 `good` 이다.
+  ///
+  /// 보호자가 고른 말과 리포트에 적히는 말이 이어지게 나눈다. 예전에는 2~4를
+  /// 모두 `normal` 로 묶어, `아쉬웠어요` 를 고른 사람에게도 `평범한 만남` 이라고
+  /// 적었다.
   static VisitMood fromSatisfaction(int satisfaction) => switch (satisfaction) {
-    <= 1 => VisitMood.hard,
-    >= 5 => VisitMood.good,
+    <= 2 => VisitMood.hard,
+    >= 4 => VisitMood.good,
     _ => VisitMood.normal,
   };
 }
