@@ -2,18 +2,42 @@
 
 ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담당 README에는 현재 선택을 기록하고, ADR에는 선택 이유와 영향을 기록한다.
 
+## 현재 결정
+
+| 문서 | 상태 | 결정 |
+| --- | --- | --- |
+| [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted | 동의 구조와 원본 자료의 최대 24시간 임시 처리 |
+| [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID는 `com.saelog.app` |
+| [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Riverpod 상태 관리와 go_router 화면 이동 |
+| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리, 데이터 관리는 서버 중심으로 전환. 세부 저장 계약은 미정 |
+
+accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다.
+
+<details>
+<summary>대체된 제안 2건</summary>
+
+| 문서 | 상태 | 대체 관계 |
+| --- | --- | --- |
+| [ADR-003](ADR-003-parallel-stt-validation.md) | superseded | 온디바이스 STT 병렬 검증과 단말 우선 저장, ADR-006으로 대체 |
+| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | superseded | 온디바이스 병렬 검증과 단말 우선 저장, ADR-006으로 대체. 로컬 FastAPI 검증 원칙 유지 |
+
+</details>
+
 ## 파일 이름
 
     ADR-001-decision-title.md
 
 ## 상태
 
-- `proposed`
-- `accepted`
-- `rejected`
-- `superseded`
+- `proposed`: 검토 중
+- `accepted`: 결정 확정
+- `rejected`: 채택하지 않음
+- `superseded`: 다른 ADR로 대체됨
 
 ## 템플릿
+
+<details>
+<summary>새 ADR을 작성할 때 펼치기</summary>
 
 ```md
 # ADR-번호: 결정 제목
@@ -36,6 +60,8 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 ## 재검토 조건
 ```
 
+</details>
+
 ## ADR이 필요한 변경
 
 - 로컬 저장과 서버 처리 경계
@@ -50,12 +76,5 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 
 기존 결정을 바꾸면 이전 ADR을 삭제하지 않고 `superseded`로 보존한다.
 
-## 현재 ADR
-
-| 문서 | 상태 | 결정 |
-| --- | --- | --- |
-| [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted | 동의 구조와 원본 자료의 최대 24시간 서버 임시 처리 경계 |
-| [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID를 `com.saelog.app`으로 통일 |
-| [ADR-003](ADR-003-parallel-stt-validation.md) | proposed | Python 기준 환경과 온디바이스 STT 병렬 검증 제안 |
-| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | proposed | 로컬 FastAPI 기준 환경과 온디바이스 처리 병렬 검증 제안 |
-| [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Flutter 상태 관리는 Riverpod, 화면 이동은 go_router |
+<a id="현재-adr"></a>
+현재 목록은 위 [현재 결정](#현재-결정)에 모았다.
