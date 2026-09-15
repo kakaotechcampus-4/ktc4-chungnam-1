@@ -93,6 +93,8 @@ models/
 *.pth
 *.tflite
 
+/local_ai/docs/stt-mobile-benchmark/data/*
+
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/
 .gradle/
