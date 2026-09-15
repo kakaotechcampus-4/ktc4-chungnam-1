@@ -61,7 +61,9 @@ const consentTerms = <ConsentTerm>[
   ),
   ConsentTerm(
     key: 'pushNotification',
-    required: true,
+    // 선택이다. 거부해도 가입과 핵심 기능을 막지 않는다. 리포트 도착은 홈
+    // 화면에서도 알 수 있다.
+    required: false,
     label: '알림 수신 동의',
     statement: '면회 준비와 리포트 완료 알림을 받는 것에 동의합니다.',
     details: [

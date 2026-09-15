@@ -95,8 +95,9 @@
 }
 ```
 
-- `serviceData`(개인정보 수집 동의), `sensitiveData`(민감정보 수집 동의)와 `pushNotification`(알림 수신 동의)은 필수 동의 사항이며 거부하면 가입을 진행하지 않는다. `pushNotification`은 리포트 도착을 알리는 데 필요하다.
-- 나머지 하나(`serviceImprovement` 데이터를 서비스 개선에 활용)는 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
+- `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
+- 나머지 둘(`serviceImprovement` 데이터를 서비스 개선에 활용, `pushNotification` 알림 수신)은 선택 동의이며 거부해도 가입과 핵심 기능을 차단하지 않는다.
+- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.status`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
 - 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
 
 **없어도 되는 값** — 선택 동의 항목의 `grantedAt`

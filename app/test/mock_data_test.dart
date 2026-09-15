@@ -19,7 +19,7 @@ void main() {
     final account = await repository.loadAccount();
 
     expect(account.accountId, 'account_demo_001');
-    // 알림 수신은 필수 동의로 올렸다. 목 데이터도 수락 상태여야 한다.
+    // 알림 수신은 선택 동의다. 이 목 데이터는 수락한 계정을 담는다.
     expect(account.consent['pushNotification']?.granted, isTrue);
     expect(account.consent['serviceData']?.granted, isTrue);
   });
