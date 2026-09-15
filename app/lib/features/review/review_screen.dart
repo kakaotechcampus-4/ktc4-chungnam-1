@@ -16,11 +16,6 @@ import 'review_controller.dart';
 ///
 /// 피그마의 네 물음을 계약의 `CaregiverEvaluation` 필드에 그대로 맞춘다.
 /// Q1 대화 만족도, Q2 어르신 반응, Q3 카드별 평가, Q4 남기고 싶은 말.
-/// 리포트가 만들어지기까지 걸리는 시간이다.
-///
-/// 실제 분석 시간은 AI 영역이 정한다. 목 데이터에서는 이만큼만 기다린다.
-const _reportDelay = Duration(seconds: 3);
-
 class ReviewScreen extends ConsumerStatefulWidget {
   const ReviewScreen({super.key});
 
@@ -51,11 +46,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           label: '리포트 만들기',
           onPressed: draft.canSubmit
               ? () {
-                  // 기다리는 화면을 두지 않는다. 리포트가 만들어지면 홈에서
-                  // 알린다.
-                  ref
-                      .read(reportNoticeProvider.notifier)
-                      .showAfter(_reportDelay);
+                  // 기다리는 화면을 두지 않는다. 만드는 중과 도착을 모두
+                  // 홈에서 알린다.
+                  ref.read(reportNoticeProvider.notifier).startGenerating();
                   context.go(AppRoutes.home);
                 }
               : null,

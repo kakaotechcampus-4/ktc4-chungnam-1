@@ -34,12 +34,16 @@ void main() {
       await container.read(cardsControllerProvider.future);
       final controller = container.read(cardsControllerProvider.notifier);
 
-      expect(container.read(cardsControllerProvider).value!.visibleCards,
-          hasLength(3));
+      expect(
+        container.read(cardsControllerProvider).value!.visibleCards,
+        hasLength(3),
+      );
 
       controller.showMore();
-      expect(container.read(cardsControllerProvider).value!.visibleCards,
-          hasLength(6));
+      expect(
+        container.read(cardsControllerProvider).value!.visibleCards,
+        hasLength(6),
+      );
 
       controller.showMore();
       final state = container.read(cardsControllerProvider).value!;
@@ -47,8 +51,10 @@ void main() {
       expect(state.hasMore, isFalse, reason: '9장을 넘지 않는다');
 
       controller.showMore();
-      expect(container.read(cardsControllerProvider).value!.visibleCards,
-          hasLength(9));
+      expect(
+        container.read(cardsControllerProvider).value!.visibleCards,
+        hasLength(9),
+      );
     });
 
     test('아무것도 고르지 않은 상태로 시작한다', () async {
@@ -102,8 +108,8 @@ void main() {
 
       expect(
         container.read(reportNoticeProvider),
-        isFalse,
-        reason: '리포트가 만들어지기 전에는 알릴 것이 없다',
+        isNull,
+        reason: '리포트를 만들기 시작하기 전에는 알릴 것이 없다',
       );
     });
 
@@ -111,17 +117,16 @@ void main() {
       final container = makeContainer();
       final notice = container.read(reportNoticeProvider.notifier);
 
-      // 로딩 화면이 끝나며 알린다.
-      notice.show();
-      expect(container.read(reportNoticeProvider), isTrue);
+      notice.arrive();
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
 
       // 리포트를 읽기만 해서는 지우지 않는다. 홈 화면은 알림을 눌러도
       // dismiss 를 부르지 않고 리포트로 보내기만 한다.
-      expect(container.read(reportNoticeProvider), isTrue);
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
 
       // 변경 사항 확인을 마치면 사라진다.
       notice.dismiss();
-      expect(container.read(reportNoticeProvider), isFalse);
+      expect(container.read(reportNoticeProvider), isNull);
     });
   });
 }

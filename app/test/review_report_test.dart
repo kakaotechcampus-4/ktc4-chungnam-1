@@ -1,5 +1,7 @@
 // F, G 화면(보호자 소감과 리포트, 변경 사항 확인)의 규칙을 확인한다.
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
@@ -173,40 +175,68 @@ void main() {
     });
   });
 
-  group('리포트 도착 알림', () {
-    // 기다리는 화면을 없앴다. 소감을 제출하면 바로 홈으로 돌아가고, 리포트가
-    // 만들어지면 홈에서 알린다. 그래서 기다림은 화면이 아니라 알림 상태가 센다.
+  /// 도착 시점을 테스트가 직접 정하는 저장소를 끼운 통을 만든다.
+  (ProviderContainer, Completer<void>) makeWaitingContainer() {
+    final ready = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        mockRepositoryProvider.overrideWithValue(_WaitingRepository(ready)),
+      ],
+    );
+    addTearDown(container.dispose);
+    return (container, ready);
+  }
 
-    test('정해진 시간이 지나면 알림이 뜬다', () async {
-      final container = makeContainer();
+  group('리포트 알림', () {
+    // 기다리는 화면을 없앴다. 소감을 제출하면 바로 홈으로 돌아가고, 만드는
+    // 중과 도착을 모두 홈에서 알린다. 그래서 기다림은 화면이 아니라 알림
+    // 상태가 센다.
 
-      expect(container.read(reportNoticeProvider), isFalse);
+    test('제출하면 곧바로 만드는 중이 되고 저장소가 알리면 도착으로 바뀐다', () async {
+      final (container, ready) = makeWaitingContainer();
 
-      container
-          .read(reportNoticeProvider.notifier)
-          .showAfter(const Duration(milliseconds: 40));
+      expect(container.read(reportNoticeProvider), isNull);
 
-      expect(container.read(reportNoticeProvider), isFalse, reason: '아직 이르다');
-
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-
-      expect(container.read(reportNoticeProvider), isTrue);
-    });
-
-    test('확인을 마치면 예약도 함께 지운다', () async {
-      final container = makeContainer();
-
-      final notice = container.read(reportNoticeProvider.notifier);
-      notice.showAfter(const Duration(milliseconds: 40));
-      notice.dismiss();
-
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      container.read(reportNoticeProvider.notifier).startGenerating();
 
       expect(
         container.read(reportNoticeProvider),
-        isFalse,
-        reason: '지운 뒤에 예약이 살아나면 안 된다',
+        ReportNotice.generating,
+        reason: '홈에 돌아갔을 때 빈 화면이 아니라 만드는 중이 보여야 한다',
+      );
+
+      // 얼마나 걸리는지는 저장소가 정한다. 서버를 붙여도 이 자리만 바뀐다.
+      ready.complete();
+      await Future<void>.value();
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+    });
+
+    test('확인을 마치면 기다리던 결과도 버린다', () async {
+      final (container, ready) = makeWaitingContainer();
+
+      final notice = container.read(reportNoticeProvider.notifier);
+      notice.startGenerating();
+      notice.dismiss();
+
+      ready.complete();
+      await Future<void>.value();
+
+      expect(
+        container.read(reportNoticeProvider),
+        isNull,
+        reason: '지운 뒤에 지난 기다림이 살아나면 안 된다',
       );
     });
   });
+}
+
+/// 리포트 도착 시점을 테스트가 직접 정하는 저장소다.
+class _WaitingRepository extends MockRepository {
+  const _WaitingRepository(this._ready);
+
+  final Completer<void> _ready;
+
+  @override
+  Future<void> awaitReportReady() => _ready.future;
 }
