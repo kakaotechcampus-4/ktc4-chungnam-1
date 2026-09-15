@@ -109,3 +109,12 @@ target/
 # ── 디자인 참고 자료 ────────────────────────────────
 # 개인 참고용 이미지. 외부 저작물이 섞일 수 있어 public repo 에 올리지 않는다.
 design-refs/
+
+
+
+# Google and Firebase platform configuration
+**/google-services.json
+**/GoogleService-Info.plist
+*-firebase-adminsdk-*.json
+client_secret_*.json
+google-credentials.json
