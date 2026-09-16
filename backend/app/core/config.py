@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     )
     service_name: str = "saerok-backend"
     service_version: str = "0.1.0"
+    database_url: str | None = None
 
 
 @lru_cache
