@@ -1,8 +1,8 @@
 # ADR-003: Python 기준 환경과 온디바이스 STT 병렬 검증
 
-상태: proposed
+상태: superseded by ADR-006
 담당: PM, BE, AI
-결정일: 결정 대기
+결정일: 2026-09-11 대체
 관련 Issue: #6, #7, #9
 
 ## 배경
