@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import traceback
 from datetime import UTC, datetime
 from time import perf_counter
 from uuid import uuid4
@@ -15,6 +16,19 @@ _STANDARD_LOG_FIELDS = frozenset(
 )
 
 
+def _format_traceback_without_message(
+    exc_info: tuple[type[BaseException], BaseException, object],
+) -> str:
+    # 예외 메시지(`str(exc)`)는 애플리케이션 코드가 요청 관련 값을 문자열로
+    # 넣었을 경우 그대로 로그에 노출될 수 있다. 발생 위치를 알 수 있는 스택
+    # 프레임(파일, 라인, 함수, 코드 라인)만 남기고 마지막 "타입: 메시지" 줄은
+    # 타입 이름만 남긴다.
+    exc_type, exc_value, exc_tb = exc_info
+    frames = "".join(traceback.format_tb(exc_tb))
+    type_name = getattr(exc_type, "__name__", None) or type(exc_value).__name__
+    return f"Traceback (most recent call last):\n{frames}{type_name}\n"
+
+
 class SafeJsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -26,6 +40,8 @@ class SafeJsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key not in _STANDARD_LOG_FIELDS and key not in {"message", "asctime"}:
                 payload[key] = value
+        if record.exc_info:
+            payload["traceback"] = _format_traceback_without_message(record.exc_info)
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
@@ -68,6 +84,16 @@ def install_request_logging(application: FastAPI) -> None:
             # 이 미들웨어보다 바깥쪽에서 실행된다. call_next가 예외를 그대로
             # 전파하면 아래의 헤더 부여와 완료 로그가 건너뛰어지므로, 여기서
             # 직접 같은 처리기를 호출해 응답을 만들고 로그 흐름을 보장한다.
+            # 예외를 여기서 소비하면 ServerErrorMiddleware까지 전파되지 않아
+            # (그곳에서의 재전파로 서버가 남기던) traceback도 함께 사라지므로,
+            # 실제로 예외를 잡는 이 지점에서 한 번만 traceback을 남긴다.
+            logger.exception(
+                "server_exception",
+                extra={
+                    "request_id": request_id,
+                    "exception_type": type(exc).__name__,
+                },
+            )
             response = await unhandled_error_handler(request, exc)
         response.headers["X-Request-ID"] = request_id
 
