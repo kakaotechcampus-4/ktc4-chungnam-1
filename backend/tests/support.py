@@ -11,6 +11,7 @@ def request(
     path: str,
     *,
     json: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> Response:
     async def send() -> Response:
         transport = ASGITransport(app=application)
@@ -18,6 +19,6 @@ def request(
             transport=transport,
             base_url="http://testserver",
         ) as client:
-            return await client.request(method, path, json=json)
+            return await client.request(method, path, json=json, headers=headers)
 
     return asyncio.run(send())
