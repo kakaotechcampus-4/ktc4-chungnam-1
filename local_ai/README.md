@@ -28,6 +28,7 @@
 | 필요한 내용 | 문서 |
 | --- | --- |
 | 이미지 실험의 요약과 전체 출력 | [이미지 분석 실험 안내](docs/image_tagging/README.md) |
+| 모바일 STT의 전사 품질, 처리 시간과 전환 검토 근거 | [모바일 STT 벤치마크](docs/stt-mobile-benchmark/README.md) |
 | STT 자료 준비와 평가 진행 상태 | [평가 안내](../evals/README.md) |
 | FE, BE와 주고받는 JSON과 미정 항목 | [공통 데이터 계약](../docs/architecture/data-contracts.md) |
 | 처리 위치와 운영 미정 사항 | [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md) |
