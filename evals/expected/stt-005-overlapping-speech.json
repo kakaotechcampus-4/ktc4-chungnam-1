@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-005-overlapping-speech",
+  "scenario": "A 클립의 뒷부분과 B 클립의 앞부분을 4초간 겹쳐서 이어붙인 상태",
+  "groundTruth": {
+    "overlapSegmentApprox": "약 4초 구간, A와 B가 동시에 발화"
+  },
+  "expectedResult": {
+    "nonOverlapSegments": "정상 반환 (앞뒤 구간)",
+    "overlapSegment": {
+      "transcript": null,
+      "errorCode": "OVERLAPPING_SPEECH"
+    }
+  },
+  "failureCondition": "겹친 구간의 텍스트/화자를 하나로 강제 병합해서 반환하는 경우, 또는 전체 파일을 통째로 실패 처리하는 경우 (겹치지 않은 구간까지 날리면 안 됨)",
+  "howToVerify": "겹치지 않은 앞뒤 구간은 정상 텍스트가 나오고, 겹친 구간만 별도로 계산 불가 처리되는지 확인",
+  "notes": "스프린트 1 이후 실제 파이프라인 필요"
+}

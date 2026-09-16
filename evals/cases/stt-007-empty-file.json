@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-007-empty-file",
+  "area": "sttProcessing",
+  "description": "녹음 결과가 0바이트인 파일이 입력됐을 때, 분석을 시도하지 않고 파일 자체의 오류로 즉시 처리하는지 확인한다.",
+  "inputRef": "fixtures/speech/06_empty_file.wav",
+  "expectedRef": "expected/stt-007-empty-file.json",
+  "tags": ["stt", "invalidFile", "errorHandling"]
+}

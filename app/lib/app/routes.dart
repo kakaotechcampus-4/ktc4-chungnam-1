@@ -1,0 +1,70 @@
+/// 화면 경로를 한곳에 모은다. 화면 이동은 문자열을 직접 적지 않고 여기를 쓴다.
+///
+/// 사용자 흐름은 `app/README.md` 의 "현재 사용자 흐름" 과 피그마 스토리맵
+/// A~H 를 따른다. `H` 일대기와 `리포트 기록` 은 기획 보류 상태다.
+library;
+
+abstract final class AppRoutes {
+  /// A-1 스플래시.
+  static const splash = '/splash';
+
+  /// A-2 로그인.
+  static const login = '/login';
+
+  /// A-3 회원가입과 동의.
+  static const signup = '/signup';
+
+  /// B-1 처음 오셨네요.
+  static const onboarding = '/onboarding';
+
+  /// B-2 ~ B-8 환자 정보 최초 입력.
+  static const profileCreate = '/profile/create';
+
+  /// 시작 화면.
+  static const home = '/home';
+
+  /// C 오늘의 대화 카드.
+  static const cards = '/cards';
+
+  /// D 면회 전 사진 촬영.
+  static const visitPhoto = '/visit/photo';
+
+  /// E-1, E-2 녹음 안내와 녹음 중.
+  static const visitRecord = '/visit/record';
+
+  /// E-5 면회 중 대화 카드 추가.
+  ///
+  /// E-3, E-4 면회 중 대화 카드는 녹음 화면 위로 올라오는 팝업이라 경로가 없다.
+  static const visitAddCards = '/visit/cards/add';
+
+  /// F 보호자 소감 작성.
+  static const visitReview = '/visit/review';
+
+  /// 소감 제출 후 리포트가 만들어지는 동안 보여주는 로딩 화면.
+  static const visitProcessing = '/visit/processing';
+
+  /// G 리포트. `:reportId` 를 받는다.
+  static const report = '/report/:reportId';
+
+  /// 리포트 기록에서 들어오면 이미 반영을 마친 회차라 변경 사항을 다시 묻지
+  /// 않는다. 홈의 도착 알림에서 들어오면 아직 확인 전이다.
+  static String reportOf(String reportId, {bool fromHistory = false}) =>
+      fromHistory
+      ? '/report/$reportId?from=history'
+      : '/report/$reportId';
+
+  /// G-2 변경 사항 확인.
+  static const reportChanges = '/report/:reportId/changes';
+
+  static String reportChangesOf(String reportId) =>
+      '/report/$reportId/changes';
+
+  /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
+  static const profile = '/profile';
+
+  /// 리포트 기록. 확인한 리포트를 다시 볼 수 있다.
+  static const reports = '/reports';
+
+  /// H 일대기. 기획 보류.
+  static const album = '/album';
+}

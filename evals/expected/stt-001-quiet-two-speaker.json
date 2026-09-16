@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-001-quiet-two-speaker",
+  "scenario": "Zeroth-Korean 서로 다른 화자 클립 2개를 이어붙인 상태 (실제 자연 대화 아님, 배경소음 없음)",
+  "expectedResult": {
+    "transcript": "not_null",
+    "confidenceRange": [0.8, 1.0],
+    "speakerLabel": "A_and_B_correctly_separated",
+    "errorCode": null
+  },
+  "failureCondition": "신뢰도가 낮게 나오거나 화자가 뒤섞이면 실패 — 이 케이스가 실패하면 나머지 5개 케이스의 비교 기준 자체를 재검토해야 함",
+  "notes": "정확한 신뢰도 하한값(0.8)은 예시이며 실제 채택 모델로 검증 후 확정 필요 (테크스펙 FR-007). 이 파일은 이어붙인 합성 클립이라 화자 전환이 실제 대화보다 부자연스러울 수 있음 — STT 정확도 자체보다 화자 분리 결과 해석 시 참고할 것."
+}
