@@ -8,6 +8,7 @@ import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/home/notice_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
@@ -72,6 +73,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.cards,
         builder: (context, state) => const CardsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.notifications,
+        builder: (context, state) => const NoticeScreen(),
       ),
       GoRoute(
         path: AppRoutes.visitPhoto,
