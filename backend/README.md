@@ -85,6 +85,25 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
 uv run pytest
 ```
 
+## 데이터베이스 마이그레이션 (Alembic)
+
+PostgreSQL 스키마의 소유권은 Alembic migration에 있다. `backend/database/init.sql`은
+빈 개발 DB를 한 번에 세우는 bootstrap 스크립트일 뿐이며, 스키마가 바뀌면 Alembic
+migration을 먼저 바꾸고 `init.sql`을 그에 맞춘다(자세한 로컬 적용 방법은
+`backend/database/로컬설정법.md` 참고).
+
+`SAEROK_DATABASE_URL`(`.env`)에 연결 문자열을 설정한 뒤 다음으로 최신 스키마를 적용한다.
+
+```powershell
+cd backend
+uv run alembic upgrade head
+```
+
+새 migration을 추가할 때는 `uv run alembic revision -m "설명"`으로 뼈대를 만든 뒤
+`upgrade`/`downgrade`를 직접 작성한다. `alembic revision --autogenerate`의 결과는
+CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
+그대로 신뢰하지 않고 반드시 검토한다.
+
 상태 확인 API는 다음과 같다.
 
 | 메서드 | 경로 | 용도 |
