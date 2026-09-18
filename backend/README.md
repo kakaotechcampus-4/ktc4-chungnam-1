@@ -148,8 +148,8 @@ CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 �
   "registrationToken": "...",
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
-  "requiredConsents": ["serviceData", "sensitiveData", "pushNotification"],
-  "optionalConsents": ["serviceImprovement"]
+  "requiredConsents": ["serviceData", "sensitiveData"],
+  "optionalConsents": ["serviceImprovement", "pushNotification"]
 }
 ```
 
