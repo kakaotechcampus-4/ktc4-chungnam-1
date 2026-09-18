@@ -69,6 +69,10 @@ class _BodyState extends State<_Body> {
     };
   }
 
+  bool get _requiredAgreed => consentTerms
+      .where((term) => term.required)
+      .every((term) => _agreed.contains(term.key));
+
   bool get _allAgreed => _agreed.length == consentTerms.length;
 
   void _toggleAll(bool? value) {
@@ -255,6 +259,15 @@ class _BodyState extends State<_Body> {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: AppSpacing.section),
+
+          PrimaryButton(
+            label: '저장하기',
+            // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
+            onPressed: _requiredAgreed
+                ? () => Navigator.maybePop(context)
+                : null,
           ),
 
           const SizedBox(height: AppSpacing.xl),
