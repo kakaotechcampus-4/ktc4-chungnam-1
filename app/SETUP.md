@@ -21,7 +21,7 @@
 flutter --version
 ```
 
-`Flutter 3.44.8 • channel stable`과 `Dart 3.12.2`가 나와야 한다. 
+`Flutter 3.44.8 • channel stable`과 `Dart 3.12.2`가 나와야 한다.
 
 ### 설치되어 있지 않다면
 
