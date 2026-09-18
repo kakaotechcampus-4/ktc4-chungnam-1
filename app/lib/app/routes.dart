@@ -59,6 +59,13 @@ abstract final class AppRoutes {
   /// 리포트 기록. 확인한 리포트를 다시 볼 수 있다.
   static const reports = '/reports';
 
+  /// 알림. 피그마 설계 없음.
+  ///
+  /// 지금은 홈의 리포트 알림 상태(`ReportNotice`) 하나만 보여준다. 날짜별로
+  /// 여러 건이 쌓인 이력을 보여주려면 `app/lib/data/` 의 데이터 모델을
+  /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
+  static const notifications = '/notifications';
+
   /// H 일대기. 기획 보류.
   static const album = '/album';
 }
