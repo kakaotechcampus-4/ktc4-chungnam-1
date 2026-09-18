@@ -48,6 +48,13 @@ class ConsentTerm {
   final List<String> details;
 }
 
+/// 아래 문구가 어느 판의 약관인지 가리킨다.
+///
+/// `docs/architecture/data-contracts.md` 의 `Account.consent.consentVersion` 과
+/// 같은 값이다. 서버가 다른 버전을 제시하면 앱이 보여주지 않은 문구에 동의를
+/// 받는 셈이므로 제출하지 않는다.
+const consentVersion = '2026-09-06';
+
 const consentTerms = <ConsentTerm>[
   ConsentTerm(
     key: 'serviceData',
