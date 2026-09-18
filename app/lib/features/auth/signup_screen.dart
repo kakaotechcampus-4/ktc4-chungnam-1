@@ -6,6 +6,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_text_field.dart';
+import 'consent_form.dart';
 import 'consent_terms.dart';
 
 /// A-3 회원가입과 동의.
@@ -64,44 +65,6 @@ class _SignupScreenState extends State<SignupScreen> {
         _agreed.remove(key);
       }
     });
-  }
-
-  void _showDetails(ConsentTerm term) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.background,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppRadius.card),
-        ),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen,
-            0,
-            AppSpacing.screen,
-            AppSpacing.section,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(term.label, style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.md),
-              Text(term.statement, style: AppTypography.body),
-              const SizedBox(height: AppSpacing.xl),
-              for (final line in term.details) ...[
-                Text(line, style: AppTypography.sub),
-                const SizedBox(height: AppSpacing.md),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -177,11 +140,11 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: AppSpacing.lg),
 
             for (final term in consentTerms) ...[
-              _ConsentRow(
+              ConsentRow(
                 term: term,
                 checked: _agreed.contains(term.key),
                 onChanged: (value) => _toggle(term.key, value),
-                onDetails: () => _showDetails(term),
+                onDetails: () => showConsentDetails(context, term),
               ),
               // 항목 안쪽 간격보다는 넓게 두어 자세히 보기가 어느 항목의
               // 것인지 읽히게 한다.
@@ -214,7 +177,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
             if (_fieldsFilled && !_requiredAgreed) ...[
               const SizedBox(height: AppSpacing.lg),
-              const _RequiredNotice(),
+              const AuthNotice(message: '필수 항목에 모두 동의해야 가입할 수 있어요.'),
             ],
 
             const SizedBox(height: AppSpacing.xxl),
@@ -242,140 +205,6 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ConsentRow extends StatelessWidget {
-  const _ConsentRow({
-    required this.term,
-    required this.checked,
-    required this.onChanged,
-    required this.onDetails,
-  });
-
-  final ConsentTerm term;
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final VoidCallback onDetails;
-
-  /// 항목 이름을 체크박스 한가운데에 맞추는 높이.
-  ///
-  /// 이름을 체크박스와 같은 줄(Row)에 두면 48 짜리 체크박스가 줄 높이를 정해
-  /// 이름 아래에 11dp 가 남는다. 이름부터 자세히 보기까지를 한 세로 묶음으로
-  /// 두고 그 빈 자리를 이 값으로 직접 정한다.
-  static const _labelOffset = 12.0;
-
-  /// 자세히 보기의 높이. 누르는 요소 최소 48 의 예외다(`app/DESIGN.md`).
-  static const _detailsHeight = 28.0;
-
-  @override
-  Widget build(BuildContext context) {
-    // 항목 전체가 체크 영역이다. 자세히 보기는 제 몫의 누름을 따로 받는다.
-    return InkWell(
-      onTap: () => onChanged(!checked),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Checkbox(
-            value: checked,
-            onChanged: onChanged,
-            activeColor: AppColors.ink,
-            side: const BorderSide(color: AppColors.line, width: 2),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: _labelOffset),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: term.required ? '[필수] ' : '[선택] ',
-                        style: AppTypography.body.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: term.required
-                              ? AppColors.danger
-                              : AppColors.textSub,
-                        ),
-                      ),
-                      TextSpan(text: term.label, style: AppTypography.body),
-                    ],
-                  ),
-                ),
-
-                if (term.note != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(term.note!, style: AppTypography.sub),
-                ],
-
-                const SizedBox(height: AppSpacing.sm),
-
-                // 자세히 보기를 이름과 같은 줄에 두면 이름이 쓸 수 있는 폭이
-                // 316 에서 245 로 줄어 네 항목 중 셋이 줄바꿈된다. 아래 줄로
-                // 내리고 글자를 한 단계 흐리게 둔다.
-                TextButton(
-                  onPressed: onDetails,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textDisabled,
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size(0, _detailsHeight),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '자세히 보기',
-                        style: AppTypography.sub.copyWith(
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.textDisabled,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RequiredNotice extends StatelessWidget {
-  const _RequiredNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.dangerSurface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 22, color: AppColors.danger),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              '필수 항목에 모두 동의해야 가입할 수 있어요.',
-              style: AppTypography.sub.copyWith(color: AppColors.danger),
-            ),
-          ),
-        ],
       ),
     );
   }
