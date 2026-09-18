@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../design/tokens.dart';
 import 'app_buttons.dart';
 
+/// 계약에 없는 값이 들어와 정상 값으로 보여줄 수 없을 때 쓰는 문구다.
+///
+/// 잘못된 값을 "보통이에요" 같은 정상 답변으로 바꿔 보여주지 않는다. 세 화면이
+/// 같은 문구를 쓰도록 여기에 둔다. `app/CLAUDE.md` 의 실패 표시 규칙과 테크스펙
+/// NFR-005 를 따른다.
+const unsupportedValueLabel = '확인 필요';
+
 /// 화면 가운데 로딩 표시와 한 줄 안내다.
 /// `app/DESIGN.md` 상 앱에서 움직이는 것은 이것뿐이다.
 class LoadingView extends StatelessWidget {

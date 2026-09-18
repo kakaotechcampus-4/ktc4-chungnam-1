@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stt-007-empty-file",
+  "scenario": "녹음 파일이 0바이트로 저장된 경우 (녹음 실패, 전송 중단 등 실제로 발생 가능한 상황을 가정)",
+  "expectedResult": {
+    "transcript": null,
+    "confidenceRange": null,
+    "errorCode": "EMPTY_AUDIO_FILE"
+  },
+  "failureCondition": "파일을 오디오로 해석하려고 시도하거나, stt-006(UTTERANCE_TOO_SHORT)이나 stt-004(LOW_CONFIDENCE) 같은 다른 실패 케이스와 같은 오류 코드로 뭉뚱그리는 경우 — '입력 파일 자체가 무효함'과 '분석은 됐지만 결과가 나쁨'은 구분되어야 함",
+  "uiMessage": "녹음 파일을 확인할 수 없어요. 다시 녹음해주세요.",
+  "notes": "errorCode 값(EMPTY_AUDIO_FILE)은 예시이며, 실제 채택 명칭은 #24에서 STT 결과 형식이 확정된 뒤 맞춘다."
+}

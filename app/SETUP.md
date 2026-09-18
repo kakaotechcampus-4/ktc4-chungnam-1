@@ -1,6 +1,6 @@
 # 개발 환경 세팅
 
-새록 Flutter 앱을 각자 PC에서 실행하기 위한 안내다. 버전과 선택 이유는 [`README.md`](README.md)에, 상태 관리와 화면 이동 결정은 [ADR-003](../docs/architecture/decisions/ADR-003-flutter-state-management-and-routing.md)에 있다.
+새록 Flutter 앱을 각자 PC에서 실행하기 위한 안내다. 버전과 선택 이유는 [`README.md`](README.md)에, 상태 관리와 화면 이동 결정은 [ADR-005](../docs/architecture/decisions/ADR-005-flutter-state-management-and-routing.md)에 있다.
 
 ## 누가 무엇을 하나
 
@@ -21,7 +21,7 @@
 flutter --version
 ```
 
-`Flutter 3.44.8 • channel stable`과 `Dart 3.12.2`가 나와야 한다. 
+`Flutter 3.44.8 • channel stable`과 `Dart 3.12.2`가 나와야 한다.
 
 ### 설치되어 있지 않다면
 

@@ -40,10 +40,26 @@ class ProfileSetupScreen extends ConsumerWidget {
             Expanded(
               child: ScreenBody(
                 scrollable: true,
-                bottom: _Actions(state: state, controller: controller),
+                // 기본 정보는 이름, 성별, 생년월일, 현재 상태를 한 화면에서 받아
+                // 스크롤이 길다. 버튼을 아래에 고정하면 그만큼 입력란이 보이는
+                // 높이를 가져가므로 본문과 함께 흘려보낸다. 나머지 단계는 한
+                // 화면에 들어가므로 고정한 채로 둔다.
+                bottom: state.isBasicInfo
+                    ? null
+                    : _Actions(state: state, controller: controller),
                 child: Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.xl),
-                  child: _StepBody(state: state, controller: controller),
+                  child: state.isBasicInfo
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _StepBody(state: state, controller: controller),
+                            const SizedBox(height: AppSpacing.xxl),
+                            _Actions(state: state, controller: controller),
+                            const SizedBox(height: AppSpacing.xxl),
+                          ],
+                        )
+                      : _StepBody(state: state, controller: controller),
                 ),
               ),
             ),

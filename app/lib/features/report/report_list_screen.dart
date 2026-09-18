@@ -108,7 +108,10 @@ class _ReportRow extends StatelessWidget {
                   maxLines: 2,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                AppChip(report.mood.label, tone: ChipTone.weak),
+                AppChip(
+                  report.mood?.label ?? unsupportedValueLabel,
+                  tone: ChipTone.weak,
+                ),
               ],
             ),
           ),

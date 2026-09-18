@@ -19,7 +19,7 @@ void main() {
     final account = await repository.loadAccount();
 
     expect(account.accountId, 'account_demo_001');
-    // 알림 수신은 필수 동의로 올렸다. 목 데이터도 수락 상태여야 한다.
+    // 알림 수신은 선택 동의다. 이 목 데이터는 수락한 계정을 담는다.
     expect(account.consent['pushNotification']?.granted, isTrue);
     expect(account.consent['serviceData']?.granted, isTrue);
   });
@@ -31,7 +31,7 @@ void main() {
     expect(bundle.lifeFacts, hasLength(3));
     // accepted 된 후보만 acceptedTags 에 담긴다.
     final accepted = bundle.tagCandidates
-        .where((c) => c.reviewStatus == ReviewStatus.accepted)
+        .where((c) => c.reviewStatus == TagReviewStatus.accepted)
         .map((c) => c.text)
         .toList();
     expect(accepted, bundle.photo.acceptedTags);
@@ -62,11 +62,25 @@ void main() {
     final evaluation = await repository.loadCaregiverEvaluation();
     final proposal = await repository.loadChangeProposal();
 
-    expect(evaluation.cardReviews, hasLength(4));
-    // 반영이 끝난 상태라 pending 이 남아 있지 않다.
-    expect(proposal.proposalStatus, 'reviewed');
+    // 리포트에는 카드 넷이 오는데 평가는 셋이다. 답하지 않고 넘어간 카드는
+    // 목록에 담지 않는다. 그것이 미응답이다.
+    expect(evaluation.cardReviews.map((r) => r.cardId), [
+      'card_demo_001',
+      'card_demo_004',
+      'card_demo_010',
+    ]);
     expect(
-      proposal.changes.where((c) => c.reviewStatus == ReviewStatus.pending),
+      evaluation.cardReviews.last.wasUsed,
+      isFalse,
+      reason: '명절 음식은 쓰지 않았다고 답한 카드다',
+    );
+    expect(evaluation.cardReviews.last.caregiverReaction, isNull);
+    // 반영이 끝난 상태라 pending 이 남아 있지 않다.
+    expect(proposal.proposalStatus, ProposalStatus.reviewed);
+    expect(
+      proposal.changes.where(
+        (c) => c.reviewStatus == ChangeReviewStatus.pending,
+      ),
       isEmpty,
     );
   });

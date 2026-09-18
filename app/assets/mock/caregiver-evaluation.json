@@ -17,14 +17,9 @@
         "caregiverReaction": "positive"
       },
       {
-        "cardId": "card_demo_007",
-        "wasUsed": true,
-        "caregiverReaction": "negative"
-      },
-      {
         "cardId": "card_demo_010",
         "wasUsed": false,
-        "caregiverReaction": "neutral"
+        "caregiverReaction": null
       }
     ],
     "freeNote": "노래 이야기가 나오니까 표정이 밝아지셨어요. 학교 이야기는 다음에는 꺼내지 말아야겠어요.",

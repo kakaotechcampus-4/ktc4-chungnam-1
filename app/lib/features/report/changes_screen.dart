@@ -13,10 +13,15 @@ import '../../widgets/app_surfaces.dart';
 
 /// G-2 변경 사항 확인.
 ///
-/// 계약을 그대로 따른다.
+/// 계약이 정한 규칙은 다음과 같다.
 /// - 남겨 둔 항목은 `accepted`, 지운 항목은 `rejected` 로 저장한다.
 /// - 반영하면 `proposalStatus` 를 `reviewed` 로 바꾼다.
 /// - 승인 전까지 프로필에 반영하지 않는다.
+///
+/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목을 화면
+/// 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로 이동한다.
+/// 저장은 BE 가 단말 저장 인터페이스를 확정한 뒤 붙인다. `app/README.md` 의
+/// 영역 구분을 따른다.
 class ReportChangesScreen extends ConsumerStatefulWidget {
   const ReportChangesScreen({required this.reportId, super.key});
 
@@ -28,7 +33,8 @@ class ReportChangesScreen extends ConsumerStatefulWidget {
 }
 
 class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
-  /// 사용자가 지운 항목. 반영할 때 `rejected` 가 된다.
+  /// 사용자가 지운 항목. 계약상 `rejected` 가 될 항목이지만 지금은 저장하지
+  /// 않고 화면 표시에만 쓴다.
   final _removed = <String>{};
 
   /// 이유를 펼친 항목. 한 번에 하나만 펼친다.

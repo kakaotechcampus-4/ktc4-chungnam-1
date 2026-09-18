@@ -95,8 +95,9 @@
 }
 ```
 
-- `serviceData`(개인정보 수집 동의), `sensitiveData`(민감정보 수집 동의)와 `pushNotification`(알림 수신 동의)은 필수 동의 사항이며 거부하면 가입을 진행하지 않는다. `pushNotification`은 리포트 도착을 알리는 데 필요하다.
-- 나머지 하나(`serviceImprovement` 데이터를 서비스 개선에 활용)는 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
+- `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
+- 나머지 둘(`serviceImprovement` 데이터를 서비스 개선에 활용, `pushNotification` 알림 수신)은 선택 동의이며 거부해도 가입과 핵심 기능을 차단하지 않는다.
+- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.status`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
 - 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
 
 **없어도 되는 값** — 선택 동의 항목의 `grantedAt`
@@ -260,9 +261,11 @@
 - `analysisStatus` 값은 `pending`, `processing`, `completed`, `failed`이다.
   - 분석에 실패해도 프로필 입력을 계속 진행할 수 있어야 한다.
 - `candidates`는 AI가 신뢰도 높은 순으로 정렬해 상위 6개만 반환하며, 배열 순서가 곧 추천 순위다.
-- `reviewStatus` 값은 `pending`, `accepted`, `rejected`이며 `ChangeProposal.changes[].reviewStatus`와 같은 값을 쓴다.
+- `reviewStatus` 값은 `pending`, `accepted`, `rejected`이다. `ChangeProposal.changes[].reviewStatus`와 값 이름은 겹치지만 같은 상태 타입이 아니며, 후보는 되돌릴 대상이 없어 `reverted`를 갖지 않는다.
   - `accepted`가 된 후보만 `ProfilePhoto.acceptedTags`에 저장하며, 확인하지 않고 넘어간 `pending`도 저장하지 않는다.
 - 태그는 단어 그대로 저장한다. 태그의 의미를 카드 생성에서 어떻게 사용할지는 AI 영역에서 정한다.
+- 사진 메타데이터는 이 객체의 확정값이 아니라 AI 분석에 제공할 수 있는 보조 입력이다. 누락되거나 원래 사건과 다른 값일 수 있으므로 메타데이터만으로 후보, 생애 사실과 스토리를 확정하지 않는다.
+- AI 태그와 문맥 정보도 보호자가 확인하기 전에는 후보로만 취급한다. 메타데이터를 보조 입력으로 제한하는 측정 근거는 [사진 메타데이터 추출 보고서](../../local_ai/docs/image_tagging/metadata-extraction-report.md)에 기록한다.
 
 **없어도 되는 값** — `candidates`, `error`
 
@@ -440,6 +443,11 @@
       "cardId": "card_demo_001",
       "wasUsed": true,
       "caregiverReaction": "positive"
+    },
+    {
+      "cardId": "card_demo_010",
+      "wasUsed": false,
+      "caregiverReaction": null
     }
   ],
   "freeNote": null,
@@ -450,8 +458,18 @@
 - `conversationSatisfaction`은 1 이상 5 이하의 정수다.
 - `careRecipientReaction` 값은 `pleased`, `calm`, `angry`, `lowEnergy`, `unknown`이다.
 - `caregiverReaction` 값은 `positive`, `neutral`, `negative`이다.
+- `cardReviews`는 **미사용과 미응답을 구분한다.** 둘은 다음 회차 우선순위에 다르게 쓴다.
 
-**없어도 되는 값** — `freeNote`
+| 보호자가 한 일 | `cardReviews` | 우선순위 |
+| --- | --- | --- |
+| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 평가대로 반영한다 |
+| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 보호자가 고르지 않은 주제이므로 낮춘다 |
+| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 판단할 근거가 없으므로 건드리지 않는다 |
+
+- 미응답을 미사용으로 읽지 않는다. 답하지 않은 것을 "쓰지 않았다"로 보면 보호자가 하지 않은 판단을 대신 만들어 우선순위를 낮추게 된다.
+- 리포트의 `cardSummaries`에는 세 경우가 모두 올 수 있다. 화면은 미사용과 미응답을 분석 결과 대신 그 사실로 표시한다.
+
+**없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`
 
 <br>
 
@@ -468,7 +486,7 @@
   "reportStatus": "ready",
   "title": "재봉 일 이야기를 나눈 날",
   "visitDate": "2026-08-21",
-  "mood": "normal",
+  "mood": "good",
   "photoId": "visit_photo_demo_001",
   "summaryText": "오늘은 재봉 일을 하시던 시절 이야기를 나눴어요. 동인천 수선집에서 한복을 만드시던 때를 떠올리시며 오래 말씀해주셨고, 함께 일하던 분들 이야기가 나올 때는 기분이 좋아 보이셨어요. 오늘은 이야기가 잘 풀린 날이었어요.",
   "cardSummaries": [
@@ -486,7 +504,7 @@
 - `summaryText`는 일기 형식의 본문이다.
   - 보호자 평가에서 입력받은 값을 모두 재료로 사용하며, 입력하지 않은 값은 빼고 작성한다.
 - `mood`는 보호자의 감정이며 별도로 입력받지 않고 `conversationSatisfaction`에서 계산한다.
-  - 값은 `hard`, `normal`, `good`이며 1이면 `hard`, 2~4는 `normal`, 5면 `good`이다.
+  - 값은 `hard`, `normal`, `good`이며 1~2는 `hard`, 3은 `normal`, 4~5는 `good`이다.
 - 리포트는 보호자 평가와 대화 내용을 정리해 보여주며 의료적 해석과 대화 품질 점수를 만들지 않는다.
 
 **없어도 되는 값** — `photoId`
@@ -535,7 +553,7 @@
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
-- 변경 사항 확인 화면에서 체크한 항목은 `accepted`, 체크하지 않은 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
+- 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
 <br>
 
