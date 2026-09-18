@@ -36,6 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^3.4.3
   go_router: ^18.0.1
+  # 구글 소셜 로그인. ID 토큰만 받아 서버에 넘긴다(ADR-007).
+  google_sign_in: ^7.2.0
+  # 로그인 API 호출. 다른 화면은 아직 목 데이터를 쓴다.
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +69,9 @@ flutter:
   assets:
     - assets/mock/
     - assets/images/
+    # 구글이 배포한 로그인 버튼 이미지다. 쓰는 것 하나만 담는다.
+    # 원본 묶음(assets/signin-assets/)에는 쓰지 않는 크기와 색이 함께 있다.
+    - assets/signin-assets/Android/png@4x/light/android_light_rd_na@4x.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
