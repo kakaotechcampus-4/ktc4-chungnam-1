@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -268,6 +270,12 @@ class _BodyState extends State<_Body> {
             onPressed: _requiredAgreed
                 ? () => Navigator.maybePop(context)
                 : null,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+
+          SecondaryButton(
+            label: '로그아웃',
+            onPressed: () => context.go(AppRoutes.login),
           ),
 
           const SizedBox(height: AppSpacing.xl),
