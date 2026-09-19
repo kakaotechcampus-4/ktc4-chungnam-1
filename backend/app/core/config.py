@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # 구글이 ID 토큰의 `iss` 에 넣는 두 가지 값. 둘 다 같은 발급자를 뜻한다.
 GOOGLE_ISSUERS = frozenset({"accounts.google.com", "https://accounts.google.com"})
@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
     # `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 그 웹 클라이언트 ID가
     # 되므로, FE 가 어떤 값을 쓰는지 확인한 뒤 채운다. 비어 있으면 로그인을 거부한다.
-    google_client_ids: tuple[str, ...] = ()
+    # NoDecode 가 없으면 pydantic-settings 가 복합 타입 값을 JSON 으로 먼저
+    # 파싱해서, 빈 값이나 쉼표 목록이 `_split_client_ids` 에 닿기 전에 깨진다.
+    google_client_ids: Annotated[tuple[str, ...], NoDecode] = ()
     google_jwks_url: str = GOOGLE_JWKS_URL
     google_jwks_cache_seconds: int = Field(default=3600, ge=60)
 
