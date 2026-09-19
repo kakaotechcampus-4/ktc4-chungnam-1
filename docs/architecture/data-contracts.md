@@ -172,6 +172,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
   "profileId": "profile_demo_001",
   "category": "occupation",
   "lifeStage": "youngAdult",
+  "title": "동인천 수선집",
   "text": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨고 단골도 많았대요.",
   "sourceType": "caregiverVoiceInput",
   "sourceSessionId": null,
@@ -184,11 +185,14 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - `lifeStage` 값은 `childhood`, `adolescence`, `youngAdult`, `marriageParenting`, `middleAge`, `other`이다.
   - 일대기(`/album`) 화면이 이야기를 인생 시기별로 묶어 보여주는 데만 쓴다. `category`를 대체하지 않는다.
   - **새로 추가된 필드다.** 이 값을 누가 정하는지(보호자가 직접 고르는지, AI가 이야기 내용을 보고 추정하는지)는 아직 정해지지 않았다. PM·AI 확인이 필요하다.
+- `title` — 일대기 목록에서 `text`(긴 서술문) 대신 보여줄 짧은 이름이다.
+  - **새로 추가된 필드다.** 표시 문구를 FE가 임의로 붙인 것이라 PM 확인이 필요하다.
 - `sourceType` 값은 `caregiverVoiceInput`, `caregiverTextInput`, `visitConfirmed`이다.
 - `sourceType`이 `visitConfirmed`인 사실을 생성할 때는 유효한 출처 회차의 `sourceSessionId`가 필요하다. 프로필 입력 화면에서 만든 사실은 `null`로 둔다.
 - 출처 면회가 삭제되면 보호자가 승인한 사실은 유지하고 해당 `sourceSessionId`만 `null`로 해제한다. 회차 삭제 후에도 면회에서 확인한 사실이라는 `sourceType`을 다른 입력 방식으로 바꾸지 않는다. 생성 시 출처 검증과 삭제 후 null 허용을 구분하며, 무조건적인 NOT NULL 제약으로 출처 회차 삭제를 막지 않는다.
 - 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 마이페이지에서 내용을 고치면 `updatedAt`을 갱신한다.
+- 일대기 목록 화면은 이 이야기가 "어느 면회에서 나왔는지" 날짜를 보여주는데, 계약상 그 날짜를 가리키는 값이 없다. 지금은 `createdAt`을 그 자리에 대신 쓴다. `sourceSessionId`로 실제 면회 일자를 찾아 보여주는 것이 맞는 방식이나, 목 데이터에 면회가 하나뿐이라 이번에는 `createdAt` 값 자체를 화면에 맞게 지어냈다. 실제 연동 시 재검토가 필요하다.
 
 **없어도 되는 값** — 프로필에서 직접 입력했거나 출처 면회가 삭제된 사실의 `sourceSessionId`
 

@@ -67,4 +67,10 @@ abstract final class AppRoutes {
 
   /// H 일대기. 기획 보류.
   static const album = '/album';
+
+  /// 일대기 이야기 목록. 인생 시기(`stage`)를 넘기지 않으면 전체를 보여준다.
+  static const albumStories = '/album/stories';
+
+  static String albumStoriesOf(String? stage) =>
+      stage == null ? albumStories : '$albumStories?stage=$stage';
 }

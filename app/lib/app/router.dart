@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/auth_api.dart';
+import '../data/models.dart';
 import '../features/album/album_screen.dart';
+import '../features/album/album_stories_screen.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
@@ -114,6 +116,12 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.album,
         builder: (context, state) => const AlbumScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.albumStories,
+        builder: (context, state) => AlbumStoriesScreen(
+          stage: LifeStage.parse(state.uri.queryParameters['stage'] ?? ''),
+        ),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

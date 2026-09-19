@@ -18,8 +18,6 @@ import '../home/my_page_menu.dart';
 /// 정하는지(보호자 선택 / AI 추정)는 아직 정해지지 않았다
 /// (`docs/architecture/data-contracts.md` 참고). 그 결정이 나기 전까지는
 /// mock 데이터로 화면만 먼저 만든다.
-///
-/// "전체 보기"로 갈 목록 화면이 아직 없어 눌러도 반응하지 않는다.
 class AlbumScreen extends ConsumerWidget {
   const AlbumScreen({super.key});
 
@@ -98,6 +96,9 @@ class _Body extends StatelessWidget {
                         child: _StageTile(
                           info: _stages[row],
                           count: _countOf(_stages[row].stage),
+                          onTap: () => context.push(
+                            AppRoutes.albumStoriesOf(_stages[row].stage.name),
+                          ),
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
@@ -105,6 +106,11 @@ class _Body extends StatelessWidget {
                         child: _StageTile(
                           info: _stages[row + 1],
                           count: _countOf(_stages[row + 1].stage),
+                          onTap: () => context.push(
+                            AppRoutes.albumStoriesOf(
+                              _stages[row + 1].stage.name,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -116,8 +122,8 @@ class _Body extends StatelessWidget {
                 const SizedBox(height: AppSpacing.lg),
                 SecondaryButton(
                   label: '전체 보기',
-                  // 이야기를 모두 나열해 볼 목록 화면이 아직 없다.
-                  onPressed: null,
+                  onPressed: () =>
+                      context.push(AppRoutes.albumStoriesOf(null)),
                 ),
               ],
             ),
@@ -134,38 +140,47 @@ class _Body extends StatelessWidget {
 }
 
 class _StageTile extends StatelessWidget {
-  const _StageTile({required this.info, required this.count});
+  const _StageTile({
+    required this.info,
+    required this.count,
+    required this.onTap,
+  });
 
   final _StageInfo info;
   final int count;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-      ),
-      child: Column(
-        children: [
-          Icon(info.icon, color: AppColors.ink),
-          const SizedBox(height: AppSpacing.sm),
-          Text(info.stage.label, style: AppTypography.bodyStrong),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AppChip('$count개', tone: ChipTone.weak),
-              const SizedBox(width: AppSpacing.xs),
-              const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: AppColors.textSub,
-              ),
-            ],
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.card),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+        ),
+        child: Column(
+          children: [
+            Icon(info.icon, color: AppColors.ink),
+            const SizedBox(height: AppSpacing.sm),
+            Text(info.stage.label, style: AppTypography.bodyStrong),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AppChip('$count개', tone: ChipTone.weak),
+                const SizedBox(width: AppSpacing.xs),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.textSub,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
