@@ -63,8 +63,18 @@ class _Body extends StatefulWidget {
 }
 
 class _BodyState extends State<_Body> {
-  int? _selected;
+  final _selected = <int>{};
   final _otherReason = TextEditingController();
+
+  void _toggle(int i) {
+    setState(() {
+      if (_selected.contains(i)) {
+        _selected.remove(i);
+      } else {
+        _selected.add(i);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -104,11 +114,11 @@ class _BodyState extends State<_Body> {
           for (final (i, reason) in _reasons.indexed) ...[
             _ReasonRow(
               label: reason.label,
-              selected: _selected == i,
-              onTap: () => setState(() => _selected = i),
+              selected: _selected.contains(i),
+              onTap: () => _toggle(i),
             ),
             const SizedBox(height: AppSpacing.md),
-            if (reason.other && _selected == i) ...[
+            if (reason.other && _selected.contains(i)) ...[
               TextField(
                 controller: _otherReason,
                 maxLines: 3,
