@@ -1,9 +1,12 @@
 // B 화면(온보딩과 환자 정보 입력)의 규칙을 확인한다.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
+import 'package:saerok/design/theme.dart';
+import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
@@ -14,8 +17,9 @@ void main() {
   group('단계 정의', () {
     test('생애 정보 항목은 계약의 category 를 쓴다', () async {
       final bundle = await const MockRepository().loadProfile();
-      final contractCategories =
-          bundle.collectionStates.map((s) => s.category).toSet();
+      final contractCategories = bundle.collectionStates
+          .map((s) => s.category)
+          .toSet();
       final screenCategories = lifeFactSteps.map((s) => s.category).toSet();
 
       expect(screenCategories, contractCategories);
@@ -23,10 +27,11 @@ void main() {
 
     test('현재 상태 선택지는 계약의 세 값뿐이다', () {
       expect(ConditionStage.values, hasLength(3));
-      expect(
-        ConditionStage.values.map((v) => v.name),
-        ['mildCognitiveImpairment', 'mildDementia', 'unknown'],
-      );
+      expect(ConditionStage.values.map((v) => v.name), [
+        'mildCognitiveImpairment',
+        'mildDementia',
+        'unknown',
+      ]);
     });
   });
 
@@ -41,7 +46,10 @@ void main() {
       final container = makeContainer();
       final controller = container.read(setupControllerProvider.notifier);
 
-      expect(container.read(setupControllerProvider).draft.basicInfoFilled, isFalse);
+      expect(
+        container.read(setupControllerProvider).draft.basicInfoFilled,
+        isFalse,
+      );
 
       controller.updateDraft(
         const SetupDraft(
@@ -54,7 +62,10 @@ void main() {
         ),
       );
 
-      expect(container.read(setupControllerProvider).draft.basicInfoFilled, isTrue);
+      expect(
+        container.read(setupControllerProvider).draft.basicInfoFilled,
+        isTrue,
+      );
     });
 
     test('사진을 올리지 않으면 태그 단계를 건너뛴다', () {
@@ -95,21 +106,33 @@ void main() {
       controller.next(); // 첫 생애 정보 항목으로
       final step = container.read(setupControllerProvider).lifeFactStep!;
       expect(
-        container.read(setupControllerProvider).draft.facts.containsKey(step.category),
+        container
+            .read(setupControllerProvider)
+            .draft
+            .facts
+            .containsKey(step.category),
         isFalse,
         reason: '아직 값이 없으니 건너뛰기가 보인다',
       );
 
       controller.recordFact(step.category, '재봉 일을 오래 하셨어요.');
       expect(
-        container.read(setupControllerProvider).draft.facts.containsKey(step.category),
+        container
+            .read(setupControllerProvider)
+            .draft
+            .facts
+            .containsKey(step.category),
         isTrue,
         reason: '값이 담기면 다음으로 바뀐다',
       );
 
       controller.skipFact(step.category);
       expect(
-        container.read(setupControllerProvider).draft.facts.containsKey(step.category),
+        container
+            .read(setupControllerProvider)
+            .draft
+            .facts
+            .containsKey(step.category),
         isFalse,
       );
     });
@@ -180,9 +203,71 @@ void main() {
       final outcome = await input.listen(category: 'occupation', attempt: 1);
 
       expect(outcome, isA<SpeechHeard>());
+      expect((outcome as SpeechHeard).text, bundle.factOf('occupation')?.text);
+    });
+  });
+
+  group('다음 버튼 자리', () {
+    /// 화면을 띄우고 지금 보이는 행동 버튼의 사각형과 스크롤 영역을 돌려준다.
+    Future<(Rect button, Rect viewport)> openSetup(
+      WidgetTester tester, {
+      int advance = 0,
+    }) async {
+      const dpr = 3.0;
+      tester.view.physicalSize = const Size(411 * dpr, 891 * dpr);
+      tester.view.devicePixelRatio = dpr;
+      tester.view.padding = const FakeViewPadding(
+        top: 24 * dpr,
+        bottom: 24 * dpr,
+      );
+      addTearDown(tester.view.reset);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: const ProfileSetupScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (var i = 0; i < advance; i++) {
+        container.read(setupControllerProvider.notifier).next();
+        await tester.pumpAndSettle();
+      }
+
+      var button = find.widgetWithText(FilledButton, '다음');
+      if (button.evaluate().isEmpty) {
+        button = find.widgetWithText(OutlinedButton, '건너뛰기');
+      }
+      return (
+        tester.getRect(button.first),
+        tester.getRect(find.byType(SingleChildScrollView).first),
+      );
+    }
+
+    testWidgets('기본 정보는 입력란이 많아 버튼이 본문과 함께 흐른다', (tester) async {
+      final (button, viewport) = await openSetup(tester);
+
       expect(
-        (outcome as SpeechHeard).text,
-        bundle.factOf('occupation')?.text,
+        button.top,
+        lessThan(viewport.bottom),
+        reason: '아래에 고정하면 그만큼 입력란이 보이는 높이를 가져간다',
+      );
+    });
+
+    testWidgets('생애 정보는 한 화면에 들어가므로 버튼을 고정한다', (tester) async {
+      final (button, viewport) = await openSetup(tester, advance: 1);
+
+      expect(
+        button.top,
+        greaterThanOrEqualTo(viewport.bottom),
+        reason: '스크롤 영역 밖에 있어야 고정이다',
       );
     });
   });

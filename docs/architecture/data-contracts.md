@@ -9,14 +9,14 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
 
 | 항목 | 현재 계약 또는 목 화면 | 적용할 기준과 남은 일 |
 | --- | --- | --- |
-| 알림 동의 | 계정 절에 필수로 기재 | [PM 기준](../pm/README.md#처리와-동의)은 선택. 거부해도 가입과 기본 기능을 허용하도록 화면과 계약 정합성 확인 |
+| 알림 동의 | 공통 계약과 FE는 선택, BE develop은 아직 필수 | [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)의 선택 동의 보완은 미병합. 아래 계약을 기준으로 통합 검증 필요 |
 | 사진 전송 | ProfilePhoto 절에서 서버 요청 제외 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)은 동의한 원본의 임시 처리를 허용. 업로드 요청과 삭제 상태 계약은 별도 설계 필요 |
 | 카드 수와 선택 | 12장 생성, 9장 제시와 3장 보충, 보호자 선택으로 명시 | [PM 미결 항목](../pm/README.md#검토-중인-제품-결정)과 달라 확정 여부 확인 필요. 이번 정리에서 수치와 선택 규칙은 변경하지 않음 |
 | 이미지 출력 | 단어 태그와 acceptedTags | 태그, 설명과 결합 출력 비교 중. 확정 후 계약과 화면을 함께 변경 |
 | 피보호자 동의 | 본인 확인 필드만 존재 | 대리 동의의 자격과 확인 절차는 법률 검토 필요 |
 | 저장과 상태 전이 | 값 정의는 있으나 영속 저장 미연결. 단말 중심 필드가 남아 있음 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)의 서버 중심 방향에 맞춰 [이슈 18](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/18)에서 저장 항목, 단말 보관 범위, 접근 권한, 기간, 삭제와 갱신 주체 합의 |
 | 직접 식별정보 | Profile의 `localOnly`는 서버 요청에서 제외 | 현행 제한 유지. 서버 중심 방향만으로 전송하지 않으며 필드별 필요성, 동의와 접근 범위 검토 후 별도 계약 변경 |
-| 보호자 평가 | 모든 카드 평가를 채우는 현재 형식 | 사용하지 않음, 미응답과 중립 평가를 구분할지 공동 조율 |
+| 보호자 평가 | PR #42로 미사용, 미응답과 중립 평가를 구분하는 화면 및 계약 반영 | 미사용을 비선호로 반영할지와 DB null 허용, 회차별 조회는 공동 확인 필요 |
 | 리포트 | 일기형 요약과 카드별 요약 | 테크스펙의 관찰값과 계산 불가 이유를 어떤 필드로 전달할지 조율 |
 
 공통 규칙과 [객체 목록](#객체와-담당)에서 필요한 항목으로 이동한다. [결정 대기 항목](#결정-대기-항목)의 카드 생성, STT와 주제 갱신은 아직 완성된 처리 계약이 아니다.
@@ -111,8 +111,9 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
 }
 ```
 
-- 현재 목 화면은 `serviceData`, `sensitiveData`와 `pushNotification`을 필수로 처리한다. 이 중 알림을 필수로 처리하는 동작은 선택 동의라는 제품 기준과 다르며 수정 대상이다.
-- 제품 기준에서 `pushNotification`과 `serviceImprovement`는 선택 동의다. 거부해도 가입과 핵심 기능을 차단하지 않는다. 위 JSON 필드와 예시는 유지하며 화면 동작 변경은 별도 구현에서 확인한다.
+- `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
+- 나머지 둘(`serviceImprovement` 데이터를 서비스 개선에 활용, `pushNotification` 알림 수신)은 선택 동의이며 거부해도 가입과 핵심 기능을 차단하지 않는다.
+- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.reportStatus`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
 - 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
 
 **없어도 되는 값** — 선택 동의 항목의 `grantedAt`
@@ -458,6 +459,11 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
       "cardId": "card_demo_001",
       "wasUsed": true,
       "caregiverReaction": "positive"
+    },
+    {
+      "cardId": "card_demo_010",
+      "wasUsed": false,
+      "caregiverReaction": null
     }
   ],
   "freeNote": null,
@@ -468,8 +474,18 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
 - `conversationSatisfaction`은 1 이상 5 이하의 정수다.
 - `careRecipientReaction` 값은 `pleased`, `calm`, `angry`, `lowEnergy`, `unknown`이다.
 - `caregiverReaction` 값은 `positive`, `neutral`, `negative`이다.
+- `cardReviews`는 **미사용과 미응답을 구분한다.** 둘은 다음 회차 우선순위에 다르게 쓴다.
 
-**없어도 되는 값** — `freeNote`
+| 보호자가 한 일 | `cardReviews` | 우선순위 |
+| --- | --- | --- |
+| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 평가대로 반영한다 |
+| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 보호자가 고르지 않은 주제이므로 낮춘다 |
+| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 판단할 근거가 없으므로 건드리지 않는다 |
+
+- 미응답을 미사용으로 읽지 않는다. 답하지 않은 것을 "쓰지 않았다"로 보면 보호자가 하지 않은 판단을 대신 만들어 우선순위를 낮추게 된다.
+- 리포트의 `cardSummaries`에는 세 경우가 모두 올 수 있다. 화면은 미사용과 미응답을 분석 결과 대신 그 사실로 표시한다.
+
+**없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`
 
 <br>
 
@@ -486,7 +502,7 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
   "reportStatus": "ready",
   "title": "재봉 일 이야기를 나눈 날",
   "visitDate": "2026-08-21",
-  "mood": "normal",
+  "mood": "good",
   "photoId": "visit_photo_demo_001",
   "summaryText": "오늘은 재봉 일을 하시던 시절 이야기를 나눴어요. 동인천 수선집에서 한복을 만드시던 때를 떠올리시며 오래 말씀해주셨고, 함께 일하던 분들 이야기가 나올 때는 기분이 좋아 보이셨어요. 오늘은 이야기가 잘 풀린 날이었어요.",
   "cardSummaries": [
@@ -504,7 +520,7 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
 - `summaryText`는 일기 형식의 본문이다.
   - 보호자 평가에서 입력받은 값을 모두 재료로 사용하며, 입력하지 않은 값은 빼고 작성한다.
 - `mood`는 보호자의 감정이며 별도로 입력받지 않고 `conversationSatisfaction`에서 계산한다.
-  - 값은 `hard`, `normal`, `good`이며 1이면 `hard`, 2~4는 `normal`, 5면 `good`이다.
+  - 값은 `hard`, `normal`, `good`이며 1~2는 `hard`, 3은 `normal`, 4~5는 `good`이다.
 - 리포트는 보호자 평가와 대화 내용을 정리해 보여주며 의료적 해석과 대화 품질 점수를 만들지 않는다.
 
 **없어도 되는 값** — `photoId`
@@ -553,7 +569,7 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
-- 변경 사항 확인 화면에서 체크한 항목은 `accepted`, 체크하지 않은 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
+- 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
 <br>
 
@@ -577,7 +593,7 @@ JSON 예시와 enum은 기존 구현을 추적하기 위해 유지한다. 다음
 
 | 항목 | 무엇이 미정인가 | 확인 주체 |
 | --- | --- | --- |
-| 계정과 로그인 | 계정 기능을 넣을지, 넣는다면 서버를 사용할지 정해지지 않았다. | PM, BE |
+| 계정과 로그인 | 구글 로그인 API는 PR #47에 반영됐다. ADR-007과 `authProvider`, 이메일 null 허용을 포함한 공통 Account 정리는 PR #38에서 다룬다. 저장 항목과 DB 연결, 앱 로그인 유지는 후속 검토 및 구현이다. | PM, BE, FE |
 | 서버 중심 데이터 관리 | 데이터별 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 구현을 정해야 한다. 원본 임시 처리의 최대 24시간 제한은 유지한다. | BE 제안, FE, AI, PM 공동 확인 |
 | 피보호자 대리 동의 | 현재 계약은 피보호자 본인의 동의만 담는다. 병세가 진행되어 본인이 동의하기 어려운 경우(ex. 음성 녹음 동의 등) 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
 | 카드 생성 로직 | 프로필의 어떤 값을 모델에 넣을지, 수락한 이미지 태그를 어떻게 사용할지가 함께 걸려 있다. `CardGenerationRequest`의 형식은 이 결정 이후에 확정한다. | AI |
