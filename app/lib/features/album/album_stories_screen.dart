@@ -7,14 +7,15 @@ import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import 'album_story_detail_screen.dart';
 
 /// 일대기 이야기 목록. 전체 보기로 들어오면 [stage] 가 없고, 인생 시기
 /// 카드를 눌러 들어오면 그 시기로 걸러 보여준다.
 ///
 /// 날짜는 `LifeFact.createdAt` 을 쓴다. "어느 면회에서 나온 이야기인지"를
 /// 가리키는 진짜 값이 계약에 없어서다(`docs/architecture/data-contracts.md`
-/// 참고). 이야기 하나를 더 자세히 보는 화면은 아직 없어 목록 항목을 눌러도
-/// 반응하지 않는다.
+/// 참고). 항목을 누르면 상세 화면으로 가는데, `app/lib/app/` 을 건드리지
+/// 않기로 해서 go_router 경로 대신 `Navigator.push` 로 연다.
 class AlbumStoriesScreen extends ConsumerStatefulWidget {
   const AlbumStoriesScreen({this.stage, super.key});
 
@@ -188,6 +189,11 @@ class _StoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AlbumStoryDetailScreen(fact: fact),
+        ),
+      ),
       child: Row(
         children: [
           Container(
