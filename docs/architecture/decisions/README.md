@@ -10,8 +10,11 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID는 `com.saelog.app` |
 | [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Riverpod 상태 관리와 go_router 화면 이동 |
 | [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리, 데이터 관리는 서버 중심으로 전환. 세부 저장 계약은 미정 |
+| [ADR-007](ADR-007-google-social-login.md) | proposed | 구글 로그인과 백엔드 ID 토큰 직접 검증, ADR-006의 인증과 계정 저장 부분을 구체화. 저장 항목 등 공동 검토 필요 |
 
-accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다.
+accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다. ADR-007의 `proposed` 표기는 구글 로그인 방향에 대한 PM 동의를 되돌리는 뜻이 아니며 계정 저장 항목 등 남은 검토안을 확정하지 않기 위한 표시다.
+
+서버 중심 데이터 관리 보완은 [PR #37](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/37), 로그인 설계와 계정 계약은 [PR #38](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/38)에서 다룬다. 두 변경은 ADR-006과 ADR-007을 함께 읽으며 확인한다.
 
 <details>
 <summary>대체된 제안 2건</summary>
