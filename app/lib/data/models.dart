@@ -154,7 +154,9 @@ class LifeFact {
     required this.category,
     required this.text,
     required this.sourceType,
+    required this.createdAt,
     this.lifeStage,
+    this.title,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
@@ -162,16 +164,25 @@ class LifeFact {
     category: json['category'] as String,
     text: json['text'] as String,
     sourceType: json['sourceType'] as String,
+    createdAt: json['createdAt'] as String,
     lifeStage: json['lifeStage'] == null
         ? null
         : LifeStage.parse(json['lifeStage'] as String),
+    title: json['title'] as String?,
   );
 
   final String factId;
   final String category;
   final String text;
   final String sourceType;
+
+  /// 일대기 목록에 보여줄 날짜. 계약에 "어느 면회에서 나왔는지"를 가리키는
+  /// 값이 없어 이 자리를 대신 쓴다(`docs/architecture/data-contracts.md` 참고).
+  final String createdAt;
   final LifeStage? lifeStage;
+
+  /// 일대기 목록에서 [text] 대신 보여줄 짧은 이름. 없으면 목록에서 뺀다.
+  final String? title;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.

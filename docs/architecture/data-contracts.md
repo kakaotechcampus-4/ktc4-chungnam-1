@@ -148,6 +148,7 @@
   "profileId": "profile_demo_001",
   "category": "occupation",
   "lifeStage": "youngAdult",
+  "title": "동인천 수선집",
   "text": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨고 단골도 많았대요.",
   "sourceType": "caregiverVoiceInput",
   "sourceSessionId": null,
@@ -160,9 +161,12 @@
 - `lifeStage` 값은 `childhood`, `adolescence`, `youngAdult`, `marriageParenting`, `middleAge`, `other`이다.
   - 일대기(`/album`) 화면이 이야기를 인생 시기별로 묶어 보여주는 데만 쓴다. `category`를 대체하지 않는다.
   - **새로 추가된 필드다.** 이 값을 누가 정하는지(보호자가 직접 고르는지, AI가 이야기 내용을 보고 추정하는지)는 아직 정해지지 않았다. PM·AI 확인이 필요하다.
+- `title` — 일대기 목록에서 `text`(긴 서술문) 대신 보여줄 짧은 이름이다.
+  - **새로 추가된 필드다.** 표시 문구를 FE가 임의로 붙인 것이라 PM 확인이 필요하다.
 - `sourceType` 값은 `caregiverVoiceInput`, `caregiverTextInput`, `visitConfirmed`이다.
 - `sourceSessionId`는 면회 중에 확인한 사실에만 값을 넣고, 프로필 입력 화면에서 만든 사실은 `null`로 둔다.
 - 마이페이지에서 내용을 고치면 `updatedAt`을 갱신한다.
+- 일대기 목록 화면은 이 이야기가 "어느 면회에서 나왔는지" 날짜를 보여주는데, 계약상 그 날짜를 가리키는 값이 없다. 지금은 `createdAt`을 그 자리에 대신 쓴다. `sourceSessionId`로 실제 면회 일자를 찾아 보여주는 것이 맞는 방식이나, 목 데이터에 면회가 하나뿐이라 이번에는 `createdAt` 값 자체를 화면에 맞게 지어냈다. 실제 연동 시 재검토가 필요하다.
 
 **없어도 되는 값** — `sourceSessionId`
 
