@@ -147,6 +147,7 @@
   "factId": "fact_demo_001",
   "profileId": "profile_demo_001",
   "category": "occupation",
+  "lifeStage": "youngAdult",
   "text": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨고 단골도 많았대요.",
   "sourceType": "caregiverVoiceInput",
   "sourceSessionId": null,
@@ -156,6 +157,9 @@
 ```
 
 - `category` 값은 `occupation`, `hometown`, `hobby`, `family`이다.
+- `lifeStage` 값은 `childhood`, `adolescence`, `youngAdult`, `marriageParenting`, `middleAge`, `other`이다.
+  - 일대기(`/album`) 화면이 이야기를 인생 시기별로 묶어 보여주는 데만 쓴다. `category`를 대체하지 않는다.
+  - **새로 추가된 필드다.** 이 값을 누가 정하는지(보호자가 직접 고르는지, AI가 이야기 내용을 보고 추정하는지)는 아직 정해지지 않았다. PM·AI 확인이 필요하다.
 - `sourceType` 값은 `caregiverVoiceInput`, `caregiverTextInput`, `visitConfirmed`이다.
 - `sourceSessionId`는 면회 중에 확인한 사실에만 값을 넣고, 프로필 입력 화면에서 만든 사실은 `null`로 둔다.
 - 마이페이지에서 내용을 고치면 `updatedAt`을 갱신한다.
