@@ -11,8 +11,11 @@ import 'my_page_menu.dart';
 
 /// 시작 화면.
 ///
-/// 리포트 도착 알림은 별도 화면이 아니라 이 화면의 상태다(피그마 `HOME`,
+/// 리포트 도착 알림은 별도 데이터가 아니라 이 화면의 상태다(피그마 `HOME`,
 /// `HOME-1`). 알림을 눌러야 리포트로 들어갈 수 있고, 확인하면 사라진다.
+///
+/// 왼쪽 상단 알림 아이콘을 누르면 같은 상태를 다시 보여주는 `notice_screen.dart`
+/// 가 뜬다. 상태를 새로 만들지 않고 `reportNoticeProvider` 를 그대로 본다.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -116,7 +119,7 @@ class _TopBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                onPressed: () {},
+                onPressed: () => context.push(AppRoutes.notifications),
                 tooltip: '알림',
                 icon: Stack(
                   clipBehavior: Clip.none,

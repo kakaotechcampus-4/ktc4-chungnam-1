@@ -89,9 +89,12 @@ void main() {
       );
     });
 
-    testWidgets('보류된 일대기는 안내를 보여준다', (tester) async {
+    testWidgets('일대기는 이야기를 인생 시기별로 묶어 보여준다', (tester) async {
       await openAt(tester, AppRoutes.album);
-      expect(find.text('화면 설계 중입니다'), findsOneWidget);
+      expect(find.text('이야기 현황'), findsOneWidget);
+      expect(find.text('유년기'), findsOneWidget);
+      // mock 데이터 기준 결혼·양육기만 2건, 나머지는 1건씩이다.
+      expect(find.text('2개'), findsOneWidget);
     });
 
     testWidgets('없는 경로는 오류 안내를 보여준다', (tester) async {

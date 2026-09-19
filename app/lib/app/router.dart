@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/models.dart';
+import '../features/album/album_screen.dart';
+import '../features/album/album_stories_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/home/notice_screen.dart';
+import '../features/profile/profile_delete_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
@@ -54,6 +59,10 @@ GoRouter buildRouter() {
         builder: (context, state) => const CardsScreen(),
       ),
       GoRoute(
+        path: AppRoutes.notifications,
+        builder: (context, state) => const NoticeScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.visitPhoto,
         builder: (context, state) => const VisitPhotoScreen(),
       ),
@@ -87,15 +96,21 @@ GoRouter buildRouter() {
         builder: (context, state) => const ProfileScreen(),
       ),
       GoRoute(
+        path: AppRoutes.profileDelete,
+        builder: (context, state) => const ProfileDeleteScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.reports,
         builder: (context, state) => const ReportListScreen(),
       ),
-      // H 일대기는 기획이 보류된 화면이라 안내만 보여준다. 구현 대상이 아니다.
       GoRoute(
         path: AppRoutes.album,
-        builder: (context, state) => const Scaffold(
-          appBar: AppTopBar(title: '일대기'),
-          body: PlaceholderView.designPending(),
+        builder: (context, state) => const AlbumScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.albumStories,
+        builder: (context, state) => AlbumStoriesScreen(
+          stage: LifeStage.parse(state.uri.queryParameters['stage'] ?? ''),
         ),
       ),
     ],

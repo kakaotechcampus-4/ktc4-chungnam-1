@@ -56,9 +56,25 @@ abstract final class AppRoutes {
   /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
   static const profile = '/profile';
 
+  /// 회원 탈퇴 확인. 피그마 설계 없음.
+  static const profileDelete = '/profile/delete';
+
   /// 리포트 기록. 확인한 리포트를 다시 볼 수 있다.
   static const reports = '/reports';
 
+  /// 알림. 피그마 설계 없음.
+  ///
+  /// 지금은 홈의 리포트 알림 상태(`ReportNotice`) 하나만 보여준다. 날짜별로
+  /// 여러 건이 쌓인 이력을 보여주려면 `app/lib/data/` 의 데이터 모델을
+  /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
+  static const notifications = '/notifications';
+
   /// H 일대기. 기획 보류.
   static const album = '/album';
+
+  /// 일대기 이야기 목록. 인생 시기(`stage`)를 넘기지 않으면 전체를 보여준다.
+  static const albumStories = '/album/stories';
+
+  static String albumStoriesOf(String? stage) =>
+      stage == null ? albumStories : '$albumStories?stage=$stage';
 }
