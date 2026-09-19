@@ -56,9 +56,10 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | --- | --- | --- |
 | [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted | 동의 구조와 원본 자료의 최대 24시간 서버 임시 처리 경계 |
 | [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID를 `com.saelog.app`으로 통일 |
-| [ADR-003](ADR-003-parallel-stt-validation.md) | proposed | Python 기준 환경과 온디바이스 STT 병렬 검증 제안 |
-| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | proposed | 로컬 FastAPI 기준 환경과 온디바이스 처리 병렬 검증 제안 |
+| [ADR-003](ADR-003-parallel-stt-validation.md) | superseded | Python 기준 환경과 온디바이스 STT 병렬 검증 제안, ADR-006으로 대체 |
+| [ADR-004](ADR-004-python-fastapi-reference-environment.md) | superseded | 로컬 FastAPI와 온디바이스 병렬 검증 제안, ADR-006으로 대체 |
 | [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Flutter 상태 관리는 Riverpod, 화면 이동은 go_router |
+| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | MVP의 STT와 VLM은 온프레미스 GPU 1대에서 처리. 서버 중심 데이터 관리 보완은 PR 37에서 관리 |
 | [ADR-007](ADR-007-google-social-login.md) | proposed | 구글 소셜 로그인과 백엔드 ID 토큰 직접 검증 제안, ADR-006의 인증과 계정 저장 부분을 구체화 |
 
-ADR-006은 [PR 37](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/37)에서 서버 중심 AI 처리와 데이터 관리 결정으로 추가한다. 그 PR이 develop에 들어오면 이 표의 ADR-003과 ADR-004 상태도 함께 갱신된다.
+ADR-006의 AI 실행 위치와 ADR-003 및 ADR-004의 대체 상태는 develop에 반영됐다. 단말 우선 저장 문구를 서버 중심 데이터 관리로 맞추는 보완은 [PR 37](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/37)에 있으므로 PR 38보다 먼저 반영한다. ADR-007의 `proposed` 표기는 구글 로그인 방향에 대한 PM 동의를 되돌리는 뜻이 아니며 계정 저장 항목 등 남은 검토안을 확정하지 않기 위한 표시다.

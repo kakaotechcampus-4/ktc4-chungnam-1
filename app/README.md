@@ -151,3 +151,11 @@
     app/assets/mock/          사본. Flutter 가 패키지 루트 밖을 asset 으로 읽지 못해 복사한다
 
 계약이 바뀌면 두 곳을 같은 PR에서 함께 갱신한다. `test/mock_data_sync_test.dart`가 두 벌이 같은지 확인하며, 원본이 브랜치에 없으면 건너뛰고 들어오면 코드 수정 없이 비교를 시작한다.
+
+### 계정 응답 읽기
+
+`Account`는 공통 계약의 `authProvider`를 읽고 `loginId`를 요구하지 않는다. `email`은 `String?`이며 서버가 제공하지 않는 경우 `null`을 그대로 유지한다. 이메일을 임의로 채우지 않는다. 계정 목 데이터 두 벌은 이메일을 보관하지 않는 응답을 예시로 사용한다.
+
+`test/account_model_test.dart`는 실제 `Account.fromJson`으로 이메일의 `null`, 문자열, 누락과 잘못된 타입을 검사한다. 이 변경은 계정 응답을 읽는 범위이며 이메일 미저장 정책을 확정하거나 화면의 실제 로그인 연동을 완료한 것은 아니다.
+
+구글 로그인 연결과 별도 `AuthAccount`는 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 다룬다. 약관의 서버 관리, 앱 재실행 시 로그인 유지와 만료 후 자동 재인증은 해당 PR의 후속 요청이며 여기서 구현하지 않았다.

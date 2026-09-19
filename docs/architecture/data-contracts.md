@@ -73,7 +73,7 @@
   "accountId": "account_demo_001",
   "authProvider": "google",
   "displayName": "보호자",
-  "email": "demo@example.com",
+  "email": null,
   "consent": {
     "consentVersion": "2026-09-06",
     "serviceData": {
@@ -97,14 +97,17 @@
 }
 ```
 
-- 인증은 구글 소셜 로그인을 사용한다. 2026-09-15 BE가 제안했고 공동 검토 대기 상태다([ADR-007](decisions/ADR-007-google-social-login.md)). 아이디와 비밀번호는 받지 않으며, 계정은 구글 인증 뒤 필수 동의가 완료될 때 동의 이력과 함께 만들어진다.
+- 인증은 구글 소셜 로그인을 사용하며 백엔드가 ID 토큰을 직접 검증하는 방향에 PM이 동의했다. 개인정보 저장 항목 등 [ADR-007](decisions/ADR-007-google-social-login.md)의 검토안은 별도로 남아 있다. 아이디와 비밀번호는 받지 않으며, 계정은 구글 인증 뒤 필수 동의가 완료될 때 동의 이력과 함께 만들어진다.
 - `authProvider`의 값은 현재 `google` 하나다. 다른 제공자를 더하는 것은 계약 변경으로 본다.
-- `displayName`과 `email`의 출처와 서버 저장 여부는 아직 정하지 않았다. PM은 이메일과 구글 계정 이름을 저장하지 않는 안을 제안했고 BE와 FE가 구현 영향을 확인한다([ADR-007](decisions/ADR-007-google-social-login.md)). `displayName`에는 실명이 들어올 수 있으므로 사용자가 수정할 수 있어야 한다.
-- `serviceData`(개인정보 수집 동의), `sensitiveData`(민감정보 수집 동의)와 `pushNotification`(알림 수신 동의)은 필수 동의 사항이며 거부하면 가입을 진행하지 않는다. `pushNotification`은 리포트 도착을 알리는 데 필요하다.
-- 나머지 하나(`serviceImprovement` 데이터를 서비스 개선에 활용)는 선택 동의이며 거부해도 핵심 기능을 차단하지 않는다.
-- 앱은 구글에서 받은 ID 토큰을 백엔드로 보내고, 백엔드가 구글 공개키로 검증한 뒤 기존 계정을 찾거나 필수 동의 완료 시 계정을 만든다. 제공자 식별자(구글 `sub`)와 ID 토큰은 이 계약에 포함하지 않는다.
+- `displayName`과 `email`의 영구 저장 범위는 검토 중이다. PM은 이메일과 구글 계정 이름을 저장하지 않는 안을 제안했고 BE와 FE가 구현 영향을 확인한다([ADR-007](decisions/ADR-007-google-social-login.md)). 현재 서버의 기본 설정에서는 사용자 입력 표시 이름이 없으면 `보호자`를 사용하고 `email`은 `null`로 반환한다. `displayName`에는 실명이 들어올 수 있으므로 사용자가 수정할 수 있어야 한다.
+- `email`은 문자열 또는 `null`이다. 서버가 값을 저장하지 않거나 제공하지 않는 경우 `null`로 보내며, FE는 이를 임의의 주소나 빈 문자열로 채우지 않는다. 누락된 `email`도 FE에서 없는 값으로 읽는다. nullable 응답을 지원하는 변경이며 이메일 미저장 정책을 확정한 것은 아니다.
+- `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
+- 나머지 둘(`serviceImprovement` 데이터를 서비스 개선에 활용, `pushNotification` 알림 수신)은 선택 동의이며 거부해도 가입과 핵심 기능을 차단하지 않는다.
+- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.reportStatus`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
+- 앱은 구글에서 받은 ID 토큰을 백엔드로 보내고, 백엔드가 구글 공개키로 검증한 뒤 기존 계정을 찾거나 필수 동의 완료 시 계정을 만든다. 제공자 식별자(구글 `sub`), 비밀번호와 인증 토큰은 이 계정 객체에 포함하지 않는다.
+- PR 50의 약관 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 후속 구현 요청이다. 이 계정 계약 변경만으로 해당 기능이 완료되지는 않는다.
 
-**없어도 되는 값** — 선택 동의 항목의 `grantedAt`
+**없어도 되는 값** — `email`, 선택 동의 항목의 `grantedAt`
 
 <br>
 
@@ -447,6 +450,11 @@
       "cardId": "card_demo_001",
       "wasUsed": true,
       "caregiverReaction": "positive"
+    },
+    {
+      "cardId": "card_demo_010",
+      "wasUsed": false,
+      "caregiverReaction": null
     }
   ],
   "freeNote": null,
@@ -457,8 +465,18 @@
 - `conversationSatisfaction`은 1 이상 5 이하의 정수다.
 - `careRecipientReaction` 값은 `pleased`, `calm`, `angry`, `lowEnergy`, `unknown`이다.
 - `caregiverReaction` 값은 `positive`, `neutral`, `negative`이다.
+- `cardReviews`는 **미사용과 미응답을 구분한다.** 둘은 다음 회차 우선순위에 다르게 쓴다.
 
-**없어도 되는 값** — `freeNote`
+| 보호자가 한 일 | `cardReviews` | 우선순위 |
+| --- | --- | --- |
+| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 평가대로 반영한다 |
+| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 보호자가 고르지 않은 주제이므로 낮춘다 |
+| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 판단할 근거가 없으므로 건드리지 않는다 |
+
+- 미응답을 미사용으로 읽지 않는다. 답하지 않은 것을 "쓰지 않았다"로 보면 보호자가 하지 않은 판단을 대신 만들어 우선순위를 낮추게 된다.
+- 리포트의 `cardSummaries`에는 세 경우가 모두 올 수 있다. 화면은 미사용과 미응답을 분석 결과 대신 그 사실로 표시한다.
+
+**없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`
 
 <br>
 
@@ -475,7 +493,7 @@
   "reportStatus": "ready",
   "title": "재봉 일 이야기를 나눈 날",
   "visitDate": "2026-08-21",
-  "mood": "normal",
+  "mood": "good",
   "photoId": "visit_photo_demo_001",
   "summaryText": "오늘은 재봉 일을 하시던 시절 이야기를 나눴어요. 동인천 수선집에서 한복을 만드시던 때를 떠올리시며 오래 말씀해주셨고, 함께 일하던 분들 이야기가 나올 때는 기분이 좋아 보이셨어요. 오늘은 이야기가 잘 풀린 날이었어요.",
   "cardSummaries": [
@@ -493,7 +511,7 @@
 - `summaryText`는 일기 형식의 본문이다.
   - 보호자 평가에서 입력받은 값을 모두 재료로 사용하며, 입력하지 않은 값은 빼고 작성한다.
 - `mood`는 보호자의 감정이며 별도로 입력받지 않고 `conversationSatisfaction`에서 계산한다.
-  - 값은 `hard`, `normal`, `good`이며 1이면 `hard`, 2~4는 `normal`, 5면 `good`이다.
+  - 값은 `hard`, `normal`, `good`이며 1~2는 `hard`, 3은 `normal`, 4~5는 `good`이다.
 - 리포트는 보호자 평가와 대화 내용을 정리해 보여주며 의료적 해석과 대화 품질 점수를 만들지 않는다.
 
 **없어도 되는 값** — `photoId`
@@ -542,7 +560,7 @@
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
-- 변경 사항 확인 화면에서 체크한 항목은 `accepted`, 체크하지 않은 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
+- 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
 <br>
 
