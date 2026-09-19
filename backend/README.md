@@ -1,64 +1,14 @@
 # BE 영역
 
-담당 리더: 김민혁
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있다. 실제 STT, VLM과 계정의 DB 영속 저장은 아직 연결되지 않았다.
 
-상태: FastAPI 기준 골격 구성, MVP의 STT와 VLM은 ADR-006에 따라 온프레미스 GPU 1대에서 처리
+MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 장비, 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
 
-## 담당 범위
-
-- 이미지, STT와 화자 처리 모델의 서버 실행 연동
-- 녹음부터 전사, 화자 처리와 결과 반환까지의 처리 파이프라인
-- 모델 파일 배포, 로딩, 자원 해제와 오류 처리
-- 앱과 로컬 AI 사이의 데이터 계약
-- 단말 데이터 구조, 로컬 DB, 암호화와 마이그레이션 정책
-- 선택적 중계 서버가 필요한 조건
-- 마스킹, API, 인증, 로그와 삭제 정책
-- 타임아웃, 재시도와 대체 흐름
-
-BE는 실행 위치와 데이터 흐름을 정한다. 모델 선택과 품질 기준은 AI와 공동 검토한다.
-
-## 확정된 기준
-
-- 프로필, 전사문과 회차 기록은 사용자 단말 저장을 기본으로 함
-- 녹음과 이미지 원본은 동의한 기능에 필요한 경우 암호화하여 서버에서 임시 처리할 수 있음
-- 원본 자료는 처리 완료 후 즉시 삭제하며 최대 24시간을 넘기지 않음
-- 직접 식별정보와 허용 목록 밖의 원본 자료는 외부 AI로 전송하지 않음
-- STT와 VLM은 온프레미스 GPU 1대에서 처리하며 장비와 운영 방식은 미확정
-- 별도 서버를 사용하더라도 상시 개인정보 저장을 전제로 하지 않음
-- 실제 사용자 정보와 전사문을 로그에 남기지 않음
-- 서버 처리 구조가 필요하면 데이터 흐름과 법률 문서를 먼저 갱신
-
-## BE 리더가 정할 사항
-
-- 온프레미스 GPU 모델 실행 런타임과 Flutter 연동 방식
-- 녹음 형식, 입력 조건과 처리 단계
-- 작업 상태, 타임아웃, 재시도와 복구 방식
-- 모델 파일 다운로드와 무결성 확인
-- 로컬 DB 기술, 스키마, 암호화와 마이그레이션 방식
-- 외부 LLM과 무저장 중계 서버 필요 여부
-- 서버가 받을 수 있는 필드의 허용 목록
-- 마스킹 위치, 전송 전 확인, 로그와 삭제 증명
-- 서버 사용 시 언어, 프레임워크, 배포와 테스트 명령
-
-선택 결과에는 입력과 출력, 데이터 저장 여부, 실패 조건, 보안 영향, 검증 방법과 재검토 조건을 기록한다. 구조 결정은 ADR도 작성한다.
-
-## 확정된 처리 흐름
-
-    Flutter 앱
-    → 단말 녹음과 기능 동의 확인
-    → 암호화된 원본의 서버 임시 처리
-    → STT, 화자 처리와 VLM 결과 반환
-    → 원본 즉시 삭제와 삭제 결과 확인
-    → 보호자 검토
-    → 단말 저장
-
-온프레미스 GPU의 장비와 운영 방식은 PM, AI와 BE가 정한다. 필수 동의 확인, 전송 암호화, 원본과 임시 파일의 최대 24시간 삭제, 작업 큐와 로그의 삭제 확인을 완료 조건에 포함한다. 외부 업체는 업체명, 국가, 처리 목적, 항목, 보유기간과 자체 학습 여부를 확정하기 전 호출하지 않는다.
+[ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
 ## 실행과 테스트
 
-현재 골격은 Python 3.12, FastAPI와 Uvicorn을 사용한다. 의존성과 가상 환경은 `uv`로 관리하고 테스트는 `pytest`로 실행한다. 실제 사용자 자료와 마스킹한 실제 자료는 이 환경에서 사용하지 않는다.
-
-`backend/`에서 최초 환경설정을 수행한다.
+저장소 루트에서 최초 설정:
 
 ```powershell
 cd backend
@@ -67,40 +17,86 @@ uv sync
 uv run python --version
 ```
 
-최초 환경설정 후 다음과 같이 서버를 활성화한다.
+이후 명령은 `backend/`에서 실행한다. 의존성과 가상 환경은 `uv`, 테스트는 `pytest`로 관리한다.
+
 ```powershell
-cd backend
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-access-log
 ```
 
-Android 에뮬레이터 또는 허가된 개발 단말에서 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
+Android 에뮬레이터 또는 허가된 개발 단말과 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
 
 ```powershell
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
 ```
 
-테스트는 다음 명령으로 실행한다.
-
 ```powershell
 uv run pytest
 ```
 
-상태 확인 API는 다음과 같다.
+| 확인 항목 | 위치 / 현재 범위 |
+| --- | --- |
+| 생존 확인 | `GET /health/live` |
+| 준비 상태 | `GET /health/ready`. 외부 의존성이 없는 골격의 상태만 확인 |
+| API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
+| 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
+| 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
-| 메서드 | 경로 | 용도 |
-| --- | --- | --- |
-| `GET` | `/health/live` | 프로세스 생존 확인 |
-| `GET` | `/health/ready` | 요청 처리 준비 상태 확인 |
+## 데이터베이스 마이그레이션 (Alembic)
 
-로컬 API 문서는 서버 실행 후 `http://127.0.0.1:8000/docs`에서 확인한다. 현재 readiness는 외부 의존성이 없는 골격의 준비 상태만 나타내며, 모델과 저장소가 추가되면 실제 의존성 점검을 연결한다.
+PostgreSQL 스키마의 소유권은 Alembic migration에 있다. `backend/database/init.sql`은
+빈 개발 DB를 한 번에 세우는 bootstrap 스크립트일 뿐이며, 스키마가 바뀌면 Alembic
+migration을 먼저 바꾸고 `init.sql`을 그에 맞춘다(자세한 로컬 적용 방법은
+`backend/database/로컬설정법.md` 참고).
+
+`SAEROK_DATABASE_URL`(`.env`)에 연결 문자열을 설정한 뒤 다음으로 최신 스키마를 적용한다.
+
+```powershell
+uv run alembic upgrade head
+```
+
+새 migration을 추가할 때는 `uv run alembic revision -m "설명"`으로 뼈대를 만든 뒤
+`upgrade`/`downgrade`를 직접 작성한다. `alembic revision --autogenerate`의 결과는
+CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
+그대로 신뢰하지 않고 반드시 검토한다.
+
+PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 개발 스키마가 있어도 인증 API의 저장소는 아직 프로세스 메모리 구현이다.
+
+## 담당과 다음 결정
+
+| 범위 | BE 작업 / 함께 정할 내용 |
+| --- | --- |
+| 모델 실행 | AI와 입력 형식, 모델 로딩, 자원 해제, STT 및 화자 처리 파이프라인 검토 |
+| 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
+| 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
+| 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
+| 운영 | PM, AI와 GPU 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
+| 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
+
+모델과 품질 기준은 AI와 공동 검토한다. 새 구조 결정은 입력과 출력, 저장 여부, 실패 조건, 보안 영향, 검증 방법과 재검토 조건을 ADR에 기록한다.
+
+## 데이터 처리 기준
+
+    앱에서 녹음 및 기능 동의 확인
+    → 암호화 전송과 서버 임시 처리
+    → STT 또는 VLM 결과 반환
+    → 원본 즉시 삭제와 삭제 결과 확인
+    → 보호자 검토
+    → 승인된 사실 반영, 서버 중심 관리
+
+이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 원본의 서버 보관은 처리 완료 후 즉시 삭제, 최대 24시간을 유지한다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
+
+직접 식별정보와 허용 목록 밖의 원본은 외부 AI로 보내지 않는다. 데이터 경로 변경 전 [법률 문서](../docs/legal/README.md), [동의 및 임시 처리 ADR](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md)과 데이터 흐름을 갱신한다. 외부 업체의 이름, 국가, 목적, 항목, 보유기간과 자체 학습 여부가 정해지기 전에는 실제 사용자 자료로 호출하지 않는다.
 
 ## 로그인 API
 
-근거는 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)이다. ADR-007 은 `proposed` 이고 공동 검토 대기 상태이므로, 이 구현은 검토를 위한 것이며 저장 범위를 확정한 것이 아니다. 응답의 `authProvider` 는 ADR-007 이 제안한 `Account` 계약 변경을 전제로 한다.
+로그인 API는 PR #47로 develop에 반영됐다. 근거는 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)이다. 구글 ID 토큰 직접 검증 방향에 대한 PM 동의와 개인정보 저장 항목의 검토안은 구분한다. ADR-007은 `proposed`로 유지하며, API 구현이 저장 범위 전체의 확정을 뜻하지 않는다. 응답의 `authProvider`와 nullable `email`은 [공통 Account 계약](../docs/architecture/data-contracts.md#계정-account)에 맞춘다.
+
+인증은 구글 소셜 로그인 한 가지를 사용하고 자체 아이디와 비밀번호는 받지 않는다. 백엔드는 구글 공개키로 ID 토큰을 직접 검증하며 Firebase Auth를 사용하지 않는다.
 
 ### 흐름
 
-앱은 두 단계를 거친다. 두 번째 실행부터는 저장한 세션으로 두 단계를 건너뛴다.
+다음은 목표 흐름이다. 서버의 세 엔드포인트는 있지만, 앱의 세션 보관과 재실행 시 복원은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)의 후속 보완 항목이다.
 
     앱 시작
     → (세션 있음) GET /auth/me → 홈
@@ -122,6 +118,8 @@ uv run pytest
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
 
+아래 동의 목록은 현재 BE 구현의 예시다. [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 알림 수신을 선택 동의로 옮겨 공통 계약과 FE의 기준에 맞췄다. 알림을 거부해도 필수 동의를 완료하면 계정이 생성된다.
+
 ```json
 {
   "schemaVersion": 1,
@@ -129,8 +127,8 @@ uv run pytest
   "registrationToken": "...",
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
-  "requiredConsents": ["serviceData", "sensitiveData", "pushNotification"],
-  "optionalConsents": ["serviceImprovement"]
+  "requiredConsents": ["serviceData", "sensitiveData"],
+  "optionalConsents": ["serviceImprovement", "pushNotification"]
 }
 ```
 
@@ -149,11 +147,11 @@ uv run pytest
 
 ### 세션
 
-ADR-007 이 BE 에 남긴 항목이며 현재 구현은 다음과 같다. 팀 확인 후 ADR-007 에 추가한다.
+[ADR-007의 구현 상태](../docs/architecture/decisions/ADR-007-google-social-login.md#현재-구현과-후속-작업)에 현재 서버 구현과 앱의 후속 작업을 나누어 기록했다.
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 갱신: 앱이 `google_sign_in` 의 무음 로그인으로 새 ID 토큰을 받아 `POST /auth/google` 을 다시 호출한다. 서버가 보관하는 갱신 자격증명은 없다.
+- 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
 ### 오류
@@ -196,9 +194,10 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ### 아직 정하지 않은 것
 
-- **계정 저장 항목** — ADR-007 의 PM 제안(이메일과 구글 계정 이름 미저장)을 기본값으로 두었다. `users` 개발 스키마는 `email` 컬럼과 `nickname NOT NULL` 을 갖고 있어 서로 맞지 않는다. `SAEROK_STORE_GOOGLE_PROFILE` 로 두 경우를 모두 확인할 수 있게 해두었고, 확정되면 기본값을 고정하고 이 항목을 지운다.
-- **`Account.email` 의 널 허용** — 이메일을 저장하지 않으면 응답의 `email` 이 `null` 이 된다. 공통 계약과 `app/lib/data/models.dart` 는 아직 `email` 을 필수 문자열로 본다. 저장 범위 결정과 함께 계약을 맞춰야 한다.
-- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saerok.app` 과 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
-- **계정 저장소** — 현재는 프로세스 메모리에만 남는 개발용 저장소(`InMemoryAccountRepository`)를 쓴다. 서버를 다시 시작하면 계정과 세션이 사라진다. 저장 항목이 확정되면 `AccountRepository` 를 구현해 `users` 와 `account_consents` 에 연결한다.
+- **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 스키마의 `email`은 nullable이고 표시 이름은 값이 없으면 `보호자`를 사용하므로 `nickname NOT NULL`과 충돌하지 않는다. 이메일 컬럼 유지 여부와 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
+- **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
+- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saelog.app` 과 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
+- **계정 저장소** — 현재는 프로세스 메모리에만 남는 개발용 저장소(`InMemoryAccountRepository`)를 쓴다. 서버 재시작 시 계정과 동의 기록을 잃으므로, 클라이언트에 남은 세션 토큰만으로 기존 계정을 복구할 수 없다. 저장 항목이 확정되면 `AccountRepository`를 `users`와 `account_consents`에 연결한다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
+- **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — ADR-007 의 재검토 조건에 있으며 이 구현에 없다.

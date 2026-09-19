@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
     service_name: str = "saerok-backend"
     service_version: str = "0.1.0"
+    database_url: str | None = None
 
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
     # `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 그 웹 클라이언트 ID가

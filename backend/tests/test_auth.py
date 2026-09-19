@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from app.api.deps import get_account_repository, get_google_verifier
 from app.core.config import Settings, get_settings
+from app.core.errors import AppError
 from app.main import create_app
 from app.services.accounts import InMemoryAccountRepository
 from app.services.google_identity import GoogleIdTokenVerifier
@@ -105,12 +106,11 @@ def test_google_login_asks_for_consent_without_creating_account() -> None:
     body = response.json()
     assert body["status"] == "consentRequired"
     assert body["consentVersion"] == CONSENT_VERSION
-    assert sorted(body["requiredConsents"]) == [
+    assert sorted(body["requiredConsents"]) == ["sensitiveData", "serviceData"]
+    assert sorted(body["optionalConsents"]) == [
         "pushNotification",
-        "sensitiveData",
-        "serviceData",
+        "serviceImprovement",
     ]
-    assert body["optionalConsents"] == ["serviceImprovement"]
     assert "accessToken" not in body
     assert harness.stored_account() is None
 
@@ -176,6 +176,21 @@ def test_refusing_the_optional_consent_still_creates_an_account() -> None:
     assert improvement == {"granted": False, "grantedAt": None}
 
 
+def test_refusing_push_notification_consent_still_creates_an_account() -> None:
+    harness = _harness()
+    login = harness.login(google_tokens.id_token())
+
+    response = harness.consent(
+        registrationToken=login.json()["registrationToken"],
+        consentVersion=CONSENT_VERSION,
+        consents={**ALL_GRANTED, "pushNotification": False},
+    )
+
+    assert response.status_code == 200
+    push = response.json()["account"]["consent"]["pushNotification"]
+    assert push == {"granted": False, "grantedAt": None}
+
+
 def test_consent_version_mismatch_is_rejected() -> None:
     harness = _harness()
     login = harness.login(google_tokens.id_token())
@@ -232,6 +247,65 @@ def test_jwks_failure_never_passes_verification() -> None:
     assert body["errorCode"] == "IDENTITY_PROVIDER_UNAVAILABLE"
     assert body["retryable"] is True
     assert harness.stored_account() is None
+
+
+def _counting_verifier(
+    documents: list[dict[str, Any]],
+) -> tuple[GoogleIdTokenVerifier, dict[str, int]]:
+    """호출마다 다음 JWKS 문서를 돌려주며 호출 횟수를 센다.
+
+    키 교체처럼 문서가 요청마다 달라지는 상황과, 조회 횟수 자체(중복 refresh 여부)를
+    같이 검증하기 위한 헬퍼다.
+    """
+    calls = {"count": 0}
+    queue = iter(documents)
+
+    async def fetcher() -> dict[str, Any]:
+        calls["count"] += 1
+        return next(queue)
+
+    verifier = GoogleIdTokenVerifier(
+        allowed_audiences=(google_tokens.CLIENT_ID,),
+        jwks_fetcher=fetcher,
+        cache_seconds=3600,
+    )
+    return verifier, calls
+
+
+def test_cached_kid_does_not_trigger_a_refresh() -> None:
+    verifier, calls = _counting_verifier([google_tokens.jwks_document()])
+    token = google_tokens.id_token()
+
+    asyncio.run(verifier.verify(token))
+    asyncio.run(verifier.verify(token))
+
+    assert calls["count"] == 1
+
+
+def test_unknown_kid_refreshes_the_key_set_at_most_once() -> None:
+    verifier, calls = _counting_verifier([google_tokens.jwks_document()])
+    token = google_tokens.id_token(key_id="unknown-key-id")
+
+    with pytest.raises(AppError) as excinfo:
+        asyncio.run(verifier.verify(token))
+
+    assert excinfo.value.error_code == "INVALID_ID_TOKEN"
+    assert calls["count"] == 1
+
+
+def test_key_found_after_a_single_refresh_verifies_normally() -> None:
+    # 캐시를 kid 가 없는 문서(키 교체 이전 상태)로 미리 채워두면, 토큰의 kid 는
+    # refresh 를 한 번 거쳐야 발견되는 상황이 된다.
+    verifier, calls = _counting_verifier(
+        [google_tokens.stale_jwks_document(), google_tokens.jwks_document()]
+    )
+    asyncio.run(verifier._refresh())
+    token = google_tokens.id_token()
+
+    identity = asyncio.run(verifier.verify(token))
+
+    assert identity.subject == "google-sub-0001"
+    assert calls["count"] == 2
 
 
 def test_login_is_refused_when_no_client_id_is_configured() -> None:
