@@ -130,12 +130,34 @@ class Profile {
   final List<String> photoIds;
 }
 
+/// `LifeFact.lifeStage` 값. 일대기(`/album`) 화면이 이야기를 인생 시기별로
+/// 묶어 보여주는 데만 쓴다. `LifeFact.category`(하시던 일/고향/취미/가족)를
+/// 대체하지 않는 별도 축이다.
+///
+/// 이 값을 누가 정하는지(보호자 직접 선택 / AI 추정)는 아직 정해지지 않았다.
+enum LifeStage {
+  childhood('유년기'),
+  adolescence('청소년기'),
+  youngAdult('청년기'),
+  marriageParenting('결혼·양육기'),
+  middleAge('중장년기'),
+  other('그 외');
+
+  const LifeStage(this.label);
+
+  final String label;
+
+  static LifeStage? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
 class LifeFact {
   const LifeFact({
     required this.factId,
     required this.category,
     required this.text,
     required this.sourceType,
+    this.lifeStage,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
@@ -143,12 +165,16 @@ class LifeFact {
     category: json['category'] as String,
     text: json['text'] as String,
     sourceType: json['sourceType'] as String,
+    lifeStage: json['lifeStage'] == null
+        ? null
+        : LifeStage.parse(json['lifeStage'] as String),
   );
 
   final String factId;
   final String category;
   final String text;
   final String sourceType;
+  final LifeStage? lifeStage;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.

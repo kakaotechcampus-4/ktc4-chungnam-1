@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/auth_api.dart';
+import '../features/album/album_screen.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
@@ -110,13 +111,9 @@ GoRouter buildRouter() {
         path: AppRoutes.reports,
         builder: (context, state) => const ReportListScreen(),
       ),
-      // H 일대기는 기획이 보류된 화면이라 안내만 보여준다. 구현 대상이 아니다.
       GoRoute(
         path: AppRoutes.album,
-        builder: (context, state) => const Scaffold(
-          appBar: AppTopBar(title: '일대기'),
-          body: PlaceholderView.designPending(),
-        ),
+        builder: (context, state) => const AlbumScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

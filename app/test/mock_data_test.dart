@@ -28,7 +28,7 @@ void main() {
     final bundle = await repository.loadProfile();
 
     expect(bundle.profile.stage, ConditionStage.mildCognitiveImpairment);
-    expect(bundle.lifeFacts, hasLength(3));
+    expect(bundle.lifeFacts, hasLength(7));
     // accepted 된 후보만 acceptedTags 에 담긴다.
     final accepted = bundle.tagCandidates
         .where((c) => c.reviewStatus == TagReviewStatus.accepted)
