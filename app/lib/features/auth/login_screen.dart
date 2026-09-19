@@ -37,26 +37,9 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: ScreenBody(
         scrollable: true,
-        bottom: Column(
-          children: [
-            PrimaryButton(
-              label: '로그인',
-              onPressed: _canSubmit ? () => context.go(AppRoutes.home) : null,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('계정이 없으신가요?', style: AppTypography.sub),
-                const SizedBox(width: AppSpacing.sm),
-                AppTextButton(
-                  label: '회원가입',
-                  onPressed: () => context.push(AppRoutes.signup),
-                ),
-              ],
-            ),
-          ],
-        ),
+        // 로그인 버튼과 가입 안내를 아래에 고정하지 않고 본문과 함께 흘려보낸다.
+        // 고정 영역이 168dp 를 가져가서, 화면이 작은 기기에 키보드가 올라오면
+        // 비밀번호 칸이 스크롤 영역 밖으로 밀렸다.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -79,12 +62,35 @@ class _LoginScreenState extends State<LoginScreen> {
               suffix: IconButton(
                 onPressed: () => setState(() => _obscure = !_obscure),
                 icon: Icon(
-                  _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  _obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
                   color: AppColors.textSub,
                 ),
                 tooltip: _obscure ? '비밀번호 보기' : '비밀번호 가리기',
               ),
             ),
+
+            const SizedBox(height: AppSpacing.xxl),
+
+            PrimaryButton(
+              label: '로그인',
+              onPressed: _canSubmit ? () => context.go(AppRoutes.home) : null,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('계정이 없으신가요?', style: AppTypography.sub),
+                const SizedBox(width: AppSpacing.sm),
+                AppTextButton(
+                  label: '회원가입',
+                  onPressed: () => context.push(AppRoutes.signup),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: AppSpacing.xxl),
           ],
         ),
       ),

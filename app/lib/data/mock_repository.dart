@@ -56,6 +56,16 @@ class MockRepository {
     );
   }
 
+  /// 리포트가 다 만들어지기를 기다린다.
+  ///
+  /// 목 데이터는 정해진 시간을 센다. 실제 분석 시간은 AI 영역이 정하고, 서버를
+  /// 붙이면 이 자리가 알림 구독이나 조회로 바뀐다. 화면과 알림 상태는 그대로
+  /// 둔다.
+  Future<void> awaitReportReady() => Future<void>.delayed(reportDelay);
+
+  /// 목 데이터에서 리포트가 만들어지기까지 걸리는 시간.
+  static const reportDelay = Duration(seconds: 5);
+
   Future<ChangeProposal> loadChangeProposal() async {
     final json = await _read('caregiver-evaluation.json');
     return ChangeProposal.fromJson(
