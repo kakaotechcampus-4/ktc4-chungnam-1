@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "account": {
     "accountId": "account_demo_001",
-    "loginId": "demo_user",
+    "authProvider": "google",
     "displayName": "보호자",
-    "email": "demo@example.com",
+    "email": null,
     "consent": {
       "consentVersion": "2026-09-06",
       "serviceData": {
