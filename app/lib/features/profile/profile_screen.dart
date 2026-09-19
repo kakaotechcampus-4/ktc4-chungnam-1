@@ -277,6 +277,14 @@ class _BodyState extends State<_Body> {
             label: '로그아웃',
             onPressed: () => context.go(AppRoutes.login),
           ),
+          const SizedBox(height: AppSpacing.xl),
+
+          Center(
+            child: AppTextButton(
+              label: '회원탈퇴',
+              onPressed: () => context.push(AppRoutes.profileDelete),
+            ),
+          ),
 
           const SizedBox(height: AppSpacing.xl),
         ],

@@ -90,6 +90,7 @@
 | `/report/:reportId` | 리포트 | G-1 |
 | `/report/:reportId/changes` | 변경 사항 확인 | G-2 |
 | `/profile` | 프로필 설정 | MYPAGE |
+| `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |
 | `/notifications` | 알림 | 설계 없음 |
 | `/album` | 일대기 | H, 기획 보류 |
@@ -102,6 +103,10 @@
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는
 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면
 데이터 모델을 넓혀야 한다.
+
+`/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면
+문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어
+화면에 적지 않았다.
 
 <br>
 
