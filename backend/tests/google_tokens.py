@@ -25,6 +25,13 @@ def jwks_document() -> dict[str, Any]:
     return {"keys": [jwk]}
 
 
+def stale_jwks_document() -> dict[str, Any]:
+    """`KEY_ID` 를 포함하지 않는, 키 교체 이전 상태를 흉내 낸 JWKS 문서."""
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(FOREIGN_KEY.public_key()))
+    jwk.update({"kid": "old-key-1", "alg": "RS256", "use": "sig"})
+    return {"keys": [jwk]}
+
+
 def id_token(
     *,
     subject: str = "google-sub-0001",
@@ -32,6 +39,7 @@ def id_token(
     issuer: str = ISSUER,
     expires_in: int = 3600,
     signing_key: rsa.RSAPrivateKey | None = None,
+    key_id: str = KEY_ID,
     email: str | None = None,
     name: str | None = None,
 ) -> str:
@@ -51,5 +59,5 @@ def id_token(
         payload,
         signing_key or SIGNING_KEY,
         algorithm="RS256",
-        headers={"kid": KEY_ID},
+        headers={"kid": key_id},
     )

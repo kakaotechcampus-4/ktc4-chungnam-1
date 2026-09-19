@@ -136,14 +136,11 @@ class GoogleIdTokenVerifier:
         return payload
 
     async def _signing_key(self, key_id: str) -> jwt.PyJWK:
+        # `_key_set_for` 는 캐시에 `key_id` 가 없으면 이미 한 번 `_refresh` 한다.
+        # 여기서 다시 `_refresh` 하면 같은 요청에서 JWKS 를 두 번 조회하게 되므로
+        # 추가 조회 없이 그 결과로만 판단하고, 그래도 없으면 통과시키지 않고 거부한다.
         key_set = await self._key_set_for(key_id)
         for key in key_set.keys:
-            if key.key_id == key_id:
-                return key
-        # 구글이 키를 교체하면 캐시에 없는 `kid` 가 올 수 있다. 한 번만 강제로
-        # 다시 받아 확인하고, 그래도 없으면 통과시키지 않고 거부한다.
-        refreshed = await self._refresh()
-        for key in refreshed.keys:
             if key.key_id == key_id:
                 return key
         raise _invalid("INVALID_ID_TOKEN", "유효하지 않은 구글 토큰입니다.")

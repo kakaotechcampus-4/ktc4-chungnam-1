@@ -118,7 +118,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
 
-아래 동의 목록은 현재 develop 구현의 예시다. 공통 계약과 FE에서는 알림이 선택이지만 BE는 아직 필수로 처리한다. 이를 선택 동의로 고치는 [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)는 미병합이며, 아래 예시를 제품의 확정 동의 기준으로 사용하지 않는다.
+아래 동의 목록은 현재 BE 구현의 예시다. [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 알림 수신을 선택 동의로 옮겨 공통 계약과 FE의 기준에 맞췄다. 알림을 거부해도 필수 동의를 완료하면 계정이 생성된다.
 
 ```json
 {
@@ -127,8 +127,8 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
   "registrationToken": "...",
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
-  "requiredConsents": ["serviceData", "sensitiveData", "pushNotification"],
-  "optionalConsents": ["serviceImprovement"]
+  "requiredConsents": ["serviceData", "sensitiveData"],
+  "optionalConsents": ["serviceImprovement", "pushNotification"]
 }
 ```
 

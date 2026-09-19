@@ -9,7 +9,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 | 항목 | 현재 계약 또는 목 화면 | 적용할 기준과 남은 일 |
 | --- | --- | --- |
-| 알림 동의 | 공통 계약과 FE는 선택, BE develop은 아직 필수 | [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)의 선택 동의 보완은 미병합. 아래 계약을 기준으로 통합 검증 필요 |
+| 알림 동의 | 공통 계약, FE와 BE 모두 선택 | [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 BE 규칙과 회귀 테스트를 맞춤. 실제 앱 로그인 연동 검증은 PR #50의 후속 작업 |
 | 사진 전송 | ProfilePhoto 절에서 서버 요청 제외 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)은 동의한 원본의 임시 처리를 허용. 업로드 요청과 삭제 상태 계약은 별도 설계 필요 |
 | 카드 수와 선택 | 12장 생성, 9장 제시와 3장 보충, 보호자 선택으로 명시 | [PM 미결 항목](../pm/README.md#검토-중인-제품-결정)과 달라 확정 여부 확인 필요. 이번 정리에서 수치와 선택 규칙은 변경하지 않음 |
 | 이미지 출력 | 단어 태그와 acceptedTags | 태그, 설명과 결합 출력 비교 중. 확정 후 계약과 화면을 함께 변경 |
