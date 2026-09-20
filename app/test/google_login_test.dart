@@ -16,23 +16,31 @@ import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
+import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/auth/consent_terms.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
 import 'package:saerok/features/auth/login_screen.dart';
+import 'package:saerok/features/auth/splash_screen.dart';
+import 'package:saerok/features/auth/session_store.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
 
 class _FakeGoogleAuthenticator implements GoogleAuthenticator {
-  _FakeGoogleAuthenticator({this.token, this.failure});
+  _FakeGoogleAuthenticator({this.token, this.failure, this.silentToken});
 
   /// `null` 이면 사용자가 취소한 경우다.
   final String? token;
 
   final AuthFailure? failure;
 
+  /// 무음 로그인이 돌려줄 ID 토큰. `null` 이면 고른 계정이 없는 경우다.
+  final String? silentToken;
+
   int calls = 0;
+  int silentCalls = 0;
+  int signOutCalls = 0;
 
   @override
   Future<String?> idToken() async {
@@ -43,7 +51,43 @@ class _FakeGoogleAuthenticator implements GoogleAuthenticator {
   }
 
   @override
-  Future<void> signOut() async {}
+  Future<String?> silentIdToken() async {
+    silentCalls++;
+    return silentToken;
+  }
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls++;
+  }
+}
+
+/// 단말 저장소 대신 쓴다. 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서
+/// 돌지 않는다.
+class _FakeSessionStore implements SessionStore {
+  _FakeSessionStore([this._session]);
+
+  AuthSession? _session;
+
+  int writes = 0;
+  int clears = 0;
+
+  AuthSession? get stored => _session;
+
+  @override
+  Future<AuthSession?> read() async => _session;
+
+  @override
+  Future<void> write(AuthSession session) async {
+    writes++;
+    _session = session;
+  }
+
+  @override
+  Future<void> clear() async {
+    clears++;
+    _session = null;
+  }
 }
 
 // ── 합성 응답 ───────────────────────────────────────
@@ -122,10 +166,18 @@ Widget _app({
   required GoogleAuthenticator google,
   Widget? home,
   Object? extra,
+  SessionStore? store,
+  String? initialLocation,
 }) {
   final router = GoRouter(
-    initialLocation: home == null ? AppRoutes.login : AppRoutes.googleConsent,
+    initialLocation:
+        initialLocation ??
+        (home == null ? AppRoutes.login : AppRoutes.googleConsent),
     routes: [
+      GoRoute(
+        path: AppRoutes.splash,
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
@@ -158,6 +210,9 @@ Widget _app({
     overrides: [
       authApiProvider.overrideWithValue(api),
       googleAuthenticatorProvider.overrideWithValue(google),
+      // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
+      // 넘기지 않은 화면도 가짜를 쓴다.
+      sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
     ],
     child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
   );
@@ -612,6 +667,284 @@ void main() {
       expect(find.textContaining('시간이 지났어요'), findsOneWidget);
       expect(find.text('로그인으로 돌아가기'), findsOneWidget);
       expect(find.text('처음 오셨네요'), findsNothing, reason: '실패했는데 넘어가면 안 된다');
+    });
+  });
+
+  group('세션 보관', () {
+    testWidgets('로그인에 성공하면 세션을 단말에 보관한다', (tester) async {
+      final store = _FakeSessionStore();
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async => _json(_authenticatedBody(), 200)),
+          ),
+          google: _FakeGoogleAuthenticator(token: 'fake-id-token'),
+          store: store,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(GoogleSignInButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(store.writes, 1, reason: '앱을 다시 켤 때 쓰려면 보관해야 한다');
+      expect(store.stored!.accessToken, 'fake-session-token');
+    });
+
+    test('보관한 값은 그대로 되읽힌다', () {
+      final result = AuthenticatedResult.fromJson(
+        jsonDecode(_authenticatedBody()) as Map<String, dynamic>,
+      );
+      final session = AuthSession.fromResult(
+        result,
+        now: DateTime.utc(2026, 9, 18, 9),
+      );
+
+      final again = AuthSession.fromJson(
+        jsonDecode(jsonEncode(session.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(again.accessToken, session.accessToken);
+      expect(again.tokenType, session.tokenType);
+      expect(again.expiresAt, session.expiresAt);
+      expect(again.account.accountId, session.account.accountId);
+      expect(again.account.displayName, session.account.displayName);
+      expect(again.account.email, isNull, reason: '없는 값을 지어내지 않는다');
+      expect(again.account.consentVersion, session.account.consentVersion);
+    });
+
+    test('절반만 읽어 로그인한 것처럼 넘기지 않는다', () {
+      expect(
+        () => AuthSession.fromJson({'tokenType': 'Bearer'}),
+        throwsA(isA<AuthUnexpectedResponseFailure>()),
+      );
+      expect(
+        () => AuthSession.fromJson({
+          'accessToken': 'fake-session-token',
+          'expiresAt': '2026-09-18T10:00:00Z',
+        }),
+        throwsA(isA<AuthUnexpectedResponseFailure>()),
+      );
+    });
+
+    test('로그아웃하면 보관한 세션과 구글 쪽을 함께 지운다', () async {
+      final store = _FakeSessionStore();
+      final google = _FakeGoogleAuthenticator();
+      final container = ProviderContainer(
+        overrides: [
+          sessionStoreProvider.overrideWithValue(store),
+          googleAuthenticatorProvider.overrideWithValue(google),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(sessionProvider.notifier)
+          .start(
+            AuthenticatedResult.fromJson(
+              jsonDecode(_authenticatedBody()) as Map<String, dynamic>,
+            ),
+          );
+      expect(container.read(sessionProvider), isNotNull);
+
+      await container.read(sessionProvider.notifier).signOut();
+
+      expect(container.read(sessionProvider), isNull);
+      expect(store.stored, isNull, reason: '로그아웃하면 보관한 세션은 지워야 한다');
+      expect(store.clears, 1);
+      expect(
+        google.signOutCalls,
+        1,
+        reason: '다음 로그인에서 계정을 다시 고를 수 있어야 한다',
+      );
+    });
+  });
+
+  group('앱을 다시 켰을 때', () {
+    /// 보관해 둔 세션을 만든다.
+    AuthSession keptSession({Duration remaining = const Duration(hours: 1)}) =>
+        AuthSession(
+          accessToken: 'kept-session-token',
+          tokenType: 'Bearer',
+          expiresAt: DateTime.now().add(remaining),
+          account: AuthAccount.fromJson(
+            (jsonDecode(_authenticatedBody()) as Map<String, dynamic>)['account']
+                as Map<String, dynamic>,
+          ),
+        );
+
+    String accountBody() => jsonEncode(
+      (jsonDecode(_authenticatedBody()) as Map<String, dynamic>)['account'],
+    );
+
+    testWidgets('보관한 세션이 없으면 로그인부터 시작한다', (tester) async {
+      final store = _FakeSessionStore();
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('부를 일이 없다'))),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(find.byType(GoogleSignInButton), findsOneWidget);
+    });
+
+    testWidgets('살아 있는 세션이면 로그인 화면을 거치지 않는다', (tester) async {
+      final store = _FakeSessionStore(keptSession());
+      var asked = 0;
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              asked++;
+              expect(request.url.path, '/auth/me');
+              expect(
+                request.headers['Authorization'],
+                'Bearer kept-session-token',
+              );
+              return _json(accountBody(), 200);
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(asked, 1, reason: '보관한 값만 믿지 않고 서버에 확인한다');
+      expect(find.text('홈 화면'), findsOneWidget);
+    });
+
+    testWidgets('서버가 세션을 거절하면 무음 로그인으로 새로 받는다', (tester) async {
+      final store = _FakeSessionStore(keptSession());
+      final google = _FakeGoogleAuthenticator(silentToken: 'silent-id-token');
+      final paths = <String>[];
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              paths.add(request.url.path);
+              if (request.url.path == '/auth/me') {
+                return _json(_errorBody('UNAUTHORIZED'), 401);
+              }
+              return _json(_authenticatedBody(), 200);
+            }),
+          ),
+          google: google,
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(paths, ['/auth/me', '/auth/google']);
+      expect(google.silentCalls, 1, reason: '로그인 버튼을 다시 누르게 하지 않는다');
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(
+        store.stored!.accessToken,
+        'fake-session-token',
+        reason: '새로 받은 세션을 보관한다',
+      );
+    });
+
+    testWidgets('만료된 세션은 확인하지 않고 바로 새로 받는다', (tester) async {
+      final store = _FakeSessionStore(
+        keptSession(remaining: const Duration(seconds: -1)),
+      );
+      final google = _FakeGoogleAuthenticator(silentToken: 'silent-id-token');
+      final paths = <String>[];
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              paths.add(request.url.path);
+              return _json(_authenticatedBody(), 200);
+            }),
+          ),
+          google: google,
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(paths, ['/auth/google'], reason: '이미 만료됐으므로 확인할 것이 없다');
+      expect(find.text('홈 화면'), findsOneWidget);
+    });
+
+    testWidgets('무음 로그인도 안 되면 보관한 세션을 버리고 로그인으로 보낸다', (tester) async {
+      final store = _FakeSessionStore(
+        keptSession(remaining: const Duration(seconds: -1)),
+      );
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('부를 토큰이 없다'))),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(find.byType(GoogleSignInButton), findsOneWidget);
+      expect(store.stored, isNull, reason: '되살릴 수 없는 세션은 남기지 않는다');
+    });
+
+    testWidgets('서버에 닿지 못해도 만료 전 세션은 버리지 않는다', (tester) async {
+      // 비행기 모드에서 앱을 열었다고 로그인이 풀리면 안 된다. 확인하지
+      // 못했을 뿐 만료된 것은 아니다.
+      final store = _FakeSessionStore(keptSession());
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient(
+              (request) async => throw const SocketException('오프라인'),
+            ),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(store.stored, isNotNull);
+    });
+
+    testWidgets('계정이 사라졌으면 동의 화면으로 보내지 않는다', (tester) async {
+      // 가입은 사용자가 로그인 화면에서 스스로 시작해야 한다(ADR-007).
+      final store = _FakeSessionStore(
+        keptSession(remaining: const Duration(seconds: -1)),
+      );
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async => _json(_consentRequiredBody(), 200)),
+          ),
+          google: _FakeGoogleAuthenticator(silentToken: 'silent-id-token'),
+          store: store,
+          initialLocation: AppRoutes.splash,
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+
+      expect(find.byType(GoogleSignInButton), findsOneWidget);
+      expect(find.text('약관 동의'), findsNothing);
+      expect(store.stored, isNull);
     });
   });
 

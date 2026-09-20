@@ -25,6 +25,14 @@ abstract interface class GoogleAuthenticator {
   /// 띄우지 않는다. 그 밖의 실패는 [AuthGoogleFailure] 로 던진다.
   Future<String?> idToken();
 
+  /// 창을 띄우지 않고 이미 고른 계정으로 ID 토큰을 다시 받는다.
+  ///
+  /// 세션이 만료됐을 때 로그인 버튼을 다시 누르게 하지 않으려고 쓴다. 고른
+  /// 계정이 없거나 조용히 받을 수 없으면 `null` 이다. 사용자가 보는 화면이
+  /// 없는 자리라 실패를 던지지 않고 `null` 로 알린다. 부르는 쪽은 로그인
+  /// 화면부터 시작하면 된다.
+  Future<String?> silentIdToken();
+
   /// 다음 로그인에서 계정을 다시 고를 수 있게 한다.
   Future<void> signOut();
 }
@@ -81,6 +89,30 @@ class GoogleSignInAuthenticator implements GoogleAuthenticator {
       );
     }
     return idToken;
+  }
+
+  @override
+  Future<String?> silentIdToken() async {
+    // 설정이 없으면 서버가 `aud` 를 확인할 수 없다. 조용히 포기한다.
+    if (serverClientId.isEmpty) return null;
+
+    try {
+      await _initialize();
+
+      // 웹의 FedCM 처럼 기다릴 Future 를 주지 않는 플랫폼이 있다. 그때는
+      // 복원을 포기하고 로그인 화면부터 시작한다.
+      final attempt = GoogleSignIn.instance.attemptLightweightAuthentication();
+      if (attempt == null) return null;
+
+      final account = await attempt;
+      final idToken = account?.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) return null;
+      return idToken;
+    } on AuthGoogleFailure {
+      return null;
+    } on GoogleSignInException {
+      return null;
+    }
   }
 
   @override

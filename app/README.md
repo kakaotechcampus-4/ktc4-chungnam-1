@@ -35,6 +35,7 @@
 | Android Gradle Plugin / Kotlin | 9.0.1 / 2.3.20 |
 | 상태 관리 / 화면 이동 | `flutter_riverpod` 3.4.3 / `go_router` 18.0.1 |
 | 구글 로그인 / HTTP | `google_sign_in` 7.2.0 / `http` 1.6.0 |
+| 세션 보관 | `flutter_secure_storage` 11.2.0 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -77,7 +78,7 @@
 
 동의와 프로필 입력 → 대화 카드 선택 → 면회 사진과 녹음 화면 → 보호자 소감 및 평가 → 홈에서 리포트 준비 상태 확인 → 리포트 → 변경 제안 확인. PR #42에서 별도 처리 중 화면을 제거했고, 현재 리포트 생성은 목 타이머로 표시한다. 평가 제출과 변경 제안의 실제 저장은 아직 연결되지 않았다. 화면별 상세 경로는 위 표를 따른다.
 
-알림 수신은 선택이며 거부해도 가입과 기본 기능을 차단하지 않는다. PR #49에서 BE도 같은 선택 동의 기준으로 맞췄다. PR #50에 요청한 약관의 서버 관리와 앱 재실행 시 로그인 복원은 후속 구현이며 현재 완료된 기능으로 보지 않는다.
+알림 수신은 선택이며 거부해도 가입과 기본 기능을 차단하지 않는다. PR #49에서 BE도 같은 선택 동의 기준으로 맞췄다. 앱 재실행 시 로그인 복원과 만료 후 자동 재인증은 아래 "세션 보관"에 구현했으나 실기기 확인 전이다. PR #50에 함께 요청한 약관의 서버 관리는 서버가 약관 본문을 내려주어야 해서 아직 하지 않았다.
 
 ## 구글 로그인
 
@@ -92,6 +93,17 @@
         → status=authenticated   → 세션을 받고 /home
         → status=consentRequired → /login/consent → POST /auth/consent → /onboarding
 
+    앱을 다시 켤 때 (A-1 스플래시)
+    → 보관한 세션 읽기 (없으면 /login)
+    → 만료 전이면 GET /auth/me 로 확인
+        → 200                → /home
+        → 401, 403           → 아래 무음 로그인
+        → 그 밖의 오류, 연결 실패 → 확인만 못 한 것이므로 세션을 두고 /home
+    → 만료됐거나 서버가 거절하면 google_sign_in 무음 로그인으로 새 ID 토큰
+    → POST /auth/google
+        → status=authenticated   → 새 세션을 보관하고 /home
+        → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 /login
+
 구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
@@ -101,6 +113,21 @@
 앱이 보여주는 약관 버전(`consentVersion`)이 서버가 제시한 것과 다르거나, 서버가 앱에 문구가
 없는 항목을 필수로 요구하면 동의를 받지 않는다. 보여주지 않은 문구에 동의를 받는 셈이기 때문이다.
 
+### 세션 보관
+
+세션은 `flutter_secure_storage`에 둔다(안드로이드는 키스토어로 감싼 AES-GCM, iOS는 키체인).
+평문 `SharedPreferences`에 두지 않는다. 보관하는 값은 접근 토큰, 만료 시각과 계정이며
+구글 ID 토큰과 등록 토큰은 그때만 쓰고 보관하지 않는다.
+
+서버는 리프레시 토큰을 두지 않으므로, 갱신은 앱이 구글 무음 로그인으로 새 ID 토큰을 받아
+`POST /auth/google`을 다시 부르는 방식이다(`backend/README.md`의 "세션").
+
+서버에 닿지 못했을 때는 만료 전 세션을 버리지 않는다. 확인하지 못했을 뿐 만료된 것은
+아니어서, 여기서 로그인 화면으로 보내면 오프라인에서 앱을 열 수 없다.
+
+로그아웃은 `SessionNotifier.signOut()`이며 보관한 세션과 구글 쪽을 함께 지운다.
+이 동작을 어느 화면의 어느 자리에서 부를지는 아직 정하지 않았다.
+
 ### 코드 구성
 
 | 파일 | 역할 |
@@ -108,6 +135,9 @@
 | `lib/data/auth_api.dart` | 서버 호출과 응답·실패 타입 |
 | `lib/features/auth/google_authenticator.dart` | `google_sign_in`을 감싼 인터페이스 |
 | `lib/features/auth/auth_providers.dart` | provider와 세션 상태 |
+| `lib/features/auth/auth_session.dart` | 세션 값과 보관 형태 |
+| `lib/features/auth/session_store.dart` | 단말 보안 저장소 |
+| `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
 | `lib/features/auth/consent_form.dart` | A-3과 함께 쓰는 동의 항목 UI |
 | `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
@@ -140,7 +170,13 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
   ADR-002가 확정한 값은 `com.saelog.app`이다. Google Cloud Console에 등록하기 전에 맞춰야 한다.
 - **`Account` 계약** — 서버 응답에는 `loginId`가 없고 `email`이 `null`일 수 있어
   `lib/data/models.dart`의 `Account`와 형태가 다르다. 없는 값을 지어내지 않으려고
-  `AuthAccount`를 따로 두었고, 계약이 합쳐지면 하나로 줄인다.
+  `AuthAccount`를 따로 두었고, 계약이 합쳐지면 하나로 줄인다. PR #50 리뷰는 분리를
+  유지해도 된다고 보았으며, 계정 식별 방식과 이메일이 없을 때의 기준을 BE와 맞추는 일이 남았다.
+- **약관의 서버 관리** — 필수 여부는 서버 목록을 따르도록 고쳤으나 문구는 아직
+  `consent_terms.dart`에 있다. 문구만 바뀌어도 앱 업데이트가 필요하고, 약관 버전이 다르면
+  가입을 막는다. 서버가 약관 본문을 내려주는 방법이 정해져야 고칠 수 있다(PR #50 리뷰).
+- **로그아웃 자리** — `SessionNotifier.signOut()`은 있으나 부르는 화면이 없다.
+  어느 화면에 둘지는 제품 결정이라 임의로 넣지 않았다.
 
 ## 담당과 남은 연동
 

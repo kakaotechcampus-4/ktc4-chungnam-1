@@ -67,7 +67,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       switch (result) {
         case AuthenticatedResult():
-          ref.read(sessionProvider.notifier).start(result);
+          // 보관을 마친 뒤 넘어간다. 먼저 넘어가면 앱이 곧바로 꺼졌을 때
+          // 세션이 남지 않는다.
+          await ref.read(sessionProvider.notifier).start(result);
+          if (!mounted) return;
           context.go(AppRoutes.home);
         case ConsentRequiredResult():
           setState(() => _busy = false);

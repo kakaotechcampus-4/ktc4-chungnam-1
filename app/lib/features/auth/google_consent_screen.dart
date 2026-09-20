@@ -136,7 +136,7 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
             },
             displayName: _name.text,
           );
-      ref.read(sessionProvider.notifier).start(result);
+      await ref.read(sessionProvider.notifier).start(result);
       if (!mounted) return;
       // 방금 만들어진 계정이라 프로필부터 만든다.
       context.go(AppRoutes.onboarding);

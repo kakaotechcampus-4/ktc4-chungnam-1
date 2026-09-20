@@ -206,6 +206,17 @@ class AuthAccount {
 
   final String? consentVersion;
   final String? createdAt;
+
+  /// 보관용이다. [AuthAccount.fromJson] 이 그대로 되읽을 수 있게 서버 응답과
+  /// 같은 모양으로 쓴다. 없는 값을 지어내지 않는다.
+  Map<String, Object?> toJson() => {
+    'accountId': accountId,
+    'authProvider': authProvider,
+    'displayName': displayName,
+    'email': email,
+    'consent': {'consentVersion': consentVersion},
+    'createdAt': createdAt,
+  };
 }
 
 // ── 클라이언트 ──────────────────────────────────────
@@ -258,8 +269,46 @@ class AuthApi {
     return AuthenticatedResult.fromJson(body);
   }
 
+  /// 보관한 세션이 아직 살아 있는지 확인하고 계정을 다시 읽는다.
+  ///
+  /// 서버가 401 이나 403 으로 거절하면 [AuthServerFailure] 다. 화면은 그때
+  /// 세션을 버리고 다시 인증한다.
+  Future<AuthAccount> me(String authorizationHeader) async {
+    final body = await _get('/auth/me', authorizationHeader);
+    return AuthAccount.fromJson(body);
+  }
+
   void close() {
     if (_ownsClient) _client.close();
+  }
+
+  Future<Map<String, dynamic>> _get(
+    String path,
+    String authorizationHeader,
+  ) async {
+    final http.Response response;
+    try {
+      response = await _client
+          .get(
+            Uri.parse('$_baseUrl$path'),
+            headers: {'Authorization': authorizationHeader},
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw const AuthNetworkFailure();
+    } on http.ClientException {
+      throw const AuthNetworkFailure();
+    } on SocketException {
+      throw const AuthNetworkFailure();
+    }
+
+    if (response.statusCode >= 400) throw _serverFailure(response);
+
+    final decoded = _decode(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const AuthUnexpectedResponseFailure('응답이 객체가 아니다');
+    }
+    return decoded;
   }
 
   Future<Map<String, dynamic>> _post(
