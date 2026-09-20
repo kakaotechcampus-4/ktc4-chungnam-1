@@ -14,6 +14,7 @@ import 'consent_terms.dart';
 class ConsentRow extends StatelessWidget {
   const ConsentRow({
     required this.term,
+    required this.required,
     required this.checked,
     required this.onChanged,
     required this.onDetails,
@@ -21,6 +22,15 @@ class ConsentRow extends StatelessWidget {
   });
 
   final ConsentTerm term;
+
+  /// 이 화면에서 필수로 취급할 항목인지.
+  ///
+  /// 항목을 정의한 [ConsentTerm.required] 대신 화면이 넘긴 값을 쓴다. 구글
+  /// 동의 화면은 서버가 준 `requiredConsents` 를 넘기고, 아직 서버에 보내지
+  /// 않는 A-3 회원가입은 [ConsentTerm.required] 를 그대로 넘긴다. 표시와
+  /// 제출 판정이 갈리지 않도록 한 곳에서 받는다.
+  final bool required;
+
   final bool checked;
   final ValueChanged<bool?> onChanged;
   final VoidCallback onDetails;
@@ -59,10 +69,10 @@ class ConsentRow extends StatelessWidget {
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: term.required ? '[필수] ' : '[선택] ',
+                        text: required ? '[필수] ' : '[선택] ',
                         style: AppTypography.body.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: term.required
+                          color: required
                               ? AppColors.danger
                               : AppColors.textSub,
                         ),

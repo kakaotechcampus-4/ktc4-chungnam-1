@@ -142,6 +142,8 @@ class _SignupScreenState extends State<SignupScreen> {
             for (final term in consentTerms) ...[
               ConsentRow(
                 term: term,
+                // A-3 은 아직 서버에 보내지 않아 앱 상수를 그대로 쓴다.
+                required: term.required,
                 checked: _agreed.contains(term.key),
                 onChanged: (value) => _toggle(term.key, value),
                 onDetails: () => showConsentDetails(context, term),

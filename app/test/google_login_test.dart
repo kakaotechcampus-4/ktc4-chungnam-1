@@ -65,14 +65,18 @@ String _authenticatedBody({String displayName = '보호자'}) => jsonEncode({
   },
 });
 
-String _consentRequiredBody({String version = consentVersion}) => jsonEncode({
+String _consentRequiredBody({
+  String version = consentVersion,
+  List<String> required = const ['serviceData', 'sensitiveData'],
+  List<String> optional = const ['pushNotification', 'serviceImprovement'],
+}) => jsonEncode({
   'schemaVersion': 1,
   'status': 'consentRequired',
   'registrationToken': 'fake-registration-token',
   'expiresIn': 600,
   'consentVersion': version,
-  'requiredConsents': ['serviceData', 'sensitiveData'],
-  'optionalConsents': ['pushNotification', 'serviceImprovement'],
+  'requiredConsents': required,
+  'optionalConsents': optional,
 });
 
 String _errorBody(String errorCode, {bool retryable = false}) => jsonEncode({
@@ -83,11 +87,23 @@ String _errorBody(String errorCode, {bool retryable = false}) => jsonEncode({
   'retryable': retryable,
 });
 
-ConsentRequiredResult _pending({String version = consentVersion}) =>
-    ConsentRequiredResult.fromJson(
-      jsonDecode(_consentRequiredBody(version: version))
-          as Map<String, dynamic>,
-    );
+ConsentRequiredResult _pending({
+  String version = consentVersion,
+  List<String> required = const ['serviceData', 'sensitiveData'],
+  List<String> optional = const ['pushNotification', 'serviceImprovement'],
+}) => ConsentRequiredResult.fromJson(
+  jsonDecode(
+        _consentRequiredBody(
+          version: version,
+          required: required,
+          optional: optional,
+        ),
+      )
+      as Map<String, dynamic>,
+);
+
+/// 동의 항목의 체크박스 자리. 전체 동의가 뒤에 하나 더 붙는다.
+int _rowOf(String key) => consentTerms.indexWhere((term) => term.key == key);
 
 AuthApi _api(MockClient client) =>
     AuthApi(baseUrl: 'http://api.test', client: client);
@@ -380,6 +396,136 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(sent!['displayName'], '테스트보호자');
+    });
+
+    testWidgets('필수 여부는 앱 상수가 아니라 서버가 준 목록을 따른다', (tester) async {
+      // 앱 상수는 알림 수신을 선택으로 둔다. 서버가 필수로 주면 서버를 따라야
+      // 한다. 앱이 제 상수를 보고 제출하면 서버가 422 로 거절한다.
+      _tallScreen(tester);
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              fail('서버가 필수로 준 항목 없이 보내지 않는다');
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          home: const SizedBox.shrink(),
+          extra: _pending(
+            required: const ['serviceData', 'sensitiveData', 'pushNotification'],
+            optional: const ['serviceImprovement'],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 앱 상수 기준의 필수 둘만 수락한다.
+      await tester.tap(find.byType(Checkbox).at(_rowOf('serviceData')));
+      await tester.pump();
+      await tester.tap(find.byType(Checkbox).at(_rowOf('sensitiveData')));
+      await tester.pump();
+
+      await tester.tap(find.widgetWithText(FilledButton, '동의하고 시작하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('필수 항목에 모두 동의해야 가입할 수 있어요.'), findsOneWidget);
+    });
+
+    testWidgets('서버가 선택으로 준 항목은 없어도 제출한다', (tester) async {
+      // 앱 상수는 건강 민감정보를 필수로 둔다. 서버가 선택으로 내리면 그것만
+      // 빼고도 가입이 되어야 한다.
+      _tallScreen(tester);
+      Map<String, dynamic>? sent;
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              sent = jsonDecode(request.body) as Map<String, dynamic>;
+              return _json(_authenticatedBody(), 200);
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          home: const SizedBox.shrink(),
+          extra: _pending(
+            required: const ['serviceData'],
+            optional: const [
+              'sensitiveData',
+              'pushNotification',
+              'serviceImprovement',
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(Checkbox).at(_rowOf('serviceData')));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '동의하고 시작하기'));
+      await tester.pumpAndSettle();
+
+      expect(sent!['consents'], {
+        'serviceData': true,
+        'sensitiveData': false,
+        'pushNotification': false,
+        'serviceImprovement': false,
+      }, reason: '계약의 네 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
+      expect(find.text('처음 오셨네요'), findsOneWidget);
+    });
+
+    testWidgets('필수 표시도 서버 목록을 따른다', (tester) async {
+      _tallScreen(tester);
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('제출하지 않는다'))),
+          google: _FakeGoogleAuthenticator(),
+          home: const SizedBox.shrink(),
+          extra: _pending(
+            required: const ['serviceData'],
+            optional: const [
+              'sensitiveData',
+              'pushNotification',
+              'serviceImprovement',
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('[필수]', findRichText: true),
+        findsOneWidget,
+        reason: '서버가 하나만 필수로 주면 화면에도 하나만 필수로 보여야 한다',
+      );
+    });
+
+    testWidgets('서버가 앱에 없는 항목을 필수로 요구하면 동의를 받지 않는다', (tester) async {
+      // 문구를 보여줄 수 없으면 동의를 받을 수도 없다. 약관 버전이 다를 때와
+      // 같은 이유로 막되, 무엇이 달라졌는지 구분되게 다른 문구를 쓴다.
+      _tallScreen(tester);
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(
+            MockClient((request) async {
+              fail('보여주지 않은 항목에 동의를 받아 보내지 않는다');
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          home: const SizedBox.shrink(),
+          extra: _pending(
+            required: const ['serviceData', 'sensitiveData', 'locationData'],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Checkbox), findsNothing);
+      expect(find.textContaining('동의 항목이 바뀌었어요'), findsOneWidget);
+      expect(find.textContaining('약관이 새로 바뀌었어요'), findsNothing);
+      expect(find.text('로그인으로 돌아가기'), findsOneWidget);
     });
 
     testWidgets('서버가 다른 약관 버전을 제시하면 동의를 받지 않는다', (tester) async {

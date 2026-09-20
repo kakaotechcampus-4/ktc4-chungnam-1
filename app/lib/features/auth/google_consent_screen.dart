@@ -4,7 +4,10 @@
 /// 계정이 없고, 여기서 필수 동의를 제출해야 계정과 동의 이력이 함께 만들어진다
 /// (ADR-007). 중간에 나가면 계정은 남지 않는다.
 ///
-/// 보여주는 문구는 A-3 회원가입과 같은 `consent_terms.dart` 를 쓴다.
+/// 보여주는 문구는 A-3 회원가입과 같은 `consent_terms.dart` 를 쓴다. 다만 어떤
+/// 항목이 필수인지는 앱 상수가 아니라 `POST /auth/google` 이 준
+/// `requiredConsents` 로 판단한다. 서버가 거절 기준을 갖고 있으므로 같은 곳을
+/// 본다(PR #50 리뷰).
 library;
 
 import 'package:flutter/material.dart';
@@ -48,8 +51,36 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
   /// 이때는 보여주지 않은 문구에 동의를 받는 셈이라 제출하지 않는다.
   bool get _versionMismatch => widget.pending.consentVersion != consentVersion;
 
+  /// 서버가 필수로 요구한 항목의 키.
+  ///
+  /// 필수 여부는 `consent_terms.dart` 의 [ConsentTerm.required] 가 아니라 이
+  /// 목록으로 판단한다. 앱과 서버가 따로 관리하면 어긋날 수 있고, 어긋나면
+  /// 서버가 422 `REQUIRED_CONSENT_MISSING` 으로 거절한다. 판단 기준을 서버
+  /// 한곳에 둔다(PR #50 리뷰).
+  Set<String> get _requiredKeys => widget.pending.requiredConsents.toSet();
+
+  /// 서버가 필수로 요구했으나 앱에 문구가 없는 항목.
+  ///
+  /// 문구를 보여줄 수 없으면 동의를 받을 수도 없다. 약관 버전이 다를 때와
+  /// 같은 이유로 제출하지 않고 업데이트를 안내한다.
+  Iterable<String> get _unknownRequired {
+    final known = consentTerms.map((term) => term.key).toSet();
+    return _requiredKeys.where((key) => !known.contains(key));
+  }
+
+  /// 이 화면을 띄울 수 없는 상태다.
+  bool get _cannotShow => _versionMismatch || _unknownRequired.isNotEmpty;
+
+  /// 막은 이유를 알린다. 어느 항목이 문제인지는 사용자가 할 수 있는 일이
+  /// 아니므로 드러내지 않고 업데이트만 안내한다.
+  String get _cannotShowMessage => _versionMismatch
+      ? '약관이 새로 바뀌었어요. 앱을 업데이트한 뒤 다시 시도해주세요.'
+      : '동의 항목이 바뀌었어요. 앱을 업데이트한 뒤 다시 시도해주세요.';
+
+  bool _isRequired(ConsentTerm term) => _requiredKeys.contains(term.key);
+
   bool get _requiredAgreed => consentTerms
-      .where((term) => term.required)
+      .where(_isRequired)
       .every((term) => _agreed.contains(term.key));
 
   bool get _allAgreed => _agreed.length == consentTerms.length;
@@ -122,8 +153,7 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
   @override
   Widget build(BuildContext context) {
     final failure = _failure;
-    final restart =
-        _versionMismatch || (failure != null && needsRestart(failure));
+    final restart = _cannotShow || (failure != null && needsRestart(failure));
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -143,8 +173,8 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
             ),
             const SizedBox(height: AppSpacing.section),
 
-            if (_versionMismatch) ...[
-              const AuthNotice(message: '약관이 새로 바뀌었어요. 앱을 업데이트한 뒤 다시 시도해주세요.'),
+            if (_cannotShow) ...[
+              AuthNotice(message: _cannotShowMessage),
               const SizedBox(height: AppSpacing.xl),
             ] else ...[
               AppTextField(
@@ -165,6 +195,7 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
               for (final term in consentTerms) ...[
                 ConsentRow(
                   term: term,
+                  required: _isRequired(term),
                   checked: _agreed.contains(term.key),
                   onChanged: (value) => _toggle(term.key, value),
                   onDetails: () => showConsentDetails(context, term),
