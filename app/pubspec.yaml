@@ -69,8 +69,8 @@ flutter:
   assets:
     - assets/mock/
     - assets/images/
-    # 구글이 배포한 로그인 버튼 이미지다. 쓰는 것 하나만 담는다.
-    # 원본 묶음(assets/signin-assets/)에는 쓰지 않는 크기와 색이 함께 있다.
+    # 구글이 배포한 로그인 버튼 이미지다. 출처와 남긴 이유는
+    # assets/signin-assets/README.md 에 있다.
     - assets/signin-assets/Android/png@4x/light/android_light_rd_na@4x.png
 
   # An image asset can refer to one or more resolution-specific "variants", see

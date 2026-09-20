@@ -95,8 +95,11 @@
 구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
-앱이 보여주는 약관 버전(`consentVersion`)이 서버가 제시한 것과 다르면 제출하지 않는다.
-보여주지 않은 문구에 동의를 받는 셈이기 때문이다.
+어떤 항목이 필수인지는 서버가 준 `requiredConsents`로 판단한다. 앱 상수로 따로 판단하면
+서버의 거절 기준과 어긋날 수 있어 한곳을 본다. 문구는 아직 `consent_terms.dart`에 있다.
+
+앱이 보여주는 약관 버전(`consentVersion`)이 서버가 제시한 것과 다르거나, 서버가 앱에 문구가
+없는 항목을 필수로 요구하면 동의를 받지 않는다. 보여주지 않은 문구에 동의를 받는 셈이기 때문이다.
 
 ### 코드 구성
 
@@ -109,6 +112,7 @@
 | `lib/features/auth/consent_form.dart` | A-3과 함께 쓰는 동의 항목 UI |
 | `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
 | `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
+| `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
 
 화면은 provider만 보고 SDK나 서버를 직접 부르지 않는다. 테스트는 `authApiProvider`와
 `googleAuthenticatorProvider`를 override한다(ADR-005). 확인 내용은 `test/google_login_test.dart`에 있다.
