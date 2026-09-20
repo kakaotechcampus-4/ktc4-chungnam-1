@@ -114,7 +114,9 @@ class _Body extends StatelessWidget {
 
   /// `2026-08-30T12:19:30+09:00` 를 `2026년 8월 30일 (일) 오후 12시 19분` 로 바꾼다.
   static String _formatDateTime(String iso) {
-    final dt = DateTime.parse(iso);
+    // 계약의 시각은 오프셋을 달고 온다. DateTime.parse 는 이를 UTC 로 바꾸므로
+    // KST 로 되돌려 문자열에 적힌 시각과 맞춘다.
+    final dt = DateTime.parse(iso).toUtc().add(const Duration(hours: 9));
     const weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
     final weekday = weekdayNames[dt.weekday - 1];
     final isPm = dt.hour >= 12;
