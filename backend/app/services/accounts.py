@@ -18,10 +18,9 @@ from app.core.errors import AppError
 REQUIRED_CONSENTS: tuple[str, ...] = (
     "serviceData",
     "sensitiveData",
-    "pushNotification",
 )
 # 거부해도 계정을 만드는 선택 동의 항목.
-OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement",)
+OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement", "pushNotification")
 
 
 @dataclass(frozen=True)

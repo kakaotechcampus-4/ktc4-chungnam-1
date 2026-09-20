@@ -1,9 +1,25 @@
 # 공통 데이터 계약
 
-- 상태: v0.1, FE, AI와 BE가 함께 사용하는 기준
+- 상태: v0.1, 현재 목 화면과 합성 데이터의 기준. 실제 저장과 모델 연동에 필요한 미결 항목 포함
 - 아래 예시는 모두 합성 데이터다. 구현 과정에서 변경할 수 있지만 필드와 enum 변경은 세 영역이 공동 검토한다.
 
-<br>
+## 현재 적용 범위
+
+PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Account의 `loginId`를 `authProvider`로 바꾸고 nullable `email`을 반영했다. 계정 목 데이터와 FE 파싱도 같은 변경을 따르며, 아래의 나머지 차이는 실제 연동 전에 FE, AI, BE와 PM이 함께 맞춰야 한다.
+
+| 항목 | 현재 계약 또는 목 화면 | 적용할 기준과 남은 일 |
+| --- | --- | --- |
+| 알림 동의 | 공통 계약, FE와 BE 모두 선택 | [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 BE 규칙과 회귀 테스트를 맞춤. 실제 앱 로그인 연동 검증은 PR #50의 후속 작업 |
+| 사진 전송 | ProfilePhoto 절에서 서버 요청 제외 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)은 동의한 원본의 임시 처리를 허용. 업로드 요청과 삭제 상태 계약은 별도 설계 필요 |
+| 카드 수와 선택 | 12장 생성, 9장 제시와 3장 보충, 보호자 선택으로 명시 | [PM 미결 항목](../pm/README.md#검토-중인-제품-결정)과 달라 확정 여부 확인 필요. 이번 정리에서 수치와 선택 규칙은 변경하지 않음 |
+| 이미지 출력 | 단어 태그와 acceptedTags | 태그, 설명과 결합 출력 비교 중. 확정 후 계약과 화면을 함께 변경 |
+| 피보호자 동의 | 본인 확인 필드만 존재 | 대리 동의의 자격과 확인 절차는 법률 검토 필요 |
+| 저장과 상태 전이 | 값 정의는 있으나 영속 저장 미연결. 단말 중심 필드가 남아 있음 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)의 서버 중심 방향에 맞춰 [이슈 18](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/18)에서 저장 항목, 단말 보관 범위, 접근 권한, 기간, 삭제와 갱신 주체 합의 |
+| 직접 식별정보 | Profile의 `localOnly`는 서버 요청에서 제외 | 현행 제한 유지. 서버 중심 방향만으로 전송하지 않으며 필드별 필요성, 동의와 접근 범위 검토 후 별도 계약 변경 |
+| 보호자 평가 | PR #42로 미사용, 미응답과 중립 평가를 구분하는 화면 및 계약 반영 | 미사용을 비선호로 반영할지와 DB null 허용, 회차별 조회는 공동 확인 필요 |
+| 리포트 | 일기형 요약과 카드별 요약 | 테크스펙의 관찰값과 계산 불가 이유를 어떤 필드로 전달할지 조율 |
+
+공통 규칙과 [객체 목록](#객체와-담당)에서 필요한 항목으로 이동한다. [결정 대기 항목](#결정-대기-항목)의 카드 생성, STT와 주제 갱신은 아직 완성된 처리 계약이 아니다.
 
 ## 공통 규칙
 
@@ -25,13 +41,14 @@
 
 ## 화면 흐름
 
-    회원가입 → 로그인
+    구글 로그인 → 필수 동의 확인
     → 기본 정보 입력 → 세부 정보 입력 → 사진 첨부 → 사진 분석 결과 확인
     → 대화 카드 선택 → 면회 사진 촬영
     → 녹음 → 면회 중 대화 카드 → 대화 카드 보충
     → 보호자 평가
     → 리포트 → 변경 사항 확인
 
+- 별도의 회원가입 단계를 두지 않는다. 구글 인증에 성공하면 필수 동의를 확인하고, 동의가 완료될 때 계정과 동의 이력을 함께 만든다. 동의를 거부하거나 중단하면 계정을 만들지 않는다. 현재 구현은 최초 가입 시 동의만 처리하며, 약관 변경 시 재동의는 후속 설계한다.
 - 마이페이지에서 프로필 수정과 리포트 기록 확인을 할 수 있으며 위 흐름과 별개로 언제든 진입 가능하다.
 
 <br>
@@ -42,22 +59,23 @@
 
 | 객체 | 만드는 쪽 | 읽는 쪽 |
 | --- | --- | --- |
-| `Account` | FE | FE |
-| `Profile` | FE | FE, AI |
-| `LifeFact` | FE | FE, AI |
-| `LifeFactCollectionState` | FE | FE |
-| `ProfilePhoto` | FE | FE |
-| `ImageAnalysisCandidate` | AI | FE |
-| `CardGenerationRequest` | FE | AI |
-| `ConversationCard` | AI | FE |
-| `VisitSession` | FE | FE, AI |
-| `VisitPhoto` | FE | FE |
-| `SpeechAnalysisResult` | AI | AI |
-| `CaregiverEvaluation` | FE | AI |
-| `VisitReport` | AI | FE |
-| `ChangeProposal` | AI | FE |
+| [Account](#계정-account) | BE | FE |
+| [Profile](#프로필-profile) | FE | FE, AI |
+| [LifeFact](#확인된-생애-사실-lifefact) | FE | FE, AI |
+| [LifeFactCollectionState](#생애-정보-입력-상태-lifefactcollectionstate) | FE | FE |
+| [ProfilePhoto](#프로필-사진-profilephoto) | FE | FE |
+| [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate) | AI | FE |
+| [CardGenerationRequest](#카드-생성-요청-cardgenerationrequest) | FE | AI |
+| [ConversationCard](#대화-카드-결과-conversationcard) | AI | FE |
+| [VisitSession](#면회-회차-visitsession) | FE | FE, AI |
+| [VisitPhoto](#면회-사진-visitphoto) | FE | FE |
+| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | AI |
+| [CaregiverEvaluation](#보호자-평가-caregiverevaluation) | FE | AI |
+| [VisitReport](#리포트-초안-visitreport) | AI | FE |
+| [ChangeProposal](#변경-제안-changeproposal) | AI | FE |
 
-- 모든 객체의 단말 저장과 로컬 DB 구조는 BE가 소유하며, 저장과 전달 방식은 BE 계약을 따른다.
+- 서버 중심 데이터 관리의 저장 구조와 전달 방식은 BE가 제안하고 FE, AI와 PM이 함께 확인한다. 객체별 저장 항목, 단말 보관 여부와 보관 기간은 아직 확정하지 않았다. 위 표는 현행 목 계약에서 값을 만드는 쪽과 읽는 쪽을 나타내며, 서버 저장 권한이나 API 계약을 확정한 표가 아니다.
+- `Account`는 백엔드가 구글 ID 토큰을 검증하고 필수 동의가 완료될 때 서버에서 만든다. FE는 로그인과 동의 화면을 제공하고 결과를 읽는다.
 - `selectionStatus`와 `reviewStatus`처럼 사용자가 확인해서 바꾸는 필드는 AI가 만든 객체라도 FE가 갱신한다.
 
 <br>
@@ -69,9 +87,9 @@
 {
   "schemaVersion": 1,
   "accountId": "account_demo_001",
-  "loginId": "demo_user",
+  "authProvider": "google",
   "displayName": "보호자",
-  "email": "demo@example.com",
+  "email": null,
   "consent": {
     "consentVersion": "2026-09-06",
     "serviceData": {
@@ -95,12 +113,17 @@
 }
 ```
 
+- 인증은 구글 소셜 로그인을 사용하며 백엔드가 ID 토큰을 직접 검증하는 방향에 PM이 동의했다. 개인정보 저장 항목 등 [ADR-007](decisions/ADR-007-google-social-login.md)의 검토안은 별도로 남아 있다. 아이디와 비밀번호는 받지 않으며, 계정은 구글 인증 뒤 필수 동의가 완료될 때 동의 이력과 함께 만들어진다.
+- `authProvider`의 값은 현재 `google` 하나다. 다른 제공자를 더하는 것은 계약 변경으로 본다.
+- `displayName`과 `email`의 영구 저장 범위는 검토 중이다. PM은 이메일과 구글 계정 이름을 저장하지 않는 안을 제안했고 BE와 FE가 구현 영향을 확인한다([ADR-007](decisions/ADR-007-google-social-login.md)). 현재 서버의 기본 설정에서는 사용자 입력 표시 이름이 없으면 `보호자`를 사용하고 `email`은 `null`로 반환한다. `displayName`에는 실명이 들어올 수 있으므로 사용자가 수정할 수 있어야 한다.
+- `email`은 문자열 또는 `null`이다. 서버가 값을 저장하지 않거나 제공하지 않는 경우 `null`로 보내며, FE는 이를 임의의 주소나 빈 문자열로 채우지 않는다. 누락된 `email`도 FE에서 없는 값으로 읽는다. nullable 응답을 지원하는 변경이며 이메일 미저장 정책을 확정한 것은 아니다.
 - `serviceData`(개인정보 수집 동의)와 `sensitiveData`(민감정보 수집 동의)는 필수 동의 사항이며 거부하면 가입을 진행하지 않는다.
 - 나머지 둘(`serviceImprovement` 데이터를 서비스 개선에 활용, `pushNotification` 알림 수신)은 선택 동의이며 거부해도 가입과 핵심 기능을 차단하지 않는다.
-- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.status`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
-- 비밀번호와 인증 토큰은 이 계약에 포함하지 않는다.
+- `pushNotification`을 거부한 계정에는 푸시 알림을 보내지 않는다. 리포트 도착은 `VisitReport.reportStatus`가 `ready`가 될 때 홈 화면에 표시되므로, 알림을 거부해도 리포트를 받아볼 수 있다.
+- 앱은 구글에서 받은 ID 토큰을 백엔드로 보내고, 백엔드가 구글 공개키로 검증한 뒤 기존 계정을 찾거나 필수 동의 완료 시 계정을 만든다. 제공자 식별자(구글 `sub`), 비밀번호와 인증 토큰은 이 계정 객체에 포함하지 않는다.
+- PR 50의 약관 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 후속 구현 요청이다. 이 계정 계약 변경만으로 해당 기능이 완료되지는 않는다.
 
-**없어도 되는 값** — 선택 동의 항목의 `grantedAt`
+**없어도 되는 값** — `email`, 선택 동의 항목의 `grantedAt`
 
 <br>
 
@@ -129,7 +152,7 @@
 }
 ```
 
-- `localOnly`는 단말에만 두며 외부 AI 요청과 서버 임시 처리 요청에 포함하지 않는다.
+- 현행 계약의 `localOnly`는 단말에만 두며 외부 AI 요청과 서버 임시 처리 요청에 포함하지 않는다. 서버 중심 관리에 필요한 필드별 범위가 합의되고 계약이 변경되기 전에는 이 제한을 유지한다.
 - `ageRange`는 `birthDate`에서 계산한다.
 - `condition.stage` 값은 `mildCognitiveImpairment`, `mildDementia`, `unknown`이다.
 
@@ -220,7 +243,7 @@
 }
 ```
 
-- 사진 원본은 단말에 두며 외부 AI 요청과 서버 임시 처리 요청에 포함하지 않는다.
+- 이 객체는 사진 원본의 단말 보관 정보를 표현하며 원본 업로드 요청이 아니다. 동의 범위의 서버 임시 처리는 ADR-006을 따르고, 전송과 만료 및 삭제 상태를 전달할 별도 계약은 아직 정하지 않았다.
 - `acceptedTags`는 사용자가 수락한 태그이며 갤러리에서 사진과 함께 표시한다.
 
 **없어도 되는 값** — `acceptedTags`
@@ -561,22 +584,7 @@
 
 ## 변경 절차
 
-다음 객체의 이름과 enum은 첫 구현 전에 FE, AI와 BE가 함께 확인한다.
-
-1. `Account`
-2. `Profile`
-3. `LifeFact`
-4. `LifeFactCollectionState`
-5. `ProfilePhoto`
-6. `ImageAnalysisCandidate`
-7. `CardGenerationRequest`
-8. `ConversationCard`
-9. `VisitSession`
-10. `VisitPhoto`
-11. `SpeechAnalysisResult`
-12. `CaregiverEvaluation`
-13. `VisitReport`
-14. `ChangeProposal`
+[객체 목록](#객체와-담당)의 이름과 enum은 연동 전에 FE, AI, BE가 함께 확인한다.
 
 - 필드 추가와 enum 값 추가도 계약 변경으로 본다. 한 영역이 단독으로 변경하지 않는다.
 - 계약을 변경하면 `mock/`의 합성 데이터를 같은 PR에서 함께 갱신한다.
@@ -592,7 +600,8 @@
 
 | 항목 | 무엇이 미정인가 | 확인 주체 |
 | --- | --- | --- |
-| 계정과 로그인 | 계정 기능을 넣을지, 넣는다면 서버를 사용할지 정해지지 않았다. | PM, BE |
+| 계정과 로그인 | 구글 로그인 API는 PR #47에 반영됐다. ADR-007과 공통 Account는 `authProvider`, nullable 이메일을 설명한다. 저장 항목과 DB 연결, 앱 로그인 유지는 후속 검토 및 구현이다. | PM, BE, FE |
+| 서버 중심 데이터 관리 | 데이터별 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 구현을 정해야 한다. 원본 임시 처리의 최대 24시간 제한은 유지한다. | BE 제안, FE, AI, PM 공동 확인 |
 | 피보호자 대리 동의 | 현재 계약은 피보호자 본인의 동의만 담는다. 병세가 진행되어 본인이 동의하기 어려운 경우(ex. 음성 녹음 동의 등) 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
 | 카드 생성 로직 | 프로필의 어떤 값을 모델에 넣을지, 수락한 이미지 태그를 어떻게 사용할지가 함께 걸려 있다. `CardGenerationRequest`의 형식은 이 결정 이후에 확정한다. | AI |
 | 주제 관리 방식 | 다음 회차에 어떤 주제를 더 자주 다룰지 계산하는 방법과, `topicKey`를 어떻게 생성할지가 함께 걸려 있다. 키가 매번 달라지면 회차별 반응 이력이 쌓이지 않는다. | AI |
