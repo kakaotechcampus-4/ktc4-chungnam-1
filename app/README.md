@@ -65,10 +65,18 @@
 | `/report/:reportId` | 리포트 | G-1 |
 | `/report/:reportId/changes` | 변경 사항 확인 | G-2 |
 | `/profile` | 프로필 설정 | MYPAGE |
+| `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |
-| `/album` | 일대기 | H, 기획 보류 안내만 표시 |
+| `/notifications` | 알림 | 설계 없음 |
+| `/album` | 일대기 | H, 정식 설계 아님 |
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
+
+`/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
+
+`/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
+
+`/album`은 원래 기획 보류(H)였으나, 피그마가 아니라 팀에서 받은 별도 목업을 기준으로 mock 데이터로 먼저 만들었다. `LifeFact.lifeStage`(이야기를 인생 시기별로 묶는 필드)는 이번에 새로 추가된 값이라, 이 값을 누가 정하는지(보호자 선택 / AI 추정)는 아직 PM·AI 확인이 필요하다(`docs/architecture/data-contracts.md` 참고).
 
 ## 현재 사용자 흐름
 

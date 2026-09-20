@@ -226,6 +226,7 @@ void main() {
         'category': 'hobby',
         'text': '낚시를 좋아하셨다',
         'sourceType': 'importedFromSomewhere',
+        'createdAt': '2026-08-21T12:10:00+09:00',
       });
 
       // 계약의 값은 caregiverVoiceInput, caregiverTextInput, visitConfirmed 다.

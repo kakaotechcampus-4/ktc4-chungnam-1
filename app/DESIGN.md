@@ -143,6 +143,7 @@
 | `patient.webp` | 프로필 설정 상단 원형 사진 |
 | `family.webp` | 세부 정보 입력에서 첨부하는 가족 사진 |
 | `visitation.webp` | 면회 인증샷 |
+| `album-pouch.webp` | 일대기(H) 이야기 보따리 |
 
 - 모두 `app/assets/images/`에 두고 `pubspec.yaml`에 선언한다.
 - 형식은 **WebP**를 쓴다. 파일 이름은 영문 소문자와 하이픈만 쓴다.
