@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     )
     service_name: str = "saerok-backend"
     service_version: str = "0.1.0"
+    ai_server_url: str = "http://127.0.0.1:8001"
+    ai_server_timeout_seconds: float = 600.0
 
 
 @lru_cache

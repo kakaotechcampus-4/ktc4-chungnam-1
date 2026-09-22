@@ -67,16 +67,25 @@ uv sync
 uv run python --version
 ```
 
-최초 환경설정 후 다음과 같이 서버를 활성화한다.
-```powershell
+최초 환경설정 후 실행 스크립트로 서버를 활성화한다.
+```bash
 cd backend
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-access-log
+./scripts/run_backend.sh
+```
+
+기본값은 백엔드 `127.0.0.1:8000`, AI 서버 `127.0.0.1:8001`이다. 필요한 경우 실행할 때만
+환경 변수를 덮어쓴다.
+
+```bash
+SAEROK_AI_SERVER_URL=http://192.0.2.10:8001 \
+SAEROK_BACKEND_PORT=8080 \
+./scripts/run_backend.sh
 ```
 
 Android 에뮬레이터 또는 허가된 개발 단말에서 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
 
-```powershell
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+```bash
+SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 ```
 
 테스트는 다음 명령으로 실행한다.
@@ -91,5 +100,34 @@ uv run pytest
 | --- | --- | --- |
 | `GET` | `/health/live` | 프로세스 생존 확인 |
 | `GET` | `/health/ready` | 요청 처리 준비 상태 확인 |
+
+## AI 음성 분석 연동
+
+`POST /api/v1/speech-analyses`는 이미 S3에 업로드된 음성의 Presigned GET URL과 화자 수를 받아
+AI 서버의 `POST /internal/v1/speech-analyses`로 전달한다. 이 API는 현재 S3 업로드나 Presigned URL
+생성을 담당하지 않으며, AI 서버 응답의 스키마와 `analysisId`를 확인한 뒤 결과를 그대로 반환한다.
+현재 단계는 BE가 음성 처리 동의를 이미 확인했다는 전제의 연동 확인용 API이며, 실제 앱 연결 전
+인증과 동의 조회를 앞단에 연결해야 한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "analysis_demo_001",
+  "language": "ko",
+  "speakerCount": 2,
+  "audioSource": {
+    "type": "s3PresignedGet",
+    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
+    "downloadUrlExpiresAt": "2026-09-22T15:10:00+09:00",
+    "sizeBytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dataExpiresAt": "2026-09-22T16:00:00+09:00"
+}
+```
+
+AI 서버 주소는 `SAEROK_AI_SERVER_URL`로 설정하며 기본값은 `http://127.0.0.1:8001`이다. 동기 처리
+시간 제한은 `SAEROK_AI_SERVER_TIMEOUT_SECONDS`로 설정하며 기본값은 600초다. 현재 자동 재시도는
+하지 않고 연결 실패, 시간 초과, AI 오류와 잘못된 응답을 공통 오류 형식으로 반환한다.
 
 로컬 API 문서는 서버 실행 후 `http://127.0.0.1:8000/docs`에서 확인한다. 현재 readiness는 외부 의존성이 없는 골격의 준비 상태만 나타내며, 모델과 저장소가 추가되면 실제 의존성 점검을 연결한다.
