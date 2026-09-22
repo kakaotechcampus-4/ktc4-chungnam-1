@@ -6,6 +6,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_text_field.dart';
+import 'consent_form.dart';
 import 'consent_terms.dart';
 
 /// A-3 회원가입과 동의.
@@ -66,42 +67,6 @@ class _SignupScreenState extends State<SignupScreen> {
     });
   }
 
-  void _showDetails(ConsentTerm term) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.background,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen,
-            0,
-            AppSpacing.screen,
-            AppSpacing.section,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(term.label, style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.md),
-              Text(term.statement, style: AppTypography.body),
-              const SizedBox(height: AppSpacing.xl),
-              for (final line in term.details) ...[
-                Text(line, style: AppTypography.sub),
-                const SizedBox(height: AppSpacing.md),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _name.dispose();
@@ -120,27 +85,10 @@ class _SignupScreenState extends State<SignupScreen> {
       appBar: const AppTopBar(),
       body: ScreenBody(
         scrollable: true,
-        bottom: Column(
-          children: [
-            PrimaryButton(
-              label: '회원가입',
-              // 필수 동의를 모두 수락해야 가입을 진행한다.
-              onPressed: canSubmit ? () => context.go(AppRoutes.onboarding) : null,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('이미 계정이 있으신가요?', style: AppTypography.sub),
-                const SizedBox(width: AppSpacing.sm),
-                AppTextButton(
-                  label: '로그인',
-                  onPressed: () => context.go(AppRoutes.login),
-                ),
-              ],
-            ),
-          ],
-        ),
+        // 가입 버튼과 로그인 안내를 아래에 고정하지 않고 본문과 함께 흘려보낸다.
+        // 입력칸이 넷이라 키보드가 올라오면 남는 높이가 얼마 없는데, 고정 영역이
+        // 156dp 를 가져가 입력칸이 두 개밖에 보이지 않았다. 이 화면은 약관까지
+        // 읽고 내려와야 가입할 수 있어 버튼이 늘 보일 이유도 없다.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -192,13 +140,17 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: AppSpacing.lg),
 
             for (final term in consentTerms) ...[
-              _ConsentRow(
+              ConsentRow(
                 term: term,
+                // A-3 은 아직 서버에 보내지 않아 앱 상수를 그대로 쓴다.
+                required: term.required,
                 checked: _agreed.contains(term.key),
                 onChanged: (value) => _toggle(term.key, value),
-                onDetails: () => _showDetails(term),
+                onDetails: () => showConsentDetails(context, term),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              // 항목 안쪽 간격보다는 넓게 두어 자세히 보기가 어느 항목의
+              // 것인지 읽히게 한다.
+              const SizedBox(height: AppSpacing.xs),
             ],
 
             const Padding(
@@ -227,97 +179,34 @@ class _SignupScreenState extends State<SignupScreen> {
 
             if (_fieldsFilled && !_requiredAgreed) ...[
               const SizedBox(height: AppSpacing.lg),
-              const _RequiredNotice(),
+              const AuthNotice(message: '필수 항목에 모두 동의해야 가입할 수 있어요.'),
             ],
 
+            const SizedBox(height: AppSpacing.xxl),
+
+            PrimaryButton(
+              label: '회원가입',
+              // 필수 동의를 모두 수락해야 가입을 진행한다.
+              onPressed: canSubmit
+                  ? () => context.go(AppRoutes.onboarding)
+                  : null,
+            ),
             const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('이미 계정이 있으신가요?', style: AppTypography.sub),
+                const SizedBox(width: AppSpacing.sm),
+                AppTextButton(
+                  label: '로그인',
+                  onPressed: () => context.go(AppRoutes.login),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: AppSpacing.xxl),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ConsentRow extends StatelessWidget {
-  const _ConsentRow({
-    required this.term,
-    required this.checked,
-    required this.onChanged,
-    required this.onDetails,
-  });
-
-  final ConsentTerm term;
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final VoidCallback onDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Checkbox(
-          value: checked,
-          onChanged: onChanged,
-          activeColor: AppColors.ink,
-          side: const BorderSide(color: AppColors.line, width: 2),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(!checked),
-            behavior: HitTestBehavior.opaque,
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: term.required ? '[필수] ' : '[선택] ',
-                    style: AppTypography.body.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: term.required
-                          ? AppColors.danger
-                          : AppColors.textSub,
-                    ),
-                  ),
-                  TextSpan(text: term.label, style: AppTypography.body),
-                ],
-              ),
-            ),
-          ),
-        ),
-        IconButton(
-          onPressed: onDetails,
-          icon: const Icon(Icons.chevron_right, color: AppColors.textSub),
-          tooltip: '자세히 보기',
-        ),
-      ],
-    );
-  }
-}
-
-class _RequiredNotice extends StatelessWidget {
-  const _RequiredNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.dangerSurface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 22, color: AppColors.danger),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              '필수 항목에 모두 동의해야 가입할 수 있어요.',
-              style: AppTypography.sub.copyWith(color: AppColors.danger),
-            ),
-          ),
-        ],
       ),
     );
   }
