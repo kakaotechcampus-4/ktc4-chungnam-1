@@ -1,0 +1,12 @@
+{
+  "segments": [
+    {"startMs": 0, "endMs": 2300, "speaker": "SPEAKER_00"},
+    {"startMs": 2100, "endMs": 3500, "speaker": "SPEAKER_01"},
+    {"startMs": 3500, "endMs": 4200, "speaker": "SPEAKER_00"}
+  ],
+  "exclusiveSegments": [
+    {"startMs": 0, "endMs": 2200, "speaker": "SPEAKER_00"},
+    {"startMs": 2200, "endMs": 3500, "speaker": "SPEAKER_01"},
+    {"startMs": 3500, "endMs": 4200, "speaker": "SPEAKER_00"}
+  ]
+}

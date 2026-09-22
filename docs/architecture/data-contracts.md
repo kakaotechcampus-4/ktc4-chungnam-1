@@ -35,7 +35,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | 오류 | `errorCode`와 사용자용 `message` 분리 |
 
 - 실제 이름, 직접 식별정보와 로컬 파일 경로는 외부 AI 요청 객체에 포함하지 않는다.
-- 원본 음성과 이미지를 프로젝트 서버에서 임시 처리하는 요청은 동의 상태, 만료시각과 삭제 상태를 포함해야 하며 최대 24시간을 넘기지 않는다.
+- 원본 음성과 이미지는 BE가 처리 동의를 확인한 경우에만 서버 임시 처리를 요청한다. 동의 확인 이력과 삭제 상태는 BE가 관리하며, 요청에는 데이터 만료시각을 포함하고 최대 24시간을 넘기지 않는다.
 
 <br>
 
@@ -69,7 +69,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | [ConversationCard](#대화-카드-결과-conversationcard) | AI | FE |
 | [VisitSession](#면회-회차-visitsession) | FE | FE, AI |
 | [VisitPhoto](#면회-사진-visitphoto) | FE | FE |
-| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | AI |
+| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | BE, AI |
 | [CaregiverEvaluation](#보호자-평가-caregiverevaluation) | FE | AI |
 | [VisitReport](#리포트-초안-visitreport) | AI | FE |
 | [ChangeProposal](#변경-제안-changeproposal) | AI | FE |
@@ -442,9 +442,60 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 ## STT와 화자 처리 결과 (SpeechAnalysisResult)
 
-> **상태: 결정 대기.** STT와 화자 처리 결과 형식은 AI 영역에서 확정한다.
+> **상태: v1 구현.** BE가 동의를 확인한 요청만 AI 서버에 전달하며 동의 이력은 BE가 관리한다.
 
 - 전사문은 화면에 표시하지 않으며 리포트 생성의 입력으로만 사용한다.
+- 입력 음성은 WAV/PCM 16-bit/16kHz/mono 규격으로 고정한다.
+- 운영에서는 S3 Presigned GET URL을 사용하고, `localFile`은 개발과 테스트 환경에서만 허용한다.
+- `SPEAKER_00` 같은 값은 파일 안의 화자 군집 라벨이며 보호자 또는 피보호자 역할을 뜻하지 않는다.
+- 화자를 명확하게 배정할 수 없는 구간의 `speakerLabel`은 `null`이다.
+
+BE에서 AI로 보내는 운영 요청은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "analysis_demo_001",
+  "language": "ko",
+  "speakerCount": 2,
+  "audioSource": {
+    "type": "s3PresignedGet",
+    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
+    "downloadUrlExpiresAt": "2026-09-22T15:10:00+09:00",
+    "sizeBytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dataExpiresAt": "2026-09-22T16:00:00+09:00"
+}
+```
+
+AI에서 BE로 반환하는 성공 응답은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "analysis_demo_001",
+  "language": "ko",
+  "durationMs": 15200,
+  "text": "합성 전사 결과",
+  "segments": [
+    {
+      "startMs": 0,
+      "endMs": 3200,
+      "speakerLabel": "SPEAKER_00",
+      "text": "합성 발화 구간",
+      "words": [
+        {
+          "startMs": 0,
+          "endMs": 800,
+          "text": "합성",
+          "probability": 0.93
+        }
+      ]
+    }
+  ]
+}
+```
 
 <br>
 
@@ -605,4 +656,4 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | 피보호자 대리 동의 | 현재 계약은 피보호자 본인의 동의만 담는다. 병세가 진행되어 본인이 동의하기 어려운 경우(ex. 음성 녹음 동의 등) 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
 | 카드 생성 로직 | 프로필의 어떤 값을 모델에 넣을지, 수락한 이미지 태그를 어떻게 사용할지가 함께 걸려 있다. `CardGenerationRequest`의 형식은 이 결정 이후에 확정한다. | AI |
 | 주제 관리 방식 | 다음 회차에 어떤 주제를 더 자주 다룰지 계산하는 방법과, `topicKey`를 어떻게 생성할지가 함께 걸려 있다. 키가 매번 달라지면 회차별 반응 이력이 쌓이지 않는다. | AI |
-| STT와 화자 처리 결과 형식 | 전사 결과를 어떤 형태로 넘길지, 신뢰도가 낮을 때 어떤 상태로 표시할지 정해지지 않았다. | AI |
+| STT 저신뢰도와 실패 상태 | 성공 응답 형식은 확정했지만 신뢰도가 낮거나 모델 처리가 실패한 작업의 상태와 오류 계약은 정해지지 않았다. | AI, BE |
