@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있다. 실제 STT, VLM과 계정의 DB 영속 저장은 아직 연결되지 않았다.
 
-MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 장비, 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
+MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 현재 RTX 3060 Ti는 개발용이며 시연 장비의 사양과 처리 성능은 추가 실험 후 정한다. 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -69,7 +69,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
 | 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | PM, AI와 GPU 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 운영 | 개발용 RTX 3060 Ti에서 AI와 처리 조건을 측정하고 PM과 시연 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
