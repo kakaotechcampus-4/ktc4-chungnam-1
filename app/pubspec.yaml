@@ -41,6 +41,8 @@ dependencies:
   # 로그인 API 호출. 다른 화면은 아직 목 데이터를 쓴다.
   http: ^1.6.0
   flutter_secure_storage: ^11.2.0
+  record: ^7.1.1
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:

@@ -349,6 +349,7 @@ class VisitSession {
     required this.startedAt,
     this.photoId,
     this.endedAt,
+    this.participantCount,
   });
 
   factory VisitSession.fromJson(Map<String, dynamic> json) => VisitSession(
@@ -359,6 +360,7 @@ class VisitSession {
     photoId: json['photoId'] as String?,
     startedAt: json['startedAt'] as String,
     endedAt: json['endedAt'] as String?,
+    participantCount: json['participantCount'] as int?,
   );
 
   final String sessionId;
@@ -368,6 +370,13 @@ class VisitSession {
   final String? photoId;
   final String startedAt;
   final String? endedAt;
+
+  /// 대화에 함께한 사람 수. 어르신과 보호자를 포함한다.
+  ///
+  /// 녹음을 끝낼 때 보호자에게 확인받는다. 앱이 목소리를 세어 짐작하지 않는다.
+  /// STT 화자 분리 요청의 `speakerCount` 로 그대로 넘어간다. 녹음을 끝내기
+  /// 전에는 `null` 이다.
+  final int? participantCount;
 }
 
 // ── 리포트 ──────────────────────────────────────────

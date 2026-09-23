@@ -10,6 +10,9 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
+import 'package:saerok/features/visit/visit_recorder.dart';
+
+import 'fake_visit_recorder.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +35,11 @@ void main() {
     );
     addTearDown(tester.view.reset);
 
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
+      ],
+    );
     addTearDown(container.dispose);
 
     // 목 데이터는 asset 에서 읽으므로 실제 비동기 처리를 기다린다.
@@ -46,7 +53,7 @@ void main() {
       await container.read(visitControllerProvider.future);
       final visit = container.read(visitControllerProvider.notifier);
       visit.confirmCareRecipient(confirmed: true);
-      visit.startRecording();
+      await visit.startRecording();
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
