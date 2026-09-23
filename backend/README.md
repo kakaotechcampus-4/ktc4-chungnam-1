@@ -19,14 +19,25 @@ uv run python --version
 
 이후 명령은 `backend/`에서 실행한다. 의존성과 가상 환경은 `uv`, 테스트는 `pytest`로 관리한다.
 
-```powershell
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-access-log
+실행 스크립트로 서버를 활성화한다.
+
+```bash
+./scripts/run_backend.sh
+```
+
+기본값은 백엔드 `127.0.0.1:8000`, AI 서버 `127.0.0.1:8001`이다. 필요한 경우 실행할 때만
+환경 변수를 덮어쓴다.
+
+```bash
+SAEROK_AI_SERVER_URL=http://192.0.2.10:8001 \
+SAEROK_BACKEND_PORT=8080 \
+./scripts/run_backend.sh
 ```
 
 Android 에뮬레이터 또는 허가된 개발 단말과 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
 
-```powershell
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+```bash
+SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 ```
 
 ```powershell
@@ -201,3 +212,32 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — ADR-007 의 재검토 조건에 있으며 이 구현에 없다.
+
+## AI 음성 분석 연동
+
+`POST /api/v1/speech-analyses`는 이미 S3에 업로드된 음성의 Presigned GET URL과 화자 수를 받아
+AI 서버의 `POST /internal/v1/speech-analyses`로 전달한다. 이 API는 현재 S3 업로드나 Presigned URL
+생성을 담당하지 않으며, AI 서버 응답의 스키마와 `analysisId`를 확인한 뒤 결과를 그대로 반환한다.
+현재 단계는 BE가 음성 처리 동의를 이미 확인했다는 전제의 연동 확인용 API이며, 실제 앱 연결 전
+인증과 동의 조회를 앞단에 연결해야 한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "analysis_demo_001",
+  "language": "ko",
+  "speakerCount": 2,
+  "audioSource": {
+    "type": "s3PresignedGet",
+    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
+    "downloadUrlExpiresAt": "2026-09-22T15:10:00+09:00",
+    "sizeBytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dataExpiresAt": "2026-09-22T16:00:00+09:00"
+}
+```
+
+AI 서버 주소는 `SAEROK_AI_SERVER_URL`로 설정하며 기본값은 `http://127.0.0.1:8001`이다. 동기 처리
+시간 제한은 `SAEROK_AI_SERVER_TIMEOUT_SECONDS`로 설정하며 기본값은 600초다. 현재 자동 재시도는
+하지 않고 연결 실패, 시간 초과, AI 오류와 잘못된 응답을 공통 오류 형식으로 반환한다.

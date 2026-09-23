@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     )
     service_name: str = "saerok-backend"
     service_version: str = "0.1.0"
+    ai_server_url: str = "http://127.0.0.1:8001"
+    ai_server_timeout_seconds: float = 600.0
     database_url: str | None = None
 
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
