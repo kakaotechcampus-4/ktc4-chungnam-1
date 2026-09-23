@@ -37,6 +37,7 @@ class VisitState {
     required this.careRecipientConfirmed,
     this.recordingPath,
     this.problem,
+    this.participantCount,
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -64,6 +65,12 @@ class VisitState {
 
   /// 녹음이 실패했으면 그 이유다. 성공하면 `null` 이다.
   final VisitRecordingProblem? problem;
+
+  /// 대화에 함께한 사람 수. 계약의 `VisitSession.participantCount` 에 해당한다.
+  ///
+  /// 녹음을 끝낼 때 보호자가 종료 모달에서 확인해 준 값이다. 앱이 목소리를
+  /// 세어 짐작하지 않는다. 확인 전에는 `null` 이다.
+  final int? participantCount;
 
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
@@ -100,6 +107,7 @@ class VisitState {
     bool? careRecipientConfirmed,
     String? recordingPath,
     VisitRecordingProblem? problem,
+    int? participantCount,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -114,6 +122,7 @@ class VisitState {
         careRecipientConfirmed ?? this.careRecipientConfirmed,
     recordingPath: recordingPath ?? this.recordingPath,
     problem: clearProblem ? null : (problem ?? this.problem),
+    participantCount: participantCount ?? this.participantCount,
   );
 }
 
@@ -236,13 +245,22 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 끝내기 버튼뿐 아니라 녹음 화면을 떠날 때도 부른다. 닫지 않으면 WAV 헤더가
   /// 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
   /// 없으면 장치를 건드리지 않는다.
-  Future<void> stopRecording() async {
+  ///
+  /// [participantCount] 는 종료 모달에서 보호자가 확인해 준 사람 수다. 모달을
+  /// 거치지 않고 화면을 떠난 경우에는 넘기지 않는다. 확인받지 않은 수를 대신
+  /// 지어내지 않는다.
+  Future<void> stopRecording({int? participantCount}) async {
     _stopTicker();
     final current = state.value;
     if (current == null) return;
 
     if (!_fileOpen) {
-      state = AsyncData(current.copyWith(recording: false));
+      state = AsyncData(
+        current.copyWith(
+          recording: false,
+          participantCount: participantCount,
+        ),
+      );
       return;
     }
     _fileOpen = false;
@@ -260,6 +278,7 @@ class VisitController extends AsyncNotifier<VisitState> {
       (now) => now.copyWith(
         recording: false,
         recordingPath: saved?.path,
+        participantCount: participantCount,
         problem: problem,
         clearProblem: problem == null,
       ),

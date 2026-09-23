@@ -11,6 +11,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import 'stop_recording_dialog.dart';
 import 'visit_cards_sheet.dart';
 import 'visit_controller.dart';
 import 'visit_recorder.dart';
@@ -180,6 +181,36 @@ class _Intro extends ConsumerWidget {
   }
 }
 
+/// 끝내기를 누르면 묻고 나서 끝낸다.
+///
+/// 묻는 동안 녹음과 시간을 **잠시 멈춘다.** 창을 보는 사이의 침묵을 대화로
+/// 남기지 않으려는 것이고, 이어서 녹음하면 같은 파일에 이어 쓴다. 취소하면
+/// 멈추기 전으로 돌아간다.
+///
+/// 끝내기를 고르면 참여자 수를 함께 받아 파일을 닫는다. 파일을 닫은 뒤에
+/// 넘어간다. 먼저 넘어가면 마지막 몇 초가 파일에 남지 않을 수 있다.
+Future<void> _confirmStop(
+  BuildContext context,
+  VisitController controller,
+  VisitState state,
+) async {
+  final wasRecording = state.recording;
+  if (wasRecording) await controller.pauseRecording();
+  if (!context.mounted) return;
+
+  final participantCount = await showStopRecordingDialog(context);
+
+  if (participantCount == null) {
+    // 이어서 녹음. 멈추기 전에 녹음 중이었을 때만 되돌린다.
+    if (wasRecording) await controller.startRecording();
+    return;
+  }
+
+  await controller.stopRecording(participantCount: participantCount);
+  if (!context.mounted) return;
+  context.push(AppRoutes.visitReview);
+}
+
 /// 녹음이 되지 않았을 때 그 자리에서 알린다.
 ///
 /// 성공 화면만 두지 않는다(`app/CLAUDE.md`). 권한을 대신 켜 줄 수는 없으므로
@@ -331,13 +362,7 @@ class _Recording extends ConsumerWidget {
                     _ControlButton(
                       icon: Icons.stop,
                       label: '만남 끝내기',
-                      // 파일을 닫은 뒤에 넘어간다. 먼저 넘어가면 마지막 몇 초가
-                      // 파일에 남지 않을 수 있다.
-                      onTap: () async {
-                        await controller.stopRecording();
-                        if (!context.mounted) return;
-                        context.push(AppRoutes.visitReview);
-                      },
+                      onTap: () => _confirmStop(context, controller, state),
                     ),
                   ],
                 ),

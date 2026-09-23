@@ -154,6 +154,11 @@ void main() {
       await tester.pump();
 
       expect(recorder.calls, contains('stop'));
+      expect(
+        container.read(visitControllerProvider).value!.participantCount,
+        isNull,
+        reason: '확인받지 않은 사람 수를 대신 지어내지 않는다',
+      );
     });
   });
 
