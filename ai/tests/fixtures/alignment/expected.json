@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "analysisId": "analysis_alignment_fixture",
+  "language": "ko",
+  "durationMs": 4200,
+  "text": "오늘 날씨가 좋네요 정말 좋아요. 네.",
+  "segments": [
+    {
+      "startMs": 100,
+      "endMs": 1800,
+      "speakerLabel": "SPEAKER_00",
+      "text": "오늘 날씨가 좋네요",
+      "words": [
+        {"startMs": 100, "endMs": 500, "text": "오늘", "probability": 0.98},
+        {"startMs": 500, "endMs": 1000, "text": "날씨가", "probability": 0.97},
+        {"startMs": 1100, "endMs": 1800, "text": "좋네요", "probability": 0.96}
+      ]
+    },
+    {
+      "startMs": 2050,
+      "endMs": 3200,
+      "speakerLabel": "SPEAKER_01",
+      "text": "정말 좋아요.",
+      "words": [
+        {"startMs": 2050, "endMs": 2450, "text": "정말", "probability": 0.95},
+        {"startMs": 2500, "endMs": 3100, "text": "좋아요", "probability": 0.94},
+        {"startMs": 3100, "endMs": 3200, "text": ".", "probability": 0.93}
+      ]
+    },
+    {
+      "startMs": 3600,
+      "endMs": 4000,
+      "speakerLabel": "SPEAKER_00",
+      "text": "네.",
+      "words": []
+    }
+  ]
+}

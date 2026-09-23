@@ -94,6 +94,10 @@ models/
 *.tflite
 
 /local_ai/docs/stt-mobile-benchmark/data/*
+/ai/docs/stt-mobile-benchmark/data/*
+/ai/tests/asr_test_data.json
+/ai/tests/results/local/
+/ai/:memory:.ses
 
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/
