@@ -11,7 +11,7 @@ class ReviewDraft {
   const ReviewDraft({
     this.satisfaction,
     this.reaction,
-    this.cardReactions = const {},
+    this.cardAnswers = const {},
     this.freeNote = '',
   });
 
@@ -20,8 +20,13 @@ class ReviewDraft {
 
   final CareRecipientReaction? reaction;
 
-  /// 카드별 평가. 다루지 않은 카드는 담기지 않는다.
-  final Map<String, CaregiverReaction> cardReactions;
+  /// 카드 한 장에 남긴 답이다.
+  ///
+  /// 세 경우를 구분한다. 계약의 `cardReviews` 와 그대로 맞물린다.
+  /// - 표에 없다 — 답하지 않고 넘어갔다(미응답). `cardReviews` 에서도 뺀다.
+  /// - 값이 `null` 이다 — 쓰지 않았다고 답했다(미사용). `wasUsed` 가 `false` 다.
+  /// - 값이 있다 — 쓰고 평가했다. `wasUsed` 가 `true` 다.
+  final Map<String, CaregiverReaction?> cardAnswers;
 
   final String freeNote;
 
@@ -29,19 +34,18 @@ class ReviewDraft {
   bool get canSubmit => satisfaction != null && reaction != null;
 
   /// 보호자 감정은 따로 묻지 않고 대화 만족도에서 계산한다.
-  VisitMood? get mood => satisfaction == null
-      ? null
-      : VisitMood.fromSatisfaction(satisfaction!);
+  VisitMood? get mood =>
+      satisfaction == null ? null : VisitMood.fromSatisfaction(satisfaction!);
 
   ReviewDraft copyWith({
     int? satisfaction,
     CareRecipientReaction? reaction,
-    Map<String, CaregiverReaction>? cardReactions,
+    Map<String, CaregiverReaction?>? cardAnswers,
     String? freeNote,
   }) => ReviewDraft(
     satisfaction: satisfaction ?? this.satisfaction,
     reaction: reaction ?? this.reaction,
-    cardReactions: cardReactions ?? this.cardReactions,
+    cardAnswers: cardAnswers ?? this.cardAnswers,
     freeNote: freeNote ?? this.freeNote,
   );
 }
@@ -58,15 +62,24 @@ class ReviewController extends Notifier<ReviewDraft> {
 
   void setFreeNote(String value) => state = state.copyWith(freeNote: value);
 
-  void setCardReaction(String cardId, CaregiverReaction reaction) {
-    final next = Map<String, CaregiverReaction>.from(state.cardReactions)
+  /// 카드를 쓰고 평가했다.
+  void setCardReaction(String cardId, CaregiverReaction reaction) =>
+      _answer(cardId, reaction);
+
+  /// 카드를 쓰지 않았다고 답했다. 평가는 담지 않는다.
+  void setCardNotUsed(String cardId) => _answer(cardId, null);
+
+  void _answer(String cardId, CaregiverReaction? reaction) {
+    final next = Map<String, CaregiverReaction?>.from(state.cardAnswers)
       ..[cardId] = reaction;
-    state = state.copyWith(cardReactions: next);
+    state = state.copyWith(cardAnswers: next);
   }
 
   /// 화면에서 모은 값을 계약 객체로 바꾼다.
   ///
-  /// 카드를 다루지 않았으면 `wasUsed` 가 `false` 이고 평가는 `neutral` 이다.
+  /// 답하지 않은 카드는 `cardReviews` 에 담지 않는다. 담지 않는 것이 미응답이고,
+  /// `wasUsed` 가 `false` 인 것이 미사용이다. 둘을 뭉개면 보호자가 하지 않은
+  /// 판단을 대신 만들게 된다.
   ///
   /// **아직 화면에서 부르지 않는다.** 지금은 테스트가 계약 형태를 확인하는 데만
   /// 쓰고, 소감 화면의 제출 버튼은 처리 중 화면으로 이동만 한다. 저장 인터페이스가
@@ -85,21 +98,20 @@ class ReviewController extends Notifier<ReviewDraft> {
       careRecipientReaction: state.reaction!,
       cardReviews: [
         for (final card in cards)
-          CardReview(
-            cardId: card.cardId,
-            wasUsed: state.cardReactions.containsKey(card.cardId),
-            caregiverReaction:
-                state.cardReactions[card.cardId] ?? CaregiverReaction.neutral,
-          ),
+          if (state.cardAnswers.containsKey(card.cardId))
+            CardReview(
+              cardId: card.cardId,
+              wasUsed: state.cardAnswers[card.cardId] != null,
+              caregiverReaction: state.cardAnswers[card.cardId],
+            ),
       ],
       freeNote: state.freeNote.trim().isEmpty ? null : state.freeNote.trim(),
     );
   }
 }
 
-final reviewControllerProvider = NotifierProvider<ReviewController, ReviewDraft>(
-  ReviewController.new,
-);
+final reviewControllerProvider =
+    NotifierProvider<ReviewController, ReviewDraft>(ReviewController.new);
 
 /// 소감 화면에서 평가할 카드. 면회에서 다룬 카드를 그대로 쓴다.
 final reviewCardsProvider = FutureProvider<List<ConversationCard>>((ref) async {
