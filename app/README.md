@@ -1,6 +1,6 @@
 # FE 영역
 
-담당 리더: 이서형. 합성 목 데이터로 화면을 연결한 단계이며 실제 녹음, 카메라와 서버 연동은 아직 없다. BE 인증 API는 develop에 반영됐지만 앱의 구글 로그인 연결은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 검토 중이다.
+담당 리더: 이서형. 합성 목 데이터로 화면을 연결한 단계이며 카메라와 서버 연동은 아직 없다. 면회 녹음은 기기에 파일을 남기는 데까지 동작하고 업로드는 없다([면회 녹음](#면회-녹음)). BE 인증 API는 develop에 반영됐지만 앱의 구글 로그인 연결은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 검토 중이다.
 
 - 처음 실행: [환경 세팅](SETUP.md)
 - 화면과 접근성: [디자인 기준](DESIGN.md)
@@ -36,6 +36,7 @@
 | 상태 관리 / 화면 이동 | `flutter_riverpod` 3.4.3 / `go_router` 18.0.1 |
 | 구글 로그인 / HTTP | `google_sign_in` 7.2.0 / `http` 1.6.0 |
 | 세션 보관 | `flutter_secure_storage` 11.2.0 |
+| 녹음 / 저장 경로 | `record` 7.1.1 / `path_provider` 2.1.6 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -178,12 +179,80 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
 - **로그아웃 자리** — `SessionNotifier.signOut()`은 있으나 부르는 화면이 없다.
   어느 화면에 둘지는 제품 결정이라 임의로 넣지 않았다.
 
+## 면회 녹음
+
+E-2 녹음 화면에서 실제로 마이크를 열고 기기에 파일을 남긴다. 서버 업로드와 STT
+연결은 아직 없다. 코드는 [`visit_recorder.dart`](lib/features/visit/visit_recorder.dart)에
+모여 있고, 화면과 [`VisitController`](lib/features/visit/visit_controller.dart)는
+`VisitRecorder` 인터페이스만 본다. 테스트는 `visitRecorderProvider`를 override 한다.
+
+### 저장 위치
+
+`path_provider`의 `getApplicationDocumentsDirectory()` 아래 `visit_recordings/`다.
+Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실제 경로는
+다음과 같다.
+
+```
+/data/user/0/com.saelog.app/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
+```
+
+- 앱 전용 내부 저장소다. 다른 앱과 갤러리, 파일 관리자에 보이지 않고 USB로도
+  바로 꺼낼 수 없다. 앱을 지우면 함께 지워진다.
+- 외부 저장소를 쓰지 않으므로 `READ/WRITE_EXTERNAL_STORAGE` 권한이 필요 없다.
+- 파일 이름에는 시각만 넣는다. 어르신 이름이나 회차 정보처럼 사람을 알아볼 수
+  있는 값은 파일 이름에 남기지 않는다.
+- 확인은 `adb exec-out run-as com.saelog.app ls app_flutter/visit_recordings`로 한다.
+  `run-as`는 디버그 빌드에서만 된다.
+
+### 음성 형식
+
+**WAV / 16kHz / 모노는 잠정값이다.** `app/CLAUDE.md`대로 음성 형식은 FE가 정하는
+값이 아니라 AI 영역이 확정한다. [PR #65](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/65)의
+요청 예시가 `audio.wav`이고 STT 모델이 보통 16kHz 모노를 받아 임시로 맞췄다.
+확정되면 `visitRecordConfig`와 `VisitRecording.fileExtension`, 그리고
+`test/visit_recording_test.dart`의 `음성 형식` 테스트를 함께 고친다.
+
+이 값에서 1시간 녹음은 약 115MB다. 업로드를 붙이기 전에 용량을 다시 본다.
+
+### 권한과 실패
+
+`AndroidManifest.xml`에 `RECORD_AUDIO`를 넣었고, 사용자가 녹음을 시작할 때
+`record`가 권한을 묻는다. 거부, 장치 열기 실패와 저장 실패는
+`VisitState.problem`으로 구분해 화면에서 안내한다.
+
+### 파일을 반드시 닫아야 하는 이유
+
+WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인다
+(`record_android`의 `WaveContainer.stop()`). 끝내지 않고 화면을 떠나거나 앱이
+죽으면 그 자리가 0으로 남아, 소리는 들어 있는데 열 수 없는 파일이 된다.
+
+- `만남 끝내기`뿐 아니라 **녹음 화면을 떠날 때도** 파일을 닫는다
+  (`_RecordScreenState.dispose`).
+- 닫은 뒤 파일이 정말 `RIFF`로 시작하는지 확인하고, 아니면 저장 실패로 알린다.
+  경로가 있다고 성공이라 말하지 않는다.
+- **개발 중 hot restart(`flutter run`의 `R`)는 이 과정을 건너뛴다.** 그때 남은
+  파일은 재생되지 않으니 지우고 다시 녹음한다. 확인은 다음과 같이 한다.
+
+  ```
+  adb exec-out run-as com.saelog.app cat app_flutter/visit_recordings/<파일> | head -c 4
+  ```
+
+  `RIFF`가 나오면 정상이다.
+
+### 아직 없는 것
+
+- 서버 업로드. [PR #65](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/65)의
+  `POST /api/v1/speech-analyses`는 S3 Presigned URL을 받는데, S3 업로드가 BE에 아직 없다.
+- 분석 뒤 파일 삭제. 업로드가 붙어야 지우는 시점이 생긴다. 지금은 파일이 쌓인다.
+- 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스.
+- 참여자 수(`speakerCount`) 입력. 종료 모달에서 받는다.
+
 ## 담당과 남은 연동
 
 | 영역 | FE 작업 | 함께 정할 경계 |
 | --- | --- | --- |
 | 화면 | 초기 설정, 카드, 면회, 리포트, 평가와 스토리북 | 카드 수와 제공 방식 등 제품 범위는 PM 결정 |
-| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기 | AI가 정의할 음성 형식과 `SpeechInput` 연결. 현재는 목 구현 |
+| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기, 기기 저장 | 음성 형식은 AI가 확정한다. 현재 값은 잠정이고 업로드와 `SpeechInput` 연결은 남았다 |
 | 사진 | 카메라와 갤러리 연동 | 현재는 목 이미지. 권한 거부, 중단과 복구 흐름은 FE가 정함 |
 | 데이터 | 합의된 저장 및 서버 인터페이스를 앱에 연결 | BE가 저장 구조, 암호화와 API 담당. 현재는 `MockRepository` |
 | 품질 | 오류 상태, 수동 전환과 접근성 | 실제 모델 결과와 실패 상태는 AI, BE 계약 확인 |

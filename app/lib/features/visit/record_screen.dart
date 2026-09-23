@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:math' show pi;
 import 'dart:ui' show ImageFilter;
 
@@ -12,18 +13,47 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import 'visit_cards_sheet.dart';
 import 'visit_controller.dart';
+import 'visit_recorder.dart';
 
 /// E-1, E-2 녹음 안내와 녹음 중.
 ///
 /// 둘은 별도 화면이 아니라 이 화면의 상태다.
 ///
-/// **녹음 기능 자체는 만들지 않는다.** 녹음 라이브러리와 음성 형식, STT 연결은
-/// AI 영역이 소유한다(`app/CLAUDE.md`). 여기서는 화면과 시간 표시만 다룬다.
-class RecordScreen extends ConsumerWidget {
+/// 실제 녹음은 [VisitRecorder] 가 한다. 녹음 라이브러리와 음성 형식은 AI 영역이
+/// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작·멈춤·끝내기와
+/// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
+class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecordScreen> createState() => _RecordScreenState();
+}
+
+class _RecordScreenState extends ConsumerState<RecordScreen> {
+  /// 화면이 사라진 뒤에도 파일을 닫아야 해서 미리 들고 있는다.
+  ///
+  /// **[initState] 에서 미리 받아 둔다.** `late final ... = ref.read(...)` 로
+  /// 두면 실제로 읽는 시점이 [dispose] 안이 되는데, 그때는 `ref` 가
+  /// `StateError` 를 던져 파일을 닫지 못한 채 화면만 사라진다.
+  late final VisitController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ref.read(visitControllerProvider.notifier);
+  }
+
+  @override
+  void dispose() {
+    // 끝내기를 누르지 않고 뒤로 나간 경우다. 열린 파일을 닫지 않으면 WAV 헤더가
+    // 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
+    // 없으면 상태가 알아서 지나간다.
+    unawaited(_controller.stopRecording());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final visit = ref.watch(visitControllerProvider);
 
     return Scaffold(
@@ -53,6 +83,7 @@ class _Intro extends ConsumerWidget {
     final state = ref.watch(visitControllerProvider).value;
     final controller = ref.read(visitControllerProvider.notifier);
     final confirmed = state?.careRecipientConfirmed ?? false;
+    final problem = state?.problem;
 
     return ScreenBody(
       scrollable: true,
@@ -137,7 +168,59 @@ class _Intro extends ConsumerWidget {
             ),
           ),
 
+          if (problem != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            _ProblemNotice(problem: problem),
+          ],
+
           const SizedBox(height: AppSpacing.lg),
+        ],
+      ),
+    );
+  }
+}
+
+/// 녹음이 되지 않았을 때 그 자리에서 알린다.
+///
+/// 성공 화면만 두지 않는다(`app/CLAUDE.md`). 권한을 대신 켜 줄 수는 없으므로
+/// 무엇을 해야 하는지만 적는다.
+class _ProblemNotice extends StatelessWidget {
+  const _ProblemNotice({required this.problem});
+
+  final VisitRecordingProblem problem;
+
+  String get _message => switch (problem) {
+    VisitRecordingProblem.permissionDenied =>
+      '마이크 사용을 허용해야 녹음할 수 있어요.\n휴대전화 설정에서 새록의 마이크를 켜주세요.',
+    VisitRecordingProblem.startFailed => '녹음을 시작하지 못했어요.\n잠시 후 다시 눌러주세요.',
+    VisitRecordingProblem.saveFailed =>
+      '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.dangerSurface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.mic_off_outlined,
+            size: 22,
+            color: AppColors.danger,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              _message,
+              style: AppTypography.body.copyWith(color: AppColors.danger),
+            ),
+          ),
         ],
       ),
     );
@@ -248,13 +331,21 @@ class _Recording extends ConsumerWidget {
                     _ControlButton(
                       icon: Icons.stop,
                       label: '만남 끝내기',
-                      onTap: () {
-                        controller.stopRecording();
+                      // 파일을 닫은 뒤에 넘어간다. 먼저 넘어가면 마지막 몇 초가
+                      // 파일에 남지 않을 수 있다.
+                      onTap: () async {
+                        await controller.stopRecording();
+                        if (!context.mounted) return;
                         context.push(AppRoutes.visitReview);
                       },
                     ),
                   ],
                 ),
+
+                if (state.problem != null) ...[
+                  const SizedBox(height: AppSpacing.xl),
+                  _ProblemNotice(problem: state.problem!),
+                ],
 
                 const Spacer(),
               ],
