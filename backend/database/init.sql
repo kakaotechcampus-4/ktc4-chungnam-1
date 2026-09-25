@@ -20,11 +20,13 @@ DROP TABLE IF EXISTS card_reviews CASCADE;
 DROP TABLE IF EXISTS caregiver_evaluations CASCADE;
 DROP TABLE IF EXISTS card_evidence_refs CASCADE;
 DROP TABLE IF EXISTS conversation_cards CASCADE;
+DROP TABLE IF EXISTS card_generation_fact_inputs CASCADE;
 DROP TABLE IF EXISTS card_generation_requests CASCADE;
 DROP TABLE IF EXISTS speech_analysis_jobs CASCADE;
 DROP TABLE IF EXISTS session_consents CASCADE;
 DROP TABLE IF EXISTS visit_sessions CASCADE;
 DROP TABLE IF EXISTS profile_photo_tags CASCADE;
+DROP TABLE IF EXISTS profile_topic_preferences CASCADE;
 DROP TABLE IF EXISTS life_fact_collection_states CASCADE;
 DROP TABLE IF EXISTS life_facts CASCADE;
 DROP TABLE IF EXISTS profiles CASCADE;
@@ -104,6 +106,18 @@ CREATE TABLE life_fact_collection_states (
                     ('pending', 'collected', 'skipped', 'manualFallback')),
     attempt_count SMALLINT    NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     PRIMARY KEY (profile_id, category)
+);
+
+-- 승인된 주제 우선순위를 다음 카드 생성 요청에서 다시 사용한다.
+-- 점수 계산 방식은 추천 로직의 책임이며 DB는 안전한 범위만 제한한다.
+CREATE TABLE profile_topic_preferences (
+    profile_id    UUID         NOT NULL REFERENCES profiles(profile_id) ON DELETE CASCADE,
+    topic_key     VARCHAR(50)  NOT NULL,
+    topic_title   VARCHAR(100) NOT NULL,
+    priority_score SMALLINT    NOT NULL DEFAULT 0
+                               CHECK (priority_score BETWEEN -100 AND 100),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (profile_id, topic_key)
 );
 
 -- 사진 원본과 localUri는 단말에만 둔다. 카드 생성에 쓰이는 수락 태그만 서버로 온다.
@@ -192,6 +206,22 @@ CREATE TABLE card_generation_requests (
     CHECK (generation_status <> 'failed' OR error_code IS NOT NULL)
 );
 
+-- 카드 생성 당시 입력으로 사용한 확정 Life Fact의 스냅숏이다.
+-- 원본 녹음과 전사문은 저장하지 않으며 요청 삭제 시 함께 삭제한다.
+CREATE TABLE card_generation_fact_inputs (
+    request_id UUID NOT NULL
+               REFERENCES card_generation_requests(request_id) ON DELETE CASCADE,
+    fact_id    UUID NOT NULL
+               REFERENCES life_facts(fact_id) ON DELETE CASCADE,
+    fact_category_snapshot VARCHAR(20) NOT NULL CHECK (fact_category_snapshot IN
+                              ('occupation', 'hometown', 'hobby', 'family')),
+    fact_text_snapshot TEXT NOT NULL,
+    fact_updated_at_snapshot TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (request_id, fact_id)
+);
+CREATE INDEX idx_card_generation_fact_inputs_fact
+    ON card_generation_fact_inputs(fact_id);
+
 CREATE TABLE conversation_cards (
     card_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id          UUID         NOT NULL REFERENCES card_generation_requests(request_id) ON DELETE CASCADE,
@@ -237,9 +267,13 @@ CREATE TABLE card_reviews (
     review_id          UUID        NOT NULL REFERENCES caregiver_evaluations(review_id) ON DELETE CASCADE,
     card_id            UUID        NOT NULL REFERENCES conversation_cards(card_id) ON DELETE CASCADE,
     was_used           BOOLEAN     NOT NULL,
-    caregiver_reaction VARCHAR(10) NOT NULL CHECK (caregiver_reaction IN
+    caregiver_reaction VARCHAR(10) CHECK (caregiver_reaction IN
                          ('positive', 'neutral', 'negative')),
-    PRIMARY KEY (review_id, card_id)
+    PRIMARY KEY (review_id, card_id),
+    CHECK (
+        (was_used = true AND caregiver_reaction IS NOT NULL)
+        OR (was_used = false AND caregiver_reaction IS NULL)
+    )
 );
 
 CREATE TABLE visit_reports (
@@ -290,11 +324,29 @@ CREATE TABLE proposal_changes (
     topic_title     VARCHAR(100),
     direction       VARCHAR(5)   CHECK (direction IN ('up', 'down')),
     text            TEXT,
+    life_fact_category VARCHAR(20),
     reason          TEXT         NOT NULL,
     review_status   VARCHAR(10)  NOT NULL DEFAULT 'pending'
                       CHECK (review_status IN ('pending', 'accepted', 'rejected', 'reverted')),
     applied_fact_id UUID REFERENCES life_facts(fact_id) ON DELETE SET NULL,
     display_order   SMALLINT     NOT NULL,
+
+    CHECK (
+        (change_type = 'topicPriority' AND life_fact_category IS NULL)
+        OR
+        (change_type = 'lifeFactAdd' AND life_fact_category IN
+            ('occupation', 'hometown', 'hobby', 'family'))
+    ),
+
+    CHECK (
+        (change_type = 'topicPriority' AND applied_fact_id IS NULL)
+        OR
+        (change_type = 'lifeFactAdd' AND (
+            (review_status IN ('pending', 'rejected') AND applied_fact_id IS NULL)
+            OR (review_status = 'accepted' AND applied_fact_id IS NOT NULL)
+            OR review_status = 'reverted'
+        ))
+    ),
 
     -- 계약 533~534행: 타입별로 갖는 필드가 다르다
     CHECK (
@@ -306,3 +358,8 @@ CREATE TABLE proposal_changes (
          AND topic_key IS NULL AND topic_title IS NULL AND direction IS NULL)
     )
 );
+
+-- 한 변경 항목은 최대 하나의 확정 Life Fact만 만들 수 있다.
+CREATE UNIQUE INDEX uq_proposal_changes_applied_fact
+    ON proposal_changes(applied_fact_id)
+    WHERE applied_fact_id IS NOT NULL;
