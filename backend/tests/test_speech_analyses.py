@@ -393,6 +393,37 @@ def test_ai_client_maps_failure_without_exposing_response(
     assert "synthetic" not in captured.value.message
 
 
+@pytest.mark.parametrize(
+    ("request_error", "expected_status", "expected_code"),
+    [
+        (httpx.ReadTimeout("synthetic timeout"), 504, "AI_SERVER_TIMEOUT"),
+        (httpx.ConnectError("synthetic connection failure"), 503, "AI_SERVER_UNAVAILABLE"),
+    ],
+)
+def test_ai_client_maps_transport_failure_as_retryable(
+    request_error: httpx.RequestError,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    def handler(ai_request: httpx.Request) -> httpx.Response:
+        request_error.request = ai_request
+        raise request_error
+
+    client = AiServerClient(
+        base_url="http://ai-server.test",
+        timeout_seconds=10,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(AppError) as captured:
+        asyncio.run(client.analyze_speech(_internal_request()))
+
+    assert captured.value.status_code == expected_status
+    assert captured.value.error_code == expected_code
+    assert captured.value.retryable is True
+    assert "synthetic" not in captured.value.message
+
+
 def test_ai_client_rejects_a_response_for_another_analysis() -> None:
     def handler(ai_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
