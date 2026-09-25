@@ -70,6 +70,9 @@ uv run alembic upgrade head
 CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
 그대로 신뢰하지 않고 반드시 검토한다.
 
+대화 카드 생성 입력과 면회 결과의 Life Fact 승인·누적 구조는
+[ADR-009](../docs/architecture/decisions/ADR-009-card-life-fact-feedback-schema.md)에 정리한다.
+
 PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 개발 스키마가 있어도 인증 API의 저장소는 아직 프로세스 메모리 구현이다.
 
 ## 담당과 다음 결정

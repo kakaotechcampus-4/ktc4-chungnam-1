@@ -12,6 +12,7 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리, 데이터 관리는 서버 중심으로 전환. 세부 저장 계약은 미정 |
 | [ADR-007](ADR-007-google-social-login.md) | proposed | 구글 로그인과 백엔드 ID 토큰 직접 검증, ADR-006의 인증과 계정 저장 부분을 구체화. 저장 항목 등 공동 검토 필요 |
 | [ADR-008](ADR-008-stt-pipeline.md) | proposed | 면회 WAV 접수 후 PostgreSQL 작업 상태와 worker를 사용하는 비동기 STT·리포트 처리. 재시도와 리포트 계약 공동 검토 필요 |
+| [ADR-009](ADR-009-card-life-fact-feedback-schema.md) | proposed | 카드 생성 입력 Life Fact와 면회 변경 제안의 승인 결과를 연결하고 주제 우선순위를 누적하는 DB 스키마 |
 
 accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다. ADR-007의 `proposed` 표기는 구글 로그인 방향에 대한 PM 동의를 되돌리는 뜻이 아니며 계정 저장 항목 등 남은 검토안을 확정하지 않기 위한 표시다.
 
