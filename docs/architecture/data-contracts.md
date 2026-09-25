@@ -70,7 +70,8 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | [ConversationCard](#대화-카드-결과-conversationcard) | AI | FE |
 | [VisitSession](#면회-회차-visitsession) | FE | FE, AI |
 | [VisitPhoto](#면회-사진-visitphoto) | FE | FE |
-| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | AI |
+| [SpeechAnalysisJob](#비동기-음성-분석-작업-speechanalysisjob) | BE | FE, BE |
+| [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | BE, AI |
 | [CaregiverEvaluation](#보호자-평가-caregiverevaluation) | FE | AI |
 | [VisitReport](#리포트-초안-visitreport) | AI | FE |
 | [ChangeProposal](#변경-제안-changeproposal) | AI | FE |
@@ -404,6 +405,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
     "granted": true,
     "grantedAt": "2026-08-21T13:59:30+09:00"
   },
+  "participantCount": 2,
   "startedAt": "2026-08-21T14:00:00+09:00",
   "endedAt": "2026-08-21T14:20:00+09:00"
 }
@@ -413,9 +415,11 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
   - 녹음 정지는 면회 종료를 뜻하며 `ended`가 된다.
 - `serviceData`, `sensitiveData`와 `careRecipientConfirmation`이 유효하지 않으면 녹음과 원본 업로드를 시작하지 않는다.
 - `careRecipientConfirmation`은 피보호자 본인의 동의만 담는다.
+- `participantCount`는 녹음을 끝낼 때 보호자가 확인한 1~8의 인원수다. STT 요청의
+  `speakerCount`로 이름만 바꾸어 전달하며 앱이나 서버가 추정하지 않는다.
 - 세션은 대화 카드를 선택한 시점에 `ready` 상태로 만든다. 동의 확인과 녹음 승인, 시작 시각은 녹음을 시작할 때 채운다.
 
-**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `recordingAuthorization`, `consent.careRecipientConfirmation`
+**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `participantCount`, `recordingAuthorization`, `consent.careRecipientConfirmation`
 
 <br>
 
@@ -443,11 +447,99 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 ---
 
+## 비동기 음성 분석 작업 (SpeechAnalysisJob)
+
+> **상태: ADR-008 제안 및 BE 구현 검증 중.** FE, AI, PM 공동 확인 전에는 실제 사용자
+> 자료 전송 승인을 뜻하지 않는다.
+
+앱은 WAV와 `participantCount`를 multipart 요청으로 제출한다. BE가 원본을 S3에
+임시 저장하고 작업을 영속화한 뒤 다음 `202 Accepted` 응답을 반환한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "queued"
+}
+```
+
+`GET /api/v1/speech-analyses/{analysisId}`는 같은 계정이 소유한 작업에 한해 다음 상태를
+반환한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "sttCompleted",
+  "errorCode": null
+}
+```
+
+- 공개 상태는 `queued`, `transcribing`, `sttCompleted`, `generatingReport`,
+  `completed`, `failed`다.
+- `sttCompleted`는 AI 응답 검증과 원본 삭제까지 끝났지만 리포트는 아직 준비되지 않은 상태다.
+- `completed`는 STT뿐 아니라 리포트 저장까지 끝난 상태다.
+- 실패 시 `errorCode`만 제공하며 AI 오류 본문, 전사문, S3 URL과 객체 키를 제공하지 않는다.
+- 한 면회에는 음성 분석 작업 하나만 두어 반복 제출로 중복 처리하지 않는다.
+- 자세한 상태 전이, 삭제와 재시도 경계는 [ADR-008](decisions/ADR-008-stt-pipeline.md)을 따른다.
+
+<br>
+
+---
+
 ## STT와 화자 처리 결과 (SpeechAnalysisResult)
 
-> **상태: 결정 대기.** STT와 화자 처리 결과 형식은 AI 영역에서 확정한다.
+> **상태: AI v1 결과를 BE worker가 소비하는 내부 계약.** 공개 상태 계약과 원본 처리
+> 경계는 ADR-008의 공동 검토가 남아 있다.
 
-- 전사문은 화면에 표시하지 않으며 리포트 생성의 입력으로만 사용한다.
+BE가 AI 서버로 보내는 요청은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "language": "ko",
+  "speakerCount": 2,
+  "audioSource": {
+    "type": "s3PresignedGet",
+    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
+    "downloadUrlExpiresAt": "2026-09-25T15:10:00+09:00",
+    "sizeBytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dataExpiresAt": "2026-09-26T14:00:00+09:00"
+}
+```
+
+AI 성공 응답은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "language": "ko",
+  "durationMs": 15200,
+  "text": "합성 전사 결과",
+  "segments": [
+    {
+      "startMs": 0,
+      "endMs": 3200,
+      "speakerLabel": "SPEAKER_00",
+      "text": "합성 발화 구간",
+      "words": [
+        {"startMs": 0, "endMs": 800, "text": "합성", "probability": 0.93}
+      ]
+    }
+  ]
+}
+```
+
+- 입력은 WAV/PCM 16-bit/16kHz/mono이고 `speakerCount`는 1~8이다.
+- `SPEAKER_00` 등의 값은 파일 안의 화자 군집이며 실제 인물 역할을 뜻하지 않는다.
+- 화자를 명확히 배정할 수 없는 구간의 `speakerLabel`은 `null`이다.
+- 전사문은 화면에 표시하지 않으며 리포트 생성 입력으로만 사용한다.
 
 <br>
 
@@ -610,4 +702,4 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | 피보호자 대리 동의 | 현재 계약은 피보호자 본인의 동의만 담는다. 병세가 진행되어 본인이 동의하기 어려운 경우(ex. 음성 녹음 동의 등) 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
 | 카드 생성과 추천 로직 | 핵심 기능으로 별도 설계한다. 입력 문맥, 기억 검색, 이미지 후보 활용과 평가 반영 방식을 정한 뒤 `CardGenerationRequest`의 형식을 확정한다. 미사용 및 미응답만으로 비선호를 추정하지 않는 원칙은 확정이다. | AI 설계, PM, FE, BE 공동 확인 |
 | 주제 관리와 명시적 추천 제외 | `topicKey`, 주제별 가중치, 명시적 제외의 대상 범위, 해제 방식, 화면과 저장 필드 및 API를 정해야 한다. 추천 제외와 과거 기록 삭제는 별개다. | AI, PM, FE, BE |
-| STT와 화자 처리 결과 형식 | 전사 결과를 어떤 형태로 넘길지, 신뢰도가 낮을 때 어떤 상태로 표시할지 정해지지 않았다. | AI |
+| 비동기 STT 운영 계약 | ADR-008의 API와 상태 초안은 구현 검증 중이다. 자동 재시도, 취소, 리포트 생성 계약과 전사문 장애 복구 저장 여부는 공동 확인이 필요하다. | BE 제안, FE, AI, PM 공동 확인 |
