@@ -75,10 +75,13 @@ DOMAIN_TABLES = {
     "profiles",
     "life_facts",
     "life_fact_collection_states",
+    "profile_topic_preferences",
     "profile_photo_tags",
     "visit_sessions",
     "session_consents",
+    "speech_analysis_jobs",
     "card_generation_requests",
+    "card_generation_fact_inputs",
     "conversation_cards",
     "card_evidence_refs",
     "caregiver_evaluations",
@@ -90,7 +93,7 @@ DOMAIN_TABLES = {
 }
 
 
-def test_upgrade_creates_all_seventeen_tables(alembic_config, test_database_url):
+def test_upgrade_creates_all_twenty_tables(alembic_config, test_database_url):
     command.upgrade(alembic_config, "head")
 
     engine = sa.create_engine(test_database_url)
@@ -101,7 +104,7 @@ def test_upgrade_creates_all_seventeen_tables(alembic_config, test_database_url)
         engine.dispose()
 
     assert DOMAIN_TABLES <= table_names
-    assert len(DOMAIN_TABLES) == 17
+    assert len(DOMAIN_TABLES) == 20
 
 
 def test_upgrade_produces_working_constraints_and_uuid_default(
@@ -138,18 +141,127 @@ def test_upgrade_produces_working_constraints_and_uuid_default(
                 ),
                 {"profile_id": profile_id},
             ).scalar_one()
-            follow_ups = conn.execute(
+            card_row = conn.execute(
                 sa.text(
                     "INSERT INTO conversation_cards "
                     "(request_id, topic_key, topic_title, topic_description, "
                     " primary_question, display_order) "
                     "VALUES (:request_id, 'synthetic-topic', 'Synthetic Topic', "
                     " 'synthetic description', 'synthetic question?', 1) "
-                    "RETURNING follow_up_questions"
+                    "RETURNING card_id, follow_up_questions"
                 ),
                 {"request_id": request_id},
+            ).one()
+            card_id = card_row.card_id
+            assert card_row.follow_up_questions == []
+
+            fact_id = conn.execute(
+                sa.text(
+                    "INSERT INTO life_facts "
+                    "(profile_id, category, text, source_type) "
+                    "VALUES (:profile_id, 'occupation', 'synthetic fact', "
+                    "'caregiverTextInput') RETURNING fact_id"
+                ),
+                {"profile_id": profile_id},
             ).scalar_one()
-            assert follow_ups == []
+            conn.execute(
+                sa.text(
+                    "INSERT INTO card_generation_fact_inputs "
+                    "(request_id, fact_id, fact_category_snapshot, "
+                    " fact_text_snapshot, fact_updated_at_snapshot) "
+                    "VALUES (:request_id, :fact_id, 'occupation', "
+                    "'synthetic fact', now())"
+                ),
+                {"request_id": request_id, "fact_id": fact_id},
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO profile_topic_preferences "
+                    "(profile_id, topic_key, topic_title, priority_score) "
+                    "VALUES (:profile_id, 'synthetic-topic', "
+                    "'Synthetic Topic', 1)"
+                ),
+                {"profile_id": profile_id},
+            )
+
+            session_id = conn.execute(
+                sa.text(
+                    "INSERT INTO visit_sessions "
+                    "(profile_id, session_status, recording_authorization_granted, "
+                    " recording_authorization_granted_at, started_at, ended_at) "
+                    "VALUES (:profile_id, 'ended', true, now(), now(), now()) "
+                    "RETURNING session_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+            analysis_id = uuid.uuid4()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO speech_analysis_jobs "
+                    "(analysis_id, session_id, status, participant_count, "
+                    " s3_object_key, data_expires_at) "
+                    "VALUES (:analysis_id, :session_id, 'uploading', 2, "
+                    " 'temporary/speech/synthetic.wav', now() + interval '1 day')"
+                ),
+                {"analysis_id": analysis_id, "session_id": session_id},
+            )
+            queued = conn.execute(
+                sa.text(
+                    "UPDATE speech_analysis_jobs SET status = 'queued', "
+                    "size_bytes = 3200, sha256 = :sha256 "
+                    "WHERE analysis_id = :analysis_id RETURNING status"
+                ),
+                {"analysis_id": analysis_id, "sha256": "a" * 64},
+            ).scalar_one()
+            assert queued == "queued"
+
+            review_id = conn.execute(
+                sa.text(
+                    "INSERT INTO caregiver_evaluations "
+                    "(session_id, conversation_satisfaction, "
+                    " care_recipient_reaction) "
+                    "VALUES (:session_id, 4, 'pleased') RETURNING review_id"
+                ),
+                {"session_id": session_id},
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO card_reviews "
+                    "(review_id, card_id, was_used, caregiver_reaction) "
+                    "VALUES (:review_id, :card_id, false, NULL)"
+                ),
+                {"review_id": review_id, "card_id": card_id},
+            )
+
+            report_id = conn.execute(
+                sa.text(
+                    "INSERT INTO visit_reports "
+                    "(session_id, review_id, report_status, title, visit_date, "
+                    " mood, summary_text) "
+                    "VALUES (:session_id, :review_id, 'ready', "
+                    "'Synthetic Report', CURRENT_DATE, 'good', "
+                    "'synthetic summary') RETURNING report_id"
+                ),
+                {"session_id": session_id, "review_id": review_id},
+            ).scalar_one()
+            proposal_id = conn.execute(
+                sa.text(
+                    "INSERT INTO change_proposals (profile_id, report_id) "
+                    "VALUES (:profile_id, :report_id) RETURNING proposal_id"
+                ),
+                {"profile_id": profile_id, "report_id": report_id},
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO proposal_changes "
+                    "(proposal_id, change_type, text, life_fact_category, "
+                    " reason, review_status, applied_fact_id, display_order) "
+                    "VALUES (:proposal_id, 'lifeFactAdd', 'synthetic fact', "
+                    "'occupation', 'synthetic reason', 'accepted', "
+                    ":fact_id, 1)"
+                ),
+                {"proposal_id": proposal_id, "fact_id": fact_id},
+            )
 
         # 허용되지 않는 값은 CHECK constraint로 거부되어야 한다.
         with pytest.raises(IntegrityError):
@@ -169,6 +281,34 @@ def test_upgrade_produces_working_constraints_and_uuid_default(
                         "INSERT INTO profiles (user_id, age_range, condition_stage) "
                         "VALUES ('00000000-0000-0000-0000-000000000000', '80s', 'unknown')"
                     )
+                )
+
+        # lifeFactAdd는 카테고리 없이 새로 만들 수 없다.
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO proposal_changes "
+                        "(proposal_id, change_type, text, reason, display_order) "
+                        "VALUES (:proposal_id, 'lifeFactAdd', 'invalid fact', "
+                        "'missing category', 2)"
+                    ),
+                    {"proposal_id": proposal_id},
+                )
+
+        # topicPriority는 Life Fact 적용 결과를 가리킬 수 없다.
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO proposal_changes "
+                        "(proposal_id, change_type, topic_key, topic_title, "
+                        " direction, reason, applied_fact_id, display_order) "
+                        "VALUES (:proposal_id, 'topicPriority', 'invalid-topic', "
+                        "'Invalid Topic', 'up', 'invalid applied fact', "
+                        ":fact_id, 3)"
+                    ),
+                    {"proposal_id": proposal_id, "fact_id": fact_id},
                 )
     finally:
         engine.dispose()

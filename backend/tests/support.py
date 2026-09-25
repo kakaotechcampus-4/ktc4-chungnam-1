@@ -11,6 +11,8 @@ def request(
     path: str,
     *,
     json: dict[str, Any] | None = None,
+    data: dict[str, Any] | None = None,
+    files: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     raise_app_exceptions: bool = True,
 ) -> Response:
@@ -22,6 +24,13 @@ def request(
             transport=transport,
             base_url="http://testserver",
         ) as client:
-            return await client.request(method, path, json=json, headers=headers)
+            return await client.request(
+                method,
+                path,
+                json=json,
+                data=data,
+                files=files,
+                headers=headers,
+            )
 
     return asyncio.run(send())
