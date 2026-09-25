@@ -215,29 +215,80 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ## AI 음성 분석 연동
 
-`POST /api/v1/speech-analyses`는 이미 S3에 업로드된 음성의 Presigned GET URL과 화자 수를 받아
-AI 서버의 `POST /internal/v1/speech-analyses`로 전달한다. 이 API는 현재 S3 업로드나 Presigned URL
-생성을 담당하지 않으며, AI 서버 응답의 스키마와 `analysisId`를 확인한 뒤 결과를 그대로 반환한다.
-현재 단계는 BE가 음성 처리 동의를 이미 확인했다는 전제의 연동 확인용 API이며, 실제 앱 연결 전
-인증과 동의 조회를 앞단에 연결해야 한다.
+비동기 처리 경계와 상태는 [ADR-008](../docs/architecture/decisions/ADR-008-stt-pipeline.md)의
+제안 및 [공통 데이터 계약](../docs/architecture/data-contracts.md)을 따른다. 앱은 다음 multipart
+API로 WAV와 보호자가 확인한 참여자 수를 제출한다.
+
+구현 파일, 환경 설정과 합성 WAV를 사용한 전체 테스트 절차는
+[비동기 면회 음성 STT 구현 및 테스트 가이드](docs/async-speech-analysis.md)에 정리했다.
+
+```http
+POST /api/v1/visit-sessions/{sessionId}/speech-analyses
+Authorization: Bearer <accessToken>
+Content-Type: multipart/form-data
+
+audio=<WAV/PCM 16-bit/16kHz/mono>
+participantCount=2
+```
+
+BE는 인증, 필수 동의, 회차 소유권, 피보호자 확인과 녹음 허가를 확인하고 파일 형식과
+크기를 검증한다. S3 업로드와 작업 DB 저장이 끝나면 `202 Accepted`와 `analysisId`를
+반환한다. STT 완료를 뜻하지 않는다.
 
 ```json
 {
   "schemaVersion": 1,
-  "analysisId": "analysis_demo_001",
-  "language": "ko",
-  "speakerCount": 2,
-  "audioSource": {
-    "type": "s3PresignedGet",
-    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
-    "downloadUrlExpiresAt": "2026-09-22T15:10:00+09:00",
-    "sizeBytes": 123456,
-    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  },
-  "dataExpiresAt": "2026-09-22T16:00:00+09:00"
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "queued"
 }
 ```
 
-AI 서버 주소는 `SAEROK_AI_SERVER_URL`로 설정하며 기본값은 `http://127.0.0.1:8001`이다. 동기 처리
-시간 제한은 `SAEROK_AI_SERVER_TIMEOUT_SECONDS`로 설정하며 기본값은 600초다. 현재 자동 재시도는
-하지 않고 연결 실패, 시간 초과, AI 오류와 잘못된 응답을 공통 오류 형식으로 반환한다.
+상태 조회는 인증된 `GET /api/v1/speech-analyses/{analysisId}`다. 다른 계정의 작업은
+존재 여부를 드러내지 않고 404로 처리한다. 상태는 `queued`, `transcribing`,
+`sttCompleted`, `generatingReport`, `completed`, `failed`이며 `failed`일 때 안전한
+`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 S3 원본 삭제까지 끝났다는
+뜻이며 리포트 완료는 아니다.
+
+worker는 PostgreSQL에서 `queued` 작업을 행 잠금으로 하나씩 가져오고 S3 Presigned GET
+URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`를 호출한다.
+`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 S3 원본을 즉시 삭제하고,
+리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+
+현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
+있다. 리포트 생성 모델과 저장 계약은 아직 연결되지 않았으므로 기본 worker는 STT 성공
+후 `sttCompleted`에서 멈춘다. 성공한 STT를 리포트 실패로 바꾸거나 `completed`로
+과장하지 않는다. 자동 재시도와 취소도 아직 없으며 실패를 숨겨 재실행하지 않는다.
+
+API 서버와 별도 터미널에서 worker를 실행한다.
+
+```bash
+bash ./scripts/run_speech_worker.sh
+```
+
+대기 작업 하나만 처리하고 종료하는 통합 확인은 다음과 같다.
+
+```bash
+bash ./scripts/run_speech_worker.sh --once
+```
+
+### 음성 분석 설정
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
+| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
+| `SAEROK_SPEECH_AUDIO_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
+| `SAEROK_SPEECH_AUDIO_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사 |
+| `SAEROK_SPEECH_AUDIO_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
+| `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
+| `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 최대 86400초 |
+| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간 |
+| `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
+
+S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
+운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
+STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
+오류 응답에 남기지 않는다.
