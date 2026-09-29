@@ -13,6 +13,7 @@ import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
 import '../features/report/report_list_screen.dart';
 import '../features/report/report_screen.dart';
+import '../features/review/comfort_screen.dart';
 import '../features/review/review_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
@@ -88,6 +89,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.visitReview,
         builder: (context, state) => const ReviewScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.visitReviewDone,
+        builder: (context, state) => const ComfortScreen(),
       ),
       GoRoute(
         path: AppRoutes.report,
