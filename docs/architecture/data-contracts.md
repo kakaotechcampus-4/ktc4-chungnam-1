@@ -412,13 +412,13 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 - `sessionStatus` 값은 `ready`, `recording`, `paused`, `ended`, `processing`, `completed`, `failed`이다.
   - 녹음 정지는 면회 종료를 뜻하며 `ended`가 된다.
-- `participantCount`는 대화에 함께한 사람 수다. 어르신과 보호자를 포함하며 1 이상이다.
-  - STT 화자 분리 요청의 `speakerCount`로 그대로 넘긴다. 두 값은 같은 수이며 앱에서 따로 계산하거나 보정하지 않는다.
 - `serviceData`, `sensitiveData`와 `careRecipientConfirmation`이 유효하지 않으면 녹음과 원본 업로드를 시작하지 않는다.
 - `careRecipientConfirmation`은 피보호자 본인의 동의만 담는다.
+- `participantCount`는 녹음을 끝낼 때 보호자가 확인한 1~8의 인원수다. STT 요청의
+  `speakerCount`로 이름만 바꾸어 전달하며 앱이나 서버가 추정하지 않는다.
 - 세션은 대화 카드를 선택한 시점에 `ready` 상태로 만든다. 동의 확인과 녹음 승인, 시작 시각은 녹음을 시작할 때 채운다.
 
-**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `recordingAuthorization`, `consent.careRecipientConfirmation`, `participantCount`
+**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `participantCount`, `recordingAuthorization`, `consent.careRecipientConfirmation`
 
 <br>
 

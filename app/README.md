@@ -181,8 +181,8 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
 
 ## 면회 녹음
 
-E-2 녹음 화면에서 실제로 마이크를 열고 기기에 파일을 남긴다. 서버 업로드와 STT
-연결은 아직 없다. 코드는 [`visit_recorder.dart`](lib/features/visit/visit_recorder.dart)에
+E-2 녹음 화면에서 실제로 마이크를 열고 기기에 파일을 남긴다. 이 파일은 이후 서버로
+보내 STT를 거치지만, 업로드는 아직 붙이지 않았다([아직 없는 것](#아직-없는-것)). 코드는 [`visit_recorder.dart`](lib/features/visit/visit_recorder.dart)에
 모여 있고, 화면과 [`VisitController`](lib/features/visit/visit_controller.dart)는
 `VisitRecorder` 인터페이스만 본다. 테스트는 `visitRecorderProvider`를 override 한다.
 
@@ -206,13 +206,13 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 
 ### 음성 형식
 
-**WAV / 16kHz / 모노는 잠정값이다.** `app/CLAUDE.md`대로 음성 형식은 FE가 정하는
-값이 아니라 AI 영역이 확정한다. [PR #65](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/65)의
-요청 예시가 `audio.wav`이고 STT 모델이 보통 16kHz 모노를 받아 임시로 맞췄다.
-확정되면 `visitRecordConfig`와 `VisitRecording.fileExtension`, 그리고
+WAV / PCM 16비트 / 16kHz / 모노다. BE [PR #71](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/71)과
+AI [PR #66](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/66)이 검사하는 형식과 같다.
+두 PR 모두 머지 전이고 PR #71의 ADR-008도 `proposed`라 확정값은 아니다. `app/CLAUDE.md`대로 형식은 AI 영역이 확정한다. 바뀌면
+`visitRecordConfig`와 `VisitRecording.fileExtension`, 그리고
 `test/visit_recording_test.dart`의 `음성 형식` 테스트를 함께 고친다.
 
-이 값에서 1시간 녹음은 약 115MB다. 업로드를 붙이기 전에 용량을 다시 본다.
+1시간 녹음은 약 115MB다. PR #71의 서버 업로드 상한 기본값은 512MB다.
 
 ### 권한과 실패
 
@@ -256,11 +256,15 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 
 ### 아직 없는 것
 
-- 서버 업로드. [PR #65](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/65)의
-  `POST /api/v1/speech-analyses`는 S3 Presigned URL을 받는데, S3 업로드가 BE에 아직 없다.
-- 참여자 수를 서버로 보내는 연결. 값은 화면 상태에만 있고 `VisitSession`을
-  저장하는 경로가 아직 없다.
-- 분석 뒤 파일 삭제. 업로드가 붙어야 지우는 시점이 생긴다. 지금은 파일이 쌓인다.
+PR #71이 머지되면 별도 PR로 붙인다. 흐름은 ADR-008을 따른다.
+
+- 서버 업로드. WAV와 `participantCount`를 multipart로
+  `POST /api/v1/visit-sessions/{sessionId}/speech-analyses`에 보낸다.
+- 상태 조회. `202`로 받은 `analysisId`로 `GET /api/v1/speech-analyses/{analysisId}`를
+  조회해 홈 타일에 반영한다.
+- 기기 파일 삭제. 서버가 `202`로 받은 뒤 지운다. 지금은 파일이 쌓인다.
+- 보내지 못한 파일을 기기에 얼마나 둘지. ADR-008은 FE 문서에서 정하게 했으나 **미정**이며
+  PM 확인이 필요하다.
 - 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스.
 
 ## 담당과 남은 연동
@@ -268,7 +272,7 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 | 영역 | FE 작업 | 함께 정할 경계 |
 | --- | --- | --- |
 | 화면 | 초기 설정, 카드, 면회, 리포트, 평가와 스토리북 | 카드 수와 제공 방식 등 제품 범위는 PM 결정 |
-| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기, 기기 저장 | 음성 형식은 AI가 확정한다. 현재 값은 잠정이고 업로드와 `SpeechInput` 연결은 남았다 |
+| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기, 기기 저장 | 음성 형식은 AI가 확정한다. 업로드와 상태 조회는 BE 계약(PR #71)을 따르며 남았다 |
 | 사진 | 카메라와 갤러리 연동 | 현재는 목 이미지. 권한 거부, 중단과 복구 흐름은 FE가 정함 |
 | 데이터 | 합의된 저장 및 서버 인터페이스를 앱에 연결 | BE가 저장 구조, 암호화와 API 담당. 현재는 `MockRepository` |
 | 품질 | 오류 상태, 수동 전환과 접근성 | 실제 모델 결과와 실패 상태는 AI, BE 계약 확인 |
