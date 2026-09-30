@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 import json
+import struct
 import wave
 
 import httpx
@@ -50,6 +51,23 @@ def synthetic_wav() -> bytes:
         wav.setframerate(16_000)
         wav.writeframes(b"\x00\x00" * 1600)
     return output.getvalue()
+
+
+def truncated_wav(data_bytes: int) -> bytes:
+    """헤더는 합성 WAV의 음성 길이를 그대로 선언하고 데이터만 data_bytes로 자른다."""
+
+    audio = synthetic_wav()
+    header_bytes = len(audio) - 1600 * 2
+    return audio[: header_bytes + data_bytes]
+
+
+def wav_with_trailing_chunk() -> bytes:
+    """data 청크 뒤에 메타데이터 청크가 붙은 정상 WAV."""
+
+    audio = bytearray(synthetic_wav())
+    trailer = b"LIST" + struct.pack("<I", 4) + b"INFO"
+    audio[4:8] = struct.pack("<I", len(audio) + len(trailer) - 8)
+    return bytes(audio + trailer)
 
 
 class FakeAudioStorage:
@@ -190,6 +208,26 @@ def test_rejects_a_file_that_is_not_the_required_wav_format() -> None:
     assert response.status_code == 422
     assert response.json()["errorCode"] == "INVALID_AUDIO_FORMAT"
     assert storage.objects == {}
+
+
+@pytest.mark.parametrize("data_bytes", [0, 100], ids=["header-only", "truncated"])
+def test_rejects_a_wav_missing_declared_audio_data(data_bytes: int) -> None:
+    application, _, storage, _ = harness()
+
+    response = submit(application, audio=truncated_wav(data_bytes))
+
+    assert response.status_code == 422
+    assert response.json()["errorCode"] == "INVALID_AUDIO"
+    assert storage.objects == {}
+
+
+def test_accepts_a_wav_with_a_chunk_after_the_audio_data() -> None:
+    application, _, storage, _ = harness()
+
+    response = submit(application, audio=wav_with_trailing_chunk())
+
+    assert response.status_code == 202
+    assert len(storage.objects) == 1
 
 
 def test_failed_upload_is_not_accepted_and_can_be_submitted_again() -> None:
