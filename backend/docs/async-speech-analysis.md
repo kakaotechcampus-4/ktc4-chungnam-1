@@ -169,7 +169,7 @@ BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검
 | 파일 | 역할 |
 | --- | --- |
 | `app/api/routes/speech_analyses.py` | multipart 제출 및 상태 조회 API |
-| `app/services/audio_validation.py` | 크기, SHA-256과 WAV 규격 검사 |
+| `app/services/audio_validation.py` | 크기, SHA-256, WAV 규격과 음성 데이터 누락 검사 |
 | `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
 | `app/services/speech_analysis_pipeline.py` | 제출 서비스와 STT worker 처리 순서 |
@@ -525,6 +525,7 @@ error_code = null
 | `participantCount=0` 또는 `9` | 422 `INVALID_REQUEST`, S3 업로드 없음 |
 | WAV가 아닌 파일 | 422 `INVALID_AUDIO_FORMAT`, S3 업로드 없음 |
 | 빈 파일 | 422 `INVALID_AUDIO`, S3 업로드 없음 |
+| 헤더만 있거나 음성 데이터가 잘린 WAV | 422 `INVALID_AUDIO`, S3 업로드 없음 |
 | 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨 |
 | 인증 없음 | 401 `UNAUTHENTICATED` |
 | 다른 계정의 면회 | 404 `VISIT_SESSION_NOT_FOUND` |
@@ -542,7 +543,8 @@ error_code = null
 
 ## 13. FE 연결 기준
 
-FE는 녹음을 정상적으로 닫아 WAV 헤더가 완성된 뒤 업로드한다.
+FE는 녹음을 정상적으로 닫아 WAV 헤더가 완성된 뒤 업로드한다. 헤더만 있거나 중간에 잘려
+음성 데이터가 헤더에 선언된 길이보다 짧은 파일은 BE가 `422 INVALID_AUDIO`로 거부한다.
 
 ```text
 recordingPath       → multipart audio
