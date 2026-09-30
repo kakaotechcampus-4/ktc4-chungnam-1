@@ -46,6 +46,7 @@ void main() {
     AppRoutes.visitRecord: '녹음',
     AppRoutes.visitAddCards: '대화 카드 추가',
     AppRoutes.visitReview: '보호자 소감',
+    AppRoutes.visitReviewDone: '보호자 위로',
     AppRoutes.profile: '프로필 설정',
     AppRoutes.reports: '리포트 기록',
     AppRoutes.album: '일대기',

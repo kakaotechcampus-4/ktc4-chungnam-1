@@ -46,6 +46,9 @@ abstract final class AppRoutes {
   /// F 보호자 소감 작성.
   static const visitReview = '/visit/review';
 
+  /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
+  static const visitReviewDone = '/visit/review/done';
+
   /// G 리포트. `:reportId` 를 받는다.
   static const report = '/report/:reportId';
 
