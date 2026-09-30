@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 로그인이 서버와 구글 인증에 붙는다. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="새록"
         android:name="${applicationName}"

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/auth_api.dart';
+import '../features/auth/google_consent_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
@@ -36,6 +38,24 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.signup,
         builder: (context, state) => const SignupScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.googleConsent,
+        builder: (context, state) {
+          final pending = state.extra;
+          // 등록 정보는 로그인 화면에서만 넘어온다. 주소로 직접 들어오거나 앱을
+          // 다시 띄우면 비어 있으므로, 빈 동의 화면을 보여주지 않고 되돌린다.
+          if (pending is! ConsentRequiredResult) {
+            return Scaffold(
+              appBar: const AppTopBar(title: '약관 동의'),
+              body: ErrorStateView(
+                message: '로그인 정보가 없어요.\n로그인부터 다시 해주세요.',
+                onRetry: () => context.go(AppRoutes.login),
+              ),
+            );
+          }
+          return GoogleConsentScreen(pending: pending);
+        },
       ),
       GoRoute(
         path: AppRoutes.onboarding,

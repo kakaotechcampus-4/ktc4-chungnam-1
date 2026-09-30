@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.router import api_router
+from app.clients.ai_server import AiServerClient
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, install_request_logging
@@ -17,6 +18,10 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(application)
     install_request_logging(application)
+    application.state.ai_server_client = AiServerClient(
+        base_url=settings.ai_server_url,
+        timeout_seconds=settings.ai_server_timeout_seconds,
+    )
     application.include_router(api_router)
     return application
 

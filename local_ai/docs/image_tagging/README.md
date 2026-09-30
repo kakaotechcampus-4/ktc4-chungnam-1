@@ -9,6 +9,7 @@
 | 초기 로컬 모델 후보의 품질, 속도와 한계 | [VLM 후보 비교](vlm-benchmark-report.md) | [상세 분석과 17장 전체 출력](vlm-benchmark-full-results.md) |
 | 같은 17장에 대한 Haiku와 Luna 키워드 비교 | [Haiku와 Luna 비교](haiku-luna-low-benchmark.md) | 보고서의 이미지별 비교표 |
 | Luna low와 medium의 문맥형 출력 비교 | [Luna 문맥형 비교](luna-low-medium-context-benchmark.md) | [이미지별 전체 출력](luna-low-medium-context-full-results.md) |
+| 7개 모델 9개 API 조건 비교 | [API VLM 비교](vlm-api-benchmark-report.md) | [306건 전체 확정 데이터 (JSONL)](vlm-api-full-results.jsonl) |
 | 메타데이터 확보 범위와 신뢰 한계 | [메타데이터 추출 보고서](metadata-extraction-report.md) | [추출 JSON](metadata-extraction-results.json) |
 | 평가 이미지의 출처와 라이선스 | [출처 목록](target-image/SOURCES.md) | 해당 목록에 연결된 공개 원문 |
 

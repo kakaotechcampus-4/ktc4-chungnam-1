@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- 개발 서버는 http 다(`backend/README.md` 의 10.0.2.2:8000). 안드로이드는
+         API 28 부터 평문 http 를 막으므로 디버그 빌드에서만 열어 둔다.
+         릴리스 빌드에는 들어가지 않는다. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
