@@ -302,7 +302,9 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 ## 카드 생성 요청 (CardGenerationRequest)
 
-> **상태: 결정 대기.** 카드 생성과 추천은 핵심 기능으로 별도 설계한다. [PM 제품 기준](../pm/README.md#카드-미사용과-추천-제외)을 지키며 AI가 로직을 설계하고 PM, FE와 BE가 제품 및 연동 범위를 함께 확인한다. 아래는 FE가 화면에서 수집할 수 있는 값의 목록이며 형식 제안이 아니다.
+> **상태: 스키마 제안 반영, 추천 로직 결정 대기.** 확정 Life Fact와 승인된 주제
+> 우선순위를 카드 생성 입력으로 저장하는 구조는 [ADR-009](decisions/ADR-009-card-life-fact-feedback-schema.md)를
+> 따른다. 검색, 점수 계산과 카드 선정 방식은 AI가 설계하고 PM, FE와 BE가 함께 확인한다.
 
 ```json
 {
@@ -329,6 +331,8 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 ```
 
 - `topicPriorities`는 지난 회차 변경 제안에서 승인된 주제 우선순위이며 첫 회차에는 빈 배열이다.
+- 서버는 카드 생성에 실제로 전달한 `confirmedLifeFacts`를 요청별 입력 스냅숏으로
+  저장한다. 이는 생성 근거 추적용이며 원본 음성이나 전사문을 포함하지 않는다.
 
 <br>
 
@@ -634,7 +638,9 @@ AI 성공 응답은 다음과 같다.
 
 ## 변경 제안 (ChangeProposal)
 
-> **상태: 결정 대기.** 주제 관리 방식은 AI 영역에서 확정한다. 아래는 변경 사항 확인 화면에 필요한 값의 목록이며 산출 방식 제안이 아니다.
+> **상태: 스키마 제안 반영, 산출 로직 결정 대기.** 변경 제안의 승인 결과를 Life
+> Fact와 프로필별 주제 우선순위에 반영하는 구조는 [ADR-009](decisions/ADR-009-card-life-fact-feedback-schema.md)를
+> 따른다. 제안 항목을 산출하고 우선순위 점수를 계산하는 방식은 별도로 확정한다.
 
 ```json
 {
@@ -656,6 +662,7 @@ AI 성공 응답은 다음과 같다.
     {
       "changeId": "change_demo_002",
       "changeType": "lifeFactAdd",
+      "category": "occupation",
       "text": "한복을 주로 만드셨어요.",
       "reason": "이번 면회에서 확인되었어요.",
       "reviewStatus": "accepted"
@@ -668,12 +675,14 @@ AI 성공 응답은 다음과 같다.
 - `proposalStatus` 값은 `pendingReview`, `reviewed`이다.
 - `changeType` 값은 `topicPriority`와 `lifeFactAdd`이다. 기존 생애 사실의 수정은 제안하지 않으며 사용자가 마이페이지에서 직접 수정한다.
   - `topicPriority`는 `topicKey`, `topicTitle`, `direction`을 갖고 `text`를 갖지 않는다.
-  - `lifeFactAdd`는 `text`를 갖고 나머지 셋을 갖지 않는다.
+  - `lifeFactAdd`는 `category`, `text`를 갖고 `topicKey`, `topicTitle`, `direction`을 갖지 않는다. `category` 값은 `LifeFact.category`와 같다.
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
 - 미사용 및 미응답만으로 `direction: down`을 제안하지 않는다. 추천 제외 의사와 우선순위 조정은 구분하며, 명시적 제외를 이 필드에 임의로 추가하지 않는다. 세부 추천 로직과 제외 계약은 후속 설계한다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
 - 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
+- 승인된 `lifeFactAdd`는 새 `LifeFact`를 생성하고 변경 항목과 생성 결과를 연결한다. 승인 상태 변경과 사실 생성은 하나의 트랜잭션으로 처리하며, 재요청으로 같은 변경에서 사실을 중복 생성하지 않는다.
+- 승인된 `topicPriority`는 프로필별 주제 우선순위에 반영해 다음 카드 생성 요청에서 사용한다. 점수 계산 방식은 추천 로직에서 별도로 정하며 미사용 또는 미응답만으로 낮추지 않는다.
 
 <br>
 
@@ -700,6 +709,6 @@ AI 성공 응답은 다음과 같다.
 | 계정과 로그인 | 구글 로그인 API는 PR #47에 반영됐다. ADR-007과 공통 Account는 `authProvider`, nullable 이메일을 설명한다. 저장 항목과 DB 연결, 앱 로그인 유지는 후속 검토 및 구현이다. | PM, BE, FE |
 | 서버 중심 데이터 관리 | 데이터별 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 구현을 정해야 한다. 원본 임시 처리의 최대 24시간 제한은 유지한다. | BE 제안, FE, AI, PM 공동 확인 |
 | 피보호자 대리 동의 | 현재 계약은 피보호자 본인의 동의만 담는다. 병세가 진행되어 본인이 동의하기 어려운 경우(ex. 음성 녹음 동의 등) 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
-| 카드 생성과 추천 로직 | 핵심 기능으로 별도 설계한다. 입력 문맥, 기억 검색, 이미지 후보 활용과 평가 반영 방식을 정한 뒤 `CardGenerationRequest`의 형식을 확정한다. 미사용 및 미응답만으로 비선호를 추정하지 않는 원칙은 확정이다. | AI 설계, PM, FE, BE 공동 확인 |
+| 카드 생성과 추천 로직 | 확정 Life Fact 입력 스냅숏과 승인된 주제 우선순위 저장 구조는 ADR-009에 제안했다. 기억 검색, 이미지 후보 활용, 점수 계산과 평가 반영 방식은 아직 정해야 한다. 미사용 및 미응답만으로 비선호를 추정하지 않는 원칙은 확정이다. | AI 설계, PM, FE, BE 공동 확인 |
 | 주제 관리와 명시적 추천 제외 | `topicKey`, 주제별 가중치, 명시적 제외의 대상 범위, 해제 방식, 화면과 저장 필드 및 API를 정해야 한다. 추천 제외와 과거 기록 삭제는 별개다. | AI, PM, FE, BE |
 | 비동기 STT 운영 계약 | ADR-008의 API와 상태 초안은 구현 검증 중이다. 자동 재시도, 취소, 리포트 생성 계약과 전사문 장애 복구 저장 여부는 공동 확인이 필요하다. | BE 제안, FE, AI, PM 공동 확인 |
