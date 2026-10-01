@@ -634,6 +634,16 @@ AI 성공 응답은 다음과 같다.
 
 ## 변경 제안 (ChangeProposal)
 
+2026-10-02 FE 목 화면 확장: 주제 제안은 `suggestedAction`에
+`more | less | exclude`를 사용한다. 기존 `direction: up/down`은
+이전 목 자료를 읽을 때만 more/less로 변환한다. 아래 이전 JSON 예시의
+direction보다 이 화면 확장을 우선한다. 주제의 `description`, 이야기의
+`title`을 함께 표시한다. 이야기는 기존 `text`가 DB의 content에 대응한다.
+원래 suggestedAction/reason과 최종 선택 action/수정 제목·내용은 구분한다.
+사용자 확인 전에는 exclude도 적용하지 않는다. ×는 이번 제안의 거절이며
+action=exclude와 다르다. 이 브랜치는 통합 화면용 목 객체를 유지하고,
+DB의 topic_proposals/life_fact_proposals/topic_feedback에 대한 API 연결은 하지 않는다.
+
 > **상태: 결정 대기.** 주제 관리 방식은 AI 영역에서 확정한다. 아래는 변경 사항 확인 화면에 필요한 값의 목록이며 산출 방식 제안이 아니다.
 
 ```json

@@ -75,13 +75,13 @@ void main() {
       reason: '명절 음식은 쓰지 않았다고 답한 카드다',
     );
     expect(evaluation.cardReviews.last.caregiverReaction, isNull);
-    // 반영이 끝난 상태라 pending 이 남아 있지 않다.
-    expect(proposal.proposalStatus, ProposalStatus.reviewed);
+    // 보호자가 검토하기 전의 제안이다.
+    expect(proposal.proposalStatus, ProposalStatus.pendingReview);
     expect(
       proposal.changes.where(
         (c) => c.reviewStatus == ChangeReviewStatus.pending,
       ),
-      isEmpty,
+      hasLength(4),
     );
   });
 

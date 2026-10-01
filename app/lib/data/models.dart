@@ -600,6 +600,9 @@ class ProposedChange {
     required this.reviewStatus,
     this.topicTitle,
     this.direction,
+    this.suggestedAction,
+    this.title,
+    this.description,
     this.text,
   });
 
@@ -608,6 +611,9 @@ class ProposedChange {
     changeType: json['changeType'] as String,
     topicTitle: json['topicTitle'] as String?,
     direction: json['direction'] as String?,
+    suggestedAction: json['suggestedAction'] as String?,
+    title: json['title'] as String?,
+    description: json['description'] as String?,
     text: json['text'] as String?,
     reason: json['reason'] as String,
     reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
@@ -619,6 +625,9 @@ class ProposedChange {
   final String changeType;
   final String? topicTitle;
   final String? direction;
+  final String? suggestedAction;
+  final String? title;
+  final String? description;
   final String? text;
   final String reason;
 

@@ -25,6 +25,10 @@
 
 ## 담긴 시나리오
 
+변경 제안은 검토 화면 확인을 위해 pendingReview/pending으로 제공한다.
+주제 제안은 suggestedAction=more/exclude 두 예시이며 사용자가 less를
+포함한 최종 선택을 할 수 있다. 제목·설명 수정과 이야기 확인을 지원한다.
+
 보호자 한 명이 첫 면회를 마치고 리포트의 변경 제안까지 반영한 한 회차다.
 
     account_demo_001
