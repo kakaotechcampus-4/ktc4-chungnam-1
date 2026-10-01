@@ -203,7 +203,7 @@ void main() {
           reason: change.changeId,
         );
         if (change.changeType == 'topicPriority') {
-          expect(change.direction, anyOf('up', 'down'));
+          expect(change.suggestedAction, anyOf('more', 'less', 'exclude'));
           expect(change.topicTitle, isNotNull);
           expect(change.text, isNull, reason: 'topicPriority 는 text 를 갖지 않는다');
         } else {
