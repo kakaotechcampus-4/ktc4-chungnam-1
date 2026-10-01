@@ -64,6 +64,11 @@ abstract final class AppRoutes {
 
   /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
   static const profile = '/profile';
+  static const profileStories = '/profile/stories';
+  static const profileStoryAdd = '/profile/stories/add';
+  static const profileStory = '/profile/stories/:factId';
+  static String profileStoryOf(String id) =>
+      '/profile/stories/${Uri.encodeComponent(id)}';
 
   /// 리포트 기록. 확인한 리포트를 다시 볼 수 있다.
   static const reports = '/reports';

@@ -9,6 +9,7 @@ import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/stories_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
 import '../features/report/report_list_screen.dart';
@@ -110,6 +111,19 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileStories,
+        builder: (context, state) => const StoriesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileStoryAdd,
+        builder: (context, state) => const StoryEditorScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileStory,
+        builder: (context, state) =>
+            StoryDetailScreen(factId: state.pathParameters['factId']!),
       ),
       GoRoute(
         path: AppRoutes.reports,

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../app/routes.dart';
+import 'stories_screen.dart';
+import 'stories_provider.dart';
 
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
-import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
@@ -36,14 +39,15 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends ConsumerWidget {
   const _Body({required this.bundle});
 
   final ProfileBundle bundle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final profile = bundle.profile;
+    final stories = ref.watch(profileStoriesProvider).asData?.value ?? [];
 
     return ScreenBody(
       scrollable: true,
@@ -67,9 +71,12 @@ class _Body extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      '${profile.name} 어르신',
-                      style: AppTypography.sectionTitle,
+                    Flexible(
+                      child: Text(
+                        '${profile.name} 어르신',
+                        style: AppTypography.sectionTitle,
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     const Icon(
@@ -106,24 +113,43 @@ class _Body extends StatelessWidget {
           _Section(
             title: '세부 정보',
             onEdit: () {},
-            child: bundle.lifeFacts.isEmpty
+            child: profile.details.isEmpty
                 ? const EmptyStateView(
                     message: '아직 담긴 이야기가 없어요.',
                     icon: Icons.notes_outlined,
                   )
                 : Column(
                     children: [
-                      for (final fact in bundle.lifeFacts)
+                      for (final entry in profile.details.entries)
                         Padding(
                           padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                          child: _FactRow(fact: fact),
+                          child: _FactRow(label: entry.key, text: entry.value),
                         ),
                     ],
                   ),
           ),
           const SizedBox(height: AppSpacing.lg),
 
-          SecondaryButton(label: '내용 추가하기', onPressed: () {}),
+          Text('쌓아온 이야기 ${stories.length}', style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.sm),
+          const Text('직접 남기거나 면회 후 확인한 이야기예요.', style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.md),
+          if (stories.isEmpty)
+            const EmptyStateView(
+              message: '아직 쌓아온 이야기가 없어요.',
+              icon: Icons.notes_outlined,
+            ),
+          for (final fact in stories.take(3)) StoryTile(fact: fact),
+          OutlinedButton(
+            onPressed: () => context.push(AppRoutes.profileStories),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+              child: Text(
+                '이야기 전체 보기 (${stories.length})',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.section),
 
           _Section(
@@ -219,9 +245,10 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _FactRow extends StatelessWidget {
-  const _FactRow({required this.fact});
+  const _FactRow({required this.label, required this.text});
 
-  final LifeFact fact;
+  final String label;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -229,9 +256,9 @@ class _FactRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppChip(_categoryLabel(fact.category), tone: ChipTone.weak),
+          AppChip(_categoryLabel(label), tone: ChipTone.weak),
           const SizedBox(height: AppSpacing.md),
-          Text(fact.text, style: AppTypography.body),
+          Text(text, style: AppTypography.body),
         ],
       ),
     );
