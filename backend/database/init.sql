@@ -270,11 +270,13 @@ CREATE TABLE topic_proposals (
     profile_id  UUID         NOT NULL,
     card_id     UUID         NOT NULL,
     topic_id    UUID         NOT NULL,
-    direction   VARCHAR(5)   NOT NULL CHECK (direction IN ('up', 'down')),
+    suggested_action VARCHAR(10) NOT NULL
+        CHECK (suggested_action IN ('more', 'less', 'exclude')),
     reason      TEXT         NOT NULL,
     status      VARCHAR(10)  NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'settled')),
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     FOREIGN KEY (card_id, topic_id, profile_id)
