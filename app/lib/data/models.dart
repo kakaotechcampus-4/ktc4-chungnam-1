@@ -55,6 +55,7 @@ class Account {
   }
 
   final String accountId;
+
   /// `google` 하나뿐이다. 계약에 다른 제공자를 더하는 것은 계약 변경으로 본다.
   final String authProvider;
   final String displayName;
@@ -98,6 +99,7 @@ class Profile {
     required this.lifeFactIds,
     required this.photoIds,
     this.symptomNote,
+    this.details = const {},
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
@@ -111,6 +113,7 @@ class Profile {
       ageRange: json['ageRange'] as String,
       stage: ConditionStage.parse(condition['stage'] as String),
       symptomNote: condition['symptomNote'] as String?,
+      details: Map<String, String>.from(json['details'] as Map? ?? {}),
       lifeFactIds: (json['lifeFactIds'] as List).cast<String>(),
       photoIds: (json['photoIds'] as List).cast<String>(),
     );
@@ -126,6 +129,7 @@ class Profile {
   final String ageRange;
   final ConditionStage? stage;
   final String? symptomNote;
+  final Map<String, String> details;
   final List<String> lifeFactIds;
   final List<String> photoIds;
 }
@@ -136,19 +140,25 @@ class LifeFact {
     required this.category,
     required this.text,
     required this.sourceType,
+    this.title = '',
+    this.createdAt,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
     factId: json['factId'] as String,
-    category: json['category'] as String,
+    category: json['category'] as String?,
     text: json['text'] as String,
     sourceType: json['sourceType'] as String,
+    title: json['title'] as String? ?? '',
+    createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
   );
 
   final String factId;
-  final String category;
+  final String? category;
   final String text;
   final String sourceType;
+  final String title;
+  final DateTime? createdAt;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.
