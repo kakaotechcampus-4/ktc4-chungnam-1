@@ -24,6 +24,8 @@ import 'package:saerok/features/auth/google_sign_in_button.dart';
 import 'package:saerok/features/auth/login_screen.dart';
 import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
+import 'package:saerok/features/profile/profile_delete_screen.dart';
+import 'package:saerok/features/profile/profile_screen.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
 
@@ -146,6 +148,23 @@ ConsentRequiredResult _pending({
       as Map<String, dynamic>,
 );
 
+/// 로그인을 마친 세션이다.
+AuthSession _signedIn() => AuthSession.fromResult(
+  AuthenticatedResult.fromJson(
+    jsonDecode(_authenticatedBody()) as Map<String, dynamic>,
+  ),
+);
+
+/// 화면을 띄울 때부터 로그인한 상태로 둔다.
+class _SignedInSession extends SessionNotifier {
+  _SignedInSession(this._initial);
+
+  final AuthSession _initial;
+
+  @override
+  AuthSession? build() => _initial;
+}
+
 /// 동의 항목의 체크박스 자리. 전체 동의가 뒤에 하나 더 붙는다.
 int _rowOf(String key) => consentTerms.indexWhere((term) => term.key == key);
 
@@ -168,6 +187,7 @@ Widget _app({
   Object? extra,
   SessionStore? store,
   String? initialLocation,
+  AuthSession? session,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -203,6 +223,14 @@ Widget _app({
         builder: (context, state) =>
             const Scaffold(body: Center(child: Text('회원가입 화면'))),
       ),
+      GoRoute(
+        path: AppRoutes.profile,
+        builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileDelete,
+        builder: (context, state) => const ProfileDeleteScreen(),
+      ),
     ],
   );
 
@@ -213,6 +241,8 @@ Widget _app({
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
+      if (session != null)
+        sessionProvider.overrideWith(() => _SignedInSession(session)),
     ],
     child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
   );
@@ -223,6 +253,15 @@ void _tallScreen(WidgetTester tester) {
   tester.view.physicalSize = const Size(1236, 4800);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
+}
+
+/// 프로필 화면은 목 프로필을 asset 에서 읽으므로 실제 비동기 처리를 기다린다.
+Future<void> _pumpWithProfile(WidgetTester tester, Widget app) async {
+  await tester.runAsync(() async {
+    await tester.pumpWidget(app);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  });
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -732,8 +771,17 @@ void main() {
     test('로그아웃하면 보관한 세션과 구글 쪽을 함께 지운다', () async {
       final store = _FakeSessionStore();
       final google = _FakeGoogleAuthenticator();
+      final sent = <http.Request>[];
       final container = ProviderContainer(
         overrides: [
+          authApiProvider.overrideWithValue(
+            _api(
+              MockClient((request) async {
+                sent.add(request);
+                return http.Response('', 204);
+              }),
+            ),
+          ),
           sessionStoreProvider.overrideWithValue(store),
           googleAuthenticatorProvider.overrideWithValue(google),
         ],
@@ -759,6 +807,252 @@ void main() {
         1,
         reason: '다음 로그인에서 계정을 다시 고를 수 있어야 한다',
       );
+      expect(sent, hasLength(1), reason: '서버에서도 세션을 폐기한다');
+      expect(sent.single.method, 'POST');
+      expect(sent.single.url.path, '/auth/logout');
+      expect(sent.single.headers['Authorization'], 'Bearer fake-session-token');
+    });
+  });
+
+  group('로그아웃', () {
+    test('서버에 닿지 못해도 단말에서는 로그아웃된다', () async {
+      // 오프라인에서도 로그아웃은 되어야 한다. 단말에서 지운 세션은 다시
+      // 쓰일 일이 없다.
+      final store = _FakeSessionStore(_signedIn());
+      final google = _FakeGoogleAuthenticator();
+      final container = ProviderContainer(
+        overrides: [
+          authApiProvider.overrideWithValue(
+            _api(
+              MockClient((request) async => throw const SocketException('오프라인')),
+            ),
+          ),
+          sessionStoreProvider.overrideWithValue(store),
+          googleAuthenticatorProvider.overrideWithValue(google),
+          sessionProvider.overrideWith(() => _SignedInSession(_signedIn())),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(sessionProvider.notifier).signOut();
+
+      expect(container.read(sessionProvider), isNull);
+      expect(store.stored, isNull);
+      expect(google.signOutCalls, 1);
+    });
+
+    testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
+      _tallScreen(tester);
+      final store = _FakeSessionStore(_signedIn());
+      final paths = <String>[];
+
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(
+            MockClient((request) async {
+              paths.add('${request.method} ${request.url.path}');
+              return http.Response('', 204);
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          session: _signedIn(),
+          initialLocation: AppRoutes.profile,
+        ),
+      );
+
+      final button = find.widgetWithText(OutlinedButton, '로그아웃');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(paths, ['POST /auth/logout']);
+      expect(store.stored, isNull);
+      expect(find.byType(LoginScreen), findsOneWidget);
+    });
+  });
+
+  group('회원 탈퇴', () {
+    test('API 는 세션을 담아 DELETE /auth/me 를 부른다', () async {
+      http.Request? sent;
+      final api = _api(
+        MockClient((request) async {
+          sent = request;
+          return http.Response('', 204);
+        }),
+      );
+
+      await api.deleteAccount('Bearer fake-session-token');
+
+      expect(sent!.method, 'DELETE');
+      expect(sent!.url.path, '/auth/me');
+      expect(sent!.headers['Authorization'], 'Bearer fake-session-token');
+      expect(sent!.body, isEmpty, reason: '탈퇴 이유와 계정 정보를 보내지 않는다');
+    });
+
+    test('서버가 지운 뒤에만 단말 세션과 구글 쪽을 지운다', () async {
+      final store = _FakeSessionStore(_signedIn());
+      final google = _FakeGoogleAuthenticator();
+      final container = ProviderContainer(
+        overrides: [
+          authApiProvider.overrideWithValue(
+            _api(MockClient((request) async => http.Response('', 204))),
+          ),
+          sessionStoreProvider.overrideWithValue(store),
+          googleAuthenticatorProvider.overrideWithValue(google),
+          sessionProvider.overrideWith(() => _SignedInSession(_signedIn())),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(sessionProvider.notifier).deleteAccount();
+
+      expect(container.read(sessionProvider), isNull);
+      expect(store.stored, isNull);
+      expect(google.signOutCalls, 1);
+    });
+
+    test('서버가 거절하면 세션을 남기고 실패를 그대로 알린다', () async {
+      final store = _FakeSessionStore(_signedIn());
+      final google = _FakeGoogleAuthenticator();
+      final container = ProviderContainer(
+        overrides: [
+          authApiProvider.overrideWithValue(
+            _api(
+              MockClient(
+                (request) async => _json(_errorBody('INTERNAL_ERROR'), 500),
+              ),
+            ),
+          ),
+          sessionStoreProvider.overrideWithValue(store),
+          googleAuthenticatorProvider.overrideWithValue(google),
+          sessionProvider.overrideWith(() => _SignedInSession(_signedIn())),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container.read(sessionProvider.notifier).deleteAccount(),
+        throwsA(
+          isA<AuthServerFailure>().having((f) => f.statusCode, 'status', 500),
+        ),
+      );
+
+      expect(container.read(sessionProvider), isNotNull);
+      expect(store.stored, isNotNull, reason: '지워지지 않았는데 로그아웃된 것처럼 두지 않는다');
+      expect(google.signOutCalls, 0);
+    });
+
+    testWidgets('탈퇴하기를 누르면 계정을 지우고 로그인 화면으로 간다', (tester) async {
+      final store = _FakeSessionStore(_signedIn());
+      final paths = <String>[];
+
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(
+            MockClient((request) async {
+              paths.add('${request.method} ${request.url.path}');
+              return http.Response('', 204);
+            }),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          session: _signedIn(),
+          initialLocation: AppRoutes.profileDelete,
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, '탈퇴하기'));
+      await tester.pumpAndSettle();
+
+      expect(paths, ['DELETE /auth/me']);
+      expect(store.stored, isNull);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);
+    });
+
+    testWidgets('서버가 실패하면 화면에 남아 탈퇴되지 않았음을 알린다', (tester) async {
+      final store = _FakeSessionStore(_signedIn());
+
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(
+            MockClient(
+              (request) async => _json(_errorBody('INTERNAL_ERROR'), 500),
+            ),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          session: _signedIn(),
+          initialLocation: AppRoutes.profileDelete,
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, '탈퇴하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ProfileDeleteScreen), findsOneWidget);
+      expect(find.text('탈퇴하지 못했어요. 잠시 후 다시 시도해주세요.'), findsOneWidget);
+      expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
+      expect(store.stored, isNotNull);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '탈퇴하기'))
+            .onPressed,
+        isNotNull,
+        reason: '다시 시도할 수 있다',
+      );
+    });
+
+    testWidgets('세션이 풀렸으면 로그인으로 돌아갈 길을 준다', (tester) async {
+      final store = _FakeSessionStore(_signedIn());
+
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(
+            MockClient(
+              (request) async => _json(_errorBody('SESSION_EXPIRED'), 401),
+            ),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: store,
+          session: _signedIn(),
+          initialLocation: AppRoutes.profileDelete,
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, '탈퇴하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('로그인이 풀렸어요'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '탈퇴하기'), findsNothing);
+
+      await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(store.stored, isNull, reason: '풀린 세션은 남기지 않는다');
+      expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
+    });
+
+    testWidgets('서버 계정 없이 들어오면 서버를 부르지 않고 알린다', (tester) async {
+      // 아이디와 비밀번호 목 로그인으로 들어온 경우다. 지울 계정이 없다.
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(MockClient((request) async => fail('지울 세션이 없다'))),
+          google: _FakeGoogleAuthenticator(),
+          initialLocation: AppRoutes.profileDelete,
+        ),
+      );
+
+      expect(find.textContaining('로그인 정보가 없어요'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '탈퇴하기'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '로그인으로 돌아가기'), findsOneWidget);
     });
   });
 

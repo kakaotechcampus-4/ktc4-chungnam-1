@@ -26,7 +26,7 @@ const apiBaseUrl = String.fromEnvironment(
 
 // ── 실패 ────────────────────────────────────────────
 
-/// 로그인 과정에서 생기는 실패다. 화면은 이 네 가지만 구분하면 된다.
+/// 로그인, 로그아웃과 탈퇴에서 생기는 실패다. 화면은 이 네 가지만 구분하면 된다.
 ///
 /// 사용자에게 보여줄 문구는 `features/auth/auth_messages.dart` 에 있다.
 sealed class AuthFailure implements Exception {
@@ -274,56 +274,64 @@ class AuthApi {
   /// 서버가 401 이나 403 으로 거절하면 [AuthServerFailure] 다. 화면은 그때
   /// 세션을 버리고 다시 인증한다.
   Future<AuthAccount> me(String authorizationHeader) async {
-    final body = await _get('/auth/me', authorizationHeader);
+    final body = _object(
+      await _send(
+        () => _client.get(
+          Uri.parse('$_baseUrl/auth/me'),
+          headers: {'Authorization': authorizationHeader},
+        ),
+      ),
+    );
     return AuthAccount.fromJson(body);
+  }
+
+  /// 서버에서 이 세션을 폐기한다. 성공하면 만료 전이라도 다시 쓰이지 않는다.
+  Future<void> logout(String authorizationHeader) async {
+    await _send(
+      () => _client.post(
+        Uri.parse('$_baseUrl/auth/logout'),
+        headers: {'Authorization': authorizationHeader},
+      ),
+    );
+  }
+
+  /// 회원 탈퇴. 서버가 계정과 동의 이력을 지우고 이 세션을 폐기한다.
+  ///
+  /// 실패하면 [AuthFailure] 를 던진다. 돌아오지 않았으면 지워지지 않은 것으로
+  /// 본다.
+  Future<void> deleteAccount(String authorizationHeader) async {
+    await _send(
+      () => _client.delete(
+        Uri.parse('$_baseUrl/auth/me'),
+        headers: {'Authorization': authorizationHeader},
+      ),
+    );
   }
 
   void close() {
     if (_ownsClient) _client.close();
   }
 
-  Future<Map<String, dynamic>> _get(
-    String path,
-    String authorizationHeader,
-  ) async {
-    final http.Response response;
-    try {
-      response = await _client
-          .get(
-            Uri.parse('$_baseUrl$path'),
-            headers: {'Authorization': authorizationHeader},
-          )
-          .timeout(timeout);
-    } on TimeoutException {
-      throw const AuthNetworkFailure();
-    } on http.ClientException {
-      throw const AuthNetworkFailure();
-    } on SocketException {
-      throw const AuthNetworkFailure();
-    }
-
-    if (response.statusCode >= 400) throw _serverFailure(response);
-
-    final decoded = _decode(response);
-    if (decoded is! Map<String, dynamic>) {
-      throw const AuthUnexpectedResponseFailure('응답이 객체가 아니다');
-    }
-    return decoded;
-  }
-
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, Object?> payload,
   ) async {
+    return _object(
+      await _send(
+        () => _client.post(
+          Uri.parse('$_baseUrl$path'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        ),
+      ),
+    );
+  }
+
+  /// 요청을 보내고 연결 실패와 서버의 거절을 [AuthFailure] 로 옮긴다.
+  Future<http.Response> _send(Future<http.Response> Function() request) async {
     final http.Response response;
     try {
-      response = await _client
-          .post(
-            Uri.parse('$_baseUrl$path'),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(payload),
-          )
-          .timeout(timeout);
+      response = await request().timeout(timeout);
     } on TimeoutException {
       throw const AuthNetworkFailure();
     } on http.ClientException {
@@ -333,7 +341,10 @@ class AuthApi {
     }
 
     if (response.statusCode >= 400) throw _serverFailure(response);
+    return response;
+  }
 
+  static Map<String, dynamic> _object(http.Response response) {
     final decoded = _decode(response);
     if (decoded is! Map<String, dynamic>) {
       throw const AuthUnexpectedResponseFailure('응답이 객체가 아니다');
