@@ -22,7 +22,11 @@ from app.services.google_identity import (
     GoogleIdTokenVerifier,
     fetch_google_jwks,
 )
-from app.services.session_tokens import TokenIssuer
+from app.services.session_revocations import (
+    InMemorySessionRevocationStore,
+    SessionRevocationStore,
+)
+from app.services.session_tokens import SessionClaims, TokenIssuer
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -70,24 +74,49 @@ def get_token_issuer(settings: SettingsDep) -> TokenIssuer:
     )
 
 
-async def get_current_account(
+@lru_cache
+def get_session_revocations() -> SessionRevocationStore:
+    return InMemorySessionRevocationStore()
+
+
+def _unauthenticated() -> AppError:
+    return AppError(
+        status_code=401,
+        error_code="UNAUTHENTICATED",
+        message="로그인이 필요합니다.",
+    )
+
+
+async def get_current_session(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
     ],
     issuer: Annotated[TokenIssuer, Depends(get_token_issuer)],
+    revocations: Annotated[
+        SessionRevocationStore, Depends(get_session_revocations)
+    ],
+) -> SessionClaims:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthenticated()
+    session = issuer.read_session(credentials.credentials)
+    # 로그아웃하거나 탈퇴한 세션이다. 만료 전이라도 받지 않는다.
+    if await revocations.is_revoked(session.token_id):
+        raise _unauthenticated()
+    return session
+
+
+async def get_current_account(
+    session: Annotated[SessionClaims, Depends(get_current_session)],
     accounts: Annotated[AccountService, Depends(get_account_service)],
 ) -> Account:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise AppError(
-            status_code=401,
-            error_code="UNAUTHENTICATED",
-            message="로그인이 필요합니다.",
-        )
-    account_id = issuer.read_session(credentials.credentials)
-    return await accounts.get(account_id)
+    return await accounts.get(session.account_id)
 
 
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 GoogleVerifierDep = Annotated[GoogleIdTokenVerifier, Depends(get_google_verifier)]
 TokenIssuerDep = Annotated[TokenIssuer, Depends(get_token_issuer)]
+SessionRevocationsDep = Annotated[
+    SessionRevocationStore, Depends(get_session_revocations)
+]
+CurrentSessionDep = Annotated[SessionClaims, Depends(get_current_session)]
 CurrentAccountDep = Annotated[Account, Depends(get_current_account)]
