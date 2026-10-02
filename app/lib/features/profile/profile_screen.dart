@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -8,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../auth/consent_terms.dart';
 
 /// 프로필 설정.
 ///
@@ -21,6 +24,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
+    final account = ref.watch(accountProvider);
 
     return Scaffold(
       appBar: const AppTopBar(title: '프로필 설정'),
@@ -30,20 +34,109 @@ class ProfileScreen extends ConsumerWidget {
           message: '프로필을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(profileProvider),
         ),
-        data: (bundle) => _Body(bundle: bundle),
+        data: (bundle) => account.when(
+          loading: () => const LoadingView(),
+          error: (error, _) => ErrorStateView(
+            message: '계정 정보를 불러오지 못했어요.',
+            onRetry: () => ref.invalidate(accountProvider),
+          ),
+          data: (account) => _Body(bundle: bundle, account: account),
+        ),
       ),
     );
   }
 }
 
-class _Body extends StatelessWidget {
-  const _Body({required this.bundle});
+class _Body extends StatefulWidget {
+  const _Body({required this.bundle, required this.account});
 
   final ProfileBundle bundle;
+  final Account account;
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  /// 지금 화면에서 동의한 항목의 키. `widget.account.consent` 에서 시작해
+  /// 수정하기 전까지는 회원가입 때 고른 값과 같다.
+  late final Set<String> _agreed;
+
+  @override
+  void initState() {
+    super.initState();
+    _agreed = {
+      for (final entry in widget.account.consent.entries)
+        if (entry.value.granted) entry.key,
+    };
+  }
+
+  bool get _requiredAgreed => consentTerms
+      .where((term) => term.required)
+      .every((term) => _agreed.contains(term.key));
+
+  bool get _allAgreed => _agreed.length == consentTerms.length;
+
+  void _toggleAll(bool? value) {
+    setState(() {
+      if (value ?? false) {
+        _agreed.addAll(consentTerms.map((t) => t.key));
+      } else {
+        _agreed.clear();
+      }
+    });
+  }
+
+  void _toggle(String key, bool? value) {
+    setState(() {
+      if (value ?? false) {
+        _agreed.add(key);
+      } else {
+        _agreed.remove(key);
+      }
+    });
+  }
+
+  void _showDetails(ConsentTerm term) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.background,
+      showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screen,
+            0,
+            AppSpacing.screen,
+            AppSpacing.section,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(term.label, style: AppTypography.sectionTitle),
+              const SizedBox(height: AppSpacing.md),
+              Text(term.statement, style: AppTypography.body),
+              const SizedBox(height: AppSpacing.xl),
+              for (final line in term.details) ...[
+                Text(line, style: AppTypography.sub),
+                const SizedBox(height: AppSpacing.md),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final profile = bundle.profile;
+    final profile = widget.bundle.profile;
+    final bundle = widget.bundle;
 
     return ScreenBody(
       scrollable: true,
@@ -130,6 +223,67 @@ class _Body extends StatelessWidget {
             title: '갤러리',
             onEdit: () {},
             child: _Gallery(tags: bundle.photo.acceptedTags),
+          ),
+          const SizedBox(height: AppSpacing.section),
+
+          const Text('약관 동의', style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.lg),
+
+          for (final term in consentTerms) ...[
+            _ConsentRow(
+              term: term,
+              checked: _agreed.contains(term.key),
+              onChanged: (value) => _toggle(term.key, value),
+              onDetails: () => _showDetails(term),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+            child: Divider(),
+          ),
+
+          InkWell(
+            onTap: () => _toggleAll(!_allAgreed),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _allAgreed,
+                    onChanged: _toggleAll,
+                    activeColor: AppColors.ink,
+                    side: const BorderSide(color: AppColors.line, width: 2),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  const Text('전체 동의', style: AppTypography.bodyStrong),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.section),
+
+          PrimaryButton(
+            label: '저장하기',
+            // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
+            onPressed: _requiredAgreed
+                ? () => Navigator.maybePop(context)
+                : null,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+
+          SecondaryButton(
+            label: '로그아웃',
+            onPressed: () => context.go(AppRoutes.login),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+
+          Center(
+            child: AppTextButton(
+              label: '회원탈퇴',
+              onPressed: () => context.push(AppRoutes.profileDelete),
+            ),
           ),
 
           const SizedBox(height: AppSpacing.xl),
@@ -357,6 +511,101 @@ class _SmallTag extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(label, style: AppTypography.caption),
+    );
+  }
+}
+
+/// 동의 항목 한 줄이다. `signup_screen.dart` 의 것과 같은 모양이다.
+class _ConsentRow extends StatelessWidget {
+  const _ConsentRow({
+    required this.term,
+    required this.checked,
+    required this.onChanged,
+    required this.onDetails,
+  });
+
+  final ConsentTerm term;
+  final bool checked;
+  final ValueChanged<bool?> onChanged;
+  final VoidCallback onDetails;
+
+  static const _labelOffset = 12.0;
+  static const _detailsHeight = 28.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!checked),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            value: checked,
+            onChanged: onChanged,
+            activeColor: AppColors.ink,
+            side: const BorderSide(color: AppColors.line, width: 2),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: _labelOffset),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: term.required ? '[필수] ' : '[선택] ',
+                        style: AppTypography.body.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: term.required
+                              ? AppColors.danger
+                              : AppColors.textSub,
+                        ),
+                      ),
+                      TextSpan(text: term.label, style: AppTypography.body),
+                    ],
+                  ),
+                ),
+
+                if (term.note != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(term.note!, style: AppTypography.sub),
+                ],
+
+                const SizedBox(height: AppSpacing.sm),
+
+                TextButton(
+                  onPressed: onDetails,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textDisabled,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerLeft,
+                    minimumSize: const Size(0, _detailsHeight),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '자세히 보기',
+                        style: AppTypography.sub.copyWith(
+                          color: AppColors.textDisabled,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.textDisabled,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

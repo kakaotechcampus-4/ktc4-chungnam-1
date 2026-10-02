@@ -9,6 +9,8 @@ def test_default_settings_are_safe_for_local_development() -> None:
     assert settings.environment == "development"
     assert settings.log_level == "INFO"
     assert settings.service_name == "saerok-backend"
+    assert settings.ai_server_url == "http://127.0.0.1:8001"
+    assert settings.ai_server_timeout_seconds == 600.0
 
 
 # 아래 두 개는 환경변수를 직접 읽는 경로를 검사한다. 값을 생성자로 넘기면

@@ -23,7 +23,21 @@ class Settings(BaseSettings):
     )
     service_name: str = "saerok-backend"
     service_version: str = "0.1.0"
+    ai_server_url: str = "http://127.0.0.1:8001"
+    ai_server_timeout_seconds: float = 600.0
     database_url: str | None = None
+
+    # 면회 음성은 비공개 S3 버킷에 임시 저장한다. 버킷과 DB가 모두 설정돼야
+    # 공개 업로드 API가 활성화된다.
+    speech_audio_s3_bucket: str = ""
+    speech_audio_s3_region: str = "ap-northeast-2"
+    speech_audio_s3_prefix: str = "temporary/speech"
+    speech_audio_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
+    speech_audio_presigned_ttl_seconds: int = Field(default=900, ge=60)
+    speech_audio_retention_seconds: int = Field(default=86400, ge=60, le=86400)
+    max_audio_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
+    speech_analysis_lease_seconds: int = Field(default=900, ge=60)
+    speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
     # `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 그 웹 클라이언트 ID가

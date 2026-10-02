@@ -78,6 +78,7 @@ DOMAIN_TABLES = {
     "profile_photo_tags",
     "visit_sessions",
     "session_consents",
+    "speech_analysis_jobs",
     "card_generation_requests",
     "conversation_cards",
     "card_evidence_refs",
@@ -90,7 +91,7 @@ DOMAIN_TABLES = {
 }
 
 
-def test_upgrade_creates_all_seventeen_tables(alembic_config, test_database_url):
+def test_upgrade_creates_all_eighteen_tables(alembic_config, test_database_url):
     command.upgrade(alembic_config, "head")
 
     engine = sa.create_engine(test_database_url)
@@ -101,7 +102,7 @@ def test_upgrade_creates_all_seventeen_tables(alembic_config, test_database_url)
         engine.dispose()
 
     assert DOMAIN_TABLES <= table_names
-    assert len(DOMAIN_TABLES) == 17
+    assert len(DOMAIN_TABLES) == 18
 
 
 def test_upgrade_produces_working_constraints_and_uuid_default(
@@ -150,6 +151,37 @@ def test_upgrade_produces_working_constraints_and_uuid_default(
                 {"request_id": request_id},
             ).scalar_one()
             assert follow_ups == []
+
+            session_id = conn.execute(
+                sa.text(
+                    "INSERT INTO visit_sessions "
+                    "(profile_id, session_status, recording_authorization_granted, "
+                    " recording_authorization_granted_at, started_at, ended_at) "
+                    "VALUES (:profile_id, 'ended', true, now(), now(), now()) "
+                    "RETURNING session_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+            analysis_id = uuid.uuid4()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO speech_analysis_jobs "
+                    "(analysis_id, session_id, status, participant_count, "
+                    " s3_object_key, data_expires_at) "
+                    "VALUES (:analysis_id, :session_id, 'uploading', 2, "
+                    " 'temporary/speech/synthetic.wav', now() + interval '1 day')"
+                ),
+                {"analysis_id": analysis_id, "session_id": session_id},
+            )
+            queued = conn.execute(
+                sa.text(
+                    "UPDATE speech_analysis_jobs SET status = 'queued', "
+                    "size_bytes = 3200, sha256 = :sha256 "
+                    "WHERE analysis_id = :analysis_id RETURNING status"
+                ),
+                {"analysis_id": analysis_id, "sha256": "a" * 64},
+            ).scalar_one()
+            assert queued == "queued"
 
         # 허용되지 않는 값은 CHECK constraint로 거부되어야 한다.
         with pytest.raises(IntegrityError):

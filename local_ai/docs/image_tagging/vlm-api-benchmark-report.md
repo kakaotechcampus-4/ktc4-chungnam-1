@@ -2,7 +2,7 @@
 
 [PR #33](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/33)의 테스트와 동일한 이미지, 프롬프트 및 JSON Schema를 사용하여 테스트를 수행함.
 
-응답이 비어 있거나 JSON 형식에 맞지 않은 경우 재시도함. 최종 306건 모두 출력 형식 검증을 통과함.
+응답이 비어 있거나 JSON 형식에 맞지 않은 경우 재시도함. 최종 306건 모두 출력 형식 검증을 통과함. 확정 데이터 원본은 [vlm-api-full-results.jsonl](./vlm-api-full-results.jsonl)에서 확인할 수 있음.
 
 ## 1. 전체 모델 목록
 

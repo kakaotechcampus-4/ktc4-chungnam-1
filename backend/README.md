@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있다. 실제 STT, VLM과 계정의 DB 영속 저장은 아직 연결되지 않았다.
 
-MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 장비, 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
+MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 현재 RTX 3060 Ti는 개발용이며 시연 장비의 사양과 처리 성능은 추가 실험 후 정한다. 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -19,14 +19,25 @@ uv run python --version
 
 이후 명령은 `backend/`에서 실행한다. 의존성과 가상 환경은 `uv`, 테스트는 `pytest`로 관리한다.
 
-```powershell
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-access-log
+실행 스크립트로 서버를 활성화한다.
+
+```bash
+./scripts/run_backend.sh
+```
+
+기본값은 백엔드 `127.0.0.1:8000`, AI 서버 `127.0.0.1:8001`이다. 필요한 경우 실행할 때만
+환경 변수를 덮어쓴다.
+
+```bash
+SAEROK_AI_SERVER_URL=http://192.0.2.10:8001 \
+SAEROK_BACKEND_PORT=8080 \
+./scripts/run_backend.sh
 ```
 
 Android 에뮬레이터 또는 허가된 개발 단말과 합성 데이터로 연동할 때만 외부 인터페이스에 바인딩한다.
 
-```powershell
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+```bash
+SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 ```
 
 ```powershell
@@ -69,7 +80,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
 | 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | PM, AI와 GPU 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 운영 | 개발용 RTX 3060 Ti에서 AI와 처리 조건을 측정하고 PM과 시연 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
@@ -201,3 +212,83 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — ADR-007 의 재검토 조건에 있으며 이 구현에 없다.
+
+## AI 음성 분석 연동
+
+비동기 처리 경계와 상태는 [ADR-008](../docs/architecture/decisions/ADR-008-stt-pipeline.md)의
+제안 및 [공통 데이터 계약](../docs/architecture/data-contracts.md)을 따른다. 앱은 다음 multipart
+API로 WAV와 보호자가 확인한 참여자 수를 제출한다.
+
+구현 파일, 환경 설정과 합성 WAV를 사용한 전체 테스트 절차는
+[비동기 면회 음성 STT 구현 및 테스트 가이드](docs/async-speech-analysis.md)에 정리했다.
+
+```http
+POST /api/v1/visit-sessions/{sessionId}/speech-analyses
+Authorization: Bearer <accessToken>
+Content-Type: multipart/form-data
+
+audio=<WAV/PCM 16-bit/16kHz/mono>
+participantCount=2
+```
+
+BE는 인증, 필수 동의, 회차 소유권, 피보호자 확인과 녹음 허가를 확인하고 파일 형식과
+크기를 검증한다. S3 업로드와 작업 DB 저장이 끝나면 `202 Accepted`와 `analysisId`를
+반환한다. STT 완료를 뜻하지 않는다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "queued"
+}
+```
+
+상태 조회는 인증된 `GET /api/v1/speech-analyses/{analysisId}`다. 다른 계정의 작업은
+존재 여부를 드러내지 않고 404로 처리한다. 상태는 `queued`, `transcribing`,
+`sttCompleted`, `generatingReport`, `completed`, `failed`이며 `failed`일 때 안전한
+`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 S3 원본 삭제까지 끝났다는
+뜻이며 리포트 완료는 아니다.
+
+worker는 PostgreSQL에서 `queued` 작업을 행 잠금으로 하나씩 가져오고 S3 Presigned GET
+URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`를 호출한다.
+`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 S3 원본을 즉시 삭제하고,
+리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+
+현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
+있다. 리포트 생성 모델과 저장 계약은 아직 연결되지 않았으므로 기본 worker는 STT 성공
+후 `sttCompleted`에서 멈춘다. 성공한 STT를 리포트 실패로 바꾸거나 `completed`로
+과장하지 않는다. 자동 재시도와 취소도 아직 없으며 실패를 숨겨 재실행하지 않는다.
+
+API 서버와 별도 터미널에서 worker를 실행한다.
+
+```bash
+bash ./scripts/run_speech_worker.sh
+```
+
+대기 작업 하나만 처리하고 종료하는 통합 확인은 다음과 같다.
+
+```bash
+bash ./scripts/run_speech_worker.sh --once
+```
+
+### 음성 분석 설정
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
+| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
+| `SAEROK_SPEECH_AUDIO_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
+| `SAEROK_SPEECH_AUDIO_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사 |
+| `SAEROK_SPEECH_AUDIO_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
+| `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
+| `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 최대 86400초 |
+| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간 |
+| `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
+
+S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
+운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
+STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
+오류 응답에 남기지 않는다.

@@ -16,7 +16,8 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | 피보호자 동의 | 본인 확인 필드만 존재 | 대리 동의의 자격과 확인 절차는 법률 검토 필요 |
 | 저장과 상태 전이 | 값 정의는 있으나 영속 저장 미연결. 단말 중심 필드가 남아 있음 | [ADR-006](decisions/ADR-006-server-side-ai-processing.md)의 서버 중심 방향에 맞춰 [이슈 18](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/18)에서 저장 항목, 단말 보관 범위, 접근 권한, 기간, 삭제와 갱신 주체 합의 |
 | 직접 식별정보 | Profile의 `localOnly`는 서버 요청에서 제외 | 현행 제한 유지. 서버 중심 방향만으로 전송하지 않으며 필드별 필요성, 동의와 접근 범위 검토 후 별도 계약 변경 |
-| 보호자 평가 | PR #42로 미사용, 미응답과 중립 평가를 구분하는 화면 및 계약 반영 | 미사용을 비선호로 반영할지와 DB null 허용, 회차별 조회는 공동 확인 필요 |
+| 보호자 평가 | PR #42로 미사용, 미응답과 중립 평가를 구분하는 화면 및 계약 반영 | 2026-09-19 PM 결정으로 미사용 및 미응답만으로 비선호 추정, 추천 하향 및 제외 금지. DB null 허용과 회차별 조회는 구현 확인 필요 |
+| 승인된 사실의 출처 | 면회 중 확인한 LifeFact는 생성 시 sourceSessionId 연결 | 면회 삭제 시 승인된 사실은 유지하고 해당 출처 연결만 null로 해제. 저장과 삭제 후 표시의 구현 검증은 후속 작업 |
 | 리포트 | 일기형 요약과 카드별 요약 | 테크스펙의 관찰값과 계산 불가 이유를 어떤 필드로 전달할지 조율 |
 
 공통 규칙과 [객체 목록](#객체와-담당)에서 필요한 항목으로 이동한다. [결정 대기 항목](#결정-대기-항목)의 카드 생성, STT와 주제 갱신은 아직 완성된 처리 계약이 아니다.
@@ -69,6 +70,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | [ConversationCard](#대화-카드-결과-conversationcard) | AI | FE |
 | [VisitSession](#면회-회차-visitsession) | FE | FE, AI |
 | [VisitPhoto](#면회-사진-visitphoto) | FE | FE |
+| [SpeechAnalysisJob](#비동기-음성-분석-작업-speechanalysisjob) | BE | FE, BE |
 | [SpeechAnalysisResult](#stt와-화자-처리-결과-speechanalysisresult) | AI | BE, AI |
 | [CaregiverEvaluation](#보호자-평가-caregiverevaluation) | FE | AI |
 | [VisitReport](#리포트-초안-visitreport) | AI | FE |
@@ -180,10 +182,12 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 - `category` 값은 `occupation`, `hometown`, `hobby`, `family`이다.
 - `sourceType` 값은 `caregiverVoiceInput`, `caregiverTextInput`, `visitConfirmed`이다.
-- `sourceSessionId`는 면회 중에 확인한 사실에만 값을 넣고, 프로필 입력 화면에서 만든 사실은 `null`로 둔다.
+- `sourceType`이 `visitConfirmed`인 사실을 생성할 때는 유효한 출처 회차의 `sourceSessionId`가 필요하다. 프로필 입력 화면에서 만든 사실은 `null`로 둔다.
+- 출처 면회가 삭제되면 보호자가 승인한 사실은 유지하고 해당 `sourceSessionId`만 `null`로 해제한다. 회차 삭제 후에도 면회에서 확인한 사실이라는 `sourceType`을 다른 입력 방식으로 바꾸지 않는다. 생성 시 출처 검증과 삭제 후 null 허용을 구분하며, 무조건적인 NOT NULL 제약으로 출처 회차 삭제를 막지 않는다.
+- 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 마이페이지에서 내용을 고치면 `updatedAt`을 갱신한다.
 
-**없어도 되는 값** — `sourceSessionId`
+**없어도 되는 값** — 프로필에서 직접 입력했거나 출처 면회가 삭제된 사실의 `sourceSessionId`
 
 <br>
 
@@ -298,7 +302,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 ## 카드 생성 요청 (CardGenerationRequest)
 
-> **상태: 결정 대기.** 카드 생성 로직은 AI 영역에서 확정한다. 아래는 FE가 화면에서 수집할 수 있는 값의 목록이며 형식 제안이 아니다.
+> **상태: 결정 대기.** 카드 생성과 추천은 핵심 기능으로 별도 설계한다. [PM 제품 기준](../pm/README.md#카드-미사용과-추천-제외)을 지키며 AI가 로직을 설계하고 PM, FE와 BE가 제품 및 연동 범위를 함께 확인한다. 아래는 FE가 화면에서 수집할 수 있는 값의 목록이며 형식 제안이 아니다.
 
 ```json
 {
@@ -401,6 +405,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
     "granted": true,
     "grantedAt": "2026-08-21T13:59:30+09:00"
   },
+  "participantCount": 2,
   "startedAt": "2026-08-21T14:00:00+09:00",
   "endedAt": "2026-08-21T14:20:00+09:00"
 }
@@ -410,9 +415,11 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
   - 녹음 정지는 면회 종료를 뜻하며 `ended`가 된다.
 - `serviceData`, `sensitiveData`와 `careRecipientConfirmation`이 유효하지 않으면 녹음과 원본 업로드를 시작하지 않는다.
 - `careRecipientConfirmation`은 피보호자 본인의 동의만 담는다.
+- `participantCount`는 녹음을 끝낼 때 보호자가 확인한 1~8의 인원수다. STT 요청의
+  `speakerCount`로 이름만 바꾸어 전달하며 앱이나 서버가 추정하지 않는다.
 - 세션은 대화 카드를 선택한 시점에 `ready` 상태로 만든다. 동의 확인과 녹음 승인, 시작 시각은 녹음을 시작할 때 채운다.
 
-**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `recordingAuthorization`, `consent.careRecipientConfirmation`
+**없어도 되는 값** — `photoId`, `endedAt`, `startedAt`, `participantCount`, `recordingAuthorization`, `consent.careRecipientConfirmation`
 
 <br>
 
@@ -435,6 +442,48 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 사진 원본은 단말에 둔다.
 
 **없어도 되는 값** — `localUri`, `capturedAt`
+
+<br>
+
+---
+
+## 비동기 음성 분석 작업 (SpeechAnalysisJob)
+
+> **상태: ADR-008 제안 및 BE 구현 검증 중.** FE, AI, PM 공동 확인 전에는 실제 사용자
+> 자료 전송 승인을 뜻하지 않는다.
+
+앱은 WAV와 `participantCount`를 multipart 요청으로 제출한다. BE가 원본을 S3에
+임시 저장하고 작업을 영속화한 뒤 다음 `202 Accepted` 응답을 반환한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "queued"
+}
+```
+
+`GET /api/v1/speech-analyses/{analysisId}`는 같은 계정이 소유한 작업에 한해 다음 상태를
+반환한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "sessionId": "4ad84021-e2db-4a04-8995-b148f3cdb853",
+  "status": "sttCompleted",
+  "errorCode": null
+}
+```
+
+- 공개 상태는 `queued`, `transcribing`, `sttCompleted`, `generatingReport`,
+  `completed`, `failed`다.
+- `sttCompleted`는 AI 응답 검증과 원본 삭제까지 끝났지만 리포트는 아직 준비되지 않은 상태다.
+- `completed`는 STT뿐 아니라 리포트 저장까지 끝난 상태다.
+- 실패 시 `errorCode`만 제공하며 AI 오류 본문, 전사문, S3 URL과 객체 키를 제공하지 않는다.
+- 한 면회에는 음성 분석 작업 하나만 두어 반복 제출로 중복 처리하지 않는다.
+- 자세한 상태 전이, 삭제와 재시도 경계는 [ADR-008](decisions/ADR-008-stt-pipeline.md)을 따른다.
 
 <br>
 
@@ -496,6 +545,55 @@ AI에서 BE로 반환하는 성공 응답은 다음과 같다.
   ]
 }
 ```
+> **상태: AI v1 결과를 BE worker가 소비하는 내부 계약.** 공개 상태 계약과 원본 처리
+> 경계는 ADR-008의 공동 검토가 남아 있다.
+
+BE가 AI 서버로 보내는 요청은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "language": "ko",
+  "speakerCount": 2,
+  "audioSource": {
+    "type": "s3PresignedGet",
+    "downloadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/audio.wav?...",
+    "downloadUrlExpiresAt": "2026-09-25T15:10:00+09:00",
+    "sizeBytes": 123456,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dataExpiresAt": "2026-09-26T14:00:00+09:00"
+}
+```
+
+AI 성공 응답은 다음과 같다.
+
+```json
+{
+  "schemaVersion": 1,
+  "analysisId": "0c6aa54d-17ec-46e4-a270-80e88f15c77f",
+  "language": "ko",
+  "durationMs": 15200,
+  "text": "합성 전사 결과",
+  "segments": [
+    {
+      "startMs": 0,
+      "endMs": 3200,
+      "speakerLabel": "SPEAKER_00",
+      "text": "합성 발화 구간",
+      "words": [
+        {"startMs": 0, "endMs": 800, "text": "합성", "probability": 0.93}
+      ]
+    }
+  ]
+}
+```
+
+- 입력은 WAV/PCM 16-bit/16kHz/mono이고 `speakerCount`는 1~8이다.
+- `SPEAKER_00` 등의 값은 파일 안의 화자 군집이며 실제 인물 역할을 뜻하지 않는다.
+- 화자를 명확히 배정할 수 없는 구간의 `speakerLabel`은 `null`이다.
+- 전사문은 화면에 표시하지 않으며 리포트 생성 입력으로만 사용한다.
 
 <br>
 
@@ -532,15 +630,16 @@ AI에서 BE로 반환하는 성공 응답은 다음과 같다.
 - `conversationSatisfaction`은 1 이상 5 이하의 정수다.
 - `careRecipientReaction` 값은 `pleased`, `calm`, `angry`, `lowEnergy`, `unknown`이다.
 - `caregiverReaction` 값은 `positive`, `neutral`, `negative`이다.
-- `cardReviews`는 **미사용과 미응답을 구분한다.** 둘은 다음 회차 우선순위에 다르게 쓴다.
+- `cardReviews`는 **미사용과 미응답을 구분한다.** 어느 쪽도 그 사실만으로 비선호를 추정하거나 추천 순위를 낮추거나 추천 대상에서 제외하지 않는다.
 
-| 보호자가 한 일 | `cardReviews` | 우선순위 |
+| 보호자가 한 일 | `cardReviews` | 추천에 반영할 기준 |
 | --- | --- | --- |
-| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 평가대로 반영한다 |
-| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 보호자가 고르지 않은 주제이므로 낮춘다 |
-| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 판단할 근거가 없으므로 건드리지 않는다 |
+| 카드를 쓰고 평가했다 | `wasUsed`가 `true`이고 `caregiverReaction`을 담는다 | 명시된 평가는 보존하되 가중치와 반영 방식은 별도 추천 로직에서 정한다 |
+| 쓰지 않았다고 답했다(미사용) | `wasUsed`가 `false`이고 `caregiverReaction`은 `null`이다 | 미사용만으로 비선호를 추정하거나 추천을 낮추거나 제외하지 않는다 |
+| 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 응답이 없으므로 비선호를 추정하거나 추천을 낮추거나 제외하지 않는다 |
 
-- 미응답을 미사용으로 읽지 않는다. 답하지 않은 것을 "쓰지 않았다"로 보면 보호자가 하지 않은 판단을 대신 만들어 우선순위를 낮추게 된다.
+- 미응답을 미사용으로 읽지 않는다. 미사용도 시간 부족이나 나중에 이야기하려는 선택일 수 있어 사용자의 의도를 대신 판단하지 않는다.
+- 추천 대상 제외는 사용자가 `앞으로 추천하지 않기`처럼 명시적으로 선택했을 때 적용한다. 이는 과거 카드와 면회 기록 삭제가 아니다. 해당 선택의 저장 필드 및 API, 제외 대상 범위와 해제 방식은 아직 정하지 않았으며 `wasUsed=false`로 대신 표현하지 않는다.
 - 리포트의 `cardSummaries`에는 세 경우가 모두 올 수 있다. 화면은 미사용과 미응답을 분석 결과 대신 그 사실로 표시한다.
 
 **없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`
@@ -626,6 +725,7 @@ AI에서 BE로 반환하는 성공 응답은 다음과 같다.
   - `lifeFactAdd`는 `text`를 갖고 나머지 셋을 갖지 않는다.
   - `changeId`, `changeType`, `reason`, `reviewStatus`는 두 타입 모두 갖는다.
 - `topicPriority`는 다음 회차에 이 주제를 더 자주 다룰지 덜 다룰지에 대한 제안이며 주제 단위로 적용한다. `direction` 값은 `up`과 `down`이다.
+- 미사용 및 미응답만으로 `direction: down`을 제안하지 않는다. 추천 제외 의사와 우선순위 조정은 구분하며, 명시적 제외를 이 필드에 임의로 추가하지 않는다. 세부 추천 로직과 제외 계약은 후속 설계한다.
 - 각 변경의 `reviewStatus` 값은 `pending`, `accepted`, `rejected`, `reverted`이다. 제안은 승인 전까지 프로필에 반영하지 않으며 승인 후에도 되돌릴 수 있다.
 - 변경 사항 확인 화면에서 사용자가 제외하지 않고 최종 승인한 항목은 `accepted`, 제외한 항목은 `rejected`로 저장하며, 반영하면 `proposalStatus`를 `reviewed`로 바꾼다.
 
