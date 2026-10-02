@@ -46,10 +46,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           label: '리포트 만들기',
           onPressed: draft.canSubmit
               ? () {
-                  // 기다리는 화면을 두지 않는다. 만드는 중과 도착을 모두
-                  // 홈에서 알린다.
+                  // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은
+                  // 홈에서 알리고, 그 전에 위로 화면을 한 번 거친다.
                   ref.read(reportNoticeProvider.notifier).startGenerating();
-                  context.go(AppRoutes.home);
+                  context.go(AppRoutes.visitReviewDone);
                 }
               : null,
         ),

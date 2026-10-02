@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS caregiver_evaluations CASCADE;
 DROP TABLE IF EXISTS card_evidence_refs CASCADE;
 DROP TABLE IF EXISTS conversation_cards CASCADE;
 DROP TABLE IF EXISTS card_generation_requests CASCADE;
+DROP TABLE IF EXISTS speech_analysis_jobs CASCADE;
 DROP TABLE IF EXISTS session_consents CASCADE;
 DROP TABLE IF EXISTS visit_sessions CASCADE;
 DROP TABLE IF EXISTS profile_photo_tags CASCADE;
@@ -128,6 +129,7 @@ CREATE TABLE visit_sessions (
     recording_authorization_granted_at TIMESTAMPTZ,
     started_at      TIMESTAMPTZ,
     ended_at        TIMESTAMPTZ,
+    participant_count SMALLINT CHECK (participant_count BETWEEN 1 AND 8),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (ended_at IS NULL OR started_at IS NOT NULL),
     CHECK (ended_at IS NULL OR ended_at >= started_at)
@@ -147,6 +149,33 @@ CREATE TABLE session_consents (
     PRIMARY KEY (session_id, consent_type),
     CHECK (granted = false OR granted_at IS NOT NULL)
 );
+
+CREATE TABLE speech_analysis_jobs (
+    analysis_id       UUID PRIMARY KEY,
+    session_id        UUID NOT NULL UNIQUE REFERENCES visit_sessions(session_id) ON DELETE CASCADE,
+    status            VARCHAR(20) NOT NULL CHECK (status IN
+                        ('uploading', 'queued', 'transcribing', 'sttCompleted', 'generatingReport', 'completed', 'failed')),
+    participant_count SMALLINT NOT NULL CHECK (participant_count BETWEEN 1 AND 8),
+    s3_object_key     VARCHAR(255) NOT NULL UNIQUE,
+    size_bytes        BIGINT,
+    sha256            VARCHAR(64),
+    data_expires_at   TIMESTAMPTZ NOT NULL,
+    attempt_count     SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    lease_expires_at  TIMESTAMPTZ,
+    error_code        VARCHAR(50),
+    audio_deleted_at  TIMESTAMPTZ,
+    stt_completed_at  TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at      TIMESTAMPTZ,
+    CHECK ((status = 'uploading' AND size_bytes IS NULL AND sha256 IS NULL)
+        OR (status <> 'uploading' AND size_bytes > 0 AND sha256 ~ '^[0-9a-f]{64}$')),
+    CHECK (status <> 'failed' OR error_code IS NOT NULL)
+);
+CREATE INDEX idx_speech_analysis_jobs_queue ON speech_analysis_jobs(created_at)
+    WHERE status = 'queued';
+CREATE INDEX idx_speech_analysis_jobs_expiry ON speech_analysis_jobs(data_expires_at)
+    WHERE audio_deleted_at IS NULL;
 
 
 ---------------------------------------------------------------------------------------

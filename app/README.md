@@ -1,6 +1,6 @@
 # FE 영역
 
-담당 리더: 이서형. 합성 목 데이터로 화면을 연결한 단계이며 실제 녹음, 카메라와 서버 연동은 아직 없다. BE 인증 API는 develop에 반영됐지만 앱의 구글 로그인 연결은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 검토 중이다.
+담당 리더: 이서형. 합성 목 데이터로 화면을 연결한 단계이며 카메라와 서버 연동은 아직 없다. 면회 녹음은 기기에 파일을 남기는 데까지 동작하고 업로드는 없다([면회 녹음](#면회-녹음)). BE 인증 API는 develop에 반영됐지만 앱의 구글 로그인 연결은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 검토 중이다.
 
 - 처음 실행: [환경 세팅](SETUP.md)
 - 화면과 접근성: [디자인 기준](DESIGN.md)
@@ -36,6 +36,7 @@
 | 상태 관리 / 화면 이동 | `flutter_riverpod` 3.4.3 / `go_router` 18.0.1 |
 | 구글 로그인 / HTTP | `google_sign_in` 7.2.0 / `http` 1.6.0 |
 | 세션 보관 | `flutter_secure_storage` 11.2.0 |
+| 녹음 / 저장 경로 | `record` 7.1.1 / `path_provider` 2.1.6 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -66,17 +67,24 @@
 | `/visit/record` | 녹음 안내와 녹음 중 | E-1, E-2 |
 | `/visit/cards/add` | 면회 중 대화 카드 추가 | E-5 |
 | `/visit/review` | 보호자 소감 | F-1 |
+| `/visit/review/done` | 보호자 위로 | 설계 없음, PM 초안 |
 | `/report/:reportId` | 리포트 | G-1 |
 | `/report/:reportId/changes` | 변경 사항 확인 | G-2 |
 | `/profile` | 프로필 설정 | MYPAGE |
+| `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |
+| `/notifications` | 알림 | 설계 없음 |
 | `/album` | 일대기 | H, 기획 보류 안내만 표시 |
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
 
+`/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
+
+`/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
+
 ## 현재 사용자 흐름
 
-동의와 프로필 입력 → 대화 카드 선택 → 면회 사진과 녹음 화면 → 보호자 소감 및 평가 → 홈에서 리포트 준비 상태 확인 → 리포트 → 변경 제안 확인. PR #42에서 별도 처리 중 화면을 제거했고, 현재 리포트 생성은 목 타이머로 표시한다. 평가 제출과 변경 제안의 실제 저장은 아직 연결되지 않았다. 화면별 상세 경로는 위 표를 따른다.
+동의와 프로필 입력 → 대화 카드 선택 → 면회 사진과 녹음 화면 → 보호자 소감 및 평가 → 보호자 위로 → 홈에서 리포트 준비 상태 확인 → 리포트 → 변경 제안 확인. PR #42에서 별도 처리 중 화면을 제거했고, 현재 리포트 생성은 목 타이머로 표시한다. 평가 제출과 변경 제안의 실제 저장은 아직 연결되지 않았다. 보호자 위로 화면은 Q1 대화 만족도(1~5)에 맞춘 고정 문구 5개 중 하나를 보여주고, 서버와 AI를 부르지 않는다. 문구는 [comfort_messages.dart](lib/features/review/comfort_messages.dart)에 있다. 화면별 상세 경로는 위 표를 따른다.
 
 알림 수신은 선택이며 거부해도 가입과 기본 기능을 차단하지 않는다. PR #49에서 BE도 같은 선택 동의 기준으로 맞췄다. 앱 재실행 시 로그인 복원과 만료 후 자동 재인증은 아래 "세션 보관"에 구현했으나 실기기 확인 전이다. PR #50에 함께 요청한 약관의 서버 관리는 서버가 약관 본문을 내려주어야 해서 아직 하지 않았다.
 
@@ -178,12 +186,100 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
 - **로그아웃 자리** — `SessionNotifier.signOut()`은 있으나 부르는 화면이 없다.
   어느 화면에 둘지는 제품 결정이라 임의로 넣지 않았다.
 
+## 면회 녹음
+
+E-2 녹음 화면에서 실제로 마이크를 열고 기기에 파일을 남긴다. 이 파일은 이후 서버로
+보내 STT를 거치지만, 업로드는 아직 붙이지 않았다([아직 없는 것](#아직-없는-것)). 코드는 [`visit_recorder.dart`](lib/features/visit/visit_recorder.dart)에
+모여 있고, 화면과 [`VisitController`](lib/features/visit/visit_controller.dart)는
+`VisitRecorder` 인터페이스만 본다. 테스트는 `visitRecorderProvider`를 override 한다.
+
+### 저장 위치
+
+`path_provider`의 `getApplicationDocumentsDirectory()` 아래 `visit_recordings/`다.
+Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실제 경로는
+다음과 같다.
+
+```
+/data/user/0/com.saelog.app/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
+```
+
+- 앱 전용 내부 저장소다. 다른 앱과 갤러리, 파일 관리자에 보이지 않고 USB로도
+  바로 꺼낼 수 없다. 앱을 지우면 함께 지워진다.
+- 외부 저장소를 쓰지 않으므로 `READ/WRITE_EXTERNAL_STORAGE` 권한이 필요 없다.
+- 파일 이름에는 시각만 넣는다. 어르신 이름이나 회차 정보처럼 사람을 알아볼 수
+  있는 값은 파일 이름에 남기지 않는다.
+- 확인은 `adb exec-out run-as com.saelog.app ls app_flutter/visit_recordings`로 한다.
+  `run-as`는 디버그 빌드에서만 된다.
+
+### 음성 형식
+
+WAV / PCM 16비트 / 16kHz / 모노다. BE [PR #71](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/71)과
+AI [PR #66](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/66)이 검사하는 형식과 같다.
+두 PR 모두 머지 전이고 PR #71의 ADR-008도 `proposed`라 확정값은 아니다. `app/CLAUDE.md`대로 형식은 AI 영역이 확정한다. 바뀌면
+`visitRecordConfig`와 `VisitRecording.fileExtension`, 그리고
+`test/visit_recording_test.dart`의 `음성 형식` 테스트를 함께 고친다.
+
+1시간 녹음은 약 115MB다. PR #71의 서버 업로드 상한 기본값은 512MB다.
+
+### 권한과 실패
+
+`AndroidManifest.xml`에 `RECORD_AUDIO`를 넣었고, 사용자가 녹음을 시작할 때
+`record`가 권한을 묻는다. 거부, 장치 열기 실패와 저장 실패는
+`VisitState.problem`으로 구분해 화면에서 안내한다.
+
+### 파일을 반드시 닫아야 하는 이유
+
+WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인다
+(`record_android`의 `WaveContainer.stop()`). 끝내지 않고 화면을 떠나거나 앱이
+죽으면 그 자리가 0으로 남아, 소리는 들어 있는데 열 수 없는 파일이 된다.
+
+- `만남 끝내기`뿐 아니라 **녹음 화면을 떠날 때도** 파일을 닫는다
+  (`_RecordScreenState.dispose`).
+- 닫은 뒤 파일이 정말 `RIFF`로 시작하는지 확인하고, 아니면 저장 실패로 알린다.
+  경로가 있다고 성공이라 말하지 않는다.
+- **개발 중 hot restart(`flutter run`의 `R`)는 이 과정을 건너뛴다.** 그때 남은
+  파일은 재생되지 않으니 지우고 다시 녹음한다. 확인은 다음과 같이 한다.
+
+  ```
+  adb exec-out run-as com.saelog.app cat app_flutter/visit_recordings/<파일> | head -c 4
+  ```
+
+  `RIFF`가 나오면 정상이다.
+
+### 만남 끝내기 확인 창
+
+`만남 끝내기`를 누르면 바로 끝내지 않고
+[`stop_recording_dialog.dart`](lib/features/visit/stop_recording_dialog.dart)의
+확인 창을 띄운다.
+
+- 창이 떠 있는 동안 **녹음과 시간을 잠시 멈춘다.** 창을 보는 사이의 침묵을
+  대화로 남기지 않으려는 것이다. `이어서 녹음`을 고르면 같은 파일에 이어 쓴다.
+  잠시 멈춤 상태에서 눌렀다면 멈춘 채로 돌아간다.
+- 같은 자리에서 **참여자 수**를 받는다. 기본 2명이고 1~8명까지 고른다.
+  계약의 `VisitSession.participantCount`이며 STT 화자 분리 요청의
+  `speakerCount`로 그대로 넘어간다.
+- **앱이 목소리를 세어 짐작하지 않는다.** 보호자가 확인해 준 수만 쓴다. 창을
+  거치지 않고 화면을 떠나면 값을 비워 둔다.
+
+### 아직 없는 것
+
+PR #71이 머지되면 별도 PR로 붙인다. 흐름은 ADR-008을 따른다.
+
+- 서버 업로드. WAV와 `participantCount`를 multipart로
+  `POST /api/v1/visit-sessions/{sessionId}/speech-analyses`에 보낸다.
+- 상태 조회. `202`로 받은 `analysisId`로 `GET /api/v1/speech-analyses/{analysisId}`를
+  조회해 홈 타일에 반영한다.
+- 기기 파일 삭제. 서버가 `202`로 받은 뒤 지운다. 지금은 파일이 쌓인다.
+- 보내지 못한 파일을 기기에 얼마나 둘지. ADR-008은 FE 문서에서 정하게 했으나 **미정**이며
+  PM 확인이 필요하다.
+- 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스.
+
 ## 담당과 남은 연동
 
 | 영역 | FE 작업 | 함께 정할 경계 |
 | --- | --- | --- |
 | 화면 | 초기 설정, 카드, 면회, 리포트, 평가와 스토리북 | 카드 수와 제공 방식 등 제품 범위는 PM 결정 |
-| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기 | AI가 정의할 음성 형식과 `SpeechInput` 연결. 현재는 목 구현 |
+| 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기, 기기 저장 | 음성 형식은 AI가 확정한다. 업로드와 상태 조회는 BE 계약(PR #71)을 따르며 남았다 |
 | 사진 | 카메라와 갤러리 연동 | 현재는 목 이미지. 권한 거부, 중단과 복구 흐름은 FE가 정함 |
 | 데이터 | 합의된 저장 및 서버 인터페이스를 앱에 연결 | BE가 저장 구조, 암호화와 API 담당. 현재는 `MockRepository` |
 | 품질 | 오류 상태, 수동 전환과 접근성 | 실제 모델 결과와 실패 상태는 AI, BE 계약 확인 |
