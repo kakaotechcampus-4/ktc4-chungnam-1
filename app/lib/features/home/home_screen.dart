@@ -57,29 +57,36 @@ class HomeScreen extends ConsumerWidget {
                   ],
                 ],
               ),
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  Text(
-                    '새록',
-                    style: AppTypography.screenTitle.copyWith(
-                      fontSize: 44,
-                      letterSpacing: -1,
+              // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
+              // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
+              // 붙는 순간 아래로 넘친다.
+              child: Align(
+                alignment: const Alignment(0, -0.2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '새록',
+                      style: AppTypography.screenTitle.copyWith(
+                        fontSize: 44,
+                        letterSpacing: -1,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  const Text(
-                    '오늘은 무슨 주제로\n대화를 나눠볼까요?',
-                    style: AppTypography.body,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: AppSpacing.xxxl),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.image),
-                    child: Image.asset('assets/images/main.webp'),
-                  ),
-                  const Spacer(flex: 3),
-                ],
+                    const SizedBox(height: AppSpacing.xl),
+                    const Text(
+                      '오늘은 무슨 주제로\n대화를 나눠볼까요?',
+                      style: AppTypography.body,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xxxl),
+                    Flexible(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.image),
+                        child: Image.asset('assets/images/main.webp'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
