@@ -98,6 +98,9 @@ class SetupController extends Notifier<SetupState> {
 
   void updateDraft(SetupDraft draft) => state = state.copyWith(draft: draft);
 
+  /// 입력 중이던 분의 입력을 멈춘 단계부터 다시 연다.
+  void restore(SetupState saved) => state = saved;
+
   /// 다음 단계로 간다. 사진을 올리지 않았으면 태그 단계를 건너뛴다.
   ///
   /// 마지막 단계에서는 아무것도 하지 않는다. 화면이 흐름을 끝낸다.
@@ -133,10 +136,11 @@ class SetupController extends Notifier<SetupState> {
 
   /// 입력을 마친다. 입력한 어르신을 목록에 넣고 그 분으로 바꾼다.
   ///
-  /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작하고, [adding] 이면
-  /// 목록에 더한다. 서버 저장(`api-spec.md` 2-2)이 생기기 전의 임시 처리다.
-  /// 세부 정보와 사진은 아직 넘기지 않는다.
-  void finish({bool adding = false}) {
+  /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작한다. [addingId] 가
+  /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 서버 저장
+  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와 사진은 아직
+  /// 넘기지 않는다.
+  void finish({String? addingId}) {
     final draft = state.draft;
     if (!draft.basicInfoFilled) return;
 
@@ -149,10 +153,32 @@ class SetupController extends Notifier<SetupState> {
       stage: draft.stage!,
     );
     final profiles = ref.read(careProfilesProvider.notifier);
-    adding ? profiles.add(info) : profiles.startWith(info);
+    if (addingId == null) {
+      profiles.startWith(info);
+      return;
+    }
+    profiles.completeAdding(addingId, info);
+    ref.read(pendingSetupsProvider.notifier).remove(addingId);
   }
 }
 
 final setupControllerProvider = NotifierProvider<SetupController, SetupState>(
   SetupController.new,
 );
+
+/// `입력 중` 인 분마다 입력하던 값과 단계다.
+///
+/// 입력 화면은 한 번에 한 분만 다루므로, 화면을 떠나도 그 분의 입력이 남도록
+/// 여기에 옮겨 둔다. 다시 열면 [SetupController.restore] 로 되살린다.
+/// 앱이 켜져 있는 동안만 기억한다.
+class PendingSetups extends Notifier<Map<String, SetupState>> {
+  @override
+  Map<String, SetupState> build() => const {};
+
+  void save(String id, SetupState setup) => state = {...state, id: setup};
+
+  void remove(String id) => state = {...state}..remove(id);
+}
+
+final pendingSetupsProvider =
+    NotifierProvider<PendingSetups, Map<String, SetupState>>(PendingSetups.new);

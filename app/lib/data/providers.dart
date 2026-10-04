@@ -40,29 +40,39 @@ class EnteredBasicInfo {
 
 /// 보호자가 돌보는 어르신 한 분이다.
 ///
-/// [basicInfo] 가 `null` 이면 목 데이터 어르신이다. 로그인만 하고 들어온
-/// 사용자가 보는 분이며, 기본 정보는 목 데이터 그대로다.
+/// [basicInfo] 가 `null` 이고 [pending] 이 아니면 목 데이터 어르신이다. 로그인만
+/// 하고 들어온 사용자가 보는 분이며, 기본 정보는 목 데이터 그대로다.
 class CareProfileEntry {
-  const CareProfileEntry({required this.id, this.basicInfo});
+  const CareProfileEntry({
+    required this.id,
+    this.basicInfo,
+    this.pending = false,
+  });
 
   final String id;
   final EnteredBasicInfo? basicInfo;
+
+  /// 등록하다 마치지 않고 나간 분이다. 슬롯 하나를 차지하고 `입력 중` 으로
+  /// 보이며, 고를 수는 없다. 입력한 값은 입력 흐름이 들고 있다.
+  final bool pending;
 }
 
 /// 등록한 어르신 목록과 지금 보고 있는 어르신이다.
 class CareProfiles {
   const CareProfiles({required this.entries, required this.selectedId});
 
-  /// 한 보호자가 등록할 수 있는 어르신 수.
+  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다.
   static const max = 3;
 
+  /// 전환 화면의 슬롯 순서 그대로다.
   final List<CareProfileEntry> entries;
   final String selectedId;
 
-  CareProfileEntry get selected => entries.firstWhere(
-    (e) => e.id == selectedId,
-    orElse: () => entries.first,
-  );
+  /// 고를 수 있는 분들이다. 입력 중인 분은 빠진다.
+  List<CareProfileEntry> get ready => entries.where((e) => !e.pending).toList();
+
+  CareProfileEntry get selected =>
+      ready.firstWhere((e) => e.id == selectedId, orElse: () => ready.first);
 
   bool get isFull => entries.length >= max;
 }
@@ -89,35 +99,57 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
 
   /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
   void startWith(EnteredBasicInfo info) {
-    final entry = _entryOf(info);
+    final entry = CareProfileEntry(id: _newId(), basicInfo: info);
     state = CareProfiles(entries: [entry], selectedId: entry.id);
   }
 
-  /// 어르신을 더 등록하고 그 분으로 바꾼다. 가득 찼으면 `false` 다.
-  bool add(EnteredBasicInfo info) {
-    if (state.isFull) return false;
-    final entry = _entryOf(info);
+  /// 어르신을 더 등록하기 시작했다. 빈자리가 없으면 `null` 이다.
+  ///
+  /// 마치기 전까지는 `입력 중` 으로 자리만 차지한다.
+  String? beginAdding() {
+    if (state.isFull) return null;
+    final entry = CareProfileEntry(id: _newId(), pending: true);
     state = CareProfiles(
       entries: [...state.entries, entry],
-      selectedId: entry.id,
+      selectedId: state.selectedId,
     );
-    return true;
+    return entry.id;
+  }
+
+  /// 입력 중이던 분의 등록을 마치고 그 분으로 바꾼다. 자리는 그대로다.
+  void completeAdding(String id, EnteredBasicInfo info) {
+    if (state.entries.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id ? CareProfileEntry(id: id, basicInfo: info) : e,
+      ],
+      selectedId: id,
+    );
   }
 
   void select(String id) {
-    if (state.entries.every((e) => e.id != id)) return;
+    if (state.ready.every((e) => e.id != id)) return;
     state = CareProfiles(entries: state.entries, selectedId: id);
   }
 
   /// 목록 순서대로 다음 어르신으로 바꾼다. 마지막이면 처음으로 돌아간다.
+  /// 입력 중인 분은 건너뛴다.
   void selectNext() {
-    final entries = state.entries;
-    final index = entries.indexOf(state.selected);
-    select(entries[(index + 1) % entries.length].id);
+    final ready = state.ready;
+    final index = ready.indexWhere((e) => e.id == state.selected.id);
+    select(ready[(index + 1) % ready.length].id);
   }
 
-  CareProfileEntry _entryOf(EnteredBasicInfo info) =>
-      CareProfileEntry(id: 'local-${_nextId++}', basicInfo: info);
+  /// 슬롯 순서를 바꾼다. [newIndex] 는 옮긴 뒤의 자리다
+  /// (`ReorderableListView.onReorderItem` 과 같다).
+  void reorder(int oldIndex, int newIndex) {
+    final entries = [...state.entries];
+    entries.insert(newIndex, entries.removeAt(oldIndex));
+    state = CareProfiles(entries: entries, selectedId: state.selectedId);
+  }
+
+  String _newId() => 'local-${_nextId++}';
 }
 
 final careProfilesProvider =
@@ -132,17 +164,23 @@ class CareProfileSummary {
     required this.name,
     required this.gender,
     required this.selected,
+    required this.pending,
   });
 
   final String id;
+
+  /// 입력 중인 분은 비어 있다. 이름은 입력 흐름이 들고 있다.
   final String name;
   final String gender;
 
   /// 지금 보고 있는 어르신인지.
   final bool selected;
+
+  /// 등록하다 마치지 않은 분인지.
+  final bool pending;
 }
 
-/// 등록한 어르신들을 목록 순서대로 요약한다. 목 데이터 어르신은 목 데이터의
+/// 등록한 어르신들을 슬롯 순서대로 요약한다. 목 데이터 어르신은 목 데이터의
 /// 이름과 성별을 쓴다.
 final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
   ref,
@@ -153,9 +191,10 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
     for (final entry in profiles.entries)
       CareProfileSummary(
         id: entry.id,
-        name: entry.basicInfo?.name ?? mock.name,
-        gender: entry.basicInfo?.gender ?? mock.gender,
-        selected: entry.id == profiles.selectedId,
+        name: entry.pending ? '' : entry.basicInfo?.name ?? mock.name,
+        gender: entry.pending ? '' : entry.basicInfo?.gender ?? mock.gender,
+        selected: entry.id == profiles.selected.id,
+        pending: entry.pending,
       ),
   ];
 });

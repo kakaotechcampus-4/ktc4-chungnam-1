@@ -26,6 +26,10 @@ abstract final class AppRoutes {
   /// B-2 ~ B-8 환자 정보 최초 입력.
   static const profileCreate = '/profile/create';
 
+  /// 어르신을 더 등록하는 입력. 최초 입력과 같은 화면이며, 처음 오셨네요를
+  /// 거치지 않고 마치면 새로 등록한 분으로 바뀐다. [id] 는 `입력 중` 슬롯이다.
+  static String profileAddOf(String id) => '/profile/create?adding=$id';
+
   /// 시작 화면.
   static const home = '/home';
 

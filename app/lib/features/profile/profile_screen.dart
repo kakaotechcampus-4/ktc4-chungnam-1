@@ -275,7 +275,8 @@ class _BodyState extends State<_Body> {
               // 로그인해도 앞사람의 어르신 정보가 보이지 않게 한다.
               ProviderScope.containerOf(context)
                 ..invalidate(careProfilesProvider)
-                ..invalidate(setupControllerProvider);
+                ..invalidate(setupControllerProvider)
+                ..invalidate(pendingSetupsProvider);
               context.go(AppRoutes.login);
             },
           ),

@@ -67,7 +67,8 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.profileCreate,
-        builder: (context, state) => const ProfileSetupScreen(),
+        builder: (context, state) =>
+            ProfileSetupScreen(addingId: state.uri.queryParameters['adding']),
       ),
       GoRoute(
         path: AppRoutes.home,
