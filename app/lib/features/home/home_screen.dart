@@ -123,7 +123,6 @@ class _TopBar extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
                 onPressed: () => context.push(AppRoutes.notifications),
@@ -151,12 +150,6 @@ class _TopBar extends StatelessWidget {
                       ),
                   ],
                 ),
-              ),
-              // 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
-              IconButton(
-                onPressed: null,
-                tooltip: '메뉴',
-                icon: Icon(Icons.menu, size: 26, color: AppColors.textDisabled),
               ),
             ],
           ),
