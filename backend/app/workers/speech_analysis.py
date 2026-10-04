@@ -21,7 +21,10 @@ def create_worker(settings: Settings) -> SpeechAnalysisWorker:
             "음성 worker에는 SAEROK_DATABASE_URL과 "
             "SAEROK_SPEECH_AUDIO_S3_BUCKET이 필요합니다."
         )
-    jobs = PostgresSpeechAnalysisJobRepository(settings.database_url)
+    jobs = PostgresSpeechAnalysisJobRepository(
+        settings.database_url,
+        lease_seconds=settings.speech_analysis_lease_seconds,
+    )
     storage = S3AudioStorage(
         bucket=settings.speech_audio_s3_bucket,
         region=settings.speech_audio_s3_region,

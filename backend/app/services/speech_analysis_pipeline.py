@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -181,6 +181,7 @@ class SpeechAnalysisWorker:
         self._lease_seconds = lease_seconds
 
     async def run_once(self) -> bool:
+        await self._jobs.expire_transcripts()
         job = await self._jobs.claim_next(lease_seconds=self._lease_seconds)
         if job is None:
             return False
@@ -188,7 +189,10 @@ class SpeechAnalysisWorker:
         try:
             speech = await self._transcribe(job)
             await self._delete_audio(job)
-            await self._jobs.mark_stt_completed(analysis_id=job.analysis_id)
+            await self._jobs.mark_stt_completed(
+                analysis_id=job.analysis_id,
+                transcript=_transcript_for_report(speech),
+            )
             if self._report_generator is None:
                 return True
             await self._jobs.mark_generating_report(analysis_id=job.analysis_id)
@@ -257,3 +261,20 @@ class SpeechAnalysisWorker:
             # Lifecycle이 24시간 상한을 보장한다. 원래 처리 오류를 삭제 오류로
             # 덮어쓰지 않되 삭제 실패는 worker 운영 지표에서 별도로 확인한다.
             pass
+
+
+def _transcript_for_report(speech: SpeechAnalysisResult) -> dict[str, Any]:
+    # 리포트 생성 요청(API 8-3)의 transcript 형식만 남긴다. 전체 문장, 단어별
+    # 시각과 확률은 저장하지 않는다.
+    return {
+        "durationMs": speech.duration_ms,
+        "segments": [
+            {
+                "startMs": segment.start_ms,
+                "endMs": segment.end_ms,
+                "speakerLabel": segment.speaker_label,
+                "text": segment.text,
+            }
+            for segment in speech.segments
+        ],
+    }
