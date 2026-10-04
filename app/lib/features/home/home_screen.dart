@@ -194,40 +194,43 @@ class _ProfileSwitcher extends ConsumerWidget {
         if (canSwitch)
           IconButton(
             onPressed: () => _switchToNext(context, ref),
-            tooltip: '다음 어르신으로 바꾸기',
+            tooltip: '다음 분 보기',
             // 알림 아이콘과 같은 크기다.
             icon: const Icon(Icons.sync, size: 32),
           ),
-        // 전환 화면은 다음 작업에서 연결한다.
-        Container(
-          constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.xs,
-            AppSpacing.md,
-            AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ProfileAvatar(gender: profile.gender, size: _photo),
-              const SizedBox(width: AppSpacing.sm),
-              ConstrainedBox(
-                // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Text(
-                  '${profile.name} 어르신',
-                  style: AppTypography.bodyStrong,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+        // 누르면 어르신을 고르는 화면으로 간다.
+        Material(
+          color: AppColors.surface,
+          shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => context.push(AppRoutes.profileSwitch),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.md,
+                AppSpacing.xs,
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ProfileAvatar(gender: profile.gender, size: _photo),
+                  const SizedBox(width: AppSpacing.sm),
+                  ConstrainedBox(
+                    // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: Text(
+                      '${profile.name} 어르신',
+                      style: AppTypography.bodyStrong,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],
@@ -244,7 +247,7 @@ class _ProfileSwitcher extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('${next.profile.name} 어르신으로 바꿨어요')),
+        SnackBar(content: Text('지금부터 ${next.profile.name} 어르신과 함께해요')),
       );
   }
 }
