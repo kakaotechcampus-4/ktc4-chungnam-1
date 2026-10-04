@@ -1,77 +1,21 @@
 """Alembic initial schema migration에 대한 통합 테스트.
 
-실제 PostgreSQL이 필요하므로, `SAEROK_TEST_DATABASE_URL`(관리자 권한으로 접속해
-테스트 전용 DB를 만들고 지울 수 있는 연결 문자열)이 설정된 환경에서만
-실행하고, 없으면 건너뛴다(기존 테스트 스위트를 깨뜨리지 않기 위함).
+실제 PostgreSQL이 필요하다. 임시 DB fixture와 실행 조건은 `conftest.py`에 있다.
 
 실제 사용자 데이터는 쓰지 않는다. 아래 값은 모두 synthetic이다.
 """
 
-import os
 import uuid
-from pathlib import Path
 
-import psycopg
 import pytest
 import sqlalchemy as sa
 from alembic import command
-from alembic.config import Config
 from sqlalchemy.exc import IntegrityError
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-ADMIN_DATABASE_URL = os.environ.get("SAEROK_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not ADMIN_DATABASE_URL,
-    reason=(
-        "SAEROK_TEST_DATABASE_URL이 설정된 실제 PostgreSQL에서만 실행한다 "
-        "(예: postgresql://postgres:postgres@localhost:5432/postgres)"
-    ),
-)
-
-
-def _psycopg_dsn(sqlalchemy_url: str) -> str:
-    # psycopg.connect()는 'postgresql://' DSN을 받고, SQLAlchemy engine URL의
-    # '+psycopg' driver 표기는 이해하지 못한다.
-    return sqlalchemy_url.replace("postgresql+psycopg://", "postgresql://")
-
 
 @pytest.fixture
-def test_database_url():
-    admin_dsn = _psycopg_dsn(ADMIN_DATABASE_URL)
-    db_name = f"saerok_migration_test_{uuid.uuid4().hex[:12]}"
-
-    with psycopg.connect(admin_dsn, autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{db_name}"')
-
-    base = admin_dsn.rsplit("/", 1)[0]
-    database_url = f"{base}/{db_name}".replace(
-        "postgresql://", "postgresql+psycopg://"
-    )
-    try:
-        yield database_url
-    finally:
-        with psycopg.connect(admin_dsn, autocommit=True) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (db_name,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
-
-
-@pytest.fixture
-def alembic_config(test_database_url):
-    config = Config(str(BACKEND_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    config.set_main_option("sqlalchemy.url", test_database_url)
-    return config
-
-
-@pytest.fixture
-def engine(alembic_config, test_database_url):
-    command.upgrade(alembic_config, "head")
-    engine = sa.create_engine(test_database_url)
+def engine(migrated_database_url):
+    engine = sa.create_engine(migrated_database_url)
     try:
         yield engine
     finally:

@@ -87,7 +87,10 @@ def _harness(
     session_secret: str = SESSION_SECRET,
     store_google_profile: bool = False,
     jwks_fails: bool = False,
+    database_url: str | None = None,
 ) -> _Harness:
+    """`database_url` 을 주면 메모리 저장소 대신 그 DB 의 계정 저장소를 쓴다."""
+
     async def fetcher() -> dict[str, Any]:
         if jwks_fails:
             raise RuntimeError("jwks unavailable")
@@ -98,6 +101,7 @@ def _harness(
         session_secret=session_secret,
         consent_version=CONSENT_VERSION,
         store_google_profile=store_google_profile,
+        database_url=database_url,
     )
     verifier = GoogleIdTokenVerifier(
         allowed_audiences=audiences,
@@ -110,7 +114,8 @@ def _harness(
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_google_verifier] = lambda: verifier
-    app.dependency_overrides[get_account_repository] = lambda: repository
+    if database_url is None:
+        app.dependency_overrides[get_account_repository] = lambda: repository
     app.dependency_overrides[get_session_revocations] = lambda: revocations
     return _Harness(app, repository)
 
@@ -400,6 +405,45 @@ def test_google_profile_fields_are_not_stored_by_default() -> None:
     assert account["displayName"] == "보호자 표시 이름"
     assert "tester@example.com" not in registered.text
     assert "구글 이름" not in registered.text
+
+
+def test_display_name_longer_than_fifty_characters_is_rejected() -> None:
+    harness = _harness()
+    login = harness.login(google_tokens.id_token())
+
+    response = harness.consent(
+        registrationToken=login.json()["registrationToken"],
+        consentVersion=CONSENT_VERSION,
+        consents=ALL_GRANTED,
+        displayName="가" * 51,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["errorCode"] == "INVALID_REQUEST"
+    assert harness.stored_account() is None
+
+
+def test_postgres_account_survives_the_whole_login_flow(
+    migrated_database_url: str,
+) -> None:
+    harness = _harness(database_url=migrated_database_url)
+    token = google_tokens.id_token(email="tester@example.com")
+
+    registered = _register(harness, token).json()
+    me = harness.me(registered["accessToken"])
+    again = harness.login(token).json()
+    deleted = harness.delete_me(registered["accessToken"])
+    after = harness.login(token).json()
+
+    account = registered["account"]
+    assert account["email"] is None
+    assert account["consent"]["serviceData"]["granted"] is True
+    assert me.status_code == 200
+    assert me.json() == account
+    assert again["status"] == "authenticated"
+    assert again["account"]["accountId"] == account["accountId"]
+    assert deleted.status_code == 204
+    assert after["status"] == "consentRequired"
 
 
 def test_responses_do_not_expose_the_google_subject() -> None:
