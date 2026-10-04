@@ -219,11 +219,6 @@ Widget _app({
             const Scaffold(body: Center(child: Text('처음 오셨네요'))),
       ),
       GoRoute(
-        path: AppRoutes.signup,
-        builder: (context, state) =>
-            const Scaffold(body: Center(child: Text('회원가입 화면'))),
-      ),
-      GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
       ),
@@ -1040,7 +1035,7 @@ void main() {
     });
 
     testWidgets('서버 계정 없이 들어오면 서버를 부르지 않고 알린다', (tester) async {
-      // 아이디와 비밀번호 목 로그인으로 들어온 경우다. 지울 계정이 없다.
+      // 세션 없이 이 화면에 온 경우다. 지울 계정이 없다.
       await _pumpWithProfile(
         tester,
         _app(
