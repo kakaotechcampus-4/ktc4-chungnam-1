@@ -44,14 +44,14 @@
 
 상태: `완료` 구현됨, `미병합` 구현됐으나 develop에 병합 전, `수정` 기존 API 변경, `신규` 새로 구현, `미정` 결정 전
 
-`완료`인 6-2, 6-3, 8-1의 기존 구현은 이전 스키마의 회차 상태(`session_status`)와 회차 동의(`session_consents`)를 사용하므로 새 스키마에 맞춰 고쳐야 한다.
+6-2, 6-3, 8-1은 공통 기반 작업에서 새 스키마와 worker 공통 골격에 맞췄다.
 
 | # | 화면 | 메서드 | 경로 | 상태 |
 | --- | --- | --- | --- | --- |
 | 1-1 | 로그인 | `POST` | `/auth/google` | 완료 |
 | 1-2 | 가입 동의 | `POST` | `/auth/consent` | 완료 |
 | 1-3 | 앱 시작 | `GET` | `/auth/me` | 완료 |
-| 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 미병합 |
+| 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 완료 |
 | 1-5 | 회원 탈퇴 | `DELETE` | `/auth/me` | 수정 |
 | 1-6 | 프로필 설정 | `PATCH` | `/auth/me/consents` | 신규 |
 | 2-1 | 로그인 직후 | `GET` | `/api/v1/profiles` | 신규 |
@@ -72,7 +72,7 @@
 | 5-3 | 대화 카드 보충 | `POST` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
 | 5-4 | 홈 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 신규 |
 | 6-1 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
-| 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 수정 |
+| 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 완료 |
 | 6-3 | 홈 | `GET` | `/api/v1/speech-analyses/{analysisId}` | 완료 |
 | 6-4 | 리포트 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
 | 7-1 | 리포트 기록 | `GET` | `/api/v1/profiles/{profileId}/reports` | 신규 |
@@ -183,7 +183,7 @@
 
 응답 `200` — [Account](#account)
 
-### 1-4. `POST /auth/logout` — 미병합
+### 1-4. `POST /auth/logout` — 완료
 
 요청에 사용한 세션을 폐기한다. 본문 없음.
 
@@ -688,7 +688,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 409 | `EVALUATION_ALREADY_SUBMITTED` |
 | 422 | `INVALID_CARD_REVIEW` |
 
-### 6-2. `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` — 수정
+### 6-2. `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` — 완료
 
 면회 음성과 참여자 수를 제출한다.
 
