@@ -131,26 +131,25 @@ class SetupController extends Notifier<SetupState> {
     updateDraft(state.draft.copyWith(facts: facts));
   }
 
-  /// 입력을 마친다. 기본 정보를 프로필 설정에서 볼 수 있게 넘긴다.
+  /// 입력을 마친다. 입력한 어르신을 목록에 넣고 그 분으로 바꾼다.
   ///
-  /// 서버 저장(`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와
-  /// 사진은 아직 넘기지 않는다.
-  void finish() {
+  /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작하고, [adding] 이면
+  /// 목록에 더한다. 서버 저장(`api-spec.md` 2-2)이 생기기 전의 임시 처리다.
+  /// 세부 정보와 사진은 아직 넘기지 않는다.
+  void finish({bool adding = false}) {
     final draft = state.draft;
     if (!draft.basicInfoFilled) return;
 
     String two(int value) => value.toString().padLeft(2, '0');
-    ref
-        .read(enteredBasicInfoProvider.notifier)
-        .save(
-          EnteredBasicInfo(
-            name: draft.name.trim(),
-            gender: draft.gender!,
-            birthDate:
-                '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
-            stage: draft.stage!,
-          ),
-        );
+    final info = EnteredBasicInfo(
+      name: draft.name.trim(),
+      gender: draft.gender!,
+      birthDate:
+          '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
+      stage: draft.stage!,
+    );
+    final profiles = ref.read(careProfilesProvider.notifier);
+    adding ? profiles.add(info) : profiles.startWith(info);
   }
 }
 

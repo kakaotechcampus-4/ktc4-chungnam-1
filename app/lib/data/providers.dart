@@ -20,11 +20,6 @@ final accountProvider = FutureProvider<Account>(
 );
 
 /// 환자 정보 입력에서 받은 기본 정보다.
-///
-/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
-/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
-/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
-/// 로그아웃하면 사라지고 프로필은 목 데이터로 돌아간다.
 class EnteredBasicInfo {
   const EnteredBasicInfo({
     required this.name,
@@ -43,29 +38,107 @@ class EnteredBasicInfo {
   final ConditionStage stage;
 }
 
-class EnteredBasicInfoNotifier extends Notifier<EnteredBasicInfo?> {
-  @override
-  EnteredBasicInfo? build() => null;
+/// 보호자가 돌보는 어르신 한 분이다.
+///
+/// [basicInfo] 가 `null` 이면 목 데이터 어르신이다. 로그인만 하고 들어온
+/// 사용자가 보는 분이며, 기본 정보는 목 데이터 그대로다.
+class CareProfileEntry {
+  const CareProfileEntry({required this.id, this.basicInfo});
 
-  void save(EnteredBasicInfo info) => state = info;
+  final String id;
+  final EnteredBasicInfo? basicInfo;
 }
 
-final enteredBasicInfoProvider =
-    NotifierProvider<EnteredBasicInfoNotifier, EnteredBasicInfo?>(
-      EnteredBasicInfoNotifier.new,
+/// 등록한 어르신 목록과 지금 보고 있는 어르신이다.
+class CareProfiles {
+  const CareProfiles({required this.entries, required this.selectedId});
+
+  /// 한 보호자가 등록할 수 있는 어르신 수.
+  static const max = 3;
+
+  final List<CareProfileEntry> entries;
+  final String selectedId;
+
+  CareProfileEntry get selected => entries.firstWhere(
+    (e) => e.id == selectedId,
+    orElse: () => entries.first,
+  );
+
+  bool get isFull => entries.length >= max;
+}
+
+/// 어르신 목록을 다룬다.
+///
+/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
+/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
+/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
+/// 로그아웃하면 목 데이터 어르신 한 분으로 돌아간다.
+///
+/// 계약상 계정당 프로필은 1개다(`api-spec.md` 2-2). 최대 3분은 BE 와 합의 전인
+/// 화면 설계이며, 서버를 붙일 때 이 제한을 함께 맞춘다.
+class CareProfilesNotifier extends Notifier<CareProfiles> {
+  static const _mockId = 'mock';
+
+  int _nextId = 0;
+
+  @override
+  CareProfiles build() => const CareProfiles(
+    entries: [CareProfileEntry(id: _mockId)],
+    selectedId: _mockId,
+  );
+
+  /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
+  void startWith(EnteredBasicInfo info) {
+    final entry = _entryOf(info);
+    state = CareProfiles(entries: [entry], selectedId: entry.id);
+  }
+
+  /// 어르신을 더 등록하고 그 분으로 바꾼다. 가득 찼으면 `false` 다.
+  bool add(EnteredBasicInfo info) {
+    if (state.isFull) return false;
+    final entry = _entryOf(info);
+    state = CareProfiles(
+      entries: [...state.entries, entry],
+      selectedId: entry.id,
+    );
+    return true;
+  }
+
+  void select(String id) {
+    if (state.entries.every((e) => e.id != id)) return;
+    state = CareProfiles(entries: state.entries, selectedId: id);
+  }
+
+  /// 목록 순서대로 다음 어르신으로 바꾼다. 마지막이면 처음으로 돌아간다.
+  void selectNext() {
+    final entries = state.entries;
+    final index = entries.indexOf(state.selected);
+    select(entries[(index + 1) % entries.length].id);
+  }
+
+  CareProfileEntry _entryOf(EnteredBasicInfo info) =>
+      CareProfileEntry(id: 'local-${_nextId++}', basicInfo: info);
+}
+
+final careProfilesProvider =
+    NotifierProvider<CareProfilesNotifier, CareProfiles>(
+      CareProfilesNotifier.new,
     );
 
-/// 프로필이다. 입력받은 기본 정보가 있으면 목 데이터의 기본 정보를 그것으로
-/// 바꾼다. 세부 정보와 사진은 아직 목 데이터 그대로다.
+/// 지금 보고 있는 어르신의 프로필이다.
+///
+/// 입력받은 어르신이면 목 데이터의 기본 정보를 입력값으로 바꾼다. 세부 정보와
+/// 사진은 아직 목 데이터 그대로다.
 final profileProvider = FutureProvider<ProfileBundle>((ref) async {
   final bundle = await ref.watch(mockRepositoryProvider).loadProfile();
-  final entered = ref.watch(enteredBasicInfoProvider);
+  final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
+  final entered = selected.basicInfo;
   if (entered == null) return bundle;
 
   final mock = bundle.profile;
   return ProfileBundle(
     profile: Profile(
-      profileId: mock.profileId,
+      profileId: selected.id,
       name: entered.name,
       gender: entered.gender,
       birthDate: entered.birthDate,
