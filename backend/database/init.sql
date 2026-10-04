@@ -115,16 +115,21 @@ CREATE TABLE card_sets (
     prompt_version VARCHAR(50)  NOT NULL,
     generation_log JSONB        CHECK (jsonb_typeof(generation_log) = 'object' AND generation_log ? 'input'),
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    lease_expires_at TIMESTAMPTZ,
+    attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     UNIQUE (set_id, profile_id),
     CHECK ((status = 'failed') = (error_code IS NOT NULL)),
     CHECK ((status = 'running') = (generation_log IS NULL)),
-    CHECK (session_id IS NULL OR status = 'completed')
+    CHECK (session_id IS NULL OR status = 'completed'),
+    CONSTRAINT card_sets_lease_check CHECK (lease_expires_at IS NULL OR status = 'running')
 );
 CREATE INDEX idx_card_sets_profile ON card_sets(profile_id, created_at DESC);
 
 CREATE UNIQUE INDEX uq_card_sets_running ON card_sets(profile_id) WHERE status = 'running';
+CREATE INDEX idx_card_sets_waiting
+    ON card_sets(created_at) WHERE status = 'running' AND lease_expires_at IS NULL;
 
 CREATE TABLE profile_topics (
     topic_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -179,12 +184,16 @@ CREATE TABLE photos (
     model           VARCHAR(100),
     prompt_version  VARCHAR(50),
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    lease_expires_at TIMESTAMPTZ,
+    attempt_count    SMALLINT    NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     CHECK ((analysis_status = 'failed') = (error_code IS NOT NULL)),
     CHECK (CASE WHEN analysis_status = 'completed'
                 THEN description IS NOT NULL AND model IS NOT NULL AND prompt_version IS NOT NULL
-                ELSE description IS NULL AND model IS NULL AND prompt_version IS NULL END)
+                ELSE description IS NULL AND model IS NULL AND prompt_version IS NULL END),
+    CONSTRAINT photos_lease_check
+        CHECK ((analysis_status = 'processing') = (lease_expires_at IS NOT NULL))
 );
 CREATE INDEX idx_photos_profile ON photos(profile_id, created_at);
 CREATE INDEX idx_photos_pending ON photos(created_at) WHERE analysis_status = 'pending';

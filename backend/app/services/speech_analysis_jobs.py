@@ -8,12 +8,11 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
-import psycopg
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from app.core.database import psycopg_dsn
+from app.core.database import DbConnection
 from app.core.errors import AppError
+from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업에 임시 저장한다.
 # 리포트를 저장하면 지우고, 늦어도 STT 완료 후 이 시간이 지나면 지운다(API 8-1).
@@ -91,6 +90,10 @@ class SpeechAnalysisJobRepository(Protocol):
 
     async def expire_transcripts(self) -> int:
         """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다."""
+        ...
+
+    async def expire_leases(self) -> int:
+        """임대 시간 안에 끝나지 않은 작업을 정리한다."""
         ...
 
 
@@ -218,6 +221,9 @@ class InMemorySpeechAnalysisJobRepository:
     async def expire_transcripts(self) -> int:
         return 0
 
+    async def expire_leases(self) -> int:
+        return 0
+
     def _set_status(
         self,
         analysis_id: str,
@@ -229,12 +235,12 @@ class InMemorySpeechAnalysisJobRepository:
 class PostgresSpeechAnalysisJobRepository:
     """PostgreSQL 행 잠금으로 작업을 하나씩 임대하는 저장소.
 
-    아직 메서드마다 동기 연결을 열어 `asyncio.to_thread` 로 실행한다. 공통 규칙의
-    비동기 연결 주입으로는 worker 공통 골격 작업에서 옮긴다.
+    바깥에서 받은 비동기 연결을 쓴다(API는 `DbConnectionDep`, worker는 골격이 연다).
+    연결은 autocommit이므로 여러 문장을 함께 반영할 때만 트랜잭션 블록으로 묶는다.
     """
 
-    def __init__(self, database_url: str, *, lease_seconds: int) -> None:
-        self._dsn = psycopg_dsn(database_url)
+    def __init__(self, connection: DbConnection, *, lease_seconds: int) -> None:
+        self._connection = connection
         # 업로드와 리포트 생성 단계의 작업 임대 시간. 전사 단계는 worker가 정한다.
         self._lease_seconds = lease_seconds
 
@@ -250,7 +256,16 @@ class PostgresSpeechAnalysisJobRepository:
         except ValueError as error:
             raise _session_not_found() from error
 
-        session = await asyncio.to_thread(self._find_session, owner_id, visit_id)
+        cursor = await self._connection.execute(
+            """
+            SELECT visit.evaluated_at
+              FROM visit_sessions AS visit
+              JOIN profiles AS profile ON profile.profile_id = visit.profile_id
+             WHERE visit.session_id = %s AND profile.user_id = %s
+            """,
+            (visit_id, owner_id),
+        )
+        session = await cursor.fetchone()
         if session is None:
             raise _session_not_found()
         if session["evaluated_at"] is None:
@@ -260,33 +275,15 @@ class PostgresSpeechAnalysisJobRepository:
                 message="보호자 평가를 먼저 제출해 주세요.",
             )
 
-    def _find_session(self, account_id: UUID, session_id: UUID) -> dict | None:
-        with psycopg.connect(self._dsn, row_factory=dict_row) as connection:
-            return connection.execute(
-                """
-                SELECT visit.evaluated_at
-                  FROM visit_sessions AS visit
-                  JOIN profiles AS profile ON profile.profile_id = visit.profile_id
-                 WHERE visit.session_id = %s AND profile.user_id = %s
-                """,
-                (session_id, account_id),
-            ).fetchone()
-
     async def reserve(
         self,
         job: SpeechAnalysisJob,
     ) -> tuple[SpeechAnalysisJob, bool]:
-        return await asyncio.to_thread(self._reserve, job)
-
-    def _reserve(
-        self,
-        job: SpeechAnalysisJob,
-    ) -> tuple[SpeechAnalysisJob, bool]:
         session_id = UUID(job.session_id)
-        with psycopg.connect(self._dsn, row_factory=dict_row) as connection:
+        async with self._connection.transaction():
             # 접수 후 실패한 회차는 다시 받지 않는다. 업로드 단계의 실패는 작업을
             # 지우므로(`discard_upload`) 남은 실패 작업은 모두 접수된 작업이다.
-            failed = connection.execute(
+            cursor = await self._connection.execute(
                 """
                 SELECT * FROM speech_analysis_jobs
                  WHERE session_id = %s AND status = 'failed'
@@ -295,10 +292,11 @@ class PostgresSpeechAnalysisJobRepository:
                  LIMIT 1
                 """,
                 (session_id,),
-            ).fetchone()
+            )
+            failed = await cursor.fetchone()
             if failed is not None:
                 return self._from_row(failed), False
-            row = connection.execute(
+            cursor = await self._connection.execute(
                 """
                 INSERT INTO speech_analysis_jobs
                     (analysis_id, session_id, status, participant_count,
@@ -316,16 +314,18 @@ class PostgresSpeechAnalysisJobRepository:
                     job.data_expires_at,
                     self._lease_seconds,
                 ),
-            ).fetchone()
+            )
+            row = await cursor.fetchone()
             if row is not None:
                 return self._from_row(row), True
-            existing = connection.execute(
+            cursor = await self._connection.execute(
                 """
                 SELECT * FROM speech_analysis_jobs
                  WHERE session_id = %s AND status <> 'failed'
                 """,
                 (session_id,),
-            ).fetchone()
+            )
+            existing = await cursor.fetchone()
         if existing is None:
             # 충돌한 작업이 그 사이 실패로 바뀐 경우다. 접수했다고 꾸미지 않는다.
             raise RuntimeError("충돌한 음성 분석 작업을 다시 읽지 못했습니다.")
@@ -338,29 +338,19 @@ class PostgresSpeechAnalysisJobRepository:
         size_bytes: int,
         sha256: str,
     ) -> SpeechAnalysisJob:
-        return await asyncio.to_thread(
-            self._mark_queued, analysis_id, size_bytes, sha256
+        cursor = await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET status = 'queued', size_bytes = %s, sha256 = %s,
+                   lease_expires_at = NULL, updated_at = now()
+             WHERE analysis_id = %s AND status = 'uploading'
+            RETURNING *
+            """,
+            (size_bytes, sha256, UUID(analysis_id)),
         )
-
-    def _mark_queued(
-        self,
-        analysis_id: str,
-        size_bytes: int,
-        sha256: str,
-    ) -> SpeechAnalysisJob:
-        with psycopg.connect(self._dsn, row_factory=dict_row) as connection:
-            row = connection.execute(
-                """
-                UPDATE speech_analysis_jobs
-                   SET status = 'queued', size_bytes = %s, sha256 = %s,
-                       lease_expires_at = NULL, updated_at = now()
-                 WHERE analysis_id = %s AND status = 'uploading'
-                RETURNING *
-                """,
-                (size_bytes, sha256, UUID(analysis_id)),
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("업로드 중인 음성 분석 작업을 찾을 수 없습니다.")
+        row = await cursor.fetchone()
+        if row is None:
+            raise RuntimeError("업로드 중인 음성 분석 작업을 찾을 수 없습니다.")
         return self._from_row(row)
 
     async def get_for_account(
@@ -374,119 +364,84 @@ class PostgresSpeechAnalysisJobRepository:
             account_uuid = UUID(account_id)
         except ValueError:
             return None
-        return await asyncio.to_thread(
-            self._get_for_account, analysis_uuid, account_uuid
+        cursor = await self._connection.execute(
+            """
+            SELECT job.*
+              FROM speech_analysis_jobs AS job
+              JOIN visit_sessions AS visit ON visit.session_id = job.session_id
+              JOIN profiles AS profile ON profile.profile_id = visit.profile_id
+             WHERE job.analysis_id = %s AND profile.user_id = %s
+            """,
+            (analysis_uuid, account_uuid),
         )
-
-    def _get_for_account(
-        self,
-        analysis_id: UUID,
-        account_id: UUID,
-    ) -> SpeechAnalysisJob | None:
-        with psycopg.connect(self._dsn, row_factory=dict_row) as connection:
-            row = connection.execute(
-                """
-                SELECT job.*
-                  FROM speech_analysis_jobs AS job
-                  JOIN visit_sessions AS visit ON visit.session_id = job.session_id
-                  JOIN profiles AS profile ON profile.profile_id = visit.profile_id
-                 WHERE job.analysis_id = %s AND profile.user_id = %s
-                """,
-                (analysis_id, account_id),
-            ).fetchone()
+        row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
 
     async def discard_upload(self, *, analysis_id: str) -> None:
-        await asyncio.to_thread(self._discard_upload, analysis_id)
-
-    def _discard_upload(self, analysis_id: str) -> None:
-        with psycopg.connect(self._dsn) as connection:
-            connection.execute(
-                """
-                DELETE FROM speech_analysis_jobs
-                 WHERE analysis_id = %s AND status = 'uploading'
-                """,
-                (UUID(analysis_id),),
-            )
+        await self._connection.execute(
+            """
+            DELETE FROM speech_analysis_jobs
+             WHERE analysis_id = %s AND status = 'uploading'
+            """,
+            (UUID(analysis_id),),
+        )
 
     async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None:
-        return await asyncio.to_thread(self._claim_next, lease_seconds)
-
-    def _claim_next(self, lease_seconds: int) -> SpeechAnalysisJob | None:
-        with psycopg.connect(self._dsn, row_factory=dict_row) as connection:
-            row = connection.execute(
-                """
-                WITH candidate AS (
-                    SELECT analysis_id
-                      FROM speech_analysis_jobs
-                     WHERE status = 'queued'
-                     ORDER BY created_at
-                     FOR UPDATE SKIP LOCKED
-                     LIMIT 1
-                )
-                UPDATE speech_analysis_jobs AS job
-                   SET status = 'transcribing',
-                       attempt_count = attempt_count + 1,
-                       lease_expires_at = now() + (%s * interval '1 second'),
-                       updated_at = now()
-                  FROM candidate
-                 WHERE job.analysis_id = candidate.analysis_id
-                RETURNING job.*
-                """,
-                (lease_seconds,),
-            ).fetchone()
+        cursor = await self._connection.execute(
+            """
+            WITH candidate AS (
+                SELECT analysis_id
+                  FROM speech_analysis_jobs
+                 WHERE status = 'queued'
+                 ORDER BY created_at
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE speech_analysis_jobs AS job
+               SET status = 'transcribing',
+                   attempt_count = attempt_count + 1,
+                   lease_expires_at = now() + (%s * interval '1 second'),
+                   updated_at = now()
+              FROM candidate
+             WHERE job.analysis_id = candidate.analysis_id
+            RETURNING job.*
+            """,
+            (lease_seconds,),
+        )
+        row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
 
     async def mark_generating_report(self, *, analysis_id: str) -> None:
-        await asyncio.to_thread(
-            self._set_status,
-            analysis_id,
-            SpeechAnalysisStatus.GENERATING_REPORT,
-            None,
+        await self._set_status(
+            analysis_id, SpeechAnalysisStatus.GENERATING_REPORT, None
         )
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
     ) -> None:
-        await asyncio.to_thread(self._mark_stt_completed, analysis_id, transcript)
-
-    def _mark_stt_completed(
-        self, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None:
-        with psycopg.connect(self._dsn) as connection:
-            connection.execute(
-                """
-                UPDATE speech_analysis_jobs
-                   SET status = 'sttCompleted', stt_completed_at = now(),
-                       transcript = %s,
-                       transcript_expires_at = now() + (%s * interval '1 second'),
-                       lease_expires_at = NULL, updated_at = now()
-                 WHERE analysis_id = %s AND status = 'transcribing'
-                """,
-                (
-                    Jsonb(dict(transcript)),
-                    TRANSCRIPT_RETENTION_SECONDS,
-                    UUID(analysis_id),
-                ),
-            )
+        await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET status = 'sttCompleted', stt_completed_at = now(),
+                   transcript = %s,
+                   transcript_expires_at = now() + (%s * interval '1 second'),
+                   lease_expires_at = NULL, updated_at = now()
+             WHERE analysis_id = %s AND status = 'transcribing'
+            """,
+            (
+                Jsonb(dict(transcript)),
+                TRANSCRIPT_RETENTION_SECONDS,
+                UUID(analysis_id),
+            ),
+        )
 
     async def mark_completed(self, *, analysis_id: str) -> None:
-        await asyncio.to_thread(
-            self._set_status,
-            analysis_id,
-            SpeechAnalysisStatus.COMPLETED,
-            None,
-        )
+        await self._set_status(analysis_id, SpeechAnalysisStatus.COMPLETED, None)
 
     async def mark_failed(self, *, analysis_id: str, error_code: str) -> None:
-        await asyncio.to_thread(
-            self._set_status,
-            analysis_id,
-            SpeechAnalysisStatus.FAILED,
-            error_code,
-        )
+        await self._set_status(analysis_id, SpeechAnalysisStatus.FAILED, error_code)
 
-    def _set_status(
+    async def _set_status(
         self,
         analysis_id: str,
         status: SpeechAnalysisStatus,
@@ -494,74 +449,94 @@ class PostgresSpeechAnalysisJobRepository:
     ) -> None:
         # 회차 상태는 저장하지 않고 작업 상태로 계산하므로 회차는 바꾸지 않는다.
         # 리포트 생성 단계는 임대가 필요하고, 끝난 작업에는 전사문을 남기지 않는다.
-        with psycopg.connect(self._dsn) as connection:
-            connection.execute(
-                """
-                UPDATE speech_analysis_jobs
-                   SET status = %(status)s::text, error_code = %(error_code)s,
-                       lease_expires_at = CASE
-                           WHEN %(status)s::text = 'generatingReport'
-                           THEN now() + (%(lease_seconds)s * interval '1 second')
-                       END,
-                       transcript = CASE
-                           WHEN %(status)s::text IN ('completed', 'failed') THEN NULL
-                           ELSE transcript
-                       END,
-                       transcript_deleted_at = CASE
-                           WHEN %(status)s::text IN ('completed', 'failed')
-                                AND transcript IS NOT NULL THEN now()
-                           ELSE transcript_deleted_at
-                       END,
-                       completed_at = CASE
-                           WHEN %(status)s::text IN ('completed', 'failed') THEN now()
-                           ELSE completed_at
-                       END,
-                       updated_at = now()
-                 WHERE analysis_id = %(analysis_id)s
-                """,
-                {
-                    "status": status.value,
-                    "error_code": error_code,
-                    "lease_seconds": self._lease_seconds,
-                    "analysis_id": UUID(analysis_id),
-                },
-            )
+        await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET status = %(status)s::text, error_code = %(error_code)s,
+                   lease_expires_at = CASE
+                       WHEN %(status)s::text = 'generatingReport'
+                       THEN now() + (%(lease_seconds)s * interval '1 second')
+                   END,
+                   transcript = CASE
+                       WHEN %(status)s::text IN ('completed', 'failed') THEN NULL
+                       ELSE transcript
+                   END,
+                   transcript_deleted_at = CASE
+                       WHEN %(status)s::text IN ('completed', 'failed')
+                            AND transcript IS NOT NULL THEN now()
+                       ELSE transcript_deleted_at
+                   END,
+                   completed_at = CASE
+                       WHEN %(status)s::text IN ('completed', 'failed') THEN now()
+                       ELSE completed_at
+                   END,
+                   updated_at = now()
+             WHERE analysis_id = %(analysis_id)s
+            """,
+            {
+                "status": status.value,
+                "error_code": error_code,
+                "lease_seconds": self._lease_seconds,
+                "analysis_id": UUID(analysis_id),
+            },
+        )
 
     async def mark_audio_deleted(self, *, analysis_id: str) -> None:
-        await asyncio.to_thread(self._mark_audio_deleted, analysis_id)
-
-    def _mark_audio_deleted(self, analysis_id: str) -> None:
-        with psycopg.connect(self._dsn) as connection:
-            connection.execute(
-                """
-                UPDATE speech_analysis_jobs
-                   SET audio_deleted_at = now(), updated_at = now()
-                 WHERE analysis_id = %s
-                """,
-                (UUID(analysis_id),),
-            )
+        await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET audio_deleted_at = now(), updated_at = now()
+             WHERE analysis_id = %s
+            """,
+            (UUID(analysis_id),),
+        )
 
     async def expire_transcripts(self) -> int:
-        return await asyncio.to_thread(self._expire_transcripts)
-
-    def _expire_transcripts(self) -> int:
         # 리포트를 저장하기 전에 보관 기한이 지났다. 전사문 없이는 리포트를 만들 수
         # 없으므로 작업을 실패로 끝낸다.
-        with psycopg.connect(self._dsn) as connection:
-            cursor = connection.execute(
+        cursor = await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET status = 'failed', error_code = 'TRANSCRIPT_EXPIRED',
+                   transcript = NULL, transcript_deleted_at = now(),
+                   lease_expires_at = NULL, completed_at = now(),
+                   updated_at = now()
+             WHERE transcript IS NOT NULL AND transcript_expires_at <= now()
+            """
+        )
+        return cursor.rowcount
+
+    async def expire_leases(self) -> int:
+        async with self._connection.transaction():
+            # 업로드 중에 멈춘 작업은 접수 전 실패와 같으므로 지운다. 같은 음성을 다시
+            # 제출할 수 있고, trigger가 원본 키를 S3 삭제 대기열에 넣는다.
+            uploading = await self._connection.execute(
                 """
-                UPDATE speech_analysis_jobs
-                   SET status = 'failed', error_code = 'TRANSCRIPT_EXPIRED',
-                       transcript = NULL, transcript_deleted_at = now(),
-                       lease_expires_at = NULL, completed_at = now(),
-                       updated_at = now()
-                 WHERE transcript IS NOT NULL AND transcript_expires_at <= now()
+                DELETE FROM speech_analysis_jobs
+                 WHERE status = 'uploading' AND lease_expires_at <= now()
                 """
             )
-            return cursor.rowcount
+            # 처리 중에 멈춘 작업은 실패로 끝낸다. 남은 원본은 S3 Lifecycle이 지운다.
+            processing = await self._connection.execute(
+                """
+                UPDATE speech_analysis_jobs
+                   SET status = 'failed', error_code = %s,
+                       transcript = NULL,
+                       transcript_deleted_at = CASE
+                           WHEN transcript IS NOT NULL THEN now()
+                           ELSE transcript_deleted_at
+                       END,
+                       lease_expires_at = NULL, completed_at = now(),
+                       updated_at = now()
+                 WHERE status IN ('transcribing', 'generatingReport')
+                   AND lease_expires_at <= now()
+                """,
+                (LEASE_EXPIRED_ERROR,),
+            )
+        return uploading.rowcount + processing.rowcount
 
     @staticmethod
-    def _from_row(row: dict) -> SpeechAnalysisJob:
+    def _from_row(row: Mapping[str, Any]) -> SpeechAnalysisJob:
         return SpeechAnalysisJob(
             analysis_id=str(row["analysis_id"]),
             session_id=str(row["session_id"]),
