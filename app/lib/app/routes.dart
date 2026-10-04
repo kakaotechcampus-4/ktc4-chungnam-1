@@ -11,9 +11,6 @@ abstract final class AppRoutes {
   /// A-2 로그인.
   static const login = '/login';
 
-  /// A-3 회원가입과 동의.
-  static const signup = '/signup';
-
   /// 구글 로그인 뒤 받는 필수 동의.
   ///
   /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다. 로그인

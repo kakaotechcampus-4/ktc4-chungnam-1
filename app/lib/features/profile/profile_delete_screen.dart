@@ -130,8 +130,8 @@ class _BodyState extends ConsumerState<_Body> {
   @override
   Widget build(BuildContext context) {
     final failure = _failure;
-    // 서버 계정 없이 들어온 경우다(아이디와 비밀번호 목 로그인). 지울 계정을
-    // 가리킬 세션이 없으므로 탈퇴된 것처럼 넘기지 않는다.
+    // 서버 세션 없이 이 화면에 온 경우다. 지울 계정을 가리킬 세션이 없으므로
+    // 탈퇴된 것처럼 넘기지 않는다.
     final signedOut = ref.watch(sessionProvider) == null && !_deleting;
     final restart = signedOut || (failure != null && needsRestart(failure));
 

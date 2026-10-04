@@ -542,7 +542,7 @@ class _SmallTag extends StatelessWidget {
   }
 }
 
-/// 동의 항목 한 줄이다. `signup_screen.dart` 의 것과 같은 모양이다.
+/// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.
 class _ConsentRow extends StatelessWidget {
   const _ConsentRow({
     required this.term,
