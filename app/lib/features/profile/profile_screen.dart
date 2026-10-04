@@ -302,8 +302,8 @@ class _BodyState extends State<_Body> {
 
   /// 성별에 맞는 기본 프로필 사진이다. 계약상 성별은 `male`, `female` 둘뿐이다.
   static String _defaultPhoto(String gender) => gender == 'female'
-      ? 'assets/images/patient_female.webp'
-      : 'assets/images/patient_male.webp';
+      ? 'assets/images/patient-female.webp'
+      : 'assets/images/patient-male.webp';
 
   static String _genderLabel(String raw) => switch (raw) {
     'male' => '남성',
