@@ -27,6 +27,11 @@ from app.services.google_identity import (
     GoogleIdTokenVerifier,
     fetch_google_jwks,
 )
+from app.services.image_storage import (
+    ImageStorage,
+    S3ImageStorage,
+    UnconfiguredImageStorage,
+)
 from app.services.session_revocations import (
     InMemorySessionRevocationStore,
     SessionRevocationStore,
@@ -87,6 +92,21 @@ def get_google_verifier() -> GoogleIdTokenVerifier:
     )
 
 
+@lru_cache
+def get_image_storage() -> ImageStorage:
+    # S3 client를 요청마다 만들지 않도록 프로세스마다 하나만 둔다.
+    settings = get_settings()
+    if not settings.image_s3_bucket:
+        return UnconfiguredImageStorage()
+    return S3ImageStorage(
+        bucket=settings.image_s3_bucket,
+        region=settings.image_s3_region,
+        prefix=settings.image_s3_prefix,
+        presigned_ttl_seconds=settings.image_presigned_ttl_seconds,
+        server_side_encryption=settings.image_s3_encryption,
+    )
+
+
 def get_token_issuer(settings: SettingsDep) -> TokenIssuer:
     return TokenIssuer(
         secret=settings.session_secret,
@@ -136,6 +156,7 @@ async def get_current_account(
 
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 GoogleVerifierDep = Annotated[GoogleIdTokenVerifier, Depends(get_google_verifier)]
+ImageStorageDep = Annotated[ImageStorage, Depends(get_image_storage)]
 TokenIssuerDep = Annotated[TokenIssuer, Depends(get_token_issuer)]
 SessionRevocationsDep = Annotated[
     SessionRevocationStore, Depends(get_session_revocations)
