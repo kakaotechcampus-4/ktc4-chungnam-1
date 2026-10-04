@@ -5,12 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
+import 'package:saerok/features/visit/visit_recorder.dart';
+
+import 'fake_visit_recorder.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // 실제 마이크는 테스트에서 열 수 없다. 장치 부르는 순서는
+  // `visit_recording_test.dart` 에서 따로 본다.
   ProviderContainer makeContainer() {
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
+      ],
+    );
     addTearDown(container.dispose);
     return container;
   }
@@ -139,17 +148,17 @@ void main() {
       await container.read(visitControllerProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
 
-      controller.startRecording();
+      await controller.startRecording();
       var state = container.read(visitControllerProvider).value!;
       expect(state.started, isTrue);
       expect(state.recording, isTrue);
 
-      controller.pauseRecording();
+      await controller.pauseRecording();
       state = container.read(visitControllerProvider).value!;
       expect(state.recording, isFalse);
       expect(state.started, isTrue, reason: '녹음 화면에 그대로 머문다');
 
-      controller.startRecording();
+      await controller.startRecording();
       expect(container.read(visitControllerProvider).value!.recording, isTrue);
     });
 
@@ -158,7 +167,7 @@ void main() {
       await container.read(visitControllerProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
 
-      controller.startRecording();
+      await controller.startRecording();
       controller.nextFollowUp();
       expect(container.read(visitControllerProvider).value!.started, isTrue);
 
@@ -171,6 +180,8 @@ void main() {
       expect(fresh.elapsed, Duration.zero);
       expect(fresh.followUpIndex, 0);
       expect(fresh.careRecipientConfirmed, isFalse);
+      expect(fresh.recordingPath, isNull, reason: '지난 회차의 녹음 파일을 물려받지 않는다');
+      expect(fresh.problem, isNull);
     });
 
     test('시간 표시는 시분초 형태다', () async {

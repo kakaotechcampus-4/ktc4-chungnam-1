@@ -8,11 +8,14 @@ import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/home/notice_screen.dart';
+import '../features/profile/profile_delete_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
 import '../features/report/report_list_screen.dart';
 import '../features/report/report_screen.dart';
+import '../features/review/comfort_screen.dart';
 import '../features/review/review_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
@@ -74,6 +77,10 @@ GoRouter buildRouter() {
         builder: (context, state) => const CardsScreen(),
       ),
       GoRoute(
+        path: AppRoutes.notifications,
+        builder: (context, state) => const NoticeScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.visitPhoto,
         builder: (context, state) => const VisitPhotoScreen(),
       ),
@@ -88,6 +95,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.visitReview,
         builder: (context, state) => const ReviewScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.visitReviewDone,
+        builder: (context, state) => const ComfortScreen(),
       ),
       GoRoute(
         path: AppRoutes.report,
@@ -105,6 +116,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileDelete,
+        builder: (context, state) => const ProfileDeleteScreen(),
       ),
       GoRoute(
         path: AppRoutes.reports,
