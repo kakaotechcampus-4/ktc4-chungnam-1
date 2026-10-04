@@ -7,6 +7,7 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
+import '../../widgets/profile_avatar.dart';
 import 'my_page_menu.dart';
 
 /// 시작 화면.
@@ -111,10 +112,18 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: SizedBox(
-        height: AppSizes.topBar,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      // 오른쪽 알약이 벽과 상태바에 붙어 보이지 않게 위와 오른쪽을 띄운다.
+      // 알림 아이콘은 버튼 안쪽 여백이 있어 왼쪽은 덜 띄운다.
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.screen,
+          0,
+        ),
+        child: ConstrainedBox(
+          // 글자를 키워 알약이 높아지면 함께 늘어나도록 높이를 못 박지 않는다.
+          constraints: const BoxConstraints(minHeight: AppSizes.topBar),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -124,7 +133,7 @@ class _TopBar extends StatelessWidget {
                 icon: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Icon(Icons.notifications_none, size: 28),
+                    const Icon(Icons.notifications_none, size: 32),
                     if (hasNotice)
                       Positioned(
                         right: 0,
@@ -145,17 +154,93 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
               ),
-              // 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
-              IconButton(
-                onPressed: null,
-                tooltip: '메뉴',
-                icon: Icon(Icons.menu, size: 26, color: AppColors.textDisabled),
-              ),
+              const _ProfileSwitcher(),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// 지금 보고 있는 어르신과 어르신을 바꾸는 버튼이다.
+///
+/// 사진만으로는 같은 성별의 어르신을 구분할 수 없어 이름을 함께 둔다. 다른
+/// 어르신의 대화 카드를 받는 실수를 막으려는 자리다.
+///
+/// 원형 화살표는 목록 순서대로 다음 어르신으로 바로 바꾼다. 어르신이 한
+/// 분이면 바꿀 대상이 없어 두지 않는다.
+class _ProfileSwitcher extends ConsumerWidget {
+  const _ProfileSwitcher();
+
+  static const _photo = 32.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider).value?.profile;
+    final canSwitch = ref.watch(
+      careProfilesProvider.select((p) => p.entries.length > 1),
+    );
+    if (profile == null) return const SizedBox.shrink();
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (canSwitch)
+          IconButton(
+            onPressed: () => _switchToNext(context, ref),
+            tooltip: '다음 어르신으로 바꾸기',
+            // 알림 아이콘과 같은 크기다.
+            icon: const Icon(Icons.sync, size: 32),
+          ),
+        // 전환 화면은 다음 작업에서 연결한다.
+        Container(
+          constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ProfileAvatar(gender: profile.gender, size: _photo),
+              const SizedBox(width: AppSpacing.sm),
+              ConstrainedBox(
+                // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(
+                  '${profile.name} 어르신',
+                  style: AppTypography.bodyStrong,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 다음 어르신으로 바꾸고 누구로 바뀌었는지 알린다.
+  ///
+  /// 한 번 누르면 바로 바뀌므로, 잘못 눌러도 알아챌 수 있게 이름을 말해 준다.
+  Future<void> _switchToNext(BuildContext context, WidgetRef ref) async {
+    ref.read(careProfilesProvider.notifier).selectNext();
+    final next = await ref.read(profileProvider.future);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('${next.profile.name} 어르신으로 바꿨어요')),
+      );
   }
 }
 
