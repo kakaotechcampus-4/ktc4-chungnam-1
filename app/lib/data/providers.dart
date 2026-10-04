@@ -149,6 +149,28 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     state = CareProfiles(entries: entries, selectedId: state.selectedId);
   }
 
+  /// 지울 수 있는 분인지. 고를 수 있는 분이 한 분만 남으면 그 분은 지우지
+  /// 않는다. 남은 분이 없으면 앱을 쓸 수 없어 회원 탈퇴로 안내한다.
+  bool canRemove(String id) {
+    final entry = state.entries.where((e) => e.id == id).firstOrNull;
+    if (entry == null) return false;
+    return entry.pending || state.ready.length > 1;
+  }
+
+  /// 슬롯 하나를 비운다. 보고 있던 분을 지우면 남은 첫 분으로 바꾼다.
+  ///
+  /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
+  void remove(String id) {
+    if (!canRemove(id)) return;
+    final entries = state.entries.where((e) => e.id != id).toList();
+    final ready = entries.where((e) => !e.pending);
+    final selectedId = state.selectedId == id
+        ? ready.first.id
+        : state.selectedId;
+    state = CareProfiles(entries: entries, selectedId: selectedId);
+    ref.read(_reportNoticesProvider.notifier).dismiss(id);
+  }
+
   String _newId() => 'local-${_nextId++}';
 }
 
