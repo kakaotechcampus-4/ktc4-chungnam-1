@@ -86,7 +86,22 @@ API를 나눠 구현할 때 모두 같은 방식으로 DB를 쓴다.
 
 `SAEROK_DATABASE_URL`이 없으면 DB를 쓰는 API는 메모리 저장소 같은 대체 경로 없이 `DATABASE_NOT_CONFIGURED`(503)로 거절한다.
 
-psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)에서 동작하지 않는다. `scripts/run_backend.sh`는 `--reload`로 실행해 SelectorEventLoop를 쓴다. Windows에서 `--reload` 없이 직접 실행하면 `--loop asyncio:SelectorEventLoop`를 붙인다.
+psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)에서 동작하지 않는다. `scripts/run_backend.sh`는 `--reload`로 실행해 SelectorEventLoop를 쓴다. Windows에서 `--reload` 없이 직접 실행하면 `--loop asyncio:SelectorEventLoop`를 붙인다. worker는 실행 진입점이 SelectorEventLoop로 실행한다.
+
+## worker 공통 골격
+
+비동기 파이프라인(음성 → 리포트, 카드 생성, 사진 분석)의 worker는 [base.py](app/workers/base.py)의 `Worker`로 만든다. 파이프라인마다 대기열과 처리 함수만 준비한다.
+
+| 구성 | 하는 일 | 준비된 것 |
+| --- | --- | --- |
+| 대기열 (`JobQueue`) | 임대 만료 정리, 작업 하나 임대(`claim`), 실패 기록(`fail`). 각 메서드는 짧은 트랜잭션 하나 | 음성 `SpeechAnalysisQueue`, 카드 생성 [CardGenerationQueue](app/services/card_generation_jobs.py), 사진 분석 [PhotoAnalysisQueue](app/services/photo_analysis_jobs.py) |
+| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`. 카드 생성과 사진 분석은 각 담당이 만든다 |
+
+- `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
+- 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
+- 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
+- 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
+- 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정
 
@@ -289,9 +304,9 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 있다. 리포트 생성 모델과 저장 계약은 아직 연결되지 않았으므로 기본 worker는 STT 성공
 후 `sttCompleted`에서 멈추고 `completed`로 과장하지 않는다. 전사문은 리포트 생성
 입력으로 작업에 임시 저장하며, STT 완료 후 24시간 안에 리포트를 저장하지 못하면 지우고
-작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. 자동 재시도와 취소도 아직 없으며 실패를
-숨겨 재실행하지 않는다. 작업 저장소는 아직 메서드마다 동기 연결을 열며, 비동기 연결
-주입으로는 worker 공통 골격 작업에서 옮긴다.
+작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. worker는 위의 공통 골격으로 동작하며,
+임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도와
+취소는 아직 없으며 실패를 숨겨 재실행하지 않는다.
 
 API 서버와 별도 터미널에서 worker를 실행한다.
 

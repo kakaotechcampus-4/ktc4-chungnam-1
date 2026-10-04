@@ -174,7 +174,8 @@ BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검
 | `app/services/audio_validation.py` | 크기, SHA-256, WAV 규격과 음성 데이터 누락 검사 |
 | `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
-| `app/services/speech_analysis_pipeline.py` | 제출 서비스와 STT worker 처리 순서 |
+| `app/services/speech_analysis_pipeline.py` | 제출 서비스, 음성 대기열과 STT 처리 함수 |
+| `app/workers/base.py` | 임대, 처리와 실패 기록을 반복하는 worker 공통 골격 |
 | `app/workers/speech_analysis.py` | 독립 worker 실행 진입점 |
 | `app/clients/ai_server.py` | 내부 AI 서버 HTTP 클라이언트와 오류 매핑 |
 | `alembic/versions/f8fd6d0e862c_initial_schema.py` | 작업 테이블을 포함한 initial migration |
@@ -568,13 +569,13 @@ accessToken         → Authorization Bearer
 
 - ADR-008은 아직 `proposed`이며 FE, AI, PM의 공동 확인이 남아 있다.
 - 면회 회차 생성(5-1)과 보호자 평가(6-1) API가 아직 없다.
-- 작업 저장소는 아직 메서드마다 동기 연결을 연다. 공통 규칙의 비동기 연결 주입으로는
-  worker 공통 골격 작업에서 옮긴다.
 - 실제 S3 버킷, IAM과 Lifecycle은 저장소 밖의 운영 환경에서 구성해야 한다.
 - AI 서버 브랜치와 실제 GPU 환경의 통합 실행은 별도로 확인해야 한다.
 - 독립 실행 가능한 Mock AI HTTP 서버는 없으며 테스트의 `FakeAiServer`는 pytest에서만
   사용한다.
-- 자동 재시도, 사용자 재시도, 취소와 worker 장애 복구는 아직 없다.
+- worker가 멈춘 작업은 임대가 만료되면 정리한다. 업로드 중이던 작업은 지워 다시 제출할
+  수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도,
+  사용자 재시도와 취소는 아직 없다.
 - 리포트 생성 계약과 저장 구현은 없으며 기본 worker는 `sttCompleted`에서 멈춘다.
 - 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
   작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
