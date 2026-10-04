@@ -303,6 +303,7 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` — 사진의 조회 URL을 만들지 못함 |
 
 ### 2-4. `PATCH /api/v1/profiles/{profileId}` — 신규
 
@@ -421,7 +422,7 @@
 
 | 필드 | 값 |
 | --- | --- |
-| `image` | JPEG 또는 PNG |
+| `image` | JPEG 또는 PNG. 서버 설정의 크기 상한(기본 20MB) 이하 |
 
 응답 `201` — [ProfilePhoto](#profilephoto), `analysisStatus`는 `pending`
 
@@ -434,7 +435,7 @@
 | 409 | `PHOTO_LIMIT_EXCEEDED` |
 | 413 | `IMAGE_TOO_LARGE` |
 | 422 | `INVALID_IMAGE_FORMAT` |
-| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`) |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` |
 
 ### 3-2. `GET /api/v1/profile-photos/{photoId}` — 신규
 
@@ -447,6 +448,7 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_PHOTO_NOT_FOUND` |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` — 사진의 조회 URL을 만들지 못함 |
 
 ### 3-3. 사진 설명 확인 — 미정
 
@@ -567,7 +569,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 | 필드 | 값 |
 | --- | --- |
-| `image` | JPEG 또는 PNG |
+| `image` | JPEG 또는 PNG. 서버 설정의 크기 상한(기본 20MB) 이하 |
 
 응답 `201` — [VisitPhoto](#visitphoto)
 
@@ -580,7 +582,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 409 | `INVALID_SESSION_STATE` |
 | 413 | `IMAGE_TOO_LARGE` |
 | 422 | `INVALID_IMAGE_FORMAT` |
-| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`) |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` |
 
 ### 5-3. `POST /api/v1/visit-sessions/{sessionId}/cards` — 신규
 
@@ -801,6 +803,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND` | |
 | 404 | `REPORT_NOT_FOUND` | 리포트 저장 전 |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` | 면회 사진의 조회 URL을 만들지 못함 |
 
 ### 7-3. `GET /api/v1/visit-sessions/{sessionId}/proposals` — 신규
 

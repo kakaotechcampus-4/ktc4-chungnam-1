@@ -340,3 +340,31 @@ S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
 STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
 오류 응답에 남기지 않는다.
+
+## 사진 저장 (S3)
+
+프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
+[image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
+[image_validation.py](app/services/image_validation.py)의 `validate_image`로 검사한다.
+
+    validate_image(파일, max_size_bytes=설정값)       # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
+    → storage.object_key(photo_id=..., image=...)     # photos/{photoId}.jpg, 개인정보 없음
+    → storage.upload(object_key=..., file=..., image=...)
+    → photos 행 저장 (실패하면 storage.delete로 올린 객체를 지운다)
+    → 응답의 imageUrl, imageUrlExpiresAt은 storage.create_download(object_key=...)
+
+- 형식은 앱이 보낸 Content-Type이 아니라 파일 시그니처로 판단하며 JPEG와 PNG만 받는다.
+- S3 오류는 `IMAGE_STORAGE_UNAVAILABLE`(503, 재시도 가능)이다. 객체 키와 S3 오류 본문은 응답과 로그에 넣지 않는다.
+- 버킷이 설정되지 않았으면 사진이 필요한 순간에만 `IMAGE_STORAGE_NOT_CONFIGURED`(503)로 거절한다. 사진이 없는 프로필 조회는 그대로 동작한다.
+- AI 서버에 넘기는 8-4의 `downloadUrl`도 같은 `create_download`로 만든다.
+- 사진의 EXIF(촬영 위치 등) 제거 여부는 정하지 않았다. 메타데이터를 AI 보조 입력으로 쓸지와 함께 정한다.
+- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣지만, 대기열을 처리해 S3 객체를 지우는 코드는 아직 없다.
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_IMAGE_S3_BUCKET` | 사진을 보관할 비공개 버킷. 음성 버킷의 24시간 Lifecycle이 걸리지 않아야 한다 |
+| `SAEROK_IMAGE_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
+| `SAEROK_IMAGE_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사, 기본 `photos` |
+| `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
+| `SAEROK_IMAGE_PRESIGNED_TTL_SECONDS` | 조회와 AI 다운로드 URL 수명, 기본 900초 |
+| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB |
