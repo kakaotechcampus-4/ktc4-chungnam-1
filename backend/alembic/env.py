@@ -18,8 +18,14 @@ if config.config_file_name is not None:
 
 # 프로젝트 환경설정(SAEROK_DATABASE_URL)이 있으면 alembic.ini의 placeholder
 # 값 대신 그것을 사용한다. 자격 증명을 alembic.ini나 코드에 하드코딩하지 않는다.
+# 테스트처럼 호출하는 쪽이 URL을 직접 넘겼으면 덮어쓰지 않는다. 덮어쓰면 테스트의
+# downgrade가 .env의 작업용 DB에 실행된다.
+ALEMBIC_INI_PLACEHOLDER_URL = "driver://user:pass@localhost/dbname"
 settings = get_settings()
-if settings.database_url:
+if (
+    settings.database_url
+    and config.get_main_option("sqlalchemy.url") == ALEMBIC_INI_PLACEHOLDER_URL
+):
     config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # 아직 SQLAlchemy ORM 모델(#39 schema에 대응하는)이 없으므로 autogenerate가

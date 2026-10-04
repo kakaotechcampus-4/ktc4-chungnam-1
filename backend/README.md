@@ -107,13 +107,16 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 
 ### 흐름
 
-다음은 목표 흐름이다. 서버의 세 엔드포인트는 있지만, 앱의 세션 보관과 재실행 시 복원은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)의 후속 보완 항목이다.
+다음은 목표 흐름이다. 서버 엔드포인트는 아래 표에 있고, 앱의 세션 보관과 재실행 시 복원은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)의 후속 보완 항목이다.
 
     앱 시작
     → (세션 있음) GET /auth/me → 홈
     → (세션 없음) 구글 로그인 버튼 → POST /auth/google
         → status=authenticated  → 홈
         → status=consentRequired → 동의 화면 → POST /auth/consent → 홈
+
+    프로필 설정의 로그아웃 → POST /auth/logout → 로그인 화면
+    회원 탈퇴 확인의 탈퇴하기 → DELETE /auth/me → 로그인 화면
 
 구글 인증에 성공한 것만으로는 계정을 만들지 않는다. 필수 동의가 모두 완료될 때 계정과 동의 이력을 함께 만든다. 필수 동의를 거부하거나 중단하면 계정이 남지 않는다.
 
@@ -124,8 +127,10 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 | `POST` | `/auth/google` | 구글 ID 토큰 검증. 계정이 있으면 세션 발급, 없으면 동의 요청 |
 | `POST` | `/auth/consent` | 필수 동의 제출. 계정과 동의 이력 생성 후 세션 발급 |
 | `GET` | `/auth/me` | 세션으로 현재 계정 조회 (`Authorization: Bearer <accessToken>`) |
+| `POST` | `/auth/logout` | 요청에 쓴 세션 폐기. 본문 없이 `204` |
+| `DELETE` | `/auth/me` | 회원 탈퇴. 계정과 동의 이력을 지우고 요청에 쓴 세션 폐기. 본문 없이 `204` |
 
-요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다.
+요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
 
@@ -156,12 +161,19 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 
 `POST /auth/consent` 는 `registrationToken`, `consentVersion`, `consents`(네 항목 모두 boolean)와 선택값 `displayName` 을 받고 `status=authenticated` 응답을 준다.
 
+`POST /auth/logout` 과 `DELETE /auth/me` 는 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. 앱 화면의 탈퇴 이유 설문은 서버로 보내지 않는다.
+
+- 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.
+- 탈퇴는 `InMemoryAccountRepository`의 계정과 동의 이력을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
+- 탈퇴가 지우는 범위는 이 저장소가 가진 계정과 동의 이력까지다. PostgreSQL의 음성 분석 작업 등 다른 서버 자료와 단말 자료의 탈퇴 시 삭제 범위는 정해지지 않았다(아래 "아직 정하지 않은 것").
+
 ### 세션
 
 [ADR-007의 구현 상태](../docs/architecture/decisions/ADR-007-google-social-login.md#현재-구현과-후속-작업)에 현재 서버 구현과 앱의 후속 작업을 나누어 기록했다.
 
-- 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다.
+- 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 폐기 목록(`InMemorySessionRevocationStore`)에 올린다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 목록에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않는다. 계정 저장소처럼 프로세스 메모리에만 있어 서버를 다시 시작하면 비고, 그 전에 폐기한 세션은 만료까지 다시 통과한다. 서버를 여러 개 띄우면 서로의 목록을 보지 못한다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -182,7 +194,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
 | `CONSENT_VERSION_MISMATCH` | 409 | 앱이 보낸 약관 버전이 서버와 다름 |
-| `UNAUTHENTICATED` | 401 | 세션이 없거나 유효하지 않음 |
+| `UNAUTHENTICATED` | 401 | 세션이 없거나 유효하지 않음. 로그아웃이나 탈퇴로 폐기한 세션 포함 |
 | `SESSION_EXPIRED` | 401 | 세션 만료. 다시 로그인 필요 |
 | `ACCOUNT_NOT_FOUND` | 404 | 세션은 읽었으나 계정이 없음 |
 
@@ -211,7 +223,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **계정 저장소** — 현재는 프로세스 메모리에만 남는 개발용 저장소(`InMemoryAccountRepository`)를 쓴다. 서버 재시작 시 계정과 동의 기록을 잃으므로, 클라이언트에 남은 세션 토큰만으로 기존 계정을 복구할 수 없다. 저장 항목이 확정되면 `AccountRepository`를 `users`와 `account_consents`에 연결한다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
-- **탈퇴와 계정 삭제** — ADR-007 의 재검토 조건에 있으며 이 구현에 없다.
+- **탈퇴와 계정 삭제** — `DELETE /auth/me`는 [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)를 메모리 저장소에서 지운다. 검토안을 확정한 것은 아니다. 다른 서버 자료, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. DB 저장소를 연결하면 `users` 삭제의 `ON DELETE CASCADE`가 미치는 범위를 같은 검토에서 확인한다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
 ## AI 음성 분석 연동
 

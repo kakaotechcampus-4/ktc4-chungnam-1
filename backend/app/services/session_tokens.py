@@ -7,6 +7,8 @@ ADR-007 은 세션의 형식과 수명, 갱신 방식을 BE 가 정하도록 남
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
 - 갱신: 앱이 `google_sign_in` 의 무음 로그인으로 새 ID 토큰을 받아
   `POST /auth/google` 을 다시 호출한다. 서버가 보관하는 갱신 자격증명은 없다.
+- 폐기: 세션마다 무작위 `jti` 를 넣는다. 로그아웃과 탈퇴는 이 값을 만료 시각까지
+  폐기 목록(`session_revocations.py`)에 올려, 만료 전이라도 다시 쓰이지 않게 한다.
 
 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 짧은 수명의 토큰이다. 아직 계정이
 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 세션 토큰과 `typ` 으로 구분해서
@@ -17,6 +19,7 @@ ADR-007 은 세션의 형식과 수명, 갱신 방식을 BE 가 정하도록 남
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from uuid import uuid4
 
 import jwt
 
@@ -30,6 +33,14 @@ _REGISTRATION_TYPE = "registration"
 class IssuedToken:
     value: str
     expires_in: int
+
+
+@dataclass(frozen=True)
+class SessionClaims:
+    account_id: str
+    # 세션 하나를 가리키는 무작위 값. 폐기 목록의 키로만 쓰고 계정 정보는 담지 않는다.
+    token_id: str
+    expires_at: datetime
 
 
 @dataclass(frozen=True)
@@ -56,7 +67,7 @@ class TokenIssuer:
 
     def issue_session(self, account_id: str) -> IssuedToken:
         return self._issue(
-            {"sub": account_id, "typ": _SESSION_TYPE},
+            {"sub": account_id, "typ": _SESSION_TYPE, "jti": uuid4().hex},
             ttl_seconds=self._session_ttl,
         )
 
@@ -81,7 +92,8 @@ class TokenIssuer:
             claims["name"] = name
         return self._issue(claims, ttl_seconds=self._registration_ttl)
 
-    def read_session(self, token: str) -> str:
+    def read_session(self, token: str) -> SessionClaims:
+        """서명과 만료만 확인한다. 폐기 여부는 부르는 쪽이 폐기 목록에서 확인한다."""
         payload = self._decode(
             token,
             expected_type=_SESSION_TYPE,
@@ -91,9 +103,20 @@ class TokenIssuer:
             invalid_message="로그인이 필요합니다.",
         )
         account_id = payload.get("sub")
-        if not isinstance(account_id, str) or not account_id:
+        # `jti` 가 없으면 폐기했는지 확인할 수 없다. 받지 않고 다시 로그인하게 한다.
+        token_id = payload.get("jti")
+        if (
+            not isinstance(account_id, str)
+            or not account_id
+            or not isinstance(token_id, str)
+            or not token_id
+        ):
             raise self._error(401, "UNAUTHENTICATED", "로그인이 필요합니다.")
-        return account_id
+        return SessionClaims(
+            account_id=account_id,
+            token_id=token_id,
+            expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+        )
 
     def read_registration(self, token: str) -> RegistrationClaims:
         payload = self._decode(

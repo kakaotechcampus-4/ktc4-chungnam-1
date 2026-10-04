@@ -175,7 +175,7 @@ BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검
 | `app/services/speech_analysis_pipeline.py` | 제출 서비스와 STT worker 처리 순서 |
 | `app/workers/speech_analysis.py` | 독립 worker 실행 진입점 |
 | `app/clients/ai_server.py` | 내부 AI 서버 HTTP 클라이언트와 오류 매핑 |
-| `alembic/versions/a8c31f17d902_add_async_speech_analysis_jobs.py` | 작업 테이블 및 참여자 수 migration |
+| `alembic/versions/f8fd6d0e862c_initial_schema.py` | 작업 테이블을 포함한 initial migration |
 | `database/init.sql` | 빈 개발 DB용 최신 bootstrap 스키마 |
 | `tests/test_speech_analyses.py` | API, 중복 제출, worker와 AI 계약 테스트 |
 | `tests/test_audio_storage.py` | S3 암호화, URL 수명과 삭제 어댑터 테스트 |

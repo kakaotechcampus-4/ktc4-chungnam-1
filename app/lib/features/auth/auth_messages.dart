@@ -34,6 +34,7 @@ String authFailureMessage(AuthFailure failure) {
 /// 다시 로그인부터 시작해야 하는 실패인지.
 ///
 /// 동의 화면에서 등록 토큰이 만료되면 그 화면에 남아 있어도 제출할 수 없다.
+/// 탈퇴 화면에서 세션이 풀렸거나 계정이 이미 없을 때도 같다.
 bool needsRestart(AuthFailure failure) {
   return failure is AuthServerFailure &&
       const {
@@ -41,7 +42,20 @@ bool needsRestart(AuthFailure failure) {
         'REGISTRATION_TOKEN_EXPIRED',
         'UNAUTHENTICATED',
         'SESSION_EXPIRED',
+        'ACCOUNT_NOT_FOUND',
       }.contains(failure.errorCode);
+}
+
+/// 탈퇴하지 못한 이유를 알린다.
+///
+/// 로그인 문구를 그대로 쓰면 "로그인하지 못했어요" 처럼 엉뚱한 말이 된다.
+/// 세션과 연결 문제는 로그인과 같은 문구를 쓰고, 그 밖에는 탈퇴되지 않았다는
+/// 것만 알린다. 실패했는데 탈퇴된 것처럼 말하지 않는다.
+String accountDeletionFailureMessage(AuthFailure failure) {
+  if (failure is AuthNetworkFailure || needsRestart(failure)) {
+    return authFailureMessage(failure);
+  }
+  return '탈퇴하지 못했어요. 잠시 후 다시 시도해주세요.';
 }
 
 String _serverMessage(String? errorCode) {

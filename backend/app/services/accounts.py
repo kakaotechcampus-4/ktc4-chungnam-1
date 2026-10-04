@@ -57,6 +57,10 @@ class AccountRepository(Protocol):
         """
         ...
 
+    async def delete(self, account_id: str) -> bool:
+        """계정과 동의 이력을 함께 지운다. 지울 계정이 없었으면 `False` 다."""
+        ...
+
 
 class InMemoryAccountRepository:
     """개발 검증 전용 저장소.
@@ -90,6 +94,15 @@ class InMemoryAccountRepository:
             self._by_social[key] = account.account_id
             return account
 
+    async def delete(self, account_id: str) -> bool:
+        async with self._lock:
+            # 동의 이력은 `Account` 안에 있으므로 계정과 함께 사라진다.
+            account = self._by_id.pop(account_id, None)
+            if account is None:
+                return False
+            self._by_social.pop((account.provider, account.social_id), None)
+            return True
+
 
 class AccountService:
     def __init__(
@@ -119,6 +132,19 @@ class AccountService:
                 message="계정을 찾을 수 없습니다.",
             )
         return account
+
+    async def delete(self, account_id: str) -> None:
+        """회원 탈퇴. 계정 식별자, 제공자 식별자와 동의 이력을 지운다.
+
+        지우는 범위는 이 저장소가 가진 계정과 동의 이력까지다. 그 밖의 서버 자료와
+        단말 자료의 탈퇴 시 삭제 범위는 아직 정해지지 않았다(`docs/legal/README.md`).
+        """
+        if not await self._repository.delete(account_id):
+            raise AppError(
+                status_code=404,
+                error_code="ACCOUNT_NOT_FOUND",
+                message="계정을 찾을 수 없습니다.",
+            )
 
     async def register(
         self,

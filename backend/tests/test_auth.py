@@ -5,19 +5,29 @@ ADR-007 의 검증 항목을 그대로 옮겼다. 실제 사용자 계정은 쓰
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
 import pytest
 from fastapi import FastAPI
 
-from app.api.deps import get_account_repository, get_google_verifier
+from app.api.deps import (
+    get_account_repository,
+    get_google_verifier,
+    get_session_revocations,
+)
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.main import create_app
 from app.services.accounts import InMemoryAccountRepository
 from app.services.google_identity import GoogleIdTokenVerifier
+from app.services.session_revocations import InMemorySessionRevocationStore
+from app.services.session_tokens import SessionClaims
 from tests import google_tokens
 from tests.support import request
+
+SESSION_SECRET = "test-session-secret-value-32bytes-long"
 
 CONSENT_VERSION = "2026-09-06"
 ALL_GRANTED = {
@@ -47,6 +57,22 @@ class _Harness:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
+    def logout(self, access_token: str) -> Any:
+        return request(
+            self.app,
+            "POST",
+            "/auth/logout",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    def delete_me(self, access_token: str) -> Any:
+        return request(
+            self.app,
+            "DELETE",
+            "/auth/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
     def stored_account(self, social_id: str = "google-sub-0001") -> Any:
         return asyncio.run(
             self.repository.find_by_social_identity(
@@ -58,7 +84,7 @@ class _Harness:
 def _harness(
     *,
     audiences: tuple[str, ...] = (google_tokens.CLIENT_ID,),
-    session_secret: str = "test-session-secret-value-32bytes-long",
+    session_secret: str = SESSION_SECRET,
     store_google_profile: bool = False,
     jwks_fails: bool = False,
 ) -> _Harness:
@@ -79,11 +105,13 @@ def _harness(
         cache_seconds=3600,
     )
     repository = InMemoryAccountRepository()
+    revocations = InMemorySessionRevocationStore()
 
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_google_verifier] = lambda: verifier
     app.dependency_overrides[get_account_repository] = lambda: repository
+    app.dependency_overrides[get_session_revocations] = lambda: revocations
     return _Harness(app, repository)
 
 
@@ -383,3 +411,173 @@ def test_responses_do_not_expose_the_google_subject() -> None:
     assert "google-sub-0001" not in registered.text
     assert "socialId" not in registered.text
     assert "idToken" not in registered.text
+
+
+def test_logout_revokes_the_session_before_it_expires() -> None:
+    harness = _harness()
+    session = _register(harness).json()["accessToken"]
+    assert harness.me(session).status_code == 200
+
+    response = harness.logout(session)
+
+    assert response.status_code == 204
+    assert response.content == b""
+    after = harness.me(session)
+    assert after.status_code == 401
+    assert after.json()["errorCode"] == "UNAUTHENTICATED"
+
+
+def test_logout_does_not_end_other_sessions() -> None:
+    harness = _harness()
+    first = _register(harness).json()["accessToken"]
+    second = harness.login(google_tokens.id_token()).json()["accessToken"]
+
+    assert harness.logout(first).status_code == 204
+
+    assert harness.me(second).status_code == 200
+
+
+def test_logout_without_a_live_session_is_rejected() -> None:
+    harness = _harness()
+    session = _register(harness).json()["accessToken"]
+    assert harness.logout(session).status_code == 204
+
+    missing = request(harness.app, "POST", "/auth/logout")
+    again = harness.logout(session)
+
+    assert missing.status_code == 401
+    assert missing.json()["errorCode"] == "UNAUTHENTICATED"
+    assert again.status_code == 401
+    assert again.json()["errorCode"] == "UNAUTHENTICATED"
+
+
+def test_registration_token_cannot_log_out() -> None:
+    harness = _harness()
+    login = harness.login(google_tokens.id_token())
+
+    response = harness.logout(login.json()["registrationToken"])
+
+    assert response.status_code == 401
+    assert response.json()["errorCode"] == "UNAUTHENTICATED"
+
+
+def test_session_without_a_token_id_is_rejected() -> None:
+    # 폐기했는지 확인할 수 없는 세션은 받지 않는다.
+    harness = _harness()
+    account_id = _register(harness).json()["account"]["accountId"]
+    issued_at = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": account_id,
+            "typ": "session",
+            "iss": Settings(_env_file=None).service_name,
+            "iat": issued_at,
+            "exp": issued_at + timedelta(hours=1),
+        },
+        SESSION_SECRET,
+        algorithm="HS256",
+    )
+
+    response = harness.me(token)
+
+    assert response.status_code == 401
+    assert response.json()["errorCode"] == "UNAUTHENTICATED"
+
+
+def test_deleting_the_account_removes_it_with_its_consents() -> None:
+    harness = _harness()
+    session = _register(harness).json()["accessToken"]
+
+    response = harness.delete_me(session)
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert harness.stored_account() is None
+    after = harness.me(session)
+    assert after.status_code == 401, "탈퇴에 쓴 세션도 함께 폐기한다"
+
+
+def test_deleted_account_is_not_restored_by_logging_in_again() -> None:
+    harness = _harness()
+    session = _register(harness).json()["accessToken"]
+    assert harness.delete_me(session).status_code == 204
+
+    login = harness.login(google_tokens.id_token())
+
+    assert login.status_code == 200
+    body = login.json()
+    assert body["status"] == "consentRequired", "지운 계정으로 바로 로그인되지 않는다"
+    assert "accessToken" not in body
+    assert harness.stored_account() is None
+
+
+def test_other_sessions_of_a_deleted_account_find_no_account() -> None:
+    harness = _harness()
+    first = _register(harness).json()["accessToken"]
+    second = harness.login(google_tokens.id_token()).json()["accessToken"]
+    assert harness.delete_me(first).status_code == 204
+
+    read = harness.me(second)
+    delete_again = harness.delete_me(second)
+
+    assert read.status_code == 404
+    assert read.json()["errorCode"] == "ACCOUNT_NOT_FOUND"
+    assert delete_again.status_code == 404
+    assert delete_again.json()["errorCode"] == "ACCOUNT_NOT_FOUND"
+
+
+def test_deleting_only_removes_the_requesting_account() -> None:
+    harness = _harness()
+    mine = _register(harness).json()["accessToken"]
+    other = _register(
+        harness, google_tokens.id_token(subject="google-sub-0002")
+    ).json()["accessToken"]
+
+    assert harness.delete_me(mine).status_code == 204
+
+    assert harness.stored_account() is None
+    assert harness.stored_account("google-sub-0002") is not None
+    assert harness.me(other).status_code == 200
+
+
+def test_deleting_without_a_session_is_rejected() -> None:
+    harness = _harness()
+    _register(harness)
+
+    response = request(harness.app, "DELETE", "/auth/me")
+
+    assert response.status_code == 401
+    assert response.json()["errorCode"] == "UNAUTHENTICATED"
+    assert harness.stored_account() is not None
+
+
+def test_revocation_list_forgets_sessions_once_they_expire() -> None:
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    clock = {"now": now}
+    store = InMemorySessionRevocationStore(clock=lambda: clock["now"])
+
+    asyncio.run(
+        store.revoke(
+            SessionClaims(
+                account_id="acc-1",
+                token_id="old",
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+    )
+    assert asyncio.run(store.is_revoked("old")) is True
+
+    clock["now"] = now + timedelta(minutes=10)
+    asyncio.run(
+        store.revoke(
+            SessionClaims(
+                account_id="acc-2",
+                token_id="new",
+                expires_at=clock["now"] + timedelta(hours=1),
+            )
+        )
+    )
+
+    # 만료된 세션은 서명 확인에서 이미 거절되므로 목록에 남기지 않는다.
+    assert len(store) == 1
+    assert asyncio.run(store.is_revoked("new")) is True
