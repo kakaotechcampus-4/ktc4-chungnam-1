@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -9,7 +10,7 @@ import wave
 import httpx
 import pytest
 
-from app.api.deps import get_current_account
+from app.api.deps import get_current_account, get_speech_submission_service
 from app.clients.ai_server import AiServerClient
 from app.core.errors import AppError
 from app.main import create_app
@@ -22,9 +23,9 @@ from app.services.speech_analysis_jobs import (
 )
 from app.services.speech_analysis_pipeline import (
     SpeechAnalysisSubmissionService,
-    SpeechAnalysisWorker,
+    create_speech_worker,
 )
-from tests.support import request
+from tests.support import request, run
 
 
 ACCOUNT = Account(
@@ -122,7 +123,8 @@ class FakeReportGenerator:
     def __init__(self) -> None:
         self.sessions: list[str] = []
 
-    async def generate(self, *, session_id: str, speech) -> None:
+    async def generate(self, connection, *, session_id: str, speech) -> None:
+        del connection
         assert speech.text == "합성 전사 결과"
         self.sessions.append(session_id)
 
@@ -139,13 +141,30 @@ def harness():
         retention_seconds=86400,
         object_prefix="temporary/speech",
     )
-    application.state.speech_analysis_submission = service
+    application.dependency_overrides[get_speech_submission_service] = lambda: service
 
     async def current_account():
         return ACCOUNT
 
     application.dependency_overrides[get_current_account] = current_account
     return application, jobs, storage, service
+
+
+@asynccontextmanager
+async def no_connection():
+    # 메모리 저장소는 연결을 쓰지 않는다.
+    yield None
+
+
+def speech_worker(jobs, storage, ai, report_generator=None):
+    return create_speech_worker(
+        jobs_for=lambda connection: jobs,
+        audio_storage=storage,
+        ai_server=ai,
+        open_connection=no_connection,
+        lease_seconds=900,
+        report_generator=report_generator,
+    )
 
 
 def submit(application, *, participant_count: str = "2", audio: bytes | None = None):
@@ -233,7 +252,7 @@ def test_accepts_a_wav_with_a_chunk_after_the_audio_data() -> None:
 def test_failed_upload_is_not_accepted_and_can_be_submitted_again() -> None:
     application, jobs, _, _ = harness()
     failing = FailingAudioStorage()
-    application.state.speech_analysis_submission = SpeechAnalysisSubmissionService(
+    application.dependency_overrides[get_speech_submission_service] = lambda: SpeechAnalysisSubmissionService(
         jobs=jobs,
         audio_storage=failing,
         max_audio_bytes=1024 * 1024,
@@ -247,7 +266,7 @@ def test_failed_upload_is_not_accepted_and_can_be_submitted_again() -> None:
     assert failed.json()["errorCode"] == "AUDIO_STORAGE_UNAVAILABLE"
 
     healthy = FakeAudioStorage()
-    application.state.speech_analysis_submission = SpeechAnalysisSubmissionService(
+    application.dependency_overrides[get_speech_submission_service] = lambda: SpeechAnalysisSubmissionService(
         jobs=jobs,
         audio_storage=healthy,
         max_audio_bytes=1024 * 1024,
@@ -292,15 +311,9 @@ def test_worker_maps_participant_count_and_completes_after_report() -> None:
     accepted = submit(application).json()
     ai = FakeAiServer()
     reports = FakeReportGenerator()
-    worker = SpeechAnalysisWorker(
-        jobs=jobs,
-        audio_storage=storage,
-        ai_server=ai,
-        report_generator=reports,
-        lease_seconds=900,
-    )
+    worker = speech_worker(jobs, storage, ai, reports)
 
-    assert asyncio.run(worker.run_once()) is True
+    assert run(worker.run_once()) is True
 
     job = asyncio.run(
         jobs.get_for_account(
@@ -318,15 +331,9 @@ def test_worker_maps_participant_count_and_completes_after_report() -> None:
 def test_worker_finishes_stt_without_claiming_report_completion() -> None:
     application, jobs, storage, _ = harness()
     accepted = submit(application).json()
-    worker = SpeechAnalysisWorker(
-        jobs=jobs,
-        audio_storage=storage,
-        ai_server=FakeAiServer(),
-        report_generator=None,
-        lease_seconds=900,
-    )
+    worker = speech_worker(jobs, storage, FakeAiServer())
 
-    asyncio.run(worker.run_once())
+    run(worker.run_once())
 
     job = asyncio.run(
         jobs.get_for_account(

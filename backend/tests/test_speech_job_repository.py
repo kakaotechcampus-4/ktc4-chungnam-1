@@ -10,7 +10,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from app.core.database import psycopg_dsn
+from app.core.database import connect, psycopg_dsn
 from app.core.errors import AppError
 from app.services.speech_analysis_jobs import (
     PostgresSpeechAnalysisJobRepository,
@@ -27,12 +27,28 @@ TRANSCRIPT = {
 }
 
 
+class _PerCallRepository:
+    """호출마다 연결을 열어 저장소 메서드를 실행한다. 테스트의 `run`은 호출마다 새
+    이벤트 루프를 쓰므로 연결을 호출 사이에 이어 쓸 수 없다."""
+
+    def __init__(self, database_url: str) -> None:
+        self._database_url = database_url
+
+    def __getattr__(self, name: str):
+        async def call(*args, **kwargs):
+            async with connect(self._database_url) as connection:
+                repository = PostgresSpeechAnalysisJobRepository(
+                    connection, lease_seconds=900
+                )
+                return await getattr(repository, name)(*args, **kwargs)
+
+        return call
+
+
 class _Db:
     def __init__(self, database_url: str) -> None:
         self.dsn = psycopg_dsn(database_url)
-        self.repository = PostgresSpeechAnalysisJobRepository(
-            database_url, lease_seconds=900
-        )
+        self.repository = _PerCallRepository(database_url)
 
     def execute(self, query: str, params: tuple = ()) -> list[dict]:
         with psycopg.connect(self.dsn, autocommit=True, row_factory=dict_row) as conn:
@@ -263,3 +279,33 @@ def test_status_is_read_only_by_the_owning_account(migrated_database_url):
 
     assert mine is not None and mine.analysis_id == accepted.analysis_id
     assert theirs is None
+
+
+def test_jobs_whose_lease_expired_are_cleaned_up(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, uploading_session = db.seed_session()
+    _, processing_session = db.seed_session()
+    stalled_upload, _ = run(db.repository.reserve(_job(uploading_session)))
+    stalled = _accept(db, processing_session)
+    run(db.repository.claim_next(lease_seconds=600))
+    db.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second'"
+    )
+
+    cleaned = run(db.repository.expire_leases())
+
+    assert cleaned == 2
+    # 업로드 중에 멈춘 작업은 접수 전 실패와 같으므로 지우고 다시 제출할 수 있게 한다.
+    assert db.execute(
+        "SELECT 1 FROM speech_analysis_jobs WHERE analysis_id = %s",
+        (stalled_upload.analysis_id,),
+    ) == []
+    queued_keys = [
+        row["s3_object_key"]
+        for row in db.execute("SELECT s3_object_key FROM storage_deletion_request_queue")
+    ]
+    assert stalled_upload.object_key in queued_keys
+    # 처리 중에 멈춘 작업은 실패로 끝낸다.
+    row = db.job_row(stalled.analysis_id)
+    assert (row["status"], row["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
+    assert row["lease_expires_at"] is None
