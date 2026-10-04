@@ -125,6 +125,41 @@ final careProfilesProvider =
       CareProfilesNotifier.new,
     );
 
+/// 전환 화면의 슬롯 하나에 보여줄 어르신이다.
+class CareProfileSummary {
+  const CareProfileSummary({
+    required this.id,
+    required this.name,
+    required this.gender,
+    required this.selected,
+  });
+
+  final String id;
+  final String name;
+  final String gender;
+
+  /// 지금 보고 있는 어르신인지.
+  final bool selected;
+}
+
+/// 등록한 어르신들을 목록 순서대로 요약한다. 목 데이터 어르신은 목 데이터의
+/// 이름과 성별을 쓴다.
+final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
+  ref,
+) async {
+  final profiles = ref.watch(careProfilesProvider);
+  final mock = (await ref.watch(mockRepositoryProvider).loadProfile()).profile;
+  return [
+    for (final entry in profiles.entries)
+      CareProfileSummary(
+        id: entry.id,
+        name: entry.basicInfo?.name ?? mock.name,
+        gender: entry.basicInfo?.gender ?? mock.gender,
+        selected: entry.id == profiles.selectedId,
+      ),
+  ];
+});
+
 /// 지금 보고 있는 어르신의 프로필이다.
 ///
 /// 입력받은 어르신이면 목 데이터의 기본 정보를 입력값으로 바꾼다. 세부 정보와

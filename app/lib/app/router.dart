@@ -11,6 +11,7 @@ import '../features/home/home_screen.dart';
 import '../features/home/notice_screen.dart';
 import '../features/profile/profile_delete_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/profile_switch_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
 import '../features/report/report_list_screen.dart';
@@ -116,6 +117,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileSwitch,
+        builder: (context, state) => const ProfileSwitchScreen(),
       ),
       GoRoute(
         path: AppRoutes.profileDelete,
