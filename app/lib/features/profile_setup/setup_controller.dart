@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import '../../data/providers.dart';
 import 'setup_steps.dart';
 
 /// 입력 흐름이 모아 둔 값이다. 화면을 오가도 유지된다.
@@ -128,6 +129,28 @@ class SetupController extends Notifier<SetupState> {
   void skipFact(String category) {
     final facts = Map<String, String>.from(state.draft.facts)..remove(category);
     updateDraft(state.draft.copyWith(facts: facts));
+  }
+
+  /// 입력을 마친다. 기본 정보를 프로필 설정에서 볼 수 있게 넘긴다.
+  ///
+  /// 서버 저장(`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와
+  /// 사진은 아직 넘기지 않는다.
+  void finish() {
+    final draft = state.draft;
+    if (!draft.basicInfoFilled) return;
+
+    String two(int value) => value.toString().padLeft(2, '0');
+    ref
+        .read(enteredBasicInfoProvider.notifier)
+        .save(
+          EnteredBasicInfo(
+            name: draft.name.trim(),
+            gender: draft.gender!,
+            birthDate:
+                '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
+            stage: draft.stage!,
+          ),
+        );
   }
 }
 

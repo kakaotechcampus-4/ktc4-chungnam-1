@@ -19,9 +19,78 @@ final accountProvider = FutureProvider<Account>(
   (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
 );
 
-final profileProvider = FutureProvider<ProfileBundle>(
-  (ref) => ref.watch(mockRepositoryProvider).loadProfile(),
-);
+/// 환자 정보 입력에서 받은 기본 정보다.
+///
+/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
+/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
+/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
+/// 로그아웃하면 사라지고 프로필은 목 데이터로 돌아간다.
+class EnteredBasicInfo {
+  const EnteredBasicInfo({
+    required this.name,
+    required this.gender,
+    required this.birthDate,
+    required this.stage,
+  });
+
+  final String name;
+
+  /// `male` 또는 `female`.
+  final String gender;
+
+  /// `YYYY-MM-DD`.
+  final String birthDate;
+  final ConditionStage stage;
+}
+
+class EnteredBasicInfoNotifier extends Notifier<EnteredBasicInfo?> {
+  @override
+  EnteredBasicInfo? build() => null;
+
+  void save(EnteredBasicInfo info) => state = info;
+}
+
+final enteredBasicInfoProvider =
+    NotifierProvider<EnteredBasicInfoNotifier, EnteredBasicInfo?>(
+      EnteredBasicInfoNotifier.new,
+    );
+
+/// 프로필이다. 입력받은 기본 정보가 있으면 목 데이터의 기본 정보를 그것으로
+/// 바꾼다. 세부 정보와 사진은 아직 목 데이터 그대로다.
+final profileProvider = FutureProvider<ProfileBundle>((ref) async {
+  final bundle = await ref.watch(mockRepositoryProvider).loadProfile();
+  final entered = ref.watch(enteredBasicInfoProvider);
+  if (entered == null) return bundle;
+
+  final mock = bundle.profile;
+  return ProfileBundle(
+    profile: Profile(
+      profileId: mock.profileId,
+      name: entered.name,
+      gender: entered.gender,
+      birthDate: entered.birthDate,
+      ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
+      stage: entered.stage,
+      lifeFactIds: mock.lifeFactIds,
+      photoIds: mock.photoIds,
+    ),
+    lifeFacts: bundle.lifeFacts,
+    collectionStates: bundle.collectionStates,
+    photo: bundle.photo,
+    tagCandidates: bundle.tagCandidates,
+  );
+});
+
+/// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
+String ageRangeOf(String birthDate, DateTime today) {
+  final birth = DateTime.parse(birthDate);
+  var age = today.year - birth.year;
+  if (today.month < birth.month ||
+      (today.month == birth.month && today.day < birth.day)) {
+    age--;
+  }
+  return '${age ~/ 10 * 10}s';
+}
 
 final conversationCardsProvider = FutureProvider<List<ConversationCard>>(
   (ref) => ref.watch(mockRepositoryProvider).loadConversationCards(),

@@ -166,7 +166,10 @@ class _Actions extends StatelessWidget {
 
     return PrimaryButton(
       label: '마치기',
-      onPressed: () => context.go(AppRoutes.home),
+      onPressed: () {
+        controller.finish();
+        context.go(AppRoutes.home);
+      },
     );
   }
 }
