@@ -8,16 +8,21 @@
    세션을 발급한다. 필수 동의를 거부하면 계정을 만들지 않는다.
 
 앱을 다시 실행할 때는 저장한 세션으로 `GET /auth/me` 를 호출해 두 단계를 건너뛴다.
+
+로그아웃(`POST /auth/logout`)은 그 세션을 폐기하고, 탈퇴(`DELETE /auth/me`)는 계정과
+동의 이력을 지운 뒤 그 세션을 폐기한다.
 """
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import (
     AccountServiceDep,
     CurrentAccountDep,
+    CurrentSessionDep,
     GoogleVerifierDep,
+    SessionRevocationsDep,
     SettingsDep,
     TokenIssuerDep,
 )
@@ -171,3 +176,34 @@ async def submit_consent(
 )
 async def read_current_account(account: CurrentAccountDep) -> AccountResponse:
     return _to_account_response(account)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=_errors(401, 503),
+)
+async def logout(
+    session: CurrentSessionDep, revocations: SessionRevocationsDep
+) -> None:
+    # 계정이 이미 없어도 세션은 폐기한다. 로그아웃은 이 세션을 끝내는 일이다.
+    await revocations.revoke(session)
+    logger.info("session_revoked", extra={"reason": "logout"})
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=_errors(401, 404, 503),
+)
+async def delete_current_account(
+    session: CurrentSessionDep,
+    account: CurrentAccountDep,
+    accounts: AccountServiceDep,
+    revocations: SessionRevocationsDep,
+) -> None:
+    await accounts.delete(account.account_id)
+    # 계정이 지워졌으므로 같은 계정의 다른 세션은 `ACCOUNT_NOT_FOUND` 로 거절된다.
+    # 요청에 쓴 세션은 여기서 폐기해 단말에 남더라도 다시 통과하지 않게 한다.
+    await revocations.revoke(session)
+    logger.info("account_deleted", extra={"auth_provider": account.provider})

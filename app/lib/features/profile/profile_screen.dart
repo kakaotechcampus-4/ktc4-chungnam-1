@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../auth/auth_providers.dart';
 import '../auth/consent_terms.dart';
 
 /// 프로필 설정.
@@ -273,10 +274,7 @@ class _BodyState extends State<_Body> {
           ),
           const SizedBox(height: AppSpacing.lg),
 
-          SecondaryButton(
-            label: '로그아웃',
-            onPressed: () => context.go(AppRoutes.login),
-          ),
+          const _SignOutButton(),
           const SizedBox(height: AppSpacing.xl),
 
           Center(
@@ -312,6 +310,35 @@ class _BodyState extends State<_Body> {
   /// `80s` 를 `80대` 로 바꾼다.
   static String _ageLabel(String raw) =>
       raw.endsWith('s') ? '${raw.substring(0, raw.length - 1)}대' : raw;
+}
+
+/// 로그아웃. 단말 세션과 구글 쪽을 지우고 서버에서도 세션을 폐기한다.
+///
+/// 서버에 닿지 못해도 로그아웃은 된다(`SessionNotifier.signOut`).
+class _SignOutButton extends ConsumerStatefulWidget {
+  const _SignOutButton();
+
+  @override
+  ConsumerState<_SignOutButton> createState() => _SignOutButtonState();
+}
+
+class _SignOutButtonState extends ConsumerState<_SignOutButton> {
+  bool _busy = false;
+
+  Future<void> _signOut() async {
+    setState(() => _busy = true);
+    await ref.read(sessionProvider.notifier).signOut();
+    if (!mounted) return;
+    context.go(AppRoutes.login);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SecondaryButton(
+      label: _busy ? '로그아웃하는 중이에요' : '로그아웃',
+      onPressed: _busy ? null : _signOut,
+    );
+  }
 }
 
 class _Section extends StatelessWidget {
