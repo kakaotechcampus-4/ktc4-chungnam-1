@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../../widgets/profile_avatar.dart';
 import '../auth/consent_terms.dart';
 import '../profile_setup/setup_controller.dart';
 
@@ -149,14 +150,7 @@ class _BodyState extends State<_Body> {
           Center(
             child: Column(
               children: [
-                ClipOval(
-                  child: Image.asset(
-                    _defaultPhoto(profile.gender),
-                    width: 130,
-                    height: 130,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                ProfileAvatar(gender: profile.gender, size: 130),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -299,11 +293,6 @@ class _BodyState extends State<_Body> {
       ),
     );
   }
-
-  /// 성별에 맞는 기본 프로필 사진이다. 계약상 성별은 `male`, `female` 둘뿐이다.
-  static String _defaultPhoto(String gender) => gender == 'female'
-      ? 'assets/images/patient-female.webp'
-      : 'assets/images/patient-male.webp';
 
   static String _genderLabel(String raw) => switch (raw) {
     'male' => '남성',
