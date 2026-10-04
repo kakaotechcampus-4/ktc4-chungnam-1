@@ -23,8 +23,9 @@ class ConsentRequest(ApiModel):
     consent_version: str = Field(alias="consentVersion", min_length=1, max_length=20)
     consents: ConsentSubmission
     # 사용자가 입력한 표시 이름. 비우면 서버 기본값을 쓴다. 실명이 들어올 수 있으므로
-    # 나중에 수정할 수 있어야 한다(data-contracts.md `Account`).
-    display_name: str | None = Field(default=None, alias="displayName", max_length=100)
+    # 나중에 수정할 수 있어야 한다(data-contracts.md `Account`). 길이는 API 1-2와
+    # `users.display_name` 에 맞춘다.
+    display_name: str | None = Field(default=None, alias="displayName", max_length=50)
 
 
 class ConsentItemResponse(ApiModel):
