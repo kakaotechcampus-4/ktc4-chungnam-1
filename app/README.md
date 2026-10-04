@@ -58,7 +58,6 @@
 | --- | --- | --- |
 | `/splash` | 스플래시 | A-1 |
 | `/login` | 로그인 | A-2 |
-| `/signup` | 회원가입과 동의 | A-3 |
 | `/onboarding` | 처음 오셨네요 | B-1 |
 | `/profile/create` | 환자 정보 입력 (7단계) | B-2 ~ B-8 |
 | `/home` | 홈 | HOME, HOME-1 |
@@ -112,6 +111,7 @@
         → status=authenticated   → 새 세션을 보관하고 /home
         → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 /login
 
+로그인 화면에는 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
 구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
@@ -150,7 +150,7 @@
 
 탈퇴는 `SessionNotifier.deleteAccount()`다. 로그아웃과 순서가 반대로, 서버가 `204`로 답한
 뒤에만 단말 세션을 지운다. 실패했는데 로그아웃된 것처럼 보이면 사용자는 탈퇴됐다고 믿게
-된다. 서버 계정 없이 들어온 경우(아이디와 비밀번호 목 로그인)는 지울 계정을 가리킬 세션이
+된다. 세션 없이 이 화면에 온 경우는 지울 계정을 가리킬 세션이
 없으므로 서버를 부르지 않고 로그인 정보가 없다고 알린다.
 
 탈퇴 이유 설문은 화면에서만 쓰고 서버로 보내지 않는다. 기기에 남은 녹음 파일 등 단말 자료는
@@ -169,7 +169,7 @@
 | `lib/features/auth/session_store.dart` | 단말 보안 저장소 |
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
-| `lib/features/auth/consent_form.dart` | A-3과 함께 쓰는 동의 항목 UI |
+| `lib/features/auth/consent_form.dart` | 동의 항목 UI |
 | `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
 | `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
 | `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
