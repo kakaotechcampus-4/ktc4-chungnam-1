@@ -11,6 +11,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../auth/consent_terms.dart';
+import '../profile_setup/setup_controller.dart';
 
 /// 프로필 설정.
 ///
@@ -275,7 +276,14 @@ class _BodyState extends State<_Body> {
 
           SecondaryButton(
             label: '로그아웃',
-            onPressed: () => context.go(AppRoutes.login),
+            onPressed: () {
+              // 앱만 기억하던 입력값을 지운다. 같은 휴대폰으로 다른 사람이
+              // 로그인해도 앞사람의 어르신 정보가 보이지 않게 한다.
+              ProviderScope.containerOf(context)
+                ..invalidate(enteredBasicInfoProvider)
+                ..invalidate(setupControllerProvider);
+              context.go(AppRoutes.login);
+            },
           ),
           const SizedBox(height: AppSpacing.xl),
 
