@@ -149,6 +149,14 @@ void main() {
   });
 
   group('음성 입력 대역', () {
+    /// 녹음을 시작하고 곧바로 끝내 결과를 받는다.
+    Future<SpeechOutcome> listen(
+      MockSpeechInput input, {
+      required String category,
+      required int attempt,
+    }) async =>
+        (await input.start(category: category, attempt: attempt)).finish();
+
     test('목 데이터가 직접 입력으로 끝난 항목은 2회 알아듣지 못한다', () async {
       final bundle = await const MockRepository().loadProfile();
       final input = MockSpeechInput(bundle);
@@ -157,11 +165,11 @@ void main() {
       expect(bundle.stateOf('hobby')?.status, CollectionStatus.manualFallback);
 
       expect(
-        await input.listen(category: 'hobby', attempt: 1),
+        await listen(input, category: 'hobby', attempt: 1),
         isA<SpeechNotHeard>(),
       );
       expect(
-        await input.listen(category: 'hobby', attempt: 2),
+        await listen(input, category: 'hobby', attempt: 2),
         isA<SpeechNotHeard>(),
       );
     });
@@ -172,7 +180,7 @@ void main() {
 
       for (final step in lifeFactSteps.where((s) => s.category != 'hobby')) {
         expect(
-          await input.listen(category: step.category, attempt: 1),
+          await listen(input, category: step.category, attempt: 1),
           isA<SpeechHeard>(),
           reason: '${step.category} 는 한 번에 인식되어야 한다',
         );
@@ -186,7 +194,7 @@ void main() {
       // profile.json 에 hometown LifeFact 는 없다.
       expect(bundle.factOf('hometown'), isNull);
 
-      final outcome = await input.listen(category: 'hometown', attempt: 1);
+      final outcome = await listen(input, category: 'hometown', attempt: 1);
       final example = lifeFactSteps
           .firstWhere((s) => s.category == 'hometown')
           .examples
@@ -200,7 +208,7 @@ void main() {
       final bundle = await const MockRepository().loadProfile();
       final input = MockSpeechInput(bundle);
 
-      final outcome = await input.listen(category: 'occupation', attempt: 1);
+      final outcome = await listen(input, category: 'occupation', attempt: 1);
 
       expect(outcome, isA<SpeechHeard>());
       expect((outcome as SpeechHeard).text, bundle.factOf('occupation')?.text);
