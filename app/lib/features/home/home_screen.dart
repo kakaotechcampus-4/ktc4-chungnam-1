@@ -117,13 +117,14 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      // 오른쪽 알약이 벽과 상태바에 붙어 보이지 않게 위와 오른쪽을 띄운다.
-      // 알림 아이콘은 버튼 안쪽 여백이 있어 왼쪽은 덜 띄운다.
+      // 알약이 상태바에 붙어 보이지 않게 위를 띄운다. 양 끝 아이콘은 버튼 안쪽
+      // 여백이 있어 좌우는 덜 띄운다. 오른쪽 아이콘이 없을 때의 알약 간격은
+      // [_ProfileSwitcher] 가 채운다.
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.sm,
           AppSpacing.md,
-          AppSpacing.screen,
+          AppSpacing.sm,
           0,
         ),
         child: ConstrainedBox(
@@ -184,20 +185,13 @@ class _ProfileSwitcher extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider).value?.profile;
     final canSwitch = ref.watch(
-      careProfilesProvider.select((p) => p.entries.length > 1),
+      careProfilesProvider.select((p) => p.ready.length > 1),
     );
     if (profile == null) return const SizedBox.shrink();
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (canSwitch)
-          IconButton(
-            onPressed: () => _switchToNext(context, ref),
-            tooltip: '다음 분 보기',
-            // 알림 아이콘과 같은 크기다.
-            icon: const Icon(Icons.sync, size: 32),
-          ),
         // 누르면 어르신을 고르는 화면으로 간다.
         Material(
           color: AppColors.surface,
@@ -233,6 +227,17 @@ class _ProfileSwitcher extends ConsumerWidget {
             ),
           ),
         ),
+        // 엄지가 닿기 쉬운 오른쪽 끝에 둔다.
+        if (canSwitch)
+          IconButton(
+            onPressed: () => _switchToNext(context, ref),
+            tooltip: '다음 분 보기',
+            // 알림 아이콘과 같은 크기다.
+            icon: const Icon(Icons.sync, size: 32),
+          )
+        else
+          // 아이콘이 없으면 알약이 벽에 붙지 않게 화면 여백만큼 띄운다.
+          const SizedBox(width: AppSpacing.screen - AppSpacing.sm),
       ],
     );
   }
