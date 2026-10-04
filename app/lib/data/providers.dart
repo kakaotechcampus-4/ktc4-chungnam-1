@@ -203,30 +203,86 @@ enum ReportNotice {
   ready,
 }
 
-class ReportNoticeNotifier extends Notifier<ReportNotice?> {
-  /// 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난 기다림의 결과는
-  /// 버린다.
-  int _round = 0;
+/// 어르신마다의 리포트 알림이다.
+///
+/// 리포트를 기다리는 동안 다른 어르신으로 바꿔도, 도착은 기다리던 어르신에게
+/// 남는다. 화면은 이것을 직접 보지 않고 [reportNoticeProvider] 를 본다.
+class _ReportNoticesNotifier extends Notifier<Map<String, ReportNotice>> {
+  /// 어르신마다 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난
+  /// 기다림의 결과는 버린다.
+  final _rounds = <String, int>{};
 
   bool _gone = false;
 
   @override
-  ReportNotice? build() {
+  Map<String, ReportNotice> build() {
     ref.onDispose(() => _gone = true);
-    return null;
+    return const {};
   }
+
+  int _nextRound(String profileId) =>
+      _rounds[profileId] = (_rounds[profileId] ?? 0) + 1;
+
+  void _set(String profileId, ReportNotice? notice) {
+    final next = Map<String, ReportNotice>.from(state);
+    notice == null ? next.remove(profileId) : next[profileId] = notice;
+    state = next;
+  }
+
+  void dismiss(String profileId) {
+    _nextRound(profileId);
+    _set(profileId, null);
+  }
+
+  void arrive(String profileId) {
+    _nextRound(profileId);
+    _set(profileId, ReportNotice.ready);
+  }
+
+  void startGenerating(String profileId) {
+    final round = _nextRound(profileId);
+    _set(profileId, ReportNotice.generating);
+
+    unawaited(
+      ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
+        // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
+        if (_gone || _rounds[profileId] != round) return;
+        _set(profileId, ReportNotice.ready);
+      }),
+    );
+  }
+}
+
+final _reportNoticesProvider =
+    NotifierProvider<_ReportNoticesNotifier, Map<String, ReportNotice>>(
+      _ReportNoticesNotifier.new,
+    );
+
+/// 지금 보고 있는 어르신의 리포트 알림이다.
+///
+/// 다른 어르신의 리포트가 도착해도 이 어르신의 홈에는 띄우지 않는다. 다른
+/// 어르신의 알림을 어떻게 알릴지는 PM 확인 전이다.
+class ReportNoticeNotifier extends Notifier<ReportNotice?> {
+  @override
+  ReportNotice? build() {
+    final profileId = ref.watch(
+      careProfilesProvider.select((p) => p.selected.id),
+    );
+    return ref.watch(_reportNoticesProvider.select((m) => m[profileId]));
+  }
+
+  /// 부르는 순간의 어르신이다. 기다리는 동안 어르신을 바꿔도 도착은 이 어르신
+  /// 에게 남는다.
+  String get _profileId => ref.read(careProfilesProvider).selected.id;
+
+  _ReportNoticesNotifier get _notices =>
+      ref.read(_reportNoticesProvider.notifier);
 
   /// 변경 사항 확인을 마쳤다.
-  void dismiss() {
-    _round++;
-    state = null;
-  }
+  void dismiss() => _notices.dismiss(_profileId);
 
   /// 리포트가 만들어졌다.
-  void arrive() {
-    _round++;
-    state = ReportNotice.ready;
-  }
+  void arrive() => _notices.arrive(_profileId);
 
   /// 리포트를 만들기 시작했다. 다 되면 스스로 도착으로 바뀐다.
   ///
@@ -234,18 +290,7 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   /// 맡기므로 서버를 붙일 때 `mockRepositoryProvider` 만 갈아 끼우면 된다
   /// (`ADR-005`). 기다림을 화면이 아니라 이 상태가 안고 있어, 사용자가 홈을
   /// 떠나 다른 화면을 보고 있어도 도착은 알려진다.
-  void startGenerating() {
-    final round = ++_round;
-    state = ReportNotice.generating;
-
-    unawaited(
-      ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
-        // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
-        if (_gone || _round != round) return;
-        state = ReportNotice.ready;
-      }),
-    );
-  }
+  void startGenerating() => _notices.startGenerating(_profileId);
 }
 
 final reportNoticeProvider =
