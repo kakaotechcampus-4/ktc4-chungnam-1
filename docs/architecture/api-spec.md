@@ -423,7 +423,7 @@
 
 응답 `201` — [ProfilePhoto](#profilephoto), `analysisStatus`는 `pending`
 
-- 프로필당 최대 3장이다.
+- 프로필당 최대 5장이다.
 - 서버는 분석 작업(8-4)을 만든다.
 
 | HTTP | `errorCode` |
@@ -1387,4 +1387,4 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 | 4 | 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지. `topic_feedback.action`과 `topic_proposals.suggested_action`이 별도 컬럼 | 7-4 | 스키마 작성자 |
 | 5 | 카드 근거(`evidence`) 항목 형식. 세부 정보 네 항목은 `fact_id`가 없음 | 8-2, CardSet | AI |
 | 6 | 카드 생성 작업의 `model`, `prompt_version`. 생성(`running`) 시점부터 NOT NULL이라 8-2 응답 전에 값이 필요함 | 4-1, 8-2 | 스키마 작성자, AI |
-| 7 | 프로필 사진 삭제 API 필요 여부. 최대 3장이며 DB에는 삭제 시 S3 삭제 대기열 트리거가 있음 | 3절 | FE |
+| 7 | 프로필 사진 삭제 API 필요 여부. 최대 5장이며 DB에는 삭제 시 S3 삭제 대기열 트리거가 있음 | 3절 | FE |
