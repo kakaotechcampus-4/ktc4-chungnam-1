@@ -221,7 +221,11 @@ class _BodyState extends State<_Body> {
           ),
           const SizedBox(height: AppSpacing.section),
 
-          const Text('약관 동의', style: AppTypography.sectionTitle),
+          // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다. 어르신을
+          // 바꿔도 같은 값이 보인다는 것을 알린다.
+          const Text('계정 약관 동의', style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.sm),
+          const Text('함께하는 모든 분에게 똑같이 적용돼요.', style: AppTypography.sub),
           const SizedBox(height: AppSpacing.lg),
 
           for (final term in consentTerms) ...[
