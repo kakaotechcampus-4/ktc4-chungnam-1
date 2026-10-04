@@ -24,6 +24,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notice = ref.watch(reportNoticeProvider);
     final report = ref.watch(visitReportProvider);
+    final name = ref.watch(profileProvider).value?.profile.name;
 
     return Scaffold(
       body: Column(
@@ -69,8 +70,12 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  const Text(
-                    '오늘은 무슨 주제로\n대화를 나눠볼까요?',
+                  // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                  // 이름을 읽는 동안에는 이름 없이 묻는다.
+                  Text(
+                    name == null
+                        ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                        : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
                     style: AppTypography.body,
                     textAlign: TextAlign.center,
                   ),
