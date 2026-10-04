@@ -1,9 +1,13 @@
 """라우트가 쓰는 의존성.
 
-저장소와 검증기를 여기서 한 번만 만들고 주입한다. 테스트는 `dependency_overrides` 로
-구글 JWKS 조회와 저장소를 바꿔 끼운다.
+검증기처럼 프로세스에 하나만 두는 것은 여기서 한 번 만들고, DB 연결은 요청마다 하나
+열어 저장소에 넘긴다. 커밋은 이 의존성의 정리 단계가 아니라 서비스나 저장소 코드의
+트랜잭션 블록에서 한다. 정리 단계는 응답을 보낸 뒤에 실행될 수 있어, 커밋이 실패해도
+앱은 성공 응답을 받을 수 있기 때문이다. 테스트는 `dependency_overrides` 로 구글 JWKS
+조회와 저장소를 바꿔 끼운다.
 """
 
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Annotated
 
@@ -11,12 +15,13 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
+from app.core.database import DbConnection, connect
 from app.core.errors import AppError
 from app.services.accounts import (
     Account,
     AccountRepository,
     AccountService,
-    InMemoryAccountRepository,
+    PostgresAccountRepository,
 )
 from app.services.google_identity import (
     GoogleIdTokenVerifier,
@@ -33,9 +38,26 @@ bearer_scheme = HTTPBearer(auto_error=False)
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-@lru_cache
-def get_account_repository() -> AccountRepository:
-    return InMemoryAccountRepository()
+async def get_db_connection(settings: SettingsDep) -> AsyncIterator[DbConnection]:
+    if not settings.database_url:
+        raise AppError(
+            status_code=503,
+            error_code="DATABASE_NOT_CONFIGURED",
+            message="서버 저장소가 설정되지 않았습니다.",
+        )
+    async with connect(settings.database_url) as connection:
+        yield connection
+
+
+DbConnectionDep = Annotated[DbConnection, Depends(get_db_connection)]
+
+
+def get_account_repository(
+    settings: SettingsDep, connection: DbConnectionDep
+) -> AccountRepository:
+    return PostgresAccountRepository(
+        connection, default_display_name=settings.default_display_name
+    )
 
 
 def get_account_service(

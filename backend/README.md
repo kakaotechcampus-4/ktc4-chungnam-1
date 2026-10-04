@@ -1,6 +1,6 @@
 # BE 영역
 
-담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있다. 실제 STT, VLM과 계정의 DB 영속 저장은 아직 연결되지 않았다.
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정은 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
 MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 현재 RTX 3060 Ti는 개발용이며 시연 장비의 사양과 처리 성능은 추가 실험 후 정한다. 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
 
@@ -70,7 +70,23 @@ uv run alembic upgrade head
 CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
 그대로 신뢰하지 않고 반드시 검토한다.
 
-PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 개발 스키마가 있어도 인증 API의 저장소는 아직 프로세스 메모리 구현이다.
+PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정은 PostgreSQL에 저장하지만 세션 폐기 목록은 아직 프로세스 메모리 구현이다.
+
+## DB 연결과 저장소 작성 규칙
+
+API를 나눠 구현할 때 모두 같은 방식으로 DB를 쓴다.
+
+| 항목 | 규칙 |
+| --- | --- |
+| 쿼리 | psycopg로 SQL을 직접 쓴다. SQLAlchemy는 Alembic에만 쓴다 |
+| 연결 | 비동기 연결(`psycopg.AsyncConnection`)만 쓴다. 저장소는 연결을 직접 열지 않고, [deps.py](app/api/deps.py)의 `DbConnectionDep`이 요청마다 여는 연결을 받는다. 연결은 autocommit이다 |
+| 트랜잭션 | 여러 문장을 함께 반영해야 하면 서비스나 저장소 코드에서 `async with connection.transaction():`으로 묶는다. 의존성의 정리 단계에서 커밋하지 않는다. worker는 상태가 바뀔 때마다 짧게 커밋하고 AI 서버 호출 중에는 트랜잭션을 열어 두지 않는다 |
+| 소유 확인 | 경로의 ID는 `UUID`로 받고 [ownership.py](app/services/ownership.py)의 `require_owned`로 확인한다. 다른 계정의 자원과 없는 자원은 같은 404를 받는다 |
+| 테스트 | 저장소 SQL은 `SAEROK_TEST_DATABASE_URL`을 설정하고 임시 DB fixture(`migrated_database_url`, [conftest.py](tests/conftest.py))로 확인한다. 값이 없으면 건너뛴다. 비동기 코드는 [support.py](tests/support.py)의 `run`으로 실행한다 |
+
+`SAEROK_DATABASE_URL`이 없으면 DB를 쓰는 API는 메모리 저장소 같은 대체 경로 없이 `DATABASE_NOT_CONFIGURED`(503)로 거절한다.
+
+psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)에서 동작하지 않는다. `scripts/run_backend.sh`는 `--reload`로 실행해 SelectorEventLoop를 쓴다. Windows에서 `--reload` 없이 직접 실행하면 `--loop asyncio:SelectorEventLoop`를 붙인다.
 
 ## 담당과 다음 결정
 
@@ -164,8 +180,8 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 `POST /auth/logout` 과 `DELETE /auth/me` 는 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. 앱 화면의 탈퇴 이유 설문은 서버로 보내지 않는다.
 
 - 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.
-- 탈퇴는 `InMemoryAccountRepository`의 계정과 동의 이력을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
-- 탈퇴가 지우는 범위는 이 저장소가 가진 계정과 동의 이력까지다. PostgreSQL의 음성 분석 작업 등 다른 서버 자료와 단말 자료의 탈퇴 시 삭제 범위는 정해지지 않았다(아래 "아직 정하지 않은 것").
+- 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
+- DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체를 실제로 지우는 처리는 아직 없다(아래 "아직 정하지 않은 것").
 
 ### 세션
 
@@ -173,7 +189,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 폐기 목록(`InMemorySessionRevocationStore`)에 올린다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 목록에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않는다. 계정 저장소처럼 프로세스 메모리에만 있어 서버를 다시 시작하면 비고, 그 전에 폐기한 세션은 만료까지 다시 통과한다. 서버를 여러 개 띄우면 서로의 목록을 보지 못한다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 폐기 목록(`InMemorySessionRevocationStore`)에 올린다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 목록에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않는다. 프로세스 메모리에만 있어 서버를 다시 시작하면 비고, 그 전에 폐기한 세션은 만료까지 다시 통과한다. 서버를 여러 개 띄우면 서로의 목록을 보지 못한다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -197,6 +213,7 @@ PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 
 | `UNAUTHENTICATED` | 401 | 세션이 없거나 유효하지 않음. 로그아웃이나 탈퇴로 폐기한 세션 포함 |
 | `SESSION_EXPIRED` | 401 | 세션 만료. 다시 로그인 필요 |
 | `ACCOUNT_NOT_FOUND` | 404 | 세션은 읽었으나 계정이 없음 |
+| `DATABASE_NOT_CONFIGURED` | 503 | `SAEROK_DATABASE_URL`이 설정되지 않아 계정 저장소를 쓸 수 없음 |
 
 JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한다. 검증하지 못한 토큰이 통과하는 경로는 없다.
 
@@ -211,19 +228,20 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 | `SAEROK_SESSION_TTL_SECONDS` | 세션 수명 (기본 3600) |
 | `SAEROK_REGISTRATION_TTL_SECONDS` | 등록 토큰 수명 (기본 600) |
 | `SAEROK_CONSENT_VERSION` | 동의 화면이 제시하는 약관 버전 |
-| `SAEROK_STORE_GOOGLE_PROFILE` | 이메일과 구글 계정 이름 저장 여부 (기본 `false`) |
+| `SAEROK_STORE_GOOGLE_PROFILE` | 표시 이름을 입력하지 않았을 때 구글 계정 이름을 쓸지 여부 (기본 `false`). 스키마에 이메일 컬럼이 없어 이메일은 이 값과 관계없이 저장하지 않는다 |
+| `SAEROK_DATABASE_URL` | 계정 저장소 연결. 비면 계정을 쓰는 인증 경로가 503 |
 
 안드로이드에서 붙일 때는 서버를 `--host 0.0.0.0` 으로 띄우고 에뮬레이터에서 `http://10.0.2.2:8000` 을 쓴다. 합성 데이터와 개발용 계정으로만 확인한다.
 
 ### 아직 정하지 않은 것
 
-- **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 스키마의 `email`은 nullable이고 표시 이름은 값이 없으면 `보호자`를 사용하므로 `nickname NOT NULL`과 충돌하지 않는다. 이메일 컬럼 유지 여부와 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
+- **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 현재 스키마의 `users`는 구글 `sub`, 표시 이름과 가입 시각만 두고 이메일 컬럼이 없다. 표시 이름이 비어 있으면 `보호자`를 쓴다. 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
 - **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
 - **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saelog.app` 과 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
-- **계정 저장소** — 현재는 프로세스 메모리에만 남는 개발용 저장소(`InMemoryAccountRepository`)를 쓴다. 서버 재시작 시 계정과 동의 기록을 잃으므로, 클라이언트에 남은 세션 토큰만으로 기존 계정을 복구할 수 없다. 저장 항목이 확정되면 `AccountRepository`를 `users`와 `account_consents`에 연결한다.
+- **세션 폐기 목록 저장소** — 계정은 PostgreSQL로 옮겼지만 폐기 목록은 프로세스 메모리에 남아 있다. DB로 옮기려면 스키마에 테이블을 더하는 새 migration이 필요하며, 영향이 만료 시각(기본 1시간)까지로 작아 보류했다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
-- **탈퇴와 계정 삭제** — `DELETE /auth/me`는 [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)를 메모리 저장소에서 지운다. 검토안을 확정한 것은 아니다. 다른 서버 자료, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. DB 저장소를 연결하면 `users` 삭제의 `ON DELETE CASCADE`가 미치는 범위를 같은 검토에서 확인한다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
+- **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
 ## AI 음성 분석 연동
 
@@ -243,8 +261,8 @@ audio=<WAV/PCM 16-bit/16kHz/mono>
 participantCount=2
 ```
 
-BE는 인증, 필수 동의, 회차 소유권, 피보호자 확인과 녹음 허가를 확인하고 파일 형식과
-크기를 검증한다. S3 업로드와 작업 DB 저장이 끝나면 `202 Accepted`와 `analysisId`를
+BE는 인증, 필수 동의, 회차 소유권과 보호자 평가 제출 여부를 확인하고 파일 형식과
+크기를 검증한다. 평가 전이면 `EVALUATION_REQUIRED`(409)다. S3 업로드와 작업 DB 저장이 끝나면 `202 Accepted`와 `analysisId`를
 반환한다. STT 완료를 뜻하지 않는다.
 
 ```json
@@ -269,8 +287,11 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
 있다. 리포트 생성 모델과 저장 계약은 아직 연결되지 않았으므로 기본 worker는 STT 성공
-후 `sttCompleted`에서 멈춘다. 성공한 STT를 리포트 실패로 바꾸거나 `completed`로
-과장하지 않는다. 자동 재시도와 취소도 아직 없으며 실패를 숨겨 재실행하지 않는다.
+후 `sttCompleted`에서 멈추고 `completed`로 과장하지 않는다. 전사문은 리포트 생성
+입력으로 작업에 임시 저장하며, STT 완료 후 24시간 안에 리포트를 저장하지 못하면 지우고
+작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. 자동 재시도와 취소도 아직 없으며 실패를
+숨겨 재실행하지 않는다. 작업 저장소는 아직 메서드마다 동기 연결을 열며, 비동기 연결
+주입으로는 worker 공통 골격 작업에서 옮긴다.
 
 API 서버와 별도 터미널에서 worker를 실행한다.
 

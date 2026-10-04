@@ -36,6 +36,7 @@
 | 404 | `ACCOUNT_NOT_FOUND` | 세션의 계정이 없음 |
 | 422 | `INVALID_REQUEST` | 요청 형식 오류 |
 | 500 | `INTERNAL_SERVER_ERROR` | 서버 내부 오류 |
+| 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
 
 <br>
 
@@ -145,7 +146,7 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 401 | `INVALID_ID_TOKEN`, `ID_TOKEN_EXPIRED`, `ID_TOKEN_AUDIENCE_MISMATCH`, `ID_TOKEN_ISSUER_MISMATCH` |
-| 503 | `AUTH_NOT_CONFIGURED`, `IDENTITY_PROVIDER_UNAVAILABLE` |
+| 503 | `AUTH_NOT_CONFIGURED`, `IDENTITY_PROVIDER_UNAVAILABLE`, `DATABASE_NOT_CONFIGURED` |
 
 ### 1-2. `POST /auth/consent` — 완료
 
@@ -176,6 +177,7 @@
 | 401 | `INVALID_REGISTRATION_TOKEN`, `REGISTRATION_TOKEN_EXPIRED` |
 | 409 | `CONSENT_VERSION_MISMATCH` |
 | 422 | `REQUIRED_CONSENT_MISSING` |
+| 503 | `DATABASE_NOT_CONFIGURED` |
 
 ### 1-3. `GET /auth/me` — 완료
 
@@ -903,7 +905,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttCompleted`) → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
 
-- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다.
+- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 ### 8-2. `POST /internal/v1/card-generations` — 신규

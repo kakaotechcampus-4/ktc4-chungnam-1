@@ -13,8 +13,9 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
+# 테스트처럼 앱과 같은 프로세스에서 실행할 때 이미 만든 앱 로거를 끄지 않는다.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # 프로젝트 환경설정(SAEROK_DATABASE_URL)이 있으면 alembic.ini의 placeholder
 # 값 대신 그것을 사용한다. 자격 증명을 alembic.ini나 코드에 하드코딩하지 않는다.

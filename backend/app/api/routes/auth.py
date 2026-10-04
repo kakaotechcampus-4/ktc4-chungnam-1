@@ -60,7 +60,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
         404: "계정 없음",
         409: "동의 버전 불일치",
         422: "요청 형식 오류 또는 필수 동의 누락",
-        503: "로그인 설정 미완료 또는 구글 인증 서버 확인 실패",
+        503: "로그인 또는 DB 설정 미완료, 구글 인증 서버 확인 실패",
     }
     return {
         status: {"model": ErrorResponse, "description": descriptions[status]}

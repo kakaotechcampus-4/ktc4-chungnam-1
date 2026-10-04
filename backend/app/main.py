@@ -29,7 +29,10 @@ def create_app() -> FastAPI:
     application.state.speech_analysis_jobs = None
     application.state.speech_audio_storage = None
     if settings.database_url and settings.speech_audio_s3_bucket:
-        jobs = PostgresSpeechAnalysisJobRepository(settings.database_url)
+        jobs = PostgresSpeechAnalysisJobRepository(
+            settings.database_url,
+            lease_seconds=settings.speech_analysis_lease_seconds,
+        )
         audio_storage = S3AudioStorage(
             bucket=settings.speech_audio_s3_bucket,
             region=settings.speech_audio_s3_region,
