@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
-import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
-import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 
 /// 회원 탈퇴 확인. 프로필 설정의 `회원탈퇴`를 누르면 뜬다(피그마 설계 없음).
@@ -15,24 +12,15 @@ import '../../widgets/app_surfaces.dart';
 /// 탈퇴 후 보유 기간과 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이
 /// 없어 여기서 임의로 짓지 않는다. 탈퇴 이유는 계약이나 법률 문서에 속하는 값이
 /// 아니라 화면에서만 쓰는 설문이라 이 파일에 그대로 둔다.
-class ProfileDeleteScreen extends ConsumerWidget {
+///
+/// 탈퇴는 보호자 계정 전체를 지운다(`api-spec.md` 1-5). 함께하는 분이 여럿일 수
+/// 있어 특정 어르신의 이름을 부르지 않는다.
+class ProfileDeleteScreen extends StatelessWidget {
   const ProfileDeleteScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(profileProvider);
-
-    return Scaffold(
-      appBar: const AppTopBar(),
-      body: profile.when(
-        loading: () => const LoadingView(),
-        error: (error, _) => ErrorStateView(
-          message: '프로필을 불러오지 못했어요.',
-          onRetry: () => ref.invalidate(profileProvider),
-        ),
-        data: (bundle) => _Body(name: bundle.profile.name),
-      ),
-    );
+  Widget build(BuildContext context) {
+    return const Scaffold(appBar: AppTopBar(), body: _Body());
   }
 }
 
@@ -54,9 +42,7 @@ const _reasons = <_Reason>[
 ];
 
 class _Body extends StatefulWidget {
-  const _Body({required this.name});
-
-  final String name;
+  const _Body();
 
   @override
   State<_Body> createState() => _BodyState();
@@ -94,21 +80,16 @@ class _BodyState extends State<_Body> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            '${widget.name} 어르신과 이별인가요?\n너무 아쉬워요.',
-            style: AppTypography.screenTitle,
-          ),
+          const Text('새록과 이별인가요?\n너무 아쉬워요.', style: AppTypography.screenTitle),
           const SizedBox(height: AppSpacing.lg),
           const Text(
-            '계정을 삭제하면 대화 카드, 이야기 앨범 등 활동 정보와 개인 정보가 삭제돼요.',
+            '계정을 삭제하면 함께하는 모든 분의 대화 카드, 이야기 앨범 등 활동 정보와 '
+            '개인 정보가 삭제돼요.',
             style: AppTypography.body,
           ),
           const SizedBox(height: AppSpacing.section),
 
-          Text(
-            '${widget.name} 어르신이 탈퇴하려는 이유가 궁금해요.',
-            style: AppTypography.sectionTitle,
-          ),
+          const Text('탈퇴하려는 이유가 궁금해요.', style: AppTypography.sectionTitle),
           const SizedBox(height: AppSpacing.lg),
 
           for (final (i, reason) in _reasons.indexed) ...[
