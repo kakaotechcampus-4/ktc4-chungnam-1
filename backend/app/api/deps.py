@@ -23,6 +23,7 @@ from app.services.accounts import (
     AccountService,
     PostgresAccountRepository,
 )
+from app.services.audio_storage import AudioStorage, S3AudioStorage
 from app.services.google_identity import (
     GoogleIdTokenVerifier,
     fetch_google_jwks,
@@ -32,6 +33,8 @@ from app.services.session_revocations import (
     SessionRevocationStore,
 )
 from app.services.session_tokens import SessionClaims, TokenIssuer
+from app.services.speech_analysis_jobs import PostgresSpeechAnalysisJobRepository
+from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -97,6 +100,48 @@ def get_token_issuer(settings: SettingsDep) -> TokenIssuer:
 
 
 @lru_cache
+def _speech_audio_storage() -> S3AudioStorage | None:
+    # S3 client를 요청마다 만들지 않도록 프로세스마다 하나만 둔다.
+    settings = get_settings()
+    if not settings.speech_audio_s3_bucket:
+        return None
+    return S3AudioStorage(
+        bucket=settings.speech_audio_s3_bucket,
+        region=settings.speech_audio_s3_region,
+        presigned_ttl_seconds=settings.speech_audio_presigned_ttl_seconds,
+        server_side_encryption=settings.speech_audio_s3_encryption,
+    )
+
+
+def get_speech_audio_storage() -> AudioStorage:
+    storage = _speech_audio_storage()
+    if storage is None:
+        raise AppError(
+            status_code=503,
+            error_code="SPEECH_ANALYSIS_NOT_CONFIGURED",
+            message="음성 분석 저장소가 설정되지 않았습니다.",
+        )
+    return storage
+
+
+def get_speech_submission_service(
+    settings: SettingsDep,
+    audio_storage: Annotated[AudioStorage, Depends(get_speech_audio_storage)],
+    # 같은 요청의 현재 계정 확인과 같은 연결을 쓴다(FastAPI가 요청 안에서 재사용).
+    connection: DbConnectionDep,
+) -> SpeechAnalysisSubmissionService:
+    return SpeechAnalysisSubmissionService(
+        jobs=PostgresSpeechAnalysisJobRepository(
+            connection, lease_seconds=settings.speech_analysis_lease_seconds
+        ),
+        audio_storage=audio_storage,
+        max_audio_bytes=settings.max_audio_bytes,
+        retention_seconds=settings.speech_audio_retention_seconds,
+        object_prefix=settings.speech_audio_s3_prefix,
+    )
+
+
+@lru_cache
 def get_session_revocations() -> SessionRevocationStore:
     return InMemorySessionRevocationStore()
 
@@ -142,3 +187,6 @@ SessionRevocationsDep = Annotated[
 ]
 CurrentSessionDep = Annotated[SessionClaims, Depends(get_current_session)]
 CurrentAccountDep = Annotated[Account, Depends(get_current_account)]
+SpeechSubmissionDep = Annotated[
+    SpeechAnalysisSubmissionService, Depends(get_speech_submission_service)
+]
