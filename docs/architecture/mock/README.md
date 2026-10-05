@@ -11,7 +11,7 @@
 | 파일 | 담은 객체 |
 | --- | --- |
 | `account.json` | `Account` |
-| `profile.json` | `Profile`, `LifeFact`, `LifeFactCollectionState`, `ProfilePhoto`, `ImageAnalysisCandidate` |
+| `profile.json` | `Profile`, `LifeFact`, `LifeFactCollectionState`, `ProfilePhoto` 목록 |
 | `conversation-cards.json` | `ConversationCard` 12장 |
 | `visit-session.json` | `VisitSession`, `VisitPhoto` |
 | `caregiver-evaluation.json` | `CaregiverEvaluation`, `ChangeProposal` |
@@ -44,7 +44,7 @@
 | 대상 | 담은 상태 |
 | --- | --- |
 | 생애 정보 입력 | 정상 수집, 건너뜀, 2회 실패 후 수동 입력 |
-| 이미지 태그 | 후보 6개, 수락 2건, 거부 2건, 미확인 2건 |
+| 프로필 사진 | 3장. 분석 완료(설명 있음), 분석 중, 분석 실패(`AI_SERVER_ERROR`) 각 1장. 태그 후보 목록 대신 사진마다 `description` 한 문장을 둔다 |
 | 카드 선택 | 선택 3장, 면회 중 보충 1장, 미선택 8장 |
 | 카드 반응 | 좋음 2건, 나쁨 1건, 사용하지 않음 1건 |
 | 변경 제안 | 우선순위 상승과 하락, 수락 3건과 거부 1건 |
