@@ -68,7 +68,7 @@ void main() {
       );
     });
 
-    test('사진을 올리지 않으면 태그 단계를 건너뛴다', () {
+    test('사진 단계가 마지막이고 태그 단계는 없다', () {
       final container = makeContainer();
       final controller = container.read(setupControllerProvider.notifier);
 
@@ -76,27 +76,16 @@ void main() {
       for (var i = 0; i < 1 + lifeFactStepCount; i++) {
         controller.next();
       }
-      expect(container.read(setupControllerProvider).isPhoto, isTrue);
-
-      controller.next();
-      final state = container.read(setupControllerProvider);
-      expect(state.isPhotoTags, isFalse, reason: '사진이 없으면 태그를 고를 수 없다');
+      var state = container.read(setupControllerProvider);
+      expect(state.isPhoto, isTrue);
       expect(state.isLast, isTrue);
-    });
+      expect(state.progress, 1.0);
 
-    test('사진을 올리면 태그 단계로 간다', () {
-      final container = makeContainer();
-      final controller = container.read(setupControllerProvider.notifier);
-
-      for (var i = 0; i < 1 + lifeFactStepCount; i++) {
-        controller.next();
-      }
-      controller.updateDraft(
-        container.read(setupControllerProvider).draft.copyWith(hasPhoto: true),
-      );
+      // 사진을 올려도 더 갈 단계가 없다.
+      controller.updateDraft(state.draft.copyWith(hasPhoto: true));
       controller.next();
-
-      expect(container.read(setupControllerProvider).isPhotoTags, isTrue);
+      state = container.read(setupControllerProvider);
+      expect(state.isPhoto, isTrue, reason: '마지막 단계에서는 화면이 흐름을 끝낸다');
     });
 
     test('음성 항목은 값이 담기기 전까지 건너뛸 수 있고 담기면 다음이 된다', () {
@@ -276,6 +265,23 @@ void main() {
         button.top,
         greaterThanOrEqualTo(viewport.bottom),
         reason: '스크롤 영역 밖에 있어야 고정이다',
+      );
+    });
+
+    testWidgets('사진 단계에서 흐름을 마치고 태그를 고르러 가지 않는다', (tester) async {
+      await openSetup(tester, advance: 1 + lifeFactStepCount);
+
+      expect(find.widgetWithText(OutlinedButton, '건너뛰기'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '다음'), findsNothing);
+
+      await tester.tap(find.text('사진 추가하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(FilledButton, '마치기'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, '다음'),
+        findsNothing,
+        reason: '사진 다음에 태그 단계가 없다',
       );
     });
   });
