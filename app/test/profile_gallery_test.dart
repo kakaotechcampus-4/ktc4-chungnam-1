@@ -1,7 +1,8 @@
 // 프로필 설정 갤러리에서 사진 설명을 확인하고 고치는 흐름을 확인한다.
 //
 // 설명은 AI 가 만든 후보다. 확인된 사실처럼 보이지 않는지, 분석이 끝나지 않았거나
-// 실패한 사진을 정상 결과처럼 보여주지 않는지 함께 본다.
+// 실패한 사진을 정상 결과처럼 보여주지 않는지 함께 본다. 실패한 사진은 보호자가
+// 직접 적을 수 있다.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -125,7 +126,8 @@ void main() {
 
     expect(store.saved, [('photo_1', '어머니 칠순 잔치 때 찍은 가족사진이에요.')]);
     expect(find.text('설명을 저장했어요.'), findsOneWidget);
-    expect(find.text('보호자가 고친 설명'), findsOneWidget);
+    expect(find.text('사진에 대한 설명'), findsOneWidget);
+    expect(find.text('직접 적은 설명이에요. 다시 고칠 수 있어요.'), findsOneWidget);
     expect(find.text('AI가 만든 설명'), findsNothing);
     expect(_enabled(tester, _saveButton()), isFalse, reason: '저장한 내용과 같다');
   });
@@ -188,14 +190,39 @@ void main() {
     expect(find.byType(TextField), findsNothing);
   });
 
-  testWidgets('분석에 실패한 사진은 정상 결과처럼 보여주지 않는다', (tester) async {
+  testWidgets('분석에 실패한 사진은 실패를 알리고 직접 적게 한다', (tester) async {
     await _open(tester);
 
     await tester.tap(find.bySemanticsLabel('사진 3, 분석 실패'));
     await tester.pumpAndSettle();
 
-    expect(find.text('이 사진의 설명을 만들지 못했어요.'), findsOneWidget);
-    expect(find.byType(TextField), findsNothing);
+    expect(find.text('AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.'), findsOneWidget);
+    expect(find.text('AI가 만든 설명'), findsNothing, reason: 'AI 설명이 없다');
+    expect(find.text('사진에 대한 설명'), findsOneWidget);
+    expect(
+      find.text('설명을 비워둘 수 없어요.'),
+      findsNothing,
+      reason: '처음부터 빈칸인 것은 오류가 아니다',
+    );
+    expect(_enabled(tester, _saveButton()), isFalse);
+  });
+
+  testWidgets('실패한 사진에 직접 적어 저장하면 실패 표시를 뗀다', (tester) async {
+    final store = _FakeStore();
+    await _open(tester, store: store);
+
+    await tester.tap(find.bySemanticsLabel('사진 3, 분석 실패'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '아버지 환갑 때 집 앞에서 찍은 사진이에요.');
+    await tester.pump();
+    await tester.tap(_saveButton());
+    await tester.pumpAndSettle();
+
+    expect(store.saved, [('photo_3', '아버지 환갑 때 집 앞에서 찍은 사진이에요.')]);
+    expect(find.text('분석 실패'), findsNothing);
+    expect(find.bySemanticsLabel('사진 3'), findsOneWidget);
+    expect(find.textContaining('만들지 못했어요'), findsNothing);
+    expect(find.text('직접 적은 설명이에요. 다시 고칠 수 있어요.'), findsOneWidget);
   });
 
   testWidgets('다른 사진을 누르면 그 사진으로 바뀐다', (tester) async {
