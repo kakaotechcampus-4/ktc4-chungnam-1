@@ -1,0 +1,57 @@
+# 새록 백엔드 실행 구성. 사용법은 docs/deployment.md를 따른다.
+# - api: 기본으로 실행한다.
+# - speech-worker: AI 서버 연결 경로가 정해진 뒤 `--profile workers`로 켠다.
+# - db: RDS 같은 외부 DB를 쓰지 않을 때 `--profile local-db`로 켠다.
+name: saerok
+
+services:
+  api:
+    build: .
+    image: saerok-backend
+    env_file: .env
+    init: true
+    # 호스트의 127.0.0.1에만 연다. 외부 공개는 개발 서버 ADR과 HTTPS 앞단을 갖춘 뒤 정한다.
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  speech-worker:
+    build: .
+    image: saerok-backend
+    profiles: ["workers"]
+    command: ["python", "-m", "app.workers.speech_analysis"]
+    env_file: .env
+    # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
+    init: true
+    restart: unless-stopped
+
+  db:
+    image: postgres:17
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_USER: saerok
+      POSTGRES_DB: saerok
+      # .env의 값을 쓴다. 비어 있으면 postgres 이미지가 초기화를 거부한다.
+      POSTGRES_PASSWORD: ${SAEROK_POSTGRES_PASSWORD:-}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "saerok", "-d", "saerok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
