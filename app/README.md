@@ -37,6 +37,7 @@
 | 구글 로그인 / HTTP | `google_sign_in` 7.2.0 / `http` 1.6.0 |
 | 세션 보관 | `flutter_secure_storage` 11.2.0 |
 | 녹음 / 저장 경로 | `record` 7.1.1 / `path_provider` 2.1.6 |
+| 사진 고르기 | `image_picker` 1.2.3 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -76,6 +77,8 @@
 | `/album` | 일대기 | H, 기획 보류 안내만 표시 |
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
+
+B-7 사진 올리기는 기기 앨범에서 최대 5장을 고르고, 고른 사진은 X로 뺄 수 있다. 앨범은 [photo_picker.dart](lib/features/profile_setup/photo_picker.dart)의 `PhotoPicker` 뒤에 두어 테스트에서 바꿔 끼운다. 안드로이드 시스템 사진 선택기를 쓰므로 저장소 권한을 받지 않는다. 고른 사진은 단말 경로로만 들고 있고 아직 서버에 올리지 않는다.
 
 B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했어요` → `말씀을 글로 옮기고 있어요` 순서로 나눠 보여준다. 옮기는 중에는 마이크와 방법 바꾸기를 누를 수 없다. 이를 위해 [speech_input.dart](lib/features/profile_setup/speech_input.dart)의 `SpeechInput`을 녹음 시작(`start`)과 녹음 끝(`SpeechRecording.finish`)으로 나눴다. 이 형태는 FE가 화면 상태에 맞춰 둔 임시 인터페이스이며 AI 확정이 필요하다. 지금은 목이 1.2초 뒤 결과를 돌려준다.
 
