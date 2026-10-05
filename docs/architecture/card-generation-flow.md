@@ -37,114 +37,74 @@
 
 ## 2. 전체 흐름
 
-그림은 A부터 E까지 순서대로 읽는다. F는 거절한 이야기 후보의 보관과 복구를 따로 보여준다. 둥근 상자의 **‘돌아감’**은 적힌 지점부터 다시 진행한다는 뜻이며, 긴 되돌림 화살표 대신 사용했다.
-
-### A. 카드 미리 준비
+### 주제 카드 생성과 다음 생성의 기능별 전체 흐름
 
 ```mermaid
+---
+config:
+  flowchart:
+    nodeSpacing: 10
+    rankSpacing: 30
+    wrappingWidth: 200
+    padding: 10
+    curve: linear
+---
 flowchart TD
-    START["첫 프로필 입력 완료<br/>또는 다음 회차 준비"] --> INPUT["A 시작: 생성 입력 정리"]
-    INPUT --> CLUE{"대화 단서가<br/>있는가?"}
-    CLUE -->|있음| PERSONAL["개인화 주제 생성"]
-    CLUE -->|없음| GUIDE["추가 입력 안내<br/>검토 제안"]
-    GUIDE -->|정보 추가| BACK_INPUT(["A 시작으로 돌아감"])
-    GUIDE -->|일반 질문 선택| GENERAL["일반 주제 생성<br/>검토 제안"]
-    PERSONAL --> QUESTIONS["첫 질문과 꼬리 질문 준비"]
-    GENERAL --> QUESTIONS
-    QUESTIONS --> RESULT{"준비 결과"}
-    RESULT -->|실패| ERROR["실패 안내"]
-    ERROR -->|생성 재시도| RETRY(["A 시작으로 돌아감"])
-    RESULT -->|완료| NEXT(["B. 카드 확인으로"])
+    PROFILE["초기 프로필<br/>직업, 고향, 취미, 가족"] --> CONTEXT
+    FACTS["확인된 이야기"] --> CONTEXT
+    PHOTO["사진 설명과 확인 범위<br/>메타데이터 제외"] --> CONTEXT
+    HISTORY["기존 주제와 최종 피드백<br/>이전 질문 이력"] --> CONTEXT
+    CONTEXT["BE: 대상 프로필의<br/>생성 입력 구성"] --> POLICY["BE: 사실과 후보 구분<br/>more / less / exclude와<br/>생성 조건 전달"]
+    POLICY --> CLUE{"구체적인<br/>대화 단서가 있는가?"}
+    CLUE -->|있음| PERSONAL["AI: 개인화 주제 후보 생성"]
+    CLUE -->|없음| GUIDE["추가 입력 안내<br/>일반 질문 경로는 검토 제안"]
+    GUIDE -->|정보 추가| INPUT_AGAIN(["BE 입력 구성으로 돌아감"])
+    GUIDE -->|일반 질문으로 시작| GENERAL["AI: 일반 주제 후보 생성"]
+    PERSONAL --> MATCH["기존 주제와 의미 비교<br/>같으면 기존 주제 ID 연결"]
+    GENERAL --> MATCH
+    MATCH --> CATEGORY["자유롭게 만든 주제를<br/>6개 분류와 기타로 정리"]
+    CATEGORY --> QUESTIONS["AI: 첫 질문과 꼬리 질문<br/>근거와 미확인 항목 생성"]
+    QUESTIONS --> CHECK["BE: 카드와 질문 개수<br/>중복과 근거 확인<br/>제외 정책 검사"]
+    CHECK --> VALIDATE{"검증 통과?"}
+    VALIDATE -->|실패| ERROR["생성 실패 안내<br/>준비 완료로 표시하지 않음"]
+    ERROR -->|생성 재시도| RETRY_INPUT(["BE 입력 구성으로 돌아감"])
+    VALIDATE -->|통과| DISPLAY["FE: 카드와 근거 표시"]
+    DISPLAY --> CONFIRM{"보호자가 근거와<br/>미확인 내용 확인"}
+    CONFIRM -->|확인 또는 수정 후 확인| READY["사용할 질문 카드 준비 완료"]
+    CONFIRM -->|이번 후보 제외| OTHER["다른 후보 선택"]
+    OTHER --> DISPLAY
+    READY --> VISIT["면회에서 첫 질문 사용<br/>꼬리 질문이나<br/>다른 카드 선택"]
+    VISIT --> EVALUATION["면회 종료 후 소감과<br/>카드별 평가 저장"]
+    EVALUATION --> STT["녹음 파일 제출<br/>STT와 화자 구분"]
+    STT --> STATUS{"소감 저장과<br/>녹음 분석이 끝났는가?"}
+    STATUS -->|분석 대기| WAIT["홈에서 처리 중 안내"]
+    WAIT -->|상태 확인| STATUS
+    STATUS -->|분석 실패| FAILED["실패 안내<br/>재시도와 대체 경로는 미정"]
+    STATUS -->|준비 완료| REPORT["AI: 리포트와 이야기 후보<br/>주제 조정 후보 생성"]
+    REPORT --> DECIDE{"보호자가 후보별 선택"}
+    DECIDE -->|"이야기 승인 또는<br/>수정 후 승인"| SAVE_FACT["BE: 확인된 이야기 저장<br/>lifeFacts"]
+    DECIDE -->|주제 행동 최종 확인| SAVE_TOPIC["BE: 최종 추천 선택 저장<br/>topics.feedback"]
+    DECIDE -->|이야기 거절| REJECT["거절 후보 보관과 복구<br/>사실 근거에서 제외<br/>6절 참조"]
+    DECIDE -->|주제 조정 반영 안 함| KEEP["기존 추천 선택 유지"]
+    SAVE_FACT --> REMAIN{"남은 후보가 있는가?"}
+    SAVE_TOPIC --> REMAIN
+    REJECT --> REMAIN
+    KEEP --> REMAIN
+    REMAIN -->|있음| REVIEW_AGAIN(["보호자 후보별 선택으로<br/>돌아감"])
+    REMAIN -->|없음| REFRESH["BE: 다음 카드 입력 갱신<br/>확인된 이야기와<br/>최종 선택 반영"]
+    REFRESH -->|다음 주제와 질문 생성| CONTEXT
 ```
 
-일반 질문 경로는 검토 제안이다. 구체적인 단서나 사진을 모든 이용자의 필수 제출물로 정한 것은 아니다.
+- 첫 생성과 다음 생성은 같은 BE 입력 구성으로 들어간다. 첫 생성에는 이전 주제와 피드백이 없을 수 있고, 다음 생성에는 새로 확인된 이야기와 보호자의 최종 추천 선택이 추가된다.
+- 주제 생성은 자유롭게 한다. 6개 분류와 기타는 표시용이며, 같은 주제의 ID와 피드백을 이어 쓴다. BE는 카드 12장과 카드당 꼬리 질문 3개, 주제 중복, 근거와 명시적 제외를 검증한다.
+- 보호자가 내용을 수정하면 관련 질문도 다시 확인한다. 사진 내용이 ‘모름’인 경우의 세부 선택은 4절에서 다룬다. 사진 확인을 사진 설명 전체의 사실 승인이나 이야기 자동 저장으로 취급하지 않는다.
+- 면회 소감과 카드별 평가는 리포트와 조정 후보를 만드는 입력이다. AI의 제안만으로 다음 추천을 바꾸지 않으며, 미사용과 미응답을 하향이나 제외의 근거로 삼지 않는다.
+- 각 후보의 처리 결과를 저장하고 전체 확인을 마친 뒤 다음 입력을 구성한다. 모든 후보를 거절해도 기존 확인 정보로 이어진다. 처음부터 후보가 없는 경우는 10절의 검토 제안에 둔다.
+- 거절한 이야기 후보의 30일 보관은 다음 생성과 별개다. 복구하면 다시 확인할 후보가 되며, 승인 전에는 `lifeFacts`에 넣지 않는다. 상세 보관과 삭제 기준은 6절에서 다룬다.
 
-### B. 카드와 사진 단서 확인
+둥근 상자의 **‘돌아감’**은 적힌 지점부터 다시 진행한다는 뜻이다. 긴 되돌림 화살표 대신 사용했다.
 
-```mermaid
-flowchart TD
-    START["B 시작: 카드와 근거 확인"] --> PHOTO{"미확인 사진<br/>단서가 있는가?"}
-    PHOTO -->|없음| SELECT["사용할 카드 선택"]
-    PHOTO -->|있음| REVIEW{"보호자의 확인"}
-    REVIEW -->|맞음 또는 수정 후 확인| SELECT
-    REVIEW -->|모름| UNKNOWN{"질문 선택<br/>검토 제안"}
-    REVIEW -->|이번 카드 제외| OTHER(["다른 카드로<br/>B 시작에 돌아감"])
-    UNKNOWN -->|단정 없는 질문| SELECT
-    UNKNOWN -->|다른 카드| OTHER
-    SELECT --> NEXT(["C. 면회 시작으로"])
-```
-
-사진 확인의 세부 선택은 4번 항목의 검토 제안이다. 카드를 선택했다고 사진 설명 전체를 사실로 승인하거나 이야기로 저장하지 않는다.
-
-### C. 면회와 질문 사용
-
-```mermaid
-flowchart TD
-    START["녹음 승인 확인 후<br/>면회와 녹음 시작"] --> TALK{"대화 진행"}
-    TALK -->|잘 이어짐| CONTINUE["대화 유지"]
-    TALK -->|소재 필요| QUESTION["꼬리 질문이나<br/>보충 카드 선택"]
-    QUESTION --> CONTINUE
-    CONTINUE --> END{"면회를 마치는가?"}
-    END -->|계속| TALK
-    END -->|종료| FINISH["면회와 녹음 마치기"]
-    FINISH --> NEXT(["D. 면회 후 처리로"])
-```
-
-### D. 소감 저장과 녹음 분석
-
-```mermaid
-flowchart TD
-    START["면회 종료"] --> REVIEW["보호자 소감과<br/>카드별 평가 저장"]
-    REVIEW --> UPLOAD["녹음 파일 제출"]
-    UPLOAD --> RECEIVED{"제출 결과"}
-    RECEIVED -->|실패| RETRY["업로드 실패 안내"]
-    RETRY -->|업로드 재시도| UPLOAD
-    RECEIVED -->|접수| STT["STT와 화자 구분"]
-    STT --> STATUS{"분석 상태"}
-    STATUS -->|진행 중| WAIT["홈에서 처리 중 안내"]
-    WAIT -->|상태 다시 확인| STATUS
-    STATUS -->|실패| FAILED["분석 실패 안내<br/>재시도와 대체 경로는 미정"]
-    STATUS -->|완료| REPORT["소감과 분석 결과로<br/>리포트와 변경 후보 생성"]
-    REPORT --> NEXT(["E. 리포트와 후보 확인으로"])
-```
-
-녹음은 면회 중에 한다. 보호자 소감 뒤에 오는 것은 **녹음 파일의 제출과 분석**이다. 대기 중 화살표는 상태 확인이며 STT를 다시 실행한다는 뜻이 아니다. 분석 실패를 완료 리포트로 표시하지 않고, 리포트 생성까지 끝난 뒤 완료를 알린다.
-
-### E. 후보 확인과 다음 카드 준비
-
-```mermaid
-flowchart TD
-    START["리포트 확인"] --> REMAIN{"E 확인 지점<br/>남은 후보가 있는가?"}
-    REMAIN -->|있음| TYPE{"이번 후보 종류"}
-    TYPE -->|이야기| STORY{"이야기 선택"}
-    TYPE -->|주제 조정| TOPIC{"추천 행동 선택"}
-    STORY -->|"승인 또는<br/>수정 후 승인"| SAVE["확인된<br/>이야기 저장"]
-    STORY -->|거절| REJECT["거절 기록<br/>F. 보관과 복구"]
-    TOPIC -->|"승인 또는<br/>행동 변경 후 확인"| APPLY["최종 추천<br/>선택 저장"]
-    TOPIC -->|반영하지 않음| KEEP["기존 추천<br/>선택 유지"]
-    SAVE --> BACK(["E 확인 지점으로 돌아감"])
-    REJECT --> BACK
-    APPLY --> BACK
-    KEEP --> BACK
-    REMAIN -->|없음| NEXT(["확인 마침<br/>A. 다음 카드 준비"])
-```
-
-이야기와 주제는 **후보마다 해당하는 쪽만** 판단한다. 모든 후보를 거절해도 확인은 마칠 수 있다. 다음 카드에는 확인된 이야기와 보호자의 최종 추천 선택을 전달하며, 확인을 마치기 전에는 새 후보를 확정 입력으로 사용하지 않는다.
-
-**검토 제안:** 처음부터 후보가 없는 리포트도 리포트 확인 후 기존 정보로 다음 카드를 준비한다. 거절 후보의 30일 보관이 끝날 때까지 기다리는 것은 아니다.
-
-### F. 거절한 이야기 후보의 보관과 복구
-
-```mermaid
-flowchart TD
-    START["거절한 이야기 후보"] --> HOLD["30일 보관<br/>추천의 사실 근거에서 제외"]
-    HOLD --> EVENT{"보관 중 발생한 일"}
-    EVENT -->|기간 내 복구 요청| RESTORE["미확인 후보로 복구"]
-    RESTORE --> NEXT(["E 확인 지점으로 돌아감"])
-    EVENT -->|보관 기간 종료| DELETE["거절 후보 삭제"]
-```
-
-보관과 복구는 다음 카드 준비와 별도로 진행한다. 복구만으로 이야기가 승인되지는 않는다. 이 30일은 거절한 이야기 후보에만 적용하며, 복구 후 재거절할 때의 기한은 아직 정하지 않았다.
+녹음 승인을 확인하고 면회 중 녹음한다. 소감 저장 뒤의 단계는 새 녹음이 아니라 녹음 파일의 제출과 분석이다. 대기 중 화살표는 상태 조회이며 STT 재실행을 뜻하지 않는다. STT 완료만으로 리포트 완료를 알리지 않고, 리포트 생성까지 마친 뒤 완료를 알린다.
 
 ## 3. 최초 카드를 언제 준비할 것인가
 
