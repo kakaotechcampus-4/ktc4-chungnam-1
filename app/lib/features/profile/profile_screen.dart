@@ -12,6 +12,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_terms.dart';
+import 'profile_gallery.dart';
 
 /// 프로필 설정.
 ///
@@ -223,7 +224,7 @@ class _BodyState extends State<_Body> {
           _Section(
             title: '갤러리',
             onEdit: () {},
-            child: _Gallery(tags: bundle.photo.acceptedTags),
+            child: ProfileGallery(photos: bundle.photos),
           ),
           const SizedBox(height: AppSpacing.section),
 
@@ -426,120 +427,6 @@ class _FactRow extends StatelessWidget {
     'family' => '가족',
     _ => raw,
   };
-}
-
-/// 사진을 누르면 그 사진 아래에 이야기 소재 태그를 보여준다.
-///
-/// 태그는 사용자가 수락한 것만 담긴다(`ProfilePhoto.acceptedTags`).
-class _Gallery extends StatefulWidget {
-  const _Gallery({required this.tags});
-
-  final List<String> tags;
-
-  @override
-  State<_Gallery> createState() => _GalleryState();
-}
-
-class _GalleryState extends State<_Gallery> {
-  bool _showTags = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: InkWell(
-                  onTap: () => setState(() => _showTags = !_showTags),
-                  borderRadius: BorderRadius.circular(AppRadius.image),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.image),
-                        child: Image.asset(
-                          'assets/images/family.webp',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      if (_showTags)
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(
-                              AppRadius.image,
-                            ),
-                            border: Border.all(color: AppColors.ink, width: 2),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            for (var i = 0; i < 2; i++) ...[
-              Expanded(
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(AppRadius.image),
-                    ),
-                    child: const Icon(Icons.add, color: AppColors.textDisabled),
-                  ),
-                ),
-              ),
-              if (i == 0) const SizedBox(width: AppSpacing.md),
-            ],
-          ],
-        ),
-
-        if (_showTags) ...[
-          const SizedBox(height: AppSpacing.md),
-          if (widget.tags.isEmpty)
-            Text(
-              '이 사진에서 담은 이야기 소재가 없어요.',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            )
-          else
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [for (final tag in widget.tags) _SmallTag(tag)],
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-/// 사진 아래에 붙는 작은 태그다.
-class _SmallTag extends StatelessWidget {
-  const _SmallTag(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Text(label, style: AppTypography.caption),
-    );
-  }
 }
 
 /// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.

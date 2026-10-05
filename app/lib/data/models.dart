@@ -183,54 +183,66 @@ class CategoryCollectionState {
   final int attemptCount;
 }
 
-class ProfilePhoto {
-  const ProfilePhoto({
-    required this.photoId,
-    required this.localUri,
-    required this.acceptedTags,
-  });
-
-  factory ProfilePhoto.fromJson(Map<String, dynamic> json) => ProfilePhoto(
-    photoId: json['photoId'] as String,
-    localUri: json['localUri'] as String,
-    acceptedTags: (json['acceptedTags'] as List? ?? const []).cast<String>(),
-  );
-
-  final String photoId;
-  final String localUri;
-  final List<String> acceptedTags;
-}
-
-/// 이미지 분석 후보 하나의 검토 상태. 계약에 정의된 셋이다.
-///
-/// 변경 제안의 [ChangeReviewStatus] 와 값 이름은 겹치지만 같은 타입이 아니다.
-/// 후보는 되돌릴 대상이 없어 `reverted` 를 갖지 않는다.
-enum TagReviewStatus {
+/// 프로필 사진의 이미지 분석 상태. 계약에 정의된 넷이다.
+enum PhotoAnalysisStatus {
   pending,
-  accepted,
-  rejected;
+  processing,
+  completed,
+  failed;
 
-  static TagReviewStatus? parse(String raw) =>
+  static PhotoAnalysisStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
-class ImageTagCandidate {
-  const ImageTagCandidate({
-    required this.candidateId,
-    required this.text,
-    required this.reviewStatus,
+/// 프로필 사진 한 장이다(`docs/architecture/data-contracts.md` 의 ProfilePhoto).
+///
+/// [description] 은 AI 가 만든 후보이며 확인된 사실이 아니다. 보호자가 확인하는
+/// 방식(API 3-3)은 아직 정해지지 않았다.
+class ProfilePhoto {
+  const ProfilePhoto({
+    required this.photoId,
+    required this.profileId,
+    required this.imageUrl,
+    required this.analysisStatus,
+    required this.createdAt,
+    this.imageUrlExpiresAt,
+    this.description,
+    this.errorCode,
   });
 
-  factory ImageTagCandidate.fromJson(Map<String, dynamic> json) =>
-      ImageTagCandidate(
-        candidateId: json['candidateId'] as String,
-        text: json['text'] as String,
-        reviewStatus: TagReviewStatus.parse(json['reviewStatus'] as String),
-      );
+  factory ProfilePhoto.fromJson(Map<String, dynamic> json) {
+    final error = json['error'] as Map<String, dynamic>?;
+    return ProfilePhoto(
+      photoId: json['photoId'] as String,
+      profileId: json['profileId'] as String,
+      imageUrl: json['imageUrl'] as String,
+      imageUrlExpiresAt: json['imageUrlExpiresAt'] as String?,
+      analysisStatus: PhotoAnalysisStatus.parse(
+        json['analysisStatus'] as String,
+      ),
+      description: json['description'] as String?,
+      errorCode: error?['errorCode'] as String?,
+      createdAt: json['createdAt'] as String,
+    );
+  }
 
-  final String candidateId;
-  final String text;
-  final TagReviewStatus? reviewStatus;
+  final String photoId;
+  final String profileId;
+
+  /// 수명이 짧은 조회용 URL 이다. 목 데이터는 `asset:` 으로 앱 안의 이미지를 가리킨다.
+  final String imageUrl;
+  final String? imageUrlExpiresAt;
+
+  /// 모르는 값이면 `null` 이다. 화면은 분석이 끝나지 않은 것으로 다룬다.
+  final PhotoAnalysisStatus? analysisStatus;
+
+  /// [PhotoAnalysisStatus.completed] 일 때만 있다.
+  final String? description;
+
+  /// [PhotoAnalysisStatus.failed] 일 때의 `error.errorCode` 다.
+  final String? errorCode;
+
+  final String createdAt;
 }
 
 /// 프로필 화면이 한 번에 쓰는 묶음이다. `assets/mock/profile.json` 한 파일에 해당한다.
@@ -239,12 +251,10 @@ class ProfileBundle {
     required this.profile,
     required this.lifeFacts,
     required this.collectionStates,
-    required this.photo,
-    required this.tagCandidates,
+    required this.photos,
   });
 
   factory ProfileBundle.fromJson(Map<String, dynamic> json) {
-    final candidate = json['imageAnalysisCandidate'] as Map<String, dynamic>;
     final collection = json['lifeFactCollectionState'] as Map<String, dynamic>;
     return ProfileBundle(
       profile: Profile.fromJson(json['profile'] as Map<String, dynamic>),
@@ -256,11 +266,8 @@ class ProfileBundle {
             (e) => CategoryCollectionState.fromJson(e as Map<String, dynamic>),
           )
           .toList(),
-      photo: ProfilePhoto.fromJson(
-        json['profilePhoto'] as Map<String, dynamic>,
-      ),
-      tagCandidates: (candidate['candidates'] as List)
-          .map((e) => ImageTagCandidate.fromJson(e as Map<String, dynamic>))
+      photos: (json['photos'] as List? ?? const [])
+          .map((e) => ProfilePhoto.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
@@ -268,8 +275,8 @@ class ProfileBundle {
   final Profile profile;
   final List<LifeFact> lifeFacts;
   final List<CategoryCollectionState> collectionStates;
-  final ProfilePhoto photo;
-  final List<ImageTagCandidate> tagCandidates;
+  /// 올린 순서대로다. 최대 5장이다.
+  final List<ProfilePhoto> photos;
 
   LifeFact? factOf(String category) =>
       lifeFacts.where((f) => f.category == category).firstOrNull;
