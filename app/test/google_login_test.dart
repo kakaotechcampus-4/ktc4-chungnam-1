@@ -188,6 +188,7 @@ Widget _app({
   SessionStore? store,
   String? initialLocation,
   AuthSession? session,
+  bool skipGoogleLogin = false,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -214,6 +215,11 @@ Widget _app({
             const Scaffold(body: Center(child: Text('홈 화면'))),
       ),
       GoRoute(
+        path: AppRoutes.profileCreate,
+        builder: (context, state) =>
+            const Scaffold(body: Center(child: Text('환자 정보 입력 화면'))),
+      ),
+      GoRoute(
         path: AppRoutes.onboarding,
         builder: (context, state) =>
             const Scaffold(body: Center(child: Text('처음 오셨네요'))),
@@ -233,6 +239,8 @@ Widget _app({
     overrides: [
       authApiProvider.overrideWithValue(api),
       googleAuthenticatorProvider.overrideWithValue(google),
+      // 테스트는 설정 없이 디버그로 돈다. 실제 흐름을 보려면 임시 건너뛰기를 끈다.
+      skipGoogleLoginProvider.overrideWithValue(skipGoogleLogin),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
@@ -385,6 +393,47 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('구글 로그인 설정이 아직 준비되지 않았어요'), findsOneWidget);
+    });
+  });
+
+  group('구글 설정이 없을 때의 임시 건너뛰기', () {
+    testWidgets('켜져 있으면 구글을 부르지 않고 정보 입력으로 간다', (tester) async {
+      _tallScreen(tester);
+      final google = _FakeGoogleAuthenticator(
+        failure: const AuthGoogleFailure(misconfigured: true),
+      );
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('서버를 부르지 않는다'))),
+          google: google,
+          skipGoogleLogin: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('개발용'), findsOneWidget, reason: '임시 길임을 알린다');
+
+      await tester.tap(find.image(const AssetImage(GoogleSignInButton.asset)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('환자 정보 입력 화면'), findsOneWidget);
+      expect(find.textContaining('설정이 아직 준비되지 않았어요'), findsNothing);
+      expect(google.calls, 0, reason: '구글 창을 띄우지 않는다');
+    });
+
+    testWidgets('꺼져 있으면 안내 문구도 없다', (tester) async {
+      _tallScreen(tester);
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('서버를 부르지 않는다'))),
+          google: _FakeGoogleAuthenticator(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('개발용'), findsNothing);
     });
   });
 
