@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import 'photo_picker.dart';
 import 'setup_steps.dart';
 
 /// 입력 흐름이 모아 둔 값이다. 화면을 오가도 유지된다.
@@ -13,7 +14,7 @@ class SetupDraft {
     this.birthDay,
     this.stage,
     this.facts = const {},
-    this.hasPhoto = false,
+    this.photos = const [],
   });
 
   final String name;
@@ -26,7 +27,10 @@ class SetupDraft {
   /// `LifeFact.category` 별로 모은 문장. 건너뛴 항목은 담기지 않는다.
   final Map<String, String> facts;
 
-  final bool hasPhoto;
+  /// 앨범에서 고른 사진. 최대 [maxProfilePhotos] 장이다.
+  final List<PickedPhoto> photos;
+
+  bool get hasPhoto => photos.isNotEmpty;
 
   bool get basicInfoFilled =>
       name.trim().isNotEmpty &&
@@ -44,7 +48,7 @@ class SetupDraft {
     int? birthDay,
     ConditionStage? stage,
     Map<String, String>? facts,
-    bool? hasPhoto,
+    List<PickedPhoto>? photos,
   }) => SetupDraft(
     name: name ?? this.name,
     gender: gender ?? this.gender,
@@ -53,7 +57,7 @@ class SetupDraft {
     birthDay: birthDay ?? this.birthDay,
     stage: stage ?? this.stage,
     facts: facts ?? this.facts,
-    hasPhoto: hasPhoto ?? this.hasPhoto,
+    photos: photos ?? this.photos,
   );
 }
 
@@ -111,6 +115,17 @@ class SetupController extends Notifier<SetupState> {
     final facts = Map<String, String>.from(state.draft.facts)
       ..[category] = text;
     updateDraft(state.draft.copyWith(facts: facts));
+  }
+
+  /// 고른 사진을 뒤에 붙인다. 최대 장수를 넘는 것은 버린다.
+  void addPhotos(List<PickedPhoto> picked) {
+    final photos = [...state.draft.photos, ...picked].take(maxProfilePhotos);
+    updateDraft(state.draft.copyWith(photos: photos.toList()));
+  }
+
+  void removePhoto(int index) {
+    final photos = [...state.draft.photos]..removeAt(index);
+    updateDraft(state.draft.copyWith(photos: photos));
   }
 
   void skipFact(String category) {

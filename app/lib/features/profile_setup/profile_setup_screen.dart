@@ -113,11 +113,9 @@ class _StepBody extends StatelessWidget {
     }
 
     return PhotoUploadStep(
-      hasPhoto: state.draft.hasPhoto,
-      onPicked: () =>
-          controller.updateDraft(state.draft.copyWith(hasPhoto: true)),
-      onRemoved: () =>
-          controller.updateDraft(state.draft.copyWith(hasPhoto: false)),
+      photos: state.draft.photos,
+      onAdded: controller.addPhotos,
+      onRemoved: controller.removePhoto,
     );
   }
 }
