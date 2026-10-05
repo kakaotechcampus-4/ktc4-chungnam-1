@@ -2,6 +2,7 @@
 # - api: 기본으로 실행한다.
 # - speech-worker: AI 서버 연결 경로가 정해진 뒤 `--profile workers`로 켠다.
 # - db: RDS 같은 외부 DB를 쓰지 않을 때 `--profile local-db`로 켠다.
+# - caddy: 개발 서버에서 HTTPS로 api를 공개할 때 `--profile https`로 켠다.
 name: saerok
 
 services:
@@ -10,7 +11,7 @@ services:
     image: saerok-backend
     env_file: .env
     init: true
-    # 호스트의 127.0.0.1에만 연다. 외부 공개는 개발 서버 ADR과 HTTPS 앞단을 갖춘 뒤 정한다.
+    # 호스트의 127.0.0.1에만 연다. 외부에서는 caddy의 HTTPS로만 접근한다.
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
@@ -53,5 +54,23 @@ services:
       timeout: 5s
       retries: 5
 
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    environment:
+      SAEROK_PUBLIC_HOST: ${SAEROK_PUBLIC_HOST:-}
+    # 80은 인증서 발급과 갱신 확인, 443은 앱의 HTTPS 요청에 쓴다.
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 발급받은 인증서를 남겨 재시작할 때마다 다시 발급받지 않는다.
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:

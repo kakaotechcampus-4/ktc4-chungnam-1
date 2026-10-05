@@ -44,7 +44,7 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
-컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓰며, 외부 공개와 AI 서버 연결은 정하지 않았다.
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, 공개 범위와 AI 서버 연결은 정하지 않았다.
 
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
