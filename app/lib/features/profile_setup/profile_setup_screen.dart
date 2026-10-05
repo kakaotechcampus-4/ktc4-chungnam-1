@@ -11,7 +11,7 @@ import 'life_fact_step.dart';
 import 'photo_steps.dart';
 import 'setup_controller.dart';
 
-/// B-2 ~ B-8 환자 정보 최초 입력.
+/// B-2 ~ B-7 환자 정보 최초 입력.
 ///
 /// 여러 단계를 한 경로에서 다룬다. 뒤로 가기는 이전 단계로 돌아가고, 첫 단계에서
 /// 누르면 화면을 벗어난다.
@@ -112,23 +112,12 @@ class _StepBody extends StatelessWidget {
       );
     }
 
-    if (state.isPhoto) {
-      return PhotoUploadStep(
-        hasPhoto: state.draft.hasPhoto,
-        onPicked: () =>
-            controller.updateDraft(state.draft.copyWith(hasPhoto: true)),
-        onRemoved: () =>
-            controller.updateDraft(state.draft.copyWith(hasPhoto: false)),
-      );
-    }
-
-    return PhotoTagsStep(
-      accepted: state.draft.acceptedTags,
-      onToggle: (tag) {
-        final next = Set<String>.from(state.draft.acceptedTags);
-        next.contains(tag) ? next.remove(tag) : next.add(tag);
-        controller.updateDraft(state.draft.copyWith(acceptedTags: next));
-      },
+    return PhotoUploadStep(
+      hasPhoto: state.draft.hasPhoto,
+      onPicked: () =>
+          controller.updateDraft(state.draft.copyWith(hasPhoto: true)),
+      onRemoved: () =>
+          controller.updateDraft(state.draft.copyWith(hasPhoto: false)),
     );
   }
 }
@@ -158,15 +147,10 @@ class _Actions extends StatelessWidget {
           : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
     }
 
-    if (state.isPhoto) {
-      return state.draft.hasPhoto
-          ? PrimaryButton(label: '다음', onPressed: controller.next)
-          : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
-    }
-
-    return PrimaryButton(
-      label: '마치기',
-      onPressed: () => context.go(AppRoutes.home),
-    );
+    // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다.
+    void finish() => context.go(AppRoutes.home);
+    return state.draft.hasPhoto
+        ? PrimaryButton(label: '마치기', onPressed: finish)
+        : SecondaryButton(label: '건너뛰기', onPressed: finish);
   }
 }

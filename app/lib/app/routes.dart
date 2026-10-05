@@ -20,7 +20,7 @@ abstract final class AppRoutes {
   /// B-1 처음 오셨네요.
   static const onboarding = '/onboarding';
 
-  /// B-2 ~ B-8 환자 정보 최초 입력.
+  /// B-2 ~ B-7 환자 정보 최초 입력.
   static const profileCreate = '/profile/create';
 
   /// 시작 화면.
