@@ -101,6 +101,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
+- **`PhotoAnalysisQueue`는 사진 동의 설계 전에는 worker에 연결하지 않는다.** 지금은 `pending`인 프로필 사진을 모두 가져오지만, [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지 못하게 한다. 분석 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지면 그 조건을 가져오기 조건에 더한다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정

@@ -5,6 +5,11 @@
 가져오고 실패를 기록하는 일만 한다. 8-4 호출, 응답 검증과 결과 저장은 처리 함수(작업
 A)가 한다. 결과를 저장할 때는 `analysis_status = 'completed'`, `description`, `model`,
 `prompt_version`과 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `photos_lease_check`).
+
+**사진 동의 설계 전에는 worker에 연결하지 않는다.** ADR-001의 2026-10-05 개정안은 사진
+보관 동의와 AI 분석 동의를 나누고, 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지
+못하게 한다. 지금은 `pending`인 프로필 사진을 모두 가져오므로, 분석 동의의 저장 위치와
+"분석하지 않는 사진"의 상태가 정해지면 그 조건을 가져오기 조건에 더한 뒤 사용한다.
 """
 
 from __future__ import annotations
