@@ -29,12 +29,24 @@ void main() {
 
     expect(bundle.profile.stage, ConditionStage.mildCognitiveImpairment);
     expect(bundle.lifeFacts, hasLength(3));
-    // accepted 된 후보만 acceptedTags 에 담긴다.
-    final accepted = bundle.tagCandidates
-        .where((c) => c.reviewStatus == TagReviewStatus.accepted)
-        .map((c) => c.text)
-        .toList();
-    expect(accepted, bundle.photo.acceptedTags);
+    // 사진은 분석 완료, 분석 중, 실패를 한 장씩 담는다.
+    expect(bundle.photos.map((p) => p.analysisStatus), [
+      PhotoAnalysisStatus.completed,
+      PhotoAnalysisStatus.processing,
+      PhotoAnalysisStatus.failed,
+    ]);
+    // 설명은 분석이 끝난 사진에만 있다.
+    expect(bundle.photos.map((p) => p.description != null), [
+      isTrue,
+      isFalse,
+      isFalse,
+    ]);
+    expect(bundle.photos.last.errorCode, 'AI_SERVER_ERROR');
+    expect(
+      bundle.profile.photoIds,
+      bundle.photos.map((p) => p.photoId),
+      reason: '프로필이 가리키는 사진과 사진 목록이 같아야 한다',
+    );
   });
 
   test('대화 카드 12장을 읽는다', () async {
