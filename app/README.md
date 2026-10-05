@@ -59,7 +59,7 @@
 | `/splash` | 스플래시 | A-1 |
 | `/login` | 로그인 | A-2 |
 | `/onboarding` | 처음 오셨네요 | B-1 |
-| `/profile/create` | 환자 정보 입력 (7단계) | B-2 ~ B-8 |
+| `/profile/create` | 환자 정보 입력 (6단계) | B-2 ~ B-7. B-8 사진 태그 고르기는 삭제 |
 | `/home` | 홈 | HOME, HOME-1 |
 | `/cards` | 오늘의 대화 카드 | C-1 ~ C-3 |
 | `/visit/photo` | 면회 전 사진 | D-1 |
