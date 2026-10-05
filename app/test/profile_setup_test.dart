@@ -2,14 +2,26 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/design/theme.dart';
+import 'package:saerok/features/profile_setup/photo_picker.dart';
 import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
+
+/// 앨범을 열면 사진 한 장을 고른 것으로 친다.
+class _OnePhotoPicker implements PhotoPicker {
+  const _OnePhotoPicker();
+
+  @override
+  Future<List<PickedPhoto>> pick({required int limit}) async => const [
+    PickedPhoto('photo_1.jpg'),
+  ];
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -82,7 +94,7 @@ void main() {
       expect(state.progress, 1.0);
 
       // 사진을 올려도 더 갈 단계가 없다.
-      controller.updateDraft(state.draft.copyWith(hasPhoto: true));
+      controller.addPhotos(const [PickedPhoto('photo_1.jpg')]);
       controller.next();
       state = container.read(setupControllerProvider);
       expect(state.isPhoto, isTrue, reason: '마지막 단계에서는 화면이 흐름을 끝낸다');
@@ -209,6 +221,7 @@ void main() {
     Future<(Rect button, Rect viewport)> openSetup(
       WidgetTester tester, {
       int advance = 0,
+      List<Override> overrides = const [],
     }) async {
       const dpr = 3.0;
       tester.view.physicalSize = const Size(411 * dpr, 891 * dpr);
@@ -219,7 +232,7 @@ void main() {
       );
       addTearDown(tester.view.reset);
 
-      final container = ProviderContainer();
+      final container = ProviderContainer(overrides: overrides);
       addTearDown(container.dispose);
 
       await tester.pumpWidget(
@@ -269,7 +282,13 @@ void main() {
     });
 
     testWidgets('사진 단계에서 흐름을 마치고 태그를 고르러 가지 않는다', (tester) async {
-      await openSetup(tester, advance: 1 + lifeFactStepCount);
+      await openSetup(
+        tester,
+        advance: 1 + lifeFactStepCount,
+        overrides: [
+          photoPickerProvider.overrideWithValue(const _OnePhotoPicker()),
+        ],
+      );
 
       expect(find.widgetWithText(OutlinedButton, '건너뛰기'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, '다음'), findsNothing);
