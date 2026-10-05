@@ -25,7 +25,7 @@
 | 4-2 | `GET` | `/api/v1/profiles/{profileId}/card-generations/latest` | 신규 | 바로 |
 | 4-3 | `GET` | `/api/v1/card-generations/{setId}` | 신규 | 바로 |
 | 5-1 | `POST` | `/api/v1/visit-sessions` | 신규 | 바로 |
-| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 바로 |
+| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 사진 동의 설계 후(미정 3) |
 | 5-3 | `POST` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 | 바로 |
 | 8-2 | `POST` | (내부) `/internal/v1/card-generations` | 신규 | 바로. 대기열 `CardGenerationQueue`는 준비됨 |
 
@@ -58,7 +58,7 @@
 3. 5-1, 5-3
 4. 8-2 요청 조립, 응답 검증, 결과 저장
 5. 미정 6 결정 후 `start_card_generation`, 2-5, 4-1
-6. 5-2, 8-2 처리 함수와 worker 실행 진입점
+6. 8-2 처리 함수와 worker 실행 진입점, 사진 동의 설계 후 5-2
 
 ## 장별 공통 규칙
 
@@ -277,6 +277,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
+- **면회 사진도 등록 사진이라 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 동의 저장 위치가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
 - 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
@@ -504,5 +505,6 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
+| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
 | 5 | 카드 근거(`evidence`) 항목 형식. 세부 정보 네 항목은 `fact_id`가 없음 | 8-2, CardSet | AI |
 | 6 | 카드 생성 작업의 `model`, `prompt_version`. 생성(`running`) 시점부터 NOT NULL이라 8-2 응답 전에 값이 필요함 | 4-1, 8-2 | 스키마 작성자, AI |

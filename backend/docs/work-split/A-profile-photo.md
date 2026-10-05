@@ -29,10 +29,10 @@
 | 2-4 | `PATCH` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
 | 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 | 바로 |
 | 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 | 바로 |
-| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 | 바로 |
-| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 | 바로 |
+| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 | 사진 동의 설계 후(미정 3) |
+| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 | 3-1과 함께 |
 | 3-3 | | 사진 설명 확인 | 미정 | 미정 1 결정 후 |
-| 8-4 | `POST` | (내부) `/internal/v1/image-analyses` | 신규 | 바로. 대기열 `PhotoAnalysisQueue`는 준비됨 |
+| 8-4 | `POST` | (내부) `/internal/v1/image-analyses` | 신규 | 사진 동의 설계 후(미정 3). 대기열 `PhotoAnalysisQueue`는 준비됨 |
 
 ## 테이블 쓰기 소유권
 
@@ -60,8 +60,8 @@
 2. 2-2, 2-1, 2-3, 2-4로 프로필 흐름을 만든다. 사진은 3-1 전까지 항상 빈 배열이다.
 3. 2-6, 2-7
 4. 1-6, 1-5 탈퇴 이유
-5. 3-1, 3-2와 2-3의 사진 URL
-6. 8-4 처리 함수와 worker 실행 진입점
+5. 사진 동의 설계 후 3-1, 3-2와 2-3의 사진 URL. 설계 전에는 시작하지 않는다([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분))
+6. 사진 동의 설계 후 8-4 처리 함수와 worker 실행 진입점
 
 ## 장별 공통 규칙
 
@@ -80,6 +80,8 @@
 ### 3. 프로필 사진
 
 사진은 S3에 서버 측 암호화로 저장한다. 객체 키에는 개인정보를 넣지 않는다. 프로필 사진은 모두 이미지 분석(8-4)을 거친다. 면회 사진(5-2)은 분석하지 않는다.
+
+2026-10-05 PM 수정안: 위 자동 분석은 기존 API 제안이며 [ADR-001의 PR #92 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다. 분석하지 않는 등록 사진의 상태, 동의 전달과 철회 경로는 FE, BE와 AI가 후속 계약에서 정한다. 아래 요청 필드와 응답 enum은 이번 문서 수정에서 바꾸지 않으며 실제 사용자 사진 처리에 적용하기 전 이 차이를 해소해야 한다.
 
 ### 8. 내부 API (백엔드 → AI 서버)
 
@@ -128,7 +130,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다.
+- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
 - 남은 일은 탈퇴 이유다. 본문이 있으면 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣는다. 계정 ID는 넣지 않는다.
 - DB CHECK가 `reasons` 값, 1개 이상, `other`와 `other_text`의 짝을 막지만 요청 검증으로 먼저 422 `INVALID_REQUEST`를 낸다.
 
@@ -347,7 +349,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 프로필 사진(`session_id IS NULL`)이 이미 5장이면 409다. 동시 업로드로 5장을 넘지 않게 프로필 행을 `FOR UPDATE`로 잠그고 센다.
 - 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장. 행을 저장하지 못하면 `storage.delete`로 올린 객체를 지운다.
 - 행을 넣으면 8-4 worker가 다음 주기에 분석한다. 별도 호출은 없다.
-- 미정 3(프로필 사진 분석의 동의 근거)이 정해지기 전에는 합성 데이터로만 확인한다.
+- **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
 
 <br>
 
@@ -412,6 +414,8 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 **구현 메모**
 
+- **분석 동의를 확인한 사진만 분석한다.** 지금 `PhotoAnalysisQueue`는 `pending`인 프로필 사진을 모두 가져오므로, 동의 설계가 정해지면 그 조건을 가져오기 조건에 더한 뒤 worker에 연결한다(미정 3).
+- BE는 사진 사본을 만들지 않고 등록 사진의 Presigned GET URL만 넘긴다. AI 서버가 내려받은 파일이 분석용 임시 사본이며 처리 후 즉시, 늦어도 최초 생성부터 24시간 안에 지운다. 재시도로 기한이 늘지 않도록 작업마다 고정한 마감 시각을 8-4 요청에 넣는 방안을 AI와 정한다(지금 8-4 요청에는 해당 필드가 없다).
 - `PhotoAnalysisQueue`가 `pending`인 프로필 사진을 `processing`으로 임대해 `PhotoAnalysisJob(photo_id, profile_id, s3_object_key, attempt_count)`을 넘긴다. 면회 사진은 가져오지 않는다. 실패 기록과 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다.
 - 처리 함수: `storage.create_download(object_key=job.s3_object_key)`로 `downloadUrl`을 만들어 8-4를 호출하고, 응답의 `photoId`가 작업과 같은지 검증한 뒤 저장한다. 실패는 `AppError`(예: `AI_SERVER_TIMEOUT`, `INVALID_AI_RESPONSE`)로 올리면 대기열이 기록한다.
 - 저장: `analysis_status = 'completed'`, `description`, `model`, `prompt_version`, `lease_expires_at = NULL`을 함께 쓴다(`WHERE photo_id = %s AND analysis_status = 'processing'`). CHECK가 세 값의 짝과 임대를 확인한다.
@@ -512,5 +516,5 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
-| 3 | 프로필 사진 분석의 동의 근거. 이전 명세는 업로드마다 분석 동의를 받았으나 새 스키마는 모든 프로필 사진을 분석함 | 3-1 | PM, 법률 |
-| 7 | 프로필 사진 삭제 API 필요 여부. 최대 5장이며 DB에는 삭제 시 S3 삭제 대기열 트리거가 있음 | 3절 | FE |
+| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
+| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
