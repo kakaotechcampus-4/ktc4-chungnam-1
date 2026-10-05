@@ -9,6 +9,7 @@ import '../../widgets/app_scaffold.dart';
 import 'basic_info_step.dart';
 import 'life_fact_step.dart';
 import 'photo_steps.dart';
+import 'photo_uploader.dart';
 import 'setup_controller.dart';
 
 /// B-2 ~ B-7 환자 정보 최초 입력.
@@ -114,6 +115,7 @@ class _StepBody extends StatelessWidget {
 
     return PhotoUploadStep(
       photos: state.draft.photos,
+      canEdit: state.draft.canEditPhotos,
       onAdded: controller.addPhotos,
       onRemoved: controller.removePhoto,
     );
@@ -146,9 +148,47 @@ class _Actions extends StatelessWidget {
     }
 
     // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다.
-    void finish() => context.go(AppRoutes.home);
-    return state.draft.hasPhoto
-        ? PrimaryButton(label: '마치기', onPressed: finish)
-        : SecondaryButton(label: '건너뛰기', onPressed: finish);
+    void goHome() => context.go(AppRoutes.home);
+    final draft = state.draft;
+
+    if (!draft.hasPhoto) {
+      return SecondaryButton(label: '건너뛰기', onPressed: goHome);
+    }
+    if (draft.isUploadingPhotos) {
+      return const PrimaryButton(label: '올리는 중이에요', onPressed: null);
+    }
+    // 완료를 보고 직접 넘어가도록 자동으로 옮기지 않는다.
+    if (draft.allPhotosUploaded) {
+      return PrimaryButton(label: '홈으로', onPressed: goHome);
+    }
+    if (draft.hasFailedPhoto) {
+      final retryable = draft.photos.any(
+        (photo) =>
+            photo.status == PhotoUploadStatus.waiting ||
+            (photo.failure?.retryable ?? false),
+      );
+      void dropAndGoHome() {
+        controller.dropFailedPhotos();
+        goHome();
+      }
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (retryable) ...[
+            PrimaryButton(
+              label: '다시 올리기',
+              onPressed: controller.uploadPhotos,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          SecondaryButton(
+            label: '올리지 못한 사진은 빼고 마치기',
+            onPressed: dropAndGoHome,
+          ),
+        ],
+      );
+    }
+    return PrimaryButton(label: '마치기', onPressed: controller.uploadPhotos);
   }
 }

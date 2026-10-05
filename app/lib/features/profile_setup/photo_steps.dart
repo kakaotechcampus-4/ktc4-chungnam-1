@@ -6,20 +6,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design/tokens.dart';
 import 'photo_picker.dart';
+import 'photo_uploader.dart';
 
 /// B-7 사진 올리기. 선택 항목이며 최대 [maxProfilePhotos] 장을 받는다.
 ///
-/// 기기 앨범에서 고르고, 고른 사진은 X 로 뺄 수 있다. 이 단계에서는 아직 서버에
-/// 올리지 않으므로 빼도 남는 것이 없다.
+/// 기기 앨범에서 고르고, 고른 사진은 X 로 뺄 수 있다. 서버에는 `마치기` 를 누를
+/// 때 올리므로 그 전에는 빼도 남는 것이 없다. 올린 뒤에는 업로드 완료까지만
+/// 보여주고 사진 분석은 기다리지 않는다. 분석 결과는 프로필 갤러리에서 본다.
 class PhotoUploadStep extends ConsumerStatefulWidget {
   const PhotoUploadStep({
     required this.photos,
+    required this.canEdit,
     required this.onAdded,
     required this.onRemoved,
     super.key,
   });
 
-  final List<PickedPhoto> photos;
+  final List<SetupPhoto> photos;
+
+  /// 사진을 더하거나 뺄 수 있는지. 올리는 중이거나 모두 올린 뒤에는 막는다.
+  final bool canEdit;
+
   final ValueChanged<List<PickedPhoto>> onAdded;
   final ValueChanged<int> onRemoved;
 
@@ -36,7 +43,7 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
   int get _remaining => maxProfilePhotos - widget.photos.length;
 
   Future<void> _pick() async {
-    if (_picking || _remaining < 1) return;
+    if (_picking || _remaining < 1 || !widget.canEdit) return;
     setState(() {
       _picking = true;
       _notice = null;
@@ -74,6 +81,7 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
   Widget build(BuildContext context) {
     final photos = widget.photos;
     final notice = _notice;
+    final summary = _UploadSummary.of(photos);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -108,12 +116,23 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
           _PhotoGrid(
             photos: photos,
             onAdd: _remaining > 0 && !_picking ? _pick : null,
-            showAdd: _remaining > 0,
+            showAdd: widget.canEdit && _remaining > 0,
+            canRemove: widget.canEdit,
             onRemove: (index) {
               setState(() => _notice = null);
               widget.onRemoved(index);
             },
           ),
+          if (summary != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              summary.message,
+              style: AppTypography.sub.copyWith(
+                color: summary.failed ? AppColors.danger : AppColors.ink,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
 
         if (notice != null) ...[
@@ -173,14 +192,16 @@ class _PhotoGrid extends StatelessWidget {
     required this.photos,
     required this.onAdd,
     required this.showAdd,
+    required this.canRemove,
     required this.onRemove,
   });
 
   static const _columns = 3;
 
-  final List<PickedPhoto> photos;
+  final List<SetupPhoto> photos;
   final VoidCallback? onAdd;
   final bool showAdd;
+  final bool canRemove;
   final ValueChanged<int> onRemove;
 
   @override
@@ -190,7 +211,10 @@ class _PhotoGrid extends StatelessWidget {
         _PhotoTile(
           photo: photos[i],
           number: i + 1,
-          onRemove: () => onRemove(i),
+          // 서버에 올라간 사진은 지울 API 가 없어 빼지 않는다.
+          onRemove: canRemove && photos[i].status != PhotoUploadStatus.uploaded
+              ? () => onRemove(i)
+              : null,
         ),
       if (showAdd) _AddTile(onTap: onAdd),
     ];
@@ -228,12 +252,16 @@ class _PhotoTile extends StatelessWidget {
     required this.onRemove,
   });
 
-  final PickedPhoto photo;
+  final SetupPhoto photo;
   final int number;
-  final VoidCallback onRemove;
+
+  /// 뺄 수 없으면 X 를 숨긴다.
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final failed = photo.status == PhotoUploadStatus.failed;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -253,33 +281,160 @@ class _PhotoTile extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          top: 0,
-          right: 0,
-          child: IconButton(
-            onPressed: onRemove,
-            tooltip: '사진 $number 빼기',
-            constraints: const BoxConstraints(
-              minWidth: AppSizes.minTouch,
-              minHeight: AppSizes.minTouch,
+        if (failed)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.image),
+              border: Border.all(color: AppColors.danger, width: 3),
             ),
-            icon: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: AppColors.ink.withValues(alpha: 0.7),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close,
-                size: 18,
-                color: AppColors.background,
+          ),
+        if (photo.status == PhotoUploadStatus.uploading)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.image),
+            child: ColoredBox(
+              color: AppColors.ink.withValues(alpha: 0.45),
+              child: Center(
+                child: Semantics(
+                  label: '사진 $number 올리는 중',
+                  child: const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: AppColors.background,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+        if (photo.status == PhotoUploadStatus.uploaded)
+          _StatusBadge(
+            icon: Icons.check,
+            label: '완료',
+            color: AppColors.ink,
+            semanticsLabel: '사진 $number 업로드 완료',
+          ),
+        if (failed)
+          _StatusBadge(
+            icon: Icons.error_outline,
+            label: '실패',
+            color: AppColors.danger,
+            semanticsLabel: '사진 $number 올리지 못함',
+          ),
+        if (onRemove != null)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
+              onPressed: onRemove,
+              tooltip: '사진 $number 빼기',
+              constraints: const BoxConstraints(
+                minWidth: AppSizes.minTouch,
+                minHeight: AppSizes.minTouch,
+              ),
+              icon: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: AppColors.ink.withValues(alpha: 0.7),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  size: 18,
+                  color: AppColors.background,
+                ),
+              ),
+            ),
+          ),
       ],
     );
+  }
+}
+
+/// 사진 칸 아래쪽에 붙는 업로드 결과 표시다.
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.semanticsLabel,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: AppSpacing.xs,
+      bottom: AppSpacing.xs,
+      child: Semantics(
+        label: semanticsLabel,
+        excludeSemantics: true,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: 2,
+          ),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: AppColors.background),
+              const SizedBox(width: 2),
+              Text(
+                label,
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.background,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 사진 칸 아래에 띄우는 업로드 진행 문구다.
+class _UploadSummary {
+  const _UploadSummary(this.message, {this.failed = false});
+
+  final String message;
+  final bool failed;
+
+  /// 올리기 전이면 `null` 이다.
+  static _UploadSummary? of(List<SetupPhoto> photos) {
+    bool has(PhotoUploadStatus status) =>
+        photos.any((photo) => photo.status == status);
+
+    if (has(PhotoUploadStatus.uploading)) {
+      return const _UploadSummary('사진을 올리고 있어요.');
+    }
+
+    final failed = photos
+        .where((photo) => photo.status == PhotoUploadStatus.failed)
+        .toList();
+    if (failed.isNotEmpty) {
+      return _UploadSummary(
+        '사진 ${failed.length}장을 올리지 못했어요. '
+        '${photoUploadFailureMessage(failed.first.failure!)}',
+        failed: true,
+      );
+    }
+
+    if (photos.isNotEmpty &&
+        photos.every((photo) => photo.status == PhotoUploadStatus.uploaded)) {
+      return _UploadSummary('사진 ${photos.length}장을 모두 올렸어요.');
+    }
+    return null;
   }
 }
 

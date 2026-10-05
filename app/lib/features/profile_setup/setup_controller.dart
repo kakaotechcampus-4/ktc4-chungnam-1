@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import 'photo_picker.dart';
+import 'photo_uploader.dart';
 import 'setup_steps.dart';
 
 /// 입력 흐름이 모아 둔 값이다. 화면을 오가도 유지된다.
@@ -27,10 +28,23 @@ class SetupDraft {
   /// `LifeFact.category` 별로 모은 문장. 건너뛴 항목은 담기지 않는다.
   final Map<String, String> facts;
 
-  /// 앨범에서 고른 사진. 최대 [maxProfilePhotos] 장이다.
-  final List<PickedPhoto> photos;
+  /// 앨범에서 고른 사진과 각각의 업로드 상태. 최대 [maxProfilePhotos] 장이다.
+  final List<SetupPhoto> photos;
 
   bool get hasPhoto => photos.isNotEmpty;
+
+  bool get isUploadingPhotos =>
+      photos.any((photo) => photo.status == PhotoUploadStatus.uploading);
+
+  bool get allPhotosUploaded =>
+      hasPhoto &&
+      photos.every((photo) => photo.status == PhotoUploadStatus.uploaded);
+
+  bool get hasFailedPhoto =>
+      photos.any((photo) => photo.status == PhotoUploadStatus.failed);
+
+  /// 사진을 더하거나 뺄 수 있는지. 올리는 중이거나 모두 올린 뒤에는 막는다.
+  bool get canEditPhotos => !isUploadingPhotos && !allPhotosUploaded;
 
   bool get basicInfoFilled =>
       name.trim().isNotEmpty &&
@@ -48,7 +62,7 @@ class SetupDraft {
     int? birthDay,
     ConditionStage? stage,
     Map<String, String>? facts,
-    List<PickedPhoto>? photos,
+    List<SetupPhoto>? photos,
   }) => SetupDraft(
     name: name ?? this.name,
     gender: gender ?? this.gender,
@@ -105,7 +119,11 @@ class SetupController extends Notifier<SetupState> {
   }
 
   /// 이전 단계로 간다. 첫 단계면 `false` 를 돌려준다.
+  ///
+  /// 사진을 올리는 중에는 움직이지 않는다. 화면을 벗어나면 몇 장이 올라갔는지
+  /// 알 수 없게 된다.
   bool back() {
+    if (state.draft.isUploadingPhotos) return true;
     if (state.stepIndex == 0) return false;
     state = state.copyWith(stepIndex: state.stepIndex - 1);
     return true;
@@ -119,12 +137,72 @@ class SetupController extends Notifier<SetupState> {
 
   /// 고른 사진을 뒤에 붙인다. 최대 장수를 넘는 것은 버린다.
   void addPhotos(List<PickedPhoto> picked) {
-    final photos = [...state.draft.photos, ...picked].take(maxProfilePhotos);
+    if (!state.draft.canEditPhotos) return;
+    final photos = [
+      ...state.draft.photos,
+      for (final photo in picked) SetupPhoto(photo),
+    ].take(maxProfilePhotos);
     updateDraft(state.draft.copyWith(photos: photos.toList()));
   }
 
+  /// 사진을 뺀다. 서버에 올라간 사진은 지울 API 가 없어 빼지 않는다.
   void removePhoto(int index) {
+    if (state.draft.isUploadingPhotos) return;
+    if (state.draft.photos[index].status == PhotoUploadStatus.uploaded) return;
     final photos = [...state.draft.photos]..removeAt(index);
+    updateDraft(state.draft.copyWith(photos: photos));
+  }
+
+  /// 아직 올리지 못한 사진을 한 장씩 차례로 올린다.
+  ///
+  /// 이미 올라간 사진은 건너뛴다. 그래서 일부가 실패한 뒤 다시 부르면 실패한
+  /// 사진만 다시 올린다.
+  Future<void> uploadPhotos() async {
+    if (state.draft.isUploadingPhotos) return;
+    final uploader = ref.read(photoUploaderProvider);
+
+    for (var i = 0; i < state.draft.photos.length; i++) {
+      final photo = state.draft.photos[i];
+      if (photo.status == PhotoUploadStatus.uploaded) continue;
+
+      _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploading));
+      try {
+        await uploader.upload(photo.picked);
+        if (!ref.mounted) return;
+        _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploaded));
+      } on PhotoUploadFailure catch (failure) {
+        if (!ref.mounted) return;
+        _setPhoto(
+          i,
+          photo.withStatus(PhotoUploadStatus.failed, failure: failure),
+        );
+      } catch (_) {
+        if (!ref.mounted) return;
+        _setPhoto(
+          i,
+          photo.withStatus(
+            PhotoUploadStatus.failed,
+            failure: const PhotoUploadFailure(
+              PhotoUploadFailure.networkError,
+              retryable: true,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  /// 올리지 못한 사진을 뺀다. 사진은 선택이라 실패한 사진 없이도 마칠 수 있다.
+  void dropFailedPhotos() {
+    if (state.draft.isUploadingPhotos) return;
+    final photos = state.draft.photos
+        .where((photo) => photo.status != PhotoUploadStatus.failed)
+        .toList();
+    updateDraft(state.draft.copyWith(photos: photos));
+  }
+
+  void _setPhoto(int index, SetupPhoto photo) {
+    final photos = [...state.draft.photos]..[index] = photo;
     updateDraft(state.draft.copyWith(photos: photos));
   }
 
