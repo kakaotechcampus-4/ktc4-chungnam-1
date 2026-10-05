@@ -182,3 +182,14 @@ class PendingSetups extends Notifier<Map<String, SetupState>> {
 
 final pendingSetupsProvider =
     NotifierProvider<PendingSetups, Map<String, SetupState>>(PendingSetups.new);
+
+/// 앱만 기억하던 어르신 정보와 입력값을 지운다. 로그아웃과 탈퇴 뒤에 부른다.
+///
+/// 같은 휴대폰으로 다른 사람이 로그인해도 앞사람의 어르신 정보가 보이지 않게
+/// 한다.
+void forgetCareProfiles(WidgetRef ref) {
+  ref
+    ..invalidate(careProfilesProvider)
+    ..invalidate(setupControllerProvider)
+    ..invalidate(pendingSetupsProvider);
+}

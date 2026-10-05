@@ -1,29 +1,17 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Path, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Path, UploadFile, status
 
-from app.api.deps import CurrentAccountDep
+from app.api.deps import CurrentAccountDep, SpeechSubmissionDep
 from app.core.errors import AppError
 from app.schemas.speech_analysis import (
     SpeechAnalysisAccepted,
     SpeechAnalysisStatusResponse,
 )
 from app.services.speech_analysis_jobs import SpeechAnalysisStatus
-from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionService
 
 
 router = APIRouter(tags=["speech-analyses"])
-
-
-def _submission_service(request: Request) -> SpeechAnalysisSubmissionService:
-    service = getattr(request.app.state, "speech_analysis_submission", None)
-    if service is None:
-        raise AppError(
-            status_code=503,
-            error_code="SPEECH_ANALYSIS_NOT_CONFIGURED",
-            message="음성 분석 저장소가 설정되지 않았습니다.",
-        )
-    return service
 
 
 @router.post(
@@ -33,8 +21,8 @@ def _submission_service(request: Request) -> SpeechAnalysisSubmissionService:
     response_model_by_alias=True,
 )
 async def submit_speech_analysis(
-    request: Request,
     account: CurrentAccountDep,
+    submission: SpeechSubmissionDep,
     session_id: Annotated[str, Path(min_length=1, max_length=128)],
     audio: Annotated[UploadFile, File()],
     participant_count: Annotated[
@@ -44,7 +32,7 @@ async def submit_speech_analysis(
 ) -> SpeechAnalysisAccepted:
     """면회 WAV를 안전하게 인수하고 비동기 분석 작업을 등록한다."""
 
-    job = await _submission_service(request).submit(
+    job = await submission.submit(
         account=account,
         session_id=session_id,
         participant_count=participant_count,
@@ -63,13 +51,13 @@ async def submit_speech_analysis(
     response_model_by_alias=True,
 )
 async def get_speech_analysis(
-    request: Request,
     account: CurrentAccountDep,
+    submission: SpeechSubmissionDep,
     analysis_id: Annotated[str, Path(min_length=1, max_length=128)],
 ) -> SpeechAnalysisStatusResponse:
     """요청 계정이 소유한 음성 분석 작업의 안전한 상태만 반환한다."""
 
-    job = await _submission_service(request).get(
+    job = await submission.get(
         account=account,
         analysis_id=analysis_id,
     )

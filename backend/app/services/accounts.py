@@ -6,12 +6,13 @@ ADR-007 에 따라 구글 인증에 성공한 것만으로는 계정을 만들�
 """
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
-from uuid import uuid4
+from typing import Any, Literal, Protocol
+from uuid import UUID, uuid4
 
+from app.core.database import DbConnection
 from app.core.errors import AppError
 
 # 거부하면 계정을 만들지 않는 동의 항목 (data-contracts.md `Account`).
@@ -57,13 +58,16 @@ class AccountRepository(Protocol):
         """
         ...
 
+    async def delete(self, account_id: str) -> bool:
+        """계정과 동의 이력을 함께 지운다. 지울 계정이 없었으면 `False` 다."""
+        ...
+
 
 class InMemoryAccountRepository:
-    """개발 검증 전용 저장소.
+    """테스트 전용 저장소.
 
-    프로세스 메모리에만 남으므로 서버를 다시 시작하면 계정이 사라진다. 실제 저장은
-    `backend/database/init.sql` 의 `users` 와 `account_consents` 를 쓰는 구현으로
-    바꾼다. 저장 항목이 ADR-007 에서 확정되지 않아 아직 연결하지 않았다.
+    프로세스 메모리에만 남으므로 서버를 다시 시작하면 계정이 사라진다. 서버는
+    `PostgresAccountRepository` 를 쓴다.
     """
 
     def __init__(self) -> None:
@@ -89,6 +93,167 @@ class InMemoryAccountRepository:
             self._by_id[account.account_id] = account
             self._by_social[key] = account.account_id
             return account
+
+    async def delete(self, account_id: str) -> bool:
+        async with self._lock:
+            # 동의 이력은 `Account` 안에 있으므로 계정과 함께 사라진다.
+            account = self._by_id.pop(account_id, None)
+            if account is None:
+                return False
+            self._by_social.pop((account.provider, account.social_id), None)
+            return True
+
+
+# Account.consents 의 이름과 consent_records 의 컬럼.
+_CONSENT_COLUMNS: dict[str, str] = {
+    "serviceData": "service_data",
+    "sensitiveData": "sensitive_data",
+    "serviceImprovement": "service_improvement",
+    "pushNotification": "push_notification",
+}
+
+
+class PostgresAccountRepository:
+    """`users` 와 `consent_records` 에 계정과 동의 이력을 저장한다.
+
+    동의는 바뀔 때마다 이력 행을 더하고 현재 동의는 가장 최근 이력이다. 스키마에
+    이메일 컬럼이 없으므로 이메일은 저장하지 않으며 `Account.email` 은 항상 `None`
+    이다. 계정을 지우면 DB 의 CASCADE 로 동의 이력, 프로필과 그 아래 기록이 함께
+    지워지고, 사진과 음성 원본의 객체 키는 trigger 가 S3 삭제 대기열에 넣는다.
+    """
+
+    def __init__(
+        self, connection: DbConnection, *, default_display_name: str
+    ) -> None:
+        self._connection = connection
+        # 표시 이름을 비워 둔 계정(`display_name IS NULL`)에 쓴다.
+        self._default_display_name = default_display_name
+
+    async def find_by_social_identity(
+        self, *, provider: str, social_id: str
+    ) -> Account | None:
+        if provider != "google":
+            return None
+        cursor = await self._connection.execute(
+            "SELECT user_id, google_sub, display_name, created_at "
+            "FROM users WHERE google_sub = %s",
+            (social_id,),
+        )
+        return await self._to_account(await cursor.fetchone())
+
+    async def get(self, account_id: str) -> Account | None:
+        user_id = _parse_uuid(account_id)
+        if user_id is None:
+            return None
+        cursor = await self._connection.execute(
+            "SELECT user_id, google_sub, display_name, created_at "
+            "FROM users WHERE user_id = %s",
+            (user_id,),
+        )
+        return await self._to_account(await cursor.fetchone())
+
+    async def create(self, account: Account) -> Account:
+        # 계정과 첫 동의 이력은 함께 만들어야 한다. 같은 구글 계정이 이미 있으면
+        # 아무것도 만들지 않고 기존 계정을 돌려준다.
+        async with self._connection.transaction():
+            cursor = await self._connection.execute(
+                "INSERT INTO users (user_id, google_sub, display_name, created_at) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (google_sub) DO NOTHING RETURNING user_id",
+                (
+                    UUID(account.account_id),
+                    account.social_id,
+                    account.display_name,
+                    account.created_at,
+                ),
+            )
+            if await cursor.fetchone() is not None:
+                await self._connection.execute(
+                    "INSERT INTO consent_records "
+                    "(user_id, terms_version, service_data, sensitive_data, "
+                    " service_improvement, push_notification, recorded_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        UUID(account.account_id),
+                        account.consent_version,
+                        *(
+                            account.consents[name].granted
+                            for name in _CONSENT_COLUMNS
+                        ),
+                        account.created_at,
+                    ),
+                )
+        # 저장한 값으로 다시 읽어, 저장하지 않는 이메일 등이 응답에 섞이지 않게 한다.
+        stored = await self.find_by_social_identity(
+            provider=account.provider, social_id=account.social_id
+        )
+        if stored is None:
+            raise RuntimeError("만든 계정을 다시 읽지 못했다")
+        return stored
+
+    async def delete(self, account_id: str) -> bool:
+        user_id = _parse_uuid(account_id)
+        if user_id is None:
+            return False
+        cursor = await self._connection.execute(
+            "DELETE FROM users WHERE user_id = %s", (user_id,)
+        )
+        return cursor.rowcount > 0
+
+    async def _to_account(self, user: dict[str, Any] | None) -> Account | None:
+        if user is None:
+            return None
+        cursor = await self._connection.execute(
+            "SELECT terms_version, service_data, sensitive_data, "
+            "       service_improvement, push_notification, recorded_at "
+            "FROM consent_records WHERE user_id = %s "
+            "ORDER BY recorded_at, record_id",
+            (user["user_id"],),
+        )
+        history = await cursor.fetchall()
+        if not history:
+            # 계정과 첫 동의 이력은 한 트랜잭션에서 만든다. 이력이 없으면 데이터가
+            # 깨진 것이므로 동의하지 않은 것으로 꾸며 내지 않는다.
+            raise RuntimeError("동의 이력이 없는 계정이다")
+        return Account(
+            account_id=str(user["user_id"]),
+            provider="google",
+            social_id=user["google_sub"],
+            display_name=user["display_name"] or self._default_display_name,
+            email=None,
+            consent_version=history[-1]["terms_version"],
+            consents=_current_consents(history),
+            created_at=user["created_at"],
+        )
+
+
+def _current_consents(
+    history: Sequence[Mapping[str, Any]],
+) -> dict[str, ConsentRecord]:
+    """가장 최근 이력으로 현재 동의를 만든다.
+
+    `granted_at` 은 동의 중인 항목이면 거부에서 동의로 바뀐 가장 최근 이력의 시각이고,
+    처음부터 동의했으면 첫 이력(가입)의 시각이다. 거부 중이면 `None` 이다.
+    """
+    consents: dict[str, ConsentRecord] = {}
+    for name, column in _CONSENT_COLUMNS.items():
+        granted_since: datetime | None = None
+        for record in history:
+            if not record[column]:
+                granted_since = None
+            elif granted_since is None:
+                granted_since = record["recorded_at"]
+        consents[name] = ConsentRecord(
+            granted=granted_since is not None, granted_at=granted_since
+        )
+    return consents
+
+
+def _parse_uuid(value: str) -> UUID | None:
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
 
 
 class AccountService:
@@ -119,6 +284,19 @@ class AccountService:
                 message="계정을 찾을 수 없습니다.",
             )
         return account
+
+    async def delete(self, account_id: str) -> None:
+        """회원 탈퇴. 계정과 동의 이력, 프로필과 그 아래의 모든 기록을 지운다.
+
+        DB 저장소에서는 CASCADE 로 함께 지워지고 사진과 음성 원본은 S3 삭제 대기열에
+        들어간다(API 1-5). 탈퇴 이유 저장은 아직 구현하지 않았다.
+        """
+        if not await self._repository.delete(account_id):
+            raise AppError(
+                status_code=404,
+                error_code="ACCOUNT_NOT_FOUND",
+                message="계정을 찾을 수 없습니다.",
+            )
 
     async def register(
         self,

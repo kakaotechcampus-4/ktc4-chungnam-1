@@ -11,6 +11,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
+import '../auth/auth_providers.dart';
 import '../auth/consent_terms.dart';
 import '../profile_setup/setup_controller.dart';
 
@@ -272,18 +273,7 @@ class _BodyState extends State<_Body> {
           ),
           const SizedBox(height: AppSpacing.lg),
 
-          SecondaryButton(
-            label: '로그아웃',
-            onPressed: () {
-              // 앱만 기억하던 입력값을 지운다. 같은 휴대폰으로 다른 사람이
-              // 로그인해도 앞사람의 어르신 정보가 보이지 않게 한다.
-              ProviderScope.containerOf(context)
-                ..invalidate(careProfilesProvider)
-                ..invalidate(setupControllerProvider)
-                ..invalidate(pendingSetupsProvider);
-              context.go(AppRoutes.login);
-            },
-          ),
+          const _SignOutButton(),
           const SizedBox(height: AppSpacing.xl),
 
           Center(
@@ -319,6 +309,36 @@ class _BodyState extends State<_Body> {
   /// `80s` 를 `80대` 로 바꾼다.
   static String _ageLabel(String raw) =>
       raw.endsWith('s') ? '${raw.substring(0, raw.length - 1)}대' : raw;
+}
+
+/// 로그아웃. 단말 세션과 구글 쪽을 지우고 서버에서도 세션을 폐기한다.
+///
+/// 서버에 닿지 못해도 로그아웃은 된다(`SessionNotifier.signOut`).
+class _SignOutButton extends ConsumerStatefulWidget {
+  const _SignOutButton();
+
+  @override
+  ConsumerState<_SignOutButton> createState() => _SignOutButtonState();
+}
+
+class _SignOutButtonState extends ConsumerState<_SignOutButton> {
+  bool _busy = false;
+
+  Future<void> _signOut() async {
+    setState(() => _busy = true);
+    await ref.read(sessionProvider.notifier).signOut();
+    if (!mounted) return;
+    forgetCareProfiles(ref);
+    context.go(AppRoutes.login);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SecondaryButton(
+      label: _busy ? '로그아웃하는 중이에요' : '로그아웃',
+      onPressed: _busy ? null : _signOut,
+    );
+  }
 }
 
 class _Section extends StatelessWidget {

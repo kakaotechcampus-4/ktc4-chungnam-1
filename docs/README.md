@@ -13,6 +13,7 @@
 | STT와 이미지 분석 | [AI README](../local_ai/README.md) | [이미지 분석 실험](../local_ai/docs/image_tagging/README.md) |
 | 평가 자료와 실행 상태 | [평가 README](../evals/README.md) | `evals/cases/`, `evals/expected/` |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
+| 앱과 BE, BE와 AI 서버 사이의 API | [API 명세](architecture/api-spec.md) | [DB 스키마](../backend/database/init.sql) |
 | 기술 결정과 변경 이유 | [ADR 목록](architecture/decisions/README.md) | 개별 ADR |
 | 개인정보와 동의 | [법률 검토](legal/README.md) | [동의안](legal/consent-draft.md), [기능 대응표](legal/consent-mapping.md) |
 | 이슈 작성과 Git, PR 절차 | [협업 규칙](../CONTRIBUTING.md) | PR 템플릿 |

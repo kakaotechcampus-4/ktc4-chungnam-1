@@ -59,33 +59,40 @@ class HomeScreen extends ConsumerWidget {
                   ],
                 ],
               ),
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  Text(
-                    '새록',
-                    style: AppTypography.screenTitle.copyWith(
-                      fontSize: 44,
-                      letterSpacing: -1,
+              // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
+              // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
+              // 붙는 순간 아래로 넘친다.
+              child: Align(
+                alignment: const Alignment(0, -0.2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '새록',
+                      style: AppTypography.screenTitle.copyWith(
+                        fontSize: 44,
+                        letterSpacing: -1,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
-                  // 이름을 읽는 동안에는 이름 없이 묻는다.
-                  Text(
-                    name == null
-                        ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                        : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
-                    style: AppTypography.body,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: AppSpacing.xxxl),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.image),
-                    child: Image.asset('assets/images/main.webp'),
-                  ),
-                  const Spacer(flex: 3),
-                ],
+                    const SizedBox(height: AppSpacing.xl),
+                    // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                    // 이름을 읽는 동안에는 이름 없이 묻는다.
+                    Text(
+                      name == null
+                          ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                          : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
+                      style: AppTypography.body,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xxxl),
+                    Flexible(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.image),
+                        child: Image.asset('assets/images/main.webp'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
