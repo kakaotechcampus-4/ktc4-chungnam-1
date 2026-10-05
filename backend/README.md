@@ -122,11 +122,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
     앱에서 녹음 및 기능 동의 확인
     → 암호화 전송과 서버 임시 처리
     → STT 또는 VLM 결과 반환
-    → 원본 즉시 삭제와 삭제 결과 확인
+    → 녹음 원본과 분석용 임시 사진 삭제 및 삭제 결과 확인
     → 보호자 검토
     → 승인된 사실 반영, 서버 중심 관리
 
-이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 원본의 서버 보관은 처리 완료 후 즉시 삭제, 최대 24시간을 유지한다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
+이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. 해당 개정안은 PR #92 검토 중이며 실제 사용자 자료 수집을 승인한 것이 아니다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
 
 직접 식별정보와 허용 목록 밖의 원본은 외부 AI로 보내지 않는다. 데이터 경로 변경 전 [법률 문서](../docs/legal/README.md), [동의 및 임시 처리 ADR](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md)과 데이터 흐름을 갱신한다. 외부 업체의 이름, 국가, 목적, 항목, 보유기간과 자체 학습 여부가 정해지기 전에는 실제 사용자 자료로 호출하지 않는다.
 
@@ -340,3 +340,45 @@ S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
 STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
 오류 응답에 남기지 않는다.
+
+## 사진 저장 (S3)
+
+PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가한다. 사진 API 라우트 연결은 아직 구현되지 않았다. 아래는 라우트 구현 시 적용할 사용 순서다.
+
+프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
+[image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
+[image_validation.py](app/services/image_validation.py)의 `validate_image`로 검사한다.
+
+    validate_image(파일, max_size_bytes=설정값)       # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
+    → storage.object_key(photo_id=..., image=...)     # photos/{photoId}.jpg, 개인정보 없음
+    → storage.upload(object_key=..., file=..., image=...)
+    → photos 행 저장 (실패하면 storage.delete로 올린 객체를 지운다)
+    → 응답의 imageUrl, imageUrlExpiresAt은 storage.create_download(object_key=...)
+
+- 형식은 앱이 보낸 Content-Type이 아니라 파일 시그니처로 판단하며 JPEG와 PNG만 받는다.
+- S3 오류는 `IMAGE_STORAGE_UNAVAILABLE`(503, 재시도 가능)이다. 객체 키와 S3 오류 본문은 응답과 로그에 넣지 않는다.
+- 버킷이 설정되지 않았으면 사진이 필요한 순간에만 `IMAGE_STORAGE_NOT_CONFIGURED`(503)로 거절한다. 사진이 없는 프로필 조회는 그대로 동작한다.
+- AI 서버에 넘기는 8-4의 `downloadUrl`도 같은 `create_download`로 만든다.
+- 사진의 EXIF(촬영 위치 등) 제거 여부는 정하지 않았다. 메타데이터를 AI 보조 입력으로 쓸지와 함께 정한다.
+- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣지만, 대기열을 처리해 S3 객체를 지우는 코드는 아직 없다.
+
+### 보관 기준과 후속 작업
+
+2026-10-05 PM 수정안은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에 있으며 PR #92에서 검토한다.
+
+- 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
+- AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
+- 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
+- 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.
+- BE는 S3 삭제 대기열 실행과 삭제 결과 확인을, AI는 임시 사본의 기한 삭제를 구현해야 한다. 실제 사용자 사진을 받기 전에 동의 화면부터 원본 삭제까지 검증한다. 어댑터 제공, DB 행 삭제 또는 대기열 등록만으로 삭제 완료를 표시하지 않는다.
+
+### 사진 저장 설정
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_IMAGE_S3_BUCKET` | 등록 사진용 비공개 버킷. 녹음의 24시간 Lifecycle을 적용하지 않고 ADR-001의 사진 보관 및 삭제 조건을 따른다. 별도 삭제 처리가 없으면 안 된다는 뜻이며 무기한 보관 설정이 아니다 |
+| `SAEROK_IMAGE_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
+| `SAEROK_IMAGE_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사, 기본 `photos` |
+| `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
+| `SAEROK_IMAGE_PRESIGNED_TTL_SECONDS` | 조회와 AI 다운로드 URL 수명, 기본 900초 |
+| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB |

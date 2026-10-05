@@ -303,6 +303,7 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` — 사진의 조회 URL을 만들지 못함 |
 
 ### 2-4. `PATCH /api/v1/profiles/{profileId}` — 신규
 
@@ -413,6 +414,8 @@
 
 사진은 S3에 서버 측 암호화로 저장한다. 객체 키에는 개인정보를 넣지 않는다. 프로필 사진은 모두 이미지 분석(8-4)을 거친다. 면회 사진(5-2)은 분석하지 않는다.
 
+2026-10-05 PM 수정안: 위 자동 분석은 기존 API 제안이며 [ADR-001의 PR #92 개정안](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다. 분석하지 않는 등록 사진의 상태, 동의 전달과 철회 경로는 FE, BE와 AI가 후속 계약에서 정한다. 아래 요청 필드와 응답 enum은 이번 문서 수정에서 바꾸지 않으며 실제 사용자 사진 처리에 적용하기 전 이 차이를 해소해야 한다.
+
 ### 3-1. `POST /api/v1/profiles/{profileId}/photos` — 신규
 
 온보딩의 사진 첨부와 마이페이지의 갤러리 추가에서 호출한다.
@@ -421,7 +424,7 @@
 
 | 필드 | 값 |
 | --- | --- |
-| `image` | JPEG 또는 PNG |
+| `image` | JPEG 또는 PNG. 서버 설정의 크기 상한(기본 20MB) 이하 |
 
 응답 `201` — [ProfilePhoto](#profilephoto), `analysisStatus`는 `pending`
 
@@ -434,7 +437,7 @@
 | 409 | `PHOTO_LIMIT_EXCEEDED` |
 | 413 | `IMAGE_TOO_LARGE` |
 | 422 | `INVALID_IMAGE_FORMAT` |
-| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`) |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` |
 
 ### 3-2. `GET /api/v1/profile-photos/{photoId}` — 신규
 
@@ -447,6 +450,7 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_PHOTO_NOT_FOUND` |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` — 사진의 조회 URL을 만들지 못함 |
 
 ### 3-3. 사진 설명 확인 — 미정
 
@@ -567,7 +571,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 | 필드 | 값 |
 | --- | --- |
-| `image` | JPEG 또는 PNG |
+| `image` | JPEG 또는 PNG. 서버 설정의 크기 상한(기본 20MB) 이하 |
 
 응답 `201` — [VisitPhoto](#visitphoto)
 
@@ -580,7 +584,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 409 | `INVALID_SESSION_STATE` |
 | 413 | `IMAGE_TOO_LARGE` |
 | 422 | `INVALID_IMAGE_FORMAT` |
-| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`) |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` |
 
 ### 5-3. `POST /api/v1/visit-sessions/{sessionId}/cards` — 신규
 
@@ -801,6 +805,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND` | |
 | 404 | `REPORT_NOT_FOUND` | 리포트 저장 전 |
+| 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` | 면회 사진의 조회 URL을 만들지 못함 |
 
 ### 7-3. `GET /api/v1/visit-sessions/{sessionId}/proposals` — 신규
 
@@ -1385,8 +1390,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 | --- | --- | --- | --- |
 | 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | 프로필 사진 분석의 동의 근거. 이전 명세는 업로드마다 분석 동의를 받았으나 새 스키마는 모든 프로필 사진을 분석함 | 3-1 | PM, 법률 |
+| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
 | 4 | 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지. `topic_feedback.action`과 `topic_proposals.suggested_action`이 별도 컬럼 | 7-4 | 스키마 작성자 |
 | 5 | 카드 근거(`evidence`) 항목 형식. 세부 정보 네 항목은 `fact_id`가 없음 | 8-2, CardSet | AI |
 | 6 | 카드 생성 작업의 `model`, `prompt_version`. 생성(`running`) 시점부터 NOT NULL이라 8-2 응답 전에 값이 필요함 | 4-1, 8-2 | 스키마 작성자, AI |
-| 7 | 프로필 사진 삭제 API 필요 여부. 최대 5장이며 DB에는 삭제 시 S3 삭제 대기열 트리거가 있음 | 3절 | FE |
+| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
