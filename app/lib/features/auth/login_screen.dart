@@ -32,6 +32,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// 계정이 이미 있으면 바로 홈으로 가고, 없으면 동의 화면으로 넘긴다. 구글
   /// 인증만으로는 계정이 만들어지지 않는다(ADR-007).
   Future<void> _signInWithGoogle() async {
+    // 구글 설정이 준비되기 전까지 화면을 확인하기 위한 임시 길이다.
+    if (ref.read(skipGoogleLoginProvider)) {
+      context.go(AppRoutes.profileCreate);
+      return;
+    }
+
     setState(() {
       _busy = true;
       _failure = null;
@@ -72,6 +78,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final failure = _failure;
+    final skipping = ref.watch(skipGoogleLoginProvider);
 
     return Scaffold(
       body: ScreenBody(
@@ -94,6 +101,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 busy: _busy,
               ),
             ),
+
+            if (skipping) ...[
+              const SizedBox(height: AppSpacing.lg),
+              const Text(
+                '개발용: 구글 로그인 설정이 없어 누르면 바로 정보 입력으로 넘어가요.',
+                style: AppTypography.caption,
+                textAlign: TextAlign.center,
+              ),
+            ],
 
             const SizedBox(height: AppSpacing.xxl),
           ],
