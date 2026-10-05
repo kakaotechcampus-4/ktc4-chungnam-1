@@ -11,8 +11,8 @@ import 'photo_description_store.dart';
 ///
 /// 올린 사진을 세 칸씩 보여준다. 사진을 누르면 그 아래에 AI 가 만든 설명이
 /// 펼쳐지고, 보호자가 직접 고쳐 저장할 수 있다. 설명은 AI 가 만든 후보라서 확인된
-/// 사실처럼 보이지 않게 출처를 함께 적는다. 분석이 끝나지 않았거나 실패한 사진은
-/// 설명 대신 그 상태를 알린다.
+/// 사실처럼 보이지 않게 출처를 함께 적는다. 분석이 끝나지 않은 사진은 설명 대신
+/// 그 상태를 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 적게 한다.
 class ProfileGallery extends ConsumerStatefulWidget {
   const ProfileGallery({required this.photos, super.key});
 
@@ -116,6 +116,9 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                       ? _GalleryTile(
                           photo: photos[start + col],
                           number: start + col + 1,
+                          edited: edited.containsKey(
+                            photos[start + col].photoId,
+                          ),
                           selected: photos[start + col].photoId == _selectedId,
                           onTap: () => _toggle(photos[start + col]),
                         )
@@ -159,12 +162,17 @@ class _GalleryTile extends StatelessWidget {
   const _GalleryTile({
     required this.photo,
     required this.number,
+    required this.edited,
     required this.selected,
     required this.onTap,
   });
 
   final ProfilePhoto photo;
   final int number;
+
+  /// 보호자가 설명을 저장했는지. 저장했으면 분석 결과와 관계없이 표시를 떼어낸다.
+  final bool edited;
+
   final bool selected;
   final VoidCallback onTap;
 
@@ -172,6 +180,7 @@ class _GalleryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = photo.analysisStatus;
     final badge = switch (status) {
+      _ when edited => null,
       PhotoAnalysisStatus.completed => null,
       PhotoAnalysisStatus.failed => '분석 실패',
       // 모르는 값도 끝나지 않은 것으로 다룬다.
@@ -262,39 +271,48 @@ class _DescriptionPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    switch (photo.analysisStatus) {
-      case PhotoAnalysisStatus.completed:
-        break;
-      case PhotoAnalysisStatus.failed:
-        return const _PanelNotice(
-          '이 사진의 설명을 만들지 못했어요.',
-          danger: true,
-        );
-      default:
-        return const _PanelNotice('사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.');
+    final status = photo.analysisStatus;
+    final failed = status == PhotoAnalysisStatus.failed;
+    if (status != PhotoAnalysisStatus.completed && !failed) {
+      return const _PanelNotice('사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.');
     }
 
+    // 보호자가 적은 설명이 있으면 AI 설명이 아니다. 실패한 사진은 처음부터
+    // 보호자가 적는다.
+    final fromAi = !edited && !failed;
     final text = controller.text.trim();
     final canSave = !saving && text.isNotEmpty && text != current;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (failed && !edited) ...[
+          const _PanelNotice(
+            'AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.',
+            danger: true,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         AppTextField(
-          label: edited ? '보호자가 고친 설명' : 'AI가 만든 설명',
+          label: fromAi ? 'AI가 만든 설명' : '사진에 대한 설명',
           controller: controller,
           maxLines: null,
-          hintText: '사진에 대한 설명을 적어주세요',
-          errorText: text.isEmpty ? '설명을 비워둘 수 없어요.' : null,
+          hintText: '어떤 사진인지 적어주세요',
+          // 저장된 설명을 지웠을 때만 알린다. 처음부터 빈칸이면 오류가 아니다.
+          errorText: text.isEmpty && current.isNotEmpty
+              ? '설명을 비워둘 수 없어요.'
+              : null,
           onChanged: (_) => onChanged(),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          edited
-              ? '직접 고친 설명이에요. 다시 고칠 수 있어요.'
-              : 'AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.',
-          style: AppTypography.caption,
-        ),
+        if (fromAi || edited) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            fromAi
+                ? 'AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.'
+                : '직접 적은 설명이에요. 다시 고칠 수 있어요.',
+            style: AppTypography.caption,
+          ),
+        ],
         const SizedBox(height: AppSpacing.lg),
         PrimaryButton(
           label: saving ? '저장하는 중이에요' : '저장하기',
