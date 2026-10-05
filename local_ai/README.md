@@ -6,7 +6,7 @@
 
 - MVP의 STT와 VLM은 온프레미스 GPU 1대에서 처리한다. 온디바이스 실행은 현재 범위에서 제외한다.
 - 이미지 출력은 키워드 태깅, description과 두 방식의 결합을 비교 중이다. 최종 모델과 프롬프트는 미정이다.
-- 사진 메타데이터와 모델 출력은 보호자가 확인하기 전까지 후보로만 사용한다.
+- 사진 메타데이터는 AI 분석과 주제 추천 입력에서 제외한다. 모델 출력은 보호자가 확인하기 전까지 후보로만 사용한다.
 - 클로바 STT는 사용하지 않는다.
 
 처리 위치, 원본 전송과 삭제 조건은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)을 따른다. 외부 STT와 LLM 도입은 업체, 처리 국가, 보유기간과 자체 학습 여부 검토가 필요하다.
@@ -15,7 +15,7 @@
 
 | 영역 | AI에서 정할 내용 | 함께 확인 |
 | --- | --- | --- |
-| 이미지 분석 | 모델, 프롬프트, 출력 형식과 메타데이터 보조 입력 | FE, BE |
+| 이미지 분석 | 모델, 프롬프트와 출력 형식 | FE, BE |
 | 녹음과 STT | 녹음 라이브러리, 음성 형식, 입력 조건, 모델, 실시간과 후처리 관계 | BE는 실행과 자원 처리, FE는 화면과 권한 흐름 |
 | 화자 처리 | 화자 전환, 신원 식별과 불확실한 구간 처리 | BE, QA |
 | 생성 기능 | 카드, 추가 질문, 리포트와 이야기 후보의 입력 문맥, 기억과 검색 흐름 | PM, FE, BE |
@@ -31,6 +31,7 @@
 | 모바일 STT의 전사 품질, 처리 시간과 전환 검토 근거 | [모바일 STT 벤치마크](docs/stt-mobile-benchmark/README.md) |
 | STT 자료 준비와 평가 진행 상태 | [평가 안내](../evals/README.md) |
 | FE, BE와 주고받는 JSON과 미정 항목 | [공통 데이터 계약](../docs/architecture/data-contracts.md) |
+| 최초 질문, 사진 확인과 다음 추천 | [주제 카드 전체 설계 검토안](../docs/architecture/card-generation-flow.md) |
 | 처리 위치와 운영 미정 사항 | [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md) |
 | 동의, 외부 전송과 개인정보 검토 | [법률 문서 안내](../docs/legal/README.md) |
 | AI 작업 지침 | [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) |
