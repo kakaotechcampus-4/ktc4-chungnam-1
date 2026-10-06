@@ -236,41 +236,83 @@ void main() {
       return container;
     }
 
-    testWidgets('멈춘 단계로 돌아오면 적어 둔 답을 입력칸에 채운다', (tester) async {
-      final category = lifeFactSteps.first.category;
-      await openAt(
-        tester,
-        SetupState(
-          stepIndex: 1,
-          draft: SetupDraft(facts: {category: savedText}),
-        ),
+    // 기본 정보를 채운 합성 저장본이다.
+    const filled = SetupDraft(
+      name: '김○○',
+      gender: 'female',
+      birthYear: 1943,
+      birthMonth: 3,
+      birthDay: 12,
+      stage: ConditionStage.mildCognitiveImpairment,
+    );
+
+    test('뒤로 가기로 나와도 가 본 가장 먼 단계를 기억한다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final controller = container.read(setupControllerProvider.notifier)
+        ..updateDraft(filled);
+
+      // 셋째 항목까지 갔다가 화면을 나가려고 기본 정보까지 돌아온다.
+      for (var i = 0; i < 3; i++) {
+        controller.next();
+      }
+      while (controller.back()) {}
+      final saved = container.read(setupControllerProvider);
+      expect(saved.stepIndex, 0);
+
+      controller.restore(saved);
+
+      expect(container.read(setupControllerProvider).stepIndex, 3);
+    });
+
+    test('기본 정보를 비웠으면 기본 정보부터 연다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container
+          .read(setupControllerProvider.notifier)
+          .restore(const SetupState(reachedIndex: 3));
+
+      expect(
+        container.read(setupControllerProvider).stepIndex,
+        0,
+        reason: '그대로 끝까지 가면 마칠 수 없다',
       );
-
-      expect(find.widgetWithText(TextField, savedText), findsOneWidget);
-      expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
     });
 
-    testWidgets('적어 둔 답이 없는 항목은 방법 고르기부터 연다', (tester) async {
-      await openAt(tester, const SetupState(stepIndex: 1));
+    test('사진을 빼 태그 단계가 없으면 사진 단계에서 연다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
 
-      expect(find.text('말로 답하기'), findsOneWidget);
-      expect(find.byType(TextField), findsNothing);
+      container
+          .read(setupControllerProvider.notifier)
+          .restore(const SetupState(draft: filled, reachedIndex: 6));
+
+      expect(container.read(setupControllerProvider).isPhoto, isTrue);
     });
 
-    testWidgets('앞 단계로 돌아가도 그 단계의 답이 보인다', (tester) async {
-      final category = lifeFactSteps.first.category;
+    testWidgets('가 본 가장 먼 항목에서 열고 앞 항목의 답도 채워 둔다', (tester) async {
+      final first = lifeFactSteps[0];
+      final third = lifeFactSteps[2];
       final container = await openAt(
         tester,
         SetupState(
-          stepIndex: 2,
-          draft: SetupDraft(facts: {category: savedText}),
+          reachedIndex: 3,
+          draft: filled.copyWith(facts: {first.category: savedText}),
         ),
       );
 
-      container.read(setupControllerProvider.notifier).back();
+      expect(find.text(third.question), findsOneWidget);
+      expect(find.text('말로 답하기'), findsOneWidget, reason: '셋째 항목은 아직 답이 없다');
+
+      container.read(setupControllerProvider.notifier)
+        ..back()
+        ..back();
       await tester.pumpAndSettle();
 
+      expect(find.text(first.question), findsOneWidget);
       expect(find.widgetWithText(TextField, savedText), findsOneWidget);
+      expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
     });
   });
 

@@ -144,7 +144,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     context.push(AppRoutes.profileAddOf(id));
   }
 
-  /// `입력 중` 인 분의 입력을 멈춘 단계부터 다시 연다.
+  /// `입력 중` 인 분의 입력을 가 본 가장 먼 단계부터 다시 연다.
   void _resumeAdding(String id) {
     final saved = ref.read(pendingSetupsProvider)[id] ?? const SetupState();
     ref.read(setupControllerProvider.notifier).restore(saved);

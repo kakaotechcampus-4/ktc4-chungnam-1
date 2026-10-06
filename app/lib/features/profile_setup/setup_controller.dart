@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
@@ -64,11 +66,20 @@ class SetupDraft {
 
 /// 어느 단계에 있는지와 모은 값을 함께 들고 있다.
 class SetupState {
-  const SetupState({this.stepIndex = 0, this.draft = const SetupDraft()});
+  const SetupState({
+    this.stepIndex = 0,
+    this.draft = const SetupDraft(),
+    this.reachedIndex = 0,
+  });
 
   /// 0 = 기본 정보, 1 ~ 4 = 생애 정보, 5 = 사진, 6 = 태그.
   final int stepIndex;
   final SetupDraft draft;
+
+  /// 지금까지 가 본 가장 먼 단계. 화면을 나가려면 뒤로 가기로 기본 정보까지
+  /// 돌아와야 하므로, 나갈 때의 [stepIndex] 는 늘 0 이다. 이어서 입력할 때는
+  /// 이 값으로 연다.
+  final int reachedIndex;
 
   static const _photoIndex = 1 + lifeFactStepCount;
   static const _tagsIndex = _photoIndex + 1;
@@ -86,8 +97,24 @@ class SetupState {
 
   bool get isLast => stepIndex >= _tagsIndex;
 
-  SetupState copyWith({int? stepIndex, SetupDraft? draft}) =>
-      SetupState(stepIndex: stepIndex ?? this.stepIndex, draft: draft ?? this.draft);
+  /// 이어서 입력할 때 열 단계. 가 본 가장 먼 단계지만, 기본 정보를 비웠으면
+  /// 마칠 수 없으므로 기본 정보부터 연다. 사진을 빼서 태그 단계가 없어졌으면
+  /// 사진 단계에서 연다.
+  int get resumeIndex {
+    if (!draft.basicInfoFilled) return 0;
+    final reached = math.min(math.max(stepIndex, reachedIndex), _tagsIndex);
+    if (reached == _tagsIndex && !draft.hasPhoto) return _photoIndex;
+    return reached;
+  }
+
+  SetupState copyWith({int? stepIndex, SetupDraft? draft}) {
+    final step = stepIndex ?? this.stepIndex;
+    return SetupState(
+      stepIndex: step,
+      draft: draft ?? this.draft,
+      reachedIndex: math.max(reachedIndex, step),
+    );
+  }
 }
 
 const lifeFactStepCount = 4;
@@ -98,8 +125,10 @@ class SetupController extends Notifier<SetupState> {
 
   void updateDraft(SetupDraft draft) => state = state.copyWith(draft: draft);
 
-  /// 입력 중이던 분의 입력을 멈춘 단계부터 다시 연다.
-  void restore(SetupState saved) => state = saved;
+  /// 입력 중이던 분의 입력을 가 본 가장 먼 단계부터 다시 연다
+  /// ([SetupState.resumeIndex]). 앞 단계로는 뒤로 가기로 돌아갈 수 있다.
+  void restore(SetupState saved) =>
+      state = saved.copyWith(stepIndex: saved.resumeIndex);
 
   /// 다음 단계로 간다. 사진을 올리지 않았으면 태그 단계를 건너뛴다.
   ///
