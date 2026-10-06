@@ -98,6 +98,20 @@ def test_request_is_refused_while_a_visit_uses_the_set(migrated_database_url):
     assert len(_sets(migrated_database_url, profile_id)) == 1
 
 
+def test_request_is_refused_while_an_unused_set_is_ready(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        await completed_card_set(connection, profile_id)
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    res = _request_cards(migrated_database_url, user_id, profile_id)
+
+    assert res.status_code == 409 and res.json()["errorCode"] == "CARD_SET_READY"
+    assert len(_sets(migrated_database_url, profile_id)) == 1
+
+
 def test_request_is_refused_without_ml_key(migrated_database_url):
     user_id, profile_id = with_db(migrated_database_url, user_and_profile)
 

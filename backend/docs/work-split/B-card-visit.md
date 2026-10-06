@@ -130,12 +130,13 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 이미 만드는 중이면 새로 만들지 않고 같은 응답을 준다.
 - 평가 전 회차가 지금 묶음을 쓰는 중(`inVisit`)이면 409로 거절한다. 새 묶음이 생기면 면회 중인 카드를 4-3으로 받을 수 없게 되기 때문이다.
+- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다.
 - 카드 생성 worker가 작업을 가져가 카드 12장과 새 주제를 저장한다(아래 처리). 앱은 4-2를 폴링한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
-| 409 | `VISIT_IN_PROGRESS` (평가 전 회차가 있음) |
+| 409 | `VISIT_IN_PROGRESS` (평가 전 회차가 있음), `CARD_SET_READY` (아직 쓰지 않은 묶음이 있음) |
 | 503 | `CARD_GENERATION_NOT_CONFIGURED` (LLM 키가 설정되지 않음) |
 
 **구현 메모**
@@ -143,6 +144,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 프로필 입력 상태는 따지지 않는다. 그 시점 DB에 있는 것으로 context를 만든다(아래 처리).
 - `inVisit`인지는 4-2와 같은 계산으로 확인한다.
 - `running`은 프로필당 하나다(부분 유일 인덱스 `uq_card_sets_running`). `INSERT ... ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING`으로 넣는다.
+- 상태 확인과 INSERT는 한 트랜잭션에서 프로필 행을 잠근 뒤(`SELECT ... FROM profiles ... FOR UPDATE`) 한다. 5-1도 같은 행을 먼저 잠가서, 확인과 INSERT 사이에 회차가 묶음을 쓰기 시작하지 못하게 한다.
 
 #### 4-1 카드 생성 처리
 
@@ -383,6 +385,7 @@ LLM은 ML API를 백엔드에서 이용.
 
 - `require_owned(connection, CARD_SET, ...)`로 확인한다(없으면 `CARD_GENERATION_NOT_FOUND`).
 - `selectedCardIds`는 중복 없이 1~9개이며 이 묶음의 `position` 1~9 카드여야 한다.
+- 4-1과 겹치지 않게 트랜잭션 시작 때 프로필 행을 먼저 잠근다(`SELECT ... FROM profiles ... FOR UPDATE`).
 - 한 트랜잭션에서 `visit_sessions`를 넣고(`started_at` 기본값이 서버 시각), `UPDATE card_sets SET session_id = %s WHERE set_id = %s AND session_id IS NULL`로 묶음을 연결한다. 0행이면 동시 요청이 먼저 쓴 것이므로 409 `CARD_SET_ALREADY_USED`로 롤백한다. 마지막으로 고른 카드를 `selected = true`로 바꾼다.
 - `card_sets(session_id, profile_id)` FK가 회차와 묶음이 같은 프로필인지 DB에서도 확인한다.
 

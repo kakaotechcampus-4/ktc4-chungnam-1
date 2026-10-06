@@ -106,20 +106,48 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
     return CardSet(set_id=latest["set_id"], used_by_session_id=latest["session_id"], cards=cards)
 
 
+async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1과 5-1이 같은 프로필에서 차례로 실행되게 함.
+
+    4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
+    """
+    await connection.execute(
+        "SELECT 1 FROM profiles WHERE profile_id = %s FOR UPDATE", (profile_id,)
+    )
+
+
 async def start_card_generation(
     connection: DbConnection, profile_id: UUID, *, model: str, prompt_version: int
 ) -> None:
-    """`running` 작업 생성. 이미 `running`이 있으면 넘어감.
+    """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
+
+    `ready`도 거절해서 아직 안 쓴 완료 묶음은 늘 최신 묶음 하나뿐이게 함. 그래서 5-1이 받는
+    묶음이 4-2, 4-3이 보는 최신 묶음과 같음.
 
     프로필당 `running`은 하나(부분 유일 인덱스 `uq_card_sets_running`). `prompt_version` 열이
     문자열 열이라 문자열로 저장함.
     """
-    await connection.execute(
-        "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
-        "VALUES (%s, 'running', %s, %s) "
-        "ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING",
-        (profile_id, model, str(prompt_version)),
-    )
+    async with connection.transaction():
+        await lock_profile(connection, profile_id)
+        status = await generation_status(connection, profile_id)
+        if status == "inVisit":
+            raise AppError(
+                status_code=409,
+                error_code="VISIT_IN_PROGRESS",
+                message="평가를 마치지 않은 면회가 있습니다.",
+            )
+        if status == "ready":
+            raise AppError(
+                status_code=409,
+                error_code="CARD_SET_READY",
+                message="아직 쓰지 않은 카드 묶음이 있습니다.",
+            )
+        await connection.execute(
+            "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
+            "VALUES (%s, 'running', %s, %s) "
+            "ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING",
+            (profile_id, model, str(prompt_version)),
+        )
 
 
 # ── 4-1 처리 ──────────────────────────────────────────

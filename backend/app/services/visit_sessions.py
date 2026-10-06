@@ -10,6 +10,7 @@ from uuid import UUID
 from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.schemas.visit_session import VisitSession
+from app.services.card_sets import lock_profile
 
 
 def _invalid_selection(message: str) -> AppError:
@@ -50,15 +51,17 @@ async def load_visit_session(connection: DbConnection, session_id: UUID) -> Visi
 
 
 async def create_visit_session(
-    connection: DbConnection, set_id: UUID, card_ids: list[UUID]
+    connection: DbConnection, profile_id: UUID, set_id: UUID, card_ids: list[UUID]
 ) -> UUID:
     """5-1. 한 트랜잭션에서 회차 생성, 묶음 연결, 고른 카드 `selected` 표시.
 
-    묶음 소유 확인은 부르는 쪽에서 `require_owned(CARD_SET)`로 먼저 함.
+    묶음 소유 확인은 부르는 쪽에서 `require_owned(CARD_SET)`로 먼저 함. 4-1과 겹치지 않게
+    프로필 행을 먼저 잠금(`lock_profile`).
     """
     if len(set(card_ids)) != len(card_ids):
         raise _invalid_selection("같은 카드를 두 번 고를 수 없습니다.")
     async with connection.transaction():
+        await lock_profile(connection, profile_id)
         cursor = await connection.execute(
             "SELECT profile_id, status, session_id FROM card_sets WHERE set_id = %s FOR UPDATE",
             (set_id,),
