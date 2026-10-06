@@ -100,9 +100,13 @@ class _BodyState extends ConsumerState<_Body> {
   }
 
   /// 세션이 풀렸거나 계정이 이미 없다. 남은 세션을 버리고 로그인부터 한다.
+  ///
+  /// 로그아웃과 같이 단말의 어르신과 고른 분도 비운다. 남겨 두면 다른 계정으로
+  /// 로그인했을 때 앞 계정의 어르신이 보인다.
   Future<void> _backToLogin() async {
     await ref.read(sessionProvider.notifier).discard();
     if (!mounted) return;
+    forgetCareProfiles(ref);
     context.go(AppRoutes.login);
   }
 
