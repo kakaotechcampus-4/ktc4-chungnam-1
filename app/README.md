@@ -106,6 +106,8 @@
 
 입력한 기본 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 목 데이터 어르신 한 분으로 돌아간다(`forgetCareProfiles`). 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
 
+홈 리포트 알림은 계정과 어르신마다 따로 둔다. 로그아웃해도 지우지 않으며, 다른 계정으로 들어오면 보이지 않고 원래 계정으로 다시 들어오면 다시 보인다. 로그아웃한 사이 도착한 리포트도 기다리던 계정에 남는다. 탈퇴하면 그 계정의 알림만 지운다. 이 알림도 앱이 켜져 있는 동안만 기억한다.
+
 ### 확인이 필요한 것
 
 - BE: 명세 2-2는 계정당 프로필 1개다. 최대 3분 허용, 프로필 삭제 API, 푸시 알림의 `profileId`, 2-1 목록 응답의 이름과 성별은 합의 전이다.
