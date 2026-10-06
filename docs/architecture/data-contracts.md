@@ -59,7 +59,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 - 별도의 회원가입 단계를 두지 않는다. 구글 인증에 성공하면 필수 동의를 확인하고, 동의가 완료될 때 계정과 동의 이력을 함께 만든다. 녹음과 음성 처리 동의도 이때 필수 동의로 함께 받는다. 동의를 거부하거나 중단하면 계정을 만들지 않는다. 현재 구현은 최초 가입 시 동의만 처리하며, 약관 변경 시 재동의는 후속 설계한다.
 - 로그인 뒤 프로필이 없으면 기본 정보 입력부터, `setupStatus`가 `inProgress`이면 세부 정보 입력부터 이어서, `completed`이면 홈으로 간다.
-- 세부 정보는 프로필 입력을 마칠 때 한 번에 보내며, 이때 카드 생성을 시작한다. 홈의 `오늘의 대화카드 받기`는 생성이 끝난 뒤 활성화한다.
+- 세부 정보는 프로필 입력을 마칠 때 한 번에 저장하고 이어서 카드 생성을 시작한다([API 2-4](api-spec.md#2-4-patch-apiv1profilesprofileid--신규), [4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규)). 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 상태로 정한다.
 - 사진 분석 결과를 보호자가 확인하는 방식은 아직 정하지 않았다([API 3-3](api-spec.md#3-3-사진-설명-확인--미정)).
 - 면회 사진은 녹음 전에 단말에서 찍는다. 회차는 녹음을 시작할 때 만들고 사진은 그 뒤에 올린다. 녹음 일시정지와 종료는 단말에서 처리한다.
 - 보호자 평가를 제출한 뒤 면회 음성을 제출한다. 리포트는 STT 결과와 보호자 평가로 만든다.
@@ -161,7 +161,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 ```
 
 - 계정당 프로필은 1개다.
-- `setupStatus` 값은 `inProgress`, `completed`이다. 저장하지 않고 계산하며, 카드 생성 작업이 하나라도 있으면 `completed`, 없으면 `inProgress`다. 기본 정보 입력을 마치면 `inProgress`로 만들어지고, 프로필 입력을 마치면([API 2-5](api-spec.md#2-5-post-apiv1profilesprofileidcomplete-setup--신규)) 첫 카드 생성 작업과 함께 `completed`가 된다.
+- `setupStatus` 값은 `inProgress`, `completed`이다. 저장하지 않고 계산하며, 카드 생성 작업이 하나라도 있으면 `completed`, 없으면 `inProgress`다. 기본 정보 입력을 마치면 `inProgress`로 만들어지고, 프로필 입력을 마칠 때 첫 카드 생성 작업([API 4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규))이 만들어지면 `completed`가 된다.
 - `name`은 50자 이하다. `gender` 값은 `male`, `female`이다. `birthDate`는 `YYYY-MM-DD`다.
 - 피보호자의 이름, 성별, 생년월일은 서버에 저장하지만 AI 서버 요청에는 넣지 않는다. BE가 `birthDate`로 연령대를 계산해 `{십 단위 나이}s` 형식(예: `70s`, `80s`)으로 보낸다.
 - `condition.stage` 값은 `mildCognitiveImpairment`, `mildDementia`, `unknown`이다.
@@ -297,17 +297,17 @@ AI가 프로필 사진 한 장에 대해 만드는 설명 한 문장이다. 이�
 
 ## 카드 생성 요청 (CardGenerationRequest)
 
-> **상태: 요청 형식은 [API 8-2](api-spec.md#8-2-post-internalv1card-generations--신규) 기준.** 카드 생성과 추천은 핵심 기능으로 별도 설계한다. [PM 제품 기준](../pm/README.md#카드-미사용과-추천-제외)을 지키며 각 값을 생성에 어떻게 쓸지는 AI가 로직으로 정하고 PM, FE와 BE가 제품 및 연동 범위를 함께 확인한다.
+> **상태: 요청과 결과 형식은 [API 4-1 카드 생성 처리](api-spec.md#4-1-카드-생성-처리) 기준.** 카드 생성과 추천은 핵심 기능으로 별도 설계한다. [PM 제품 기준](../pm/README.md#카드-미사용과-추천-제외)을 지키며 각 값을 생성에 어떻게 쓸지는 AI가 로직으로 정하고 PM, FE와 BE가 제품 및 연동 범위를 함께 확인한다.
 
-BE가 카드 생성 작업을 만들 때 프로필 값으로 만들어 AI 서버에 보낸다. 앱은 이 객체를 보내지 않는다.
+BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규))을 가져가 DB 값으로 만들고 카드 생성 함수에 넘긴다. AI 서버를 거치지 않으며 앱은 이 객체를 보내지 않는다.
 
 ```json
 {
   "schemaVersion": 1,
-  "setId": "00000000-0000-4000-8000-000000000401",
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
   "context": {
     "ageRange": "80s",
-    "conditionStage": "mildCognitiveImpairment",
     "profileFacts": {
       "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨어요.",
       "hometown": null,
@@ -318,7 +318,15 @@ BE가 카드 생성 작업을 만들 때 프로필 값으로 만들어 AI 서버
       {
         "factId": "00000000-0000-4000-8000-000000000111",
         "title": "단골손님",
-        "content": "수선집에 오래 다닌 단골손님이 많았어요."
+        "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+        "createdAt": "2026-08-21T15:00:00+09:00",
+        "source": "visit"
+      }
+    ],
+    "photos": [
+      {
+        "photoId": "00000000-0000-4000-8000-000000000121",
+        "description": "한복을 입은 사람들이 잔치 자리에 모여 있는 사진이에요."
       }
     ],
     "topics": [
@@ -326,25 +334,46 @@ BE가 카드 생성 작업을 만들 때 프로필 값으로 만들어 AI 서버
         "topicId": "00000000-0000-4000-8000-000000000451",
         "title": "노래 이야기",
         "description": "즐겨 부르시던 노래와 그 노래에 얽힌 기억을 여쭤보는 주제예요.",
+        "evidence": [ { "profileField": "hobby" } ],
+        "createdAt": "2026-08-14T12:30:00+09:00",
         "feedback": [
           { "action": "more", "decidedAt": "2026-08-21T15:00:00+09:00" }
         ]
       }
+    ],
+    "visits": [
+      {
+        "sessionId": "00000000-0000-4000-8000-000000000201",
+        "startedAt": "2026-08-21T14:00:00+09:00",
+        "setId": "00000000-0000-4000-8000-000000000400"
+      }
+    ],
+    "pastCards": [
+      {
+        "cardId": "00000000-0000-4000-8000-000000000500",
+        "setId": "00000000-0000-4000-8000-000000000400",
+        "topicId": "00000000-0000-4000-8000-000000000451",
+        "position": 1,
+        "cardTitle": "즐겨 부르던 노래",
+        "primaryQuestion": "젊으셨을 때 즐겨 부르던 노래가 있으셨어요?",
+        "evidence": [ { "profileField": "hobby" } ],
+        "selected": true,
+        "reviewReaction": "positive"
+      }
     ]
-  },
-  "constraints": {
-    "avoidRecentMemoryCheck": true,
-    "avoidMedicalInterpretation": true
   }
 }
 ```
 
-- `ageRange`는 BE가 생년월일로 계산한 값이다. 피보호자의 이름, 성별, 생년월일은 넣지 않는다.
+- `model`, `promptVersion`은 BE 설정값이며 작업을 만들 때 저장한 값을 그대로 넘긴다. `promptVersion`은 정수다.
+- `ageRange`는 BE가 생년월일로 계산한 값이다. 피보호자의 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - `profileFacts`는 [Profile](#프로필-profile)의 세부 정보 네 항목이다.
+- `lifeFacts.source`는 면회 제안을 승인해 생긴 이야기면 `visit`, 직접 넣은 이야기면 `caregiver`다.
+- `photos`는 분석이 끝난 프로필 사진의 설명이다. 설명을 보호자 확인 없이 넣을지는 [API 3-3](api-spec.md#3-3-사진-설명-확인--미정)과 [미정 사항](api-spec.md#미정-사항) 1로 PM 확인을 기다린다. 현재 BE 구현은 넣는다.
 - `topics`는 이 프로필의 기존 주제와 보호자가 승인한 주제 피드백이며 첫 생성에는 빈 배열이다.
-- 사진 설명은 [API 3-3](api-spec.md#3-3-사진-설명-확인--미정)이 정해질 때까지 넣지 않는다.
-- BE는 요청의 `context`를 카드 생성 작업의 기록으로 저장한다.
-- AI 응답 형식은 API 8-2를 따른다. 카드 12장을 만들고 새 주제는 제목과 설명으로 돌려주며, BE가 카드와 새 주제에 ID를 부여한다.
+- `visits`는 평가까지 끝난 회차만 시간순으로 넣고, `pastCards`는 그 회차에 쓰인 카드 묶음의 카드다. 면회 평가 메모, 리포트 본문과 전사문은 넣지 않는다.
+- BE는 요청의 `context`를 카드 생성 작업의 기록(`generation_log.input`)으로 저장한다.
+- 결과 형식, 검증과 실패 코드는 [API 4-1 카드 생성 처리](api-spec.md#4-1-카드-생성-처리)를 따른다. 카드 12장을 만들고 새 주제는 제목, 설명과 근거로 돌려주며, BE가 카드와 새 주제에 ID를 부여한다.
 
 <br>
 
@@ -352,14 +381,12 @@ BE가 카드 생성 작업을 만들 때 프로필 값으로 만들어 AI 서버
 
 ## 대화 카드 묶음 (CardSet)
 
-카드 생성 작업과 그 결과인 카드 12장이다. API에서 카드 생성 작업의 응답으로 사용한다([API 4절](api-spec.md#4-대화-카드)).
+지금 쓸 카드 묶음과 그 카드 12장이다. [API 4-3](api-spec.md#4-3-get-apiv1profilesprofileidcard-generationscurrent--신규)의 응답이다.
 
 ```json
 {
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
-  "profileId": "00000000-0000-4000-8000-000000000101",
-  "generationStatus": "completed",
   "usedBySessionId": null,
   "cards": [
     {
@@ -379,28 +406,25 @@ BE가 카드 생성 작업을 만들 때 프로필 값으로 만들어 AI 서버
         "가장 기억에 남는 옷은 무엇이었어요?"
       ],
       "evidenceSource": "lifeFact",
-      "evidence": [ { "...": "미정" } ],
+      "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
       "selected": false
     }
-  ],
-  "error": null,
-  "createdAt": "2026-08-21T12:30:00+09:00"
+  ]
 }
 ```
 
-- 카드 생성은 비동기 작업이다. 프로필 입력을 마칠 때, 변경 제안을 검토한 뒤와 실패 후 다시 시도할 때 만든다. 변경 제안이 없는 리포트 뒤의 생성 시점은 아직 정하지 않았다.
-- `generationStatus` 값은 `running`, `completed`, `failed`이다. 프로필마다 `running`인 작업은 하나뿐이다.
-  - `cards`는 `completed`일 때 12장이고 그 밖에는 빈 배열이다. `cardId`는 BE가 부여한다.
-  - `failed`이면 `error`에 `{ "errorCode": "..." }`를 담고, 그 밖에는 `null`이다.
-- `usedBySessionId`는 이 카드 묶음으로 만든 회차이며 없으면 `null`이다. 홈의 `오늘의 대화카드 받기`는 최신 작업이 `completed`이고 `usedBySessionId`가 `null`일 때 활성화한다.
-- `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
-- `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 주제는 겹치지 않는다.
+- 카드 생성은 비동기 작업이다([API 4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규)). 프로필마다 만드는 중인 작업은 하나뿐이다. 변경 제안이 없는 리포트 뒤의 생성 시점은 아직 정하지 않았다.
+- 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 이 객체는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다.
+- `setId`는 녹음을 시작할 때 [API 5-1](api-spec.md#5-1-post-apiv1visit-sessions--신규)에 보낸다.
+- `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `cards`는 12장이다. `cardId`는 BE가 부여한다. `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
+- `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `topic.description`과 `description`은 보호자에게 주제와 카드를 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.
 - `followUpQuestions`는 카드마다 3개다.
-- `evidenceSource` 값은 `lifeFact`, `photo`, `none`이다. `none`이면 `evidence`는 빈 배열이다. `evidence` 항목의 형식은 아직 정하지 않았다.
+- `evidenceSource` 값은 `lifeFact`, `photo`, `profile`, `none`이다. `none`이면 `evidence`는 빈 배열이고, 나머지는 같은 종류의 근거 항목이 하나 이상이다. 항목은 `lifeFact`면 `{"factId": ...}`, `photo`면 `{"photoId": ...}`, `profile`이면 `{"profileField": "occupation" | "hometown" | "hobby" | "family"}`다.
 - `selected`는 회차를 만들 때 고른 카드와 면회 중 보충 화면에서 추가한 카드가 `true`다. 선택하지 않은 카드도 삭제하지 않는다.
 
-**없어도 되는 값** — `error`, `usedBySessionId`
+**없어도 되는 값** — `usedBySessionId`
 
 <br>
 
@@ -790,6 +814,6 @@ AI 성공 응답은 다음과 같다.
 | 프로필 사진 분석의 동의 구분 | PR #92의 PM 수정안은 사진 보관과 AI 분석 동의를 구분한다. 모든 프로필 사진을 분석하는 기존 API 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 처리를 반영해야 한다(3). | PM, FE, BE, AI |
 | 리포트 확인 여부 | 리포트 확인 여부를 저장하지 않아, 확인 후 홈 표시, 제안이 없는 리포트 뒤의 카드 생성 시점과 확인 처리가 정해지지 않았다(2). | PM, BE |
 | 피보호자 본인 동의와 대리 동의 | API 명세는 회차마다 동의를 받지 않고 가입 때 보호자의 필수 동의로 녹음과 음성 처리 동의를 받는다. 피보호자 본인 확인과, 병세가 진행되어 본인이 동의하기 어려운 경우 누가 어떤 근거로 대신 동의할 수 있는지 정해야 한다. | PM, 법률 문서 |
-| 카드 생성 로직 | `CardGenerationRequest`의 요청 형식은 API 8-2를 따른다. 각 값과 주제 피드백을 생성에 어떻게 사용할지, 카드 근거(`evidence`)의 항목 형식(5)은 AI가 정한다. | AI |
+| 카드 생성 로직 | `CardGenerationRequest`의 요청과 결과 형식, 카드 근거(`evidence`)의 항목 형식은 [API 4-1 카드 생성 처리](api-spec.md#4-1-카드-생성-처리)를 따른다. 각 값과 주제 피드백을 생성에 어떻게 사용할지는 AI가 정한다. | AI |
 | 주제 관리 방식 | 다음 회차에 어떤 주제를 더 자주 다룰지 계산하는 방법을 정해야 한다. 주제는 BE가 부여한 `topicId`로 회차 간에 잇는다. 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지도 정해야 한다(4). | AI, BE |
 | STT 저신뢰도와 실패 상태 | 성공 응답 형식은 확정했지만 신뢰도가 낮거나 모델 처리가 실패한 작업의 상태와 오류 계약은 정해지지 않았다. | AI, BE |
