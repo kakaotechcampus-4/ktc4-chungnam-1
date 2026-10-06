@@ -129,6 +129,7 @@ class _StepBody extends StatelessWidget {
         // 항목이 바뀌면 상태를 새로 잡는다.
         key: ValueKey(step.category),
         step: step,
+        initialText: state.draft.facts[step.category],
         onCaptured: (text) => controller.recordFact(step.category, text),
         onCleared: () => controller.skipFact(step.category),
       );

@@ -207,6 +207,73 @@ void main() {
     });
   });
 
+  group('이어서 입력', () {
+    // 합성 문장이다. 실제 어르신의 생애 정보가 아니다.
+    const savedText = '합성 예시 답입니다';
+
+    Future<ProviderContainer> openAt(
+      WidgetTester tester,
+      SetupState saved,
+    ) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(setupControllerProvider.notifier).restore(saved);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: const ProfileSetupScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return container;
+    }
+
+    testWidgets('멈춘 단계로 돌아오면 적어 둔 답을 입력칸에 채운다', (tester) async {
+      final category = lifeFactSteps.first.category;
+      await openAt(
+        tester,
+        SetupState(
+          stepIndex: 1,
+          draft: SetupDraft(facts: {category: savedText}),
+        ),
+      );
+
+      expect(find.widgetWithText(TextField, savedText), findsOneWidget);
+      expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
+    });
+
+    testWidgets('적어 둔 답이 없는 항목은 방법 고르기부터 연다', (tester) async {
+      await openAt(tester, const SetupState(stepIndex: 1));
+
+      expect(find.text('말로 답하기'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('앞 단계로 돌아가도 그 단계의 답이 보인다', (tester) async {
+      final category = lifeFactSteps.first.category;
+      final container = await openAt(
+        tester,
+        SetupState(
+          stepIndex: 2,
+          draft: SetupDraft(facts: {category: savedText}),
+        ),
+      );
+
+      container.read(setupControllerProvider.notifier).back();
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, savedText), findsOneWidget);
+    });
+  });
+
   group('다음 버튼 자리', () {
     /// 화면을 띄우고 지금 보이는 행동 버튼의 사각형과 스크롤 영역을 돌려준다.
     Future<(Rect button, Rect viewport)> openSetup(
