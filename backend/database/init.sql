@@ -152,7 +152,7 @@ CREATE TABLE conversation_cards (
     description         TEXT     NOT NULL,
     primary_question    TEXT     NOT NULL,
     follow_up_questions TEXT[]   NOT NULL CHECK (cardinality(follow_up_questions) >= 1),
-    evidence_source     VARCHAR(10) NOT NULL CHECK (evidence_source IN ('life_fact', 'photo', 'none')),
+    evidence_source     VARCHAR(10) NOT NULL CHECK (evidence_source IN ('life_fact', 'photo', 'profile', 'none')),
     evidence            JSONB    NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(evidence) = 'array'),
     selected            BOOLEAN  NOT NULL DEFAULT false,
     review_reaction     VARCHAR(10) CHECK (review_reaction IN ('positive', 'neutral', 'negative', 'notUsed')),
@@ -167,7 +167,7 @@ CREATE TABLE conversation_cards (
     CHECK (review_reaction IS NULL OR selected),
     CHECK (report_summary IS NULL OR coalesce(review_reaction IN ('positive', 'neutral', 'negative'), false)),
     CHECK (CASE WHEN jsonb_typeof(evidence) <> 'array' THEN false
-                WHEN evidence_source IN ('life_fact', 'photo') THEN jsonb_array_length(evidence) > 0
+                WHEN evidence_source IN ('life_fact', 'photo', 'profile') THEN jsonb_array_length(evidence) > 0
                 ELSE evidence = '[]'::jsonb END)
 );
 CREATE INDEX idx_conversation_cards_topic ON conversation_cards(topic_id);
