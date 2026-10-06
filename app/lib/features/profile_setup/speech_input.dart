@@ -72,6 +72,6 @@ class MockSpeechInput implements SpeechInput {
 }
 
 final speechInputProvider = FutureProvider<SpeechInput>((ref) async {
-  final bundle = await ref.watch(profileProvider.future);
+  final bundle = await ref.watch(profileSampleProvider.future);
   return MockSpeechInput(bundle);
 });

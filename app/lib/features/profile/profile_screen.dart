@@ -21,6 +21,9 @@ import '../profile_setup/setup_controller.dart';
 /// 마이페이지를 눌러 뜨는 메뉴에서 들어온다.
 ///
 /// 이름과 생년월일은 계약상 `localOnly` 라 단말에만 두며 외부 요청에 담지 않는다.
+///
+/// 등록한 어르신이 없으면 어르신 항목을 모두 감추고 계정 약관 동의, 저장하기,
+/// 로그아웃과 회원탈퇴만 보여준다.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -53,7 +56,8 @@ class ProfileScreen extends ConsumerWidget {
 class _Body extends StatefulWidget {
   const _Body({required this.bundle, required this.account});
 
-  final ProfileBundle bundle;
+  /// 등록한 어르신이 없으면 `null` 이다.
+  final ProfileBundle? bundle;
   final Account account;
 
   @override
@@ -136,9 +140,85 @@ class _BodyState extends State<_Body> {
     );
   }
 
+  /// 지금 보고 있는 어르신의 사진, 기본 정보, 세부 정보와 갤러리다.
+  List<Widget> _elderSections(ProfileBundle bundle) {
+    final profile = bundle.profile;
+    return [
+      Center(
+        child: Column(
+          children: [
+            ProfileAvatar(gender: profile.gender, size: 130),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('${profile.name} 어르신', style: AppTypography.sectionTitle),
+                const SizedBox(width: AppSpacing.sm),
+                const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: AppColors.textSub,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: AppSpacing.section),
+
+      _Section(
+        title: '기본 정보',
+        onEdit: () {},
+        child: Column(
+          children: [
+            _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
+            _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
+            _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
+            _InfoRow(
+              label: '현재 상태',
+              value: profile.stage?.label ?? unsupportedValueLabel,
+            ),
+            if (profile.symptomNote != null)
+              _InfoRow(label: '메모', value: profile.symptomNote!),
+          ],
+        ),
+      ),
+      const SizedBox(height: AppSpacing.section),
+
+      _Section(
+        title: '세부 정보',
+        onEdit: () {},
+        child: bundle.lifeFacts.isEmpty
+            ? const EmptyStateView(
+                message: '아직 담긴 이야기가 없어요.',
+                icon: Icons.notes_outlined,
+              )
+            : Column(
+                children: [
+                  for (final fact in bundle.lifeFacts)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                      child: _FactRow(fact: fact),
+                    ),
+                ],
+              ),
+      ),
+      const SizedBox(height: AppSpacing.lg),
+
+      SecondaryButton(label: '내용 추가하기', onPressed: () {}),
+      const SizedBox(height: AppSpacing.section),
+
+      _Section(
+        title: '갤러리',
+        onEdit: () {},
+        child: _Gallery(tags: bundle.photo.acceptedTags),
+      ),
+      const SizedBox(height: AppSpacing.section),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final profile = widget.bundle.profile;
     final bundle = widget.bundle;
 
     return ScreenBody(
@@ -148,79 +228,8 @@ class _BodyState extends State<_Body> {
         children: [
           const SizedBox(height: AppSpacing.lg),
 
-          Center(
-            child: Column(
-              children: [
-                ProfileAvatar(gender: profile.gender, size: 130),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${profile.name} 어르신',
-                      style: AppTypography.sectionTitle,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    const Icon(
-                      Icons.edit_outlined,
-                      size: 18,
-                      color: AppColors.textSub,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.section),
-
-          _Section(
-            title: '기본 정보',
-            onEdit: () {},
-            child: Column(
-              children: [
-                _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
-                _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
-                _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-                _InfoRow(
-                  label: '현재 상태',
-                  value: profile.stage?.label ?? unsupportedValueLabel,
-                ),
-                if (profile.symptomNote != null)
-                  _InfoRow(label: '메모', value: profile.symptomNote!),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.section),
-
-          _Section(
-            title: '세부 정보',
-            onEdit: () {},
-            child: bundle.lifeFacts.isEmpty
-                ? const EmptyStateView(
-                    message: '아직 담긴 이야기가 없어요.',
-                    icon: Icons.notes_outlined,
-                  )
-                : Column(
-                    children: [
-                      for (final fact in bundle.lifeFacts)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                          child: _FactRow(fact: fact),
-                        ),
-                    ],
-                  ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          SecondaryButton(label: '내용 추가하기', onPressed: () {}),
-          const SizedBox(height: AppSpacing.section),
-
-          _Section(
-            title: '갤러리',
-            onEdit: () {},
-            child: _Gallery(tags: bundle.photo.acceptedTags),
-          ),
-          const SizedBox(height: AppSpacing.section),
+          // 등록한 어르신이 없으면 계정 항목만 보여준다.
+          if (bundle != null) ..._elderSections(bundle),
 
           // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다. 어르신을
           // 바꿔도 같은 값이 보인다는 것을 알린다.

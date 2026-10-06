@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 
@@ -30,21 +32,23 @@ Future<bool> showRemoveProfileDialog(
   return removed ?? false;
 }
 
-/// 마지막 한 분을 지우려 할 때 띄운다.
+/// 등록한 어르신이 없을 때 어르신이 있어야 하는 기능을 누르면 띄운다.
 ///
-/// 남은 분이 없으면 앱을 쓸 수 없으므로 지우지 않고 회원 탈퇴를 안내한다.
-/// 회원 탈퇴로 가기를 누르면 `true` 다.
-Future<bool> showLastProfileDialog(BuildContext context) async {
-  final goWithdraw = await showDialog<bool>(
+/// 대화 카드, 면회, 리포트와 알림은 어르신을 등록하고 고른 뒤에 쓴다.
+/// `등록하러 가기` 를 누르면 함께하는 소중한 분 화면으로 간다.
+Future<void> showProfileRequiredDialog(BuildContext context) async {
+  final goRegister = await showDialog<bool>(
     context: context,
     builder: (context) => const _ChoiceDialog(
-      title: '마지막 한 분은 지울 수 없어요',
-      detail: '모든 정보를 지우려면\n회원 탈퇴를 해주세요.',
-      primaryLabel: '회원 탈퇴하러 가기',
+      title: '어르신을 먼저 등록해주세요',
+      detail: '함께하는 소중한 분을 등록한 뒤\n이용할 수 있어요.',
+      primaryLabel: '등록하러 가기',
       secondaryLabel: '닫기',
     ),
   );
-  return goWithdraw ?? false;
+  if ((goRegister ?? false) && context.mounted) {
+    context.push(AppRoutes.profileSwitch);
+  }
 }
 
 /// 제목, 설명과 두 버튼만 있는 창이다. 만남 끝내기 확인 창과 같은 모양이다.

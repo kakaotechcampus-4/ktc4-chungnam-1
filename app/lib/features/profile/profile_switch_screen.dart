@@ -11,7 +11,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import '../profile_setup/setup_controller.dart';
-import 'remove_profile_dialogs.dart';
+import 'profile_dialogs.dart';
 
 /// 함께하는 소중한 분.
 ///
@@ -24,7 +24,9 @@ import 'remove_profile_dialogs.dart';
 /// 홈의 전환 버튼이 넘어가는 순서다.
 ///
 /// 맨 아래 버튼으로 지우기를 시작하면 슬롯을 눌러 지울 분을 고른다. 한 번 더
-/// 물은 뒤 지운다.
+/// 물은 뒤 지운다. 마지막 분을 지우면 빈 슬롯만 남는다.
+///
+/// 등록한 분이 없을 때 어르신이 있어야 하는 기능을 누르면 이곳으로 온다.
 class ProfileSwitchScreen extends ConsumerStatefulWidget {
   const ProfileSwitchScreen({super.key});
 
@@ -77,7 +79,8 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
                     label: '지우지 않을게요',
                     onPressed: () => setState(() => _removing = false),
                   )
-                else
+                // 지울 분이 없으면 빈 슬롯만 보인다.
+                else if (profiles.isNotEmpty)
                   Center(
                     child: AppTextButton(
                       label: '소중한 분 정보 지우기',
@@ -160,15 +163,10 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
       ..showSnackBar(SnackBar(content: Text('지금부터 ${profile.name} 어르신과 함께해요')));
   }
 
-  /// 한 번 더 묻고 지운다. 마지막 한 분이면 지우지 않고 회원 탈퇴를 안내한다.
+  /// 한 번 더 묻고 지운다. 마지막 한 분도 지운다. 프로필 삭제는 계정 탈퇴가
+  /// 아니므로 계정은 남고 빈 슬롯만 보인다.
   Future<void> _remove(CareProfileSummary profile, String name) async {
     final profiles = ref.read(careProfilesProvider.notifier);
-    if (!profiles.canRemove(profile.id)) {
-      final goWithdraw = await showLastProfileDialog(context);
-      if (goWithdraw && mounted) context.push(AppRoutes.profileDelete);
-      return;
-    }
-
     final confirmed = await showRemoveProfileDialog(
       context,
       name: name,

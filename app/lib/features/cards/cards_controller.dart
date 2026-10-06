@@ -64,7 +64,7 @@ class CardsController extends AsyncNotifier<CardsState> {
   Future<CardsState> build() async {
     // 어르신을 바꾸면 처음부터 다시 고른다. 앞 어르신을 위해 고른 카드가 남으면
     // 다른 어르신과의 면회에 그대로 쓰일 수 있다.
-    ref.watch(careProfilesProvider.select((p) => p.selected.id));
+    ref.watch(careProfilesProvider.select((p) => p.selected?.id));
     final all = await ref.watch(conversationCardsProvider.future);
     // 배열의 앞 9장이 선택 화면 대상이다.
     final selectable = all.take(CardRules.selectableCount).toList();
