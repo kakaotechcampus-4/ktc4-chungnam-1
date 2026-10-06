@@ -131,14 +131,16 @@ def test_reserve_cards_are_added_once(migrated_database_url):
     user_id, session_id, cards = with_db(migrated_database_url, _session)
 
     added = _add(migrated_database_url, user_id, session_id, [cards[9]])
-    again = _add(migrated_database_url, user_id, session_id, [cards[9], cards[9]])
+    again = _add(migrated_database_url, user_id, session_id, [cards[9]])
 
     expected = [str(cards[0]), str(cards[9])]
     assert added.status_code == 200 and added.json()["selectedCardIds"] == expected
     assert again.status_code == 200 and again.json()["selectedCardIds"] == expected
 
 
-@pytest.mark.parametrize("pick", [[2], [9, 10, 11, 2]], ids=["main-card", "four-cards"])
+@pytest.mark.parametrize(
+    "pick", [[2], [9, 10, 11, 2], [9, 9]], ids=["main-card", "four-cards", "duplicate"]
+)
 def test_only_reserve_cards_can_be_added(migrated_database_url, pick):
     user_id, session_id, cards = with_db(migrated_database_url, _session)
 

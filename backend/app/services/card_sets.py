@@ -125,6 +125,8 @@ async def start_card_generation(
 # ── 4-1 처리 ──────────────────────────────────────────
 PROFILE_FIELDS = ("occupation", "hometown", "hobby", "family")
 EVIDENCE_KEYS = ("factId", "photoId", "profileField")
+# 근거 종류별 근거 항목의 키
+EVIDENCE_KEY = {"lifeFact": "factId", "photo": "photoId", "profile": "profileField"}
 # card_title, profile_topics.title이 VARCHAR(100)
 TITLE_MAX = 100
 # API 값 → DB 값
@@ -270,6 +272,8 @@ def result_problems(result: CardGenerationResult, context: CardContext) -> list[
         problems.append("한 묶음 안에 같은 기존 주제가 두 번 있다")
     fact_ids = {str(fact.fact_id) for fact in context.life_facts}
     photo_ids = {str(photo.photo_id) for photo in context.photos}
+    # 세부 정보 중 값이 있는 항목만 근거가 될 수 있음
+    filled_fields = {field for field in PROFILE_FIELDS if getattr(context.profile_facts, field)}
     for card in result.cards:
         if len(card.follow_up_questions) != 3:
             problems.append(f"{card.position}번: 꼬리 질문이 3개가 아니다")
@@ -283,14 +287,20 @@ def result_problems(result: CardGenerationResult, context: CardContext) -> list[
             problems.append(f"{card.position}번: 카드나 주제 제목이 {TITLE_MAX}자를 넘는다")
         if (card.evidence_source == "none") != (not card.evidence):
             problems.append(f"{card.position}번: 근거 종류와 근거 목록이 맞지 않는다")
+        elif any(
+            next(iter(item), None) != EVIDENCE_KEY.get(card.evidence_source) for item in card.evidence
+        ):
+            problems.append(f"{card.position}번: 근거 항목이 근거 종류와 다르다")
         for item in [*card.evidence, *(card.topic.evidence or [])]:
             key = next(iter(item), None)
             if len(item) != 1 or key not in EVIDENCE_KEYS:
                 problems.append(f"{card.position}번: 근거 항목 형식이 틀렸다")
             elif key == "profileField" and item[key] not in PROFILE_FIELDS:
                 problems.append(f"{card.position}번: 근거 항목 형식이 틀렸다")
-            elif (key == "factId" and item[key] not in fact_ids) or (
-                key == "photoId" and item[key] not in photo_ids
+            elif (
+                (key == "factId" and item[key] not in fact_ids)
+                or (key == "photoId" and item[key] not in photo_ids)
+                or (key == "profileField" and item[key] not in filled_fields)
             ):
                 problems.append(f"{card.position}번: context에 없는 근거")
     return problems

@@ -599,14 +599,14 @@ LLM은 ML API를 백엔드에서 이용.
 ```
 
 - 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
-- `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 주제는 겹치지 않는다.
-- `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나다.
+- `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
+- `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나이며, 카드의 근거 항목은 모두 `evidenceSource`와 같은 종류다(`lifeFact`는 `factId`, `photo`는 `photoId`, `profile`은 `profileField`). `profileField`는 context의 `profileFacts`에서 값이 있는 항목만 가리킨다.
 - `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 내용을 보지 않고 `generation_log`에만 남긴다.
 - `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
 
 검증과 저장
 
-- BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 한 묶음 안 주제 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 근거 항목 형식, `evidenceSource`와 `evidence`가 맞음. 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
+- BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, 카드별 `extra`).
 
 실패
@@ -684,7 +684,7 @@ LLM은 ML API를 백엔드에서 이용.
 }
 ```
 
-- `selectedCardIds`는 1~9개이며 해당 작업의 `position` 1~9 안에서 고른다.
+- `selectedCardIds`는 중복 없이 1~9개이며 해당 작업의 `position` 1~9 안에서 고른다.
 
 응답 `201` — [VisitSession](#visitsession), `sessionStatus`는 `evaluationPending`
 
@@ -731,7 +731,7 @@ LLM은 ML API를 백엔드에서 이용.
 { "cardIds": ["00000000-0000-4000-8000-000000000510"] }
 ```
 
-- 같은 묶음의 `position` 10~12 안에서 고른다(1~3개). 이미 더한 카드는 무시하므로 같은 요청을 다시 보내도 결과가 같다.
+- 같은 묶음의 `position` 10~12 안에서 중복 없이 고른다(1~3개). 이미 더한 카드는 무시하므로 같은 요청을 다시 보내도 결과가 같다.
 
 응답 `200` — [VisitSession](#visitsession)
 

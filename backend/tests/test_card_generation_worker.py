@@ -195,6 +195,9 @@ def test_generation_error_fails_the_job_with_its_code_and_input(migrated_databas
         lambda result: setattr(result.cards[1], "evidence", []),  # profile인데 근거 없음
         lambda result: setattr(result.cards[2], "evidence_source", "lifeFact")
         or setattr(result.cards[2], "evidence", [{"factId": "00000000-0000-4000-8000-000000000999"}]),
+        lambda result: setattr(result.cards[1], "evidence", [{"profileField": "hometown"}]),
+        lambda result: setattr(result.cards[2], "evidence_source", "lifeFact")
+        or setattr(result.cards[2], "evidence", [{"profileField": "hobby"}]),
         lambda result: setattr(result.cards[3], "card_title", "가" * 101),
         lambda result: setattr(result.cards[4].topic, "title", "   "),
     ],
@@ -204,6 +207,8 @@ def test_generation_error_fails_the_job_with_its_code_and_input(migrated_databas
         "unknown-profile-field",
         "missing-evidence",
         "unknown-fact",
+        "empty-profile-field",
+        "evidence-kind-mismatch",
         "long-title",
         "blank-topic-title",
     ],
