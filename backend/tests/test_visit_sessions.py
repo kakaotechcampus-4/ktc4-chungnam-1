@@ -1,4 +1,4 @@
-"""API 5절(면회 회차) 검증.
+"""API 5절(면회 회차) 검증: 5-1, 5-3.
 
 임시 DB에 최신 migration을 적용해 실행(`conftest.py`). 값은 모두 합성 데이터.
 """
@@ -13,6 +13,7 @@ from tests.card_fixtures import (
     make_app,
     query,
     user_and_profile,
+    visit_with,
     with_db,
 )
 from tests.support import request
@@ -107,3 +108,64 @@ def test_session_on_other_accounts_set_is_not_found(migrated_database_url):
 
     assert res.status_code == 404 and res.json()["errorCode"] == "CARD_GENERATION_NOT_FOUND"
     assert _session_count(migrated_database_url) == 0
+
+
+# ── 5-3 ──────────────────────────────────────────────
+async def _session(connection, *, evaluated=False):
+    user_id, profile_id = await user_and_profile(connection)
+    set_id, cards = await completed_card_set(connection, profile_id)
+    session_id = await visit_with(connection, profile_id, set_id, evaluated=evaluated)
+    await connection.execute(
+        "UPDATE conversation_cards SET selected = true WHERE card_id = %s", (cards[0],)
+    )
+    return user_id, session_id, cards
+
+
+def _add(database_url, user_id, session_id, card_ids):
+    app = make_app(database_url, user_id)
+    body = {"cardIds": [str(card_id) for card_id in card_ids]}
+    return request(app, "PATCH", f"/api/v1/visit-sessions/{session_id}/cards", json=body)
+
+
+def test_reserve_cards_are_added_once(migrated_database_url):
+    user_id, session_id, cards = with_db(migrated_database_url, _session)
+
+    added = _add(migrated_database_url, user_id, session_id, [cards[9]])
+    again = _add(migrated_database_url, user_id, session_id, [cards[9], cards[9]])
+
+    expected = [str(cards[0]), str(cards[9])]
+    assert added.status_code == 200 and added.json()["selectedCardIds"] == expected
+    assert again.status_code == 200 and again.json()["selectedCardIds"] == expected
+
+
+@pytest.mark.parametrize("pick", [[2], [9, 10, 11, 2]], ids=["main-card", "four-cards"])
+def test_only_reserve_cards_can_be_added(migrated_database_url, pick):
+    user_id, session_id, cards = with_db(migrated_database_url, _session)
+
+    res = _add(migrated_database_url, user_id, session_id, [cards[i] for i in pick])
+
+    assert res.status_code == 422
+
+
+def test_reserve_cards_are_refused_after_evaluation(migrated_database_url):
+    async def build(connection):
+        return await _session(connection, evaluated=True)
+
+    user_id, session_id, cards = with_db(migrated_database_url, build)
+
+    res = _add(migrated_database_url, user_id, session_id, [cards[10]])
+
+    assert res.status_code == 409 and res.json()["errorCode"] == "INVALID_SESSION_STATE"
+
+
+def test_reserve_cards_on_other_accounts_session_are_not_found(migrated_database_url):
+    async def build(connection):
+        _, session_id, cards = await _session(connection)
+        other_user, _ = await user_and_profile(connection)
+        return other_user, session_id, cards
+
+    other_user, session_id, cards = with_db(migrated_database_url, build)
+
+    res = _add(migrated_database_url, other_user, session_id, [cards[9]])
+
+    assert res.status_code == 404 and res.json()["errorCode"] == "VISIT_SESSION_NOT_FOUND"

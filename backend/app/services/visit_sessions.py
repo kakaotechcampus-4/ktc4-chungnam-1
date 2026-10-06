@@ -92,3 +92,34 @@ async def create_visit_session(
             (set_id, card_ids),
         )
     return session_id
+
+
+async def add_session_cards(connection: DbConnection, session_id: UUID, card_ids: list[UUID]) -> None:
+    """5-3. 보충 카드(10~12번)를 고른 카드에 더함. 이미 더한 카드는 넘어감. 평가 전에만 받음."""
+    async with connection.transaction():
+        cursor = await connection.execute(
+            "SELECT v.evaluated_at, s.set_id"
+            "  FROM visit_sessions v JOIN card_sets s ON s.session_id = v.session_id"
+            " WHERE v.session_id = %s FOR UPDATE OF v",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        if row["evaluated_at"] is not None:
+            raise AppError(
+                status_code=409,
+                error_code="INVALID_SESSION_STATE",
+                message="평가를 마친 면회에는 카드를 더할 수 없습니다.",
+            )
+        unique_ids = list(dict.fromkeys(card_ids))
+        cursor = await connection.execute(
+            "SELECT count(*) AS n FROM conversation_cards"
+            " WHERE set_id = %s AND card_id = ANY(%s) AND position BETWEEN 10 AND 12",
+            (row["set_id"], unique_ids),
+        )
+        if (await cursor.fetchone())["n"] != len(unique_ids):
+            raise _invalid_selection("면회 중에 더할 수 있는 카드는 이 묶음의 10~12번 카드입니다.")
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true"
+            " WHERE set_id = %s AND card_id = ANY(%s) AND NOT selected",
+            (row["set_id"], unique_ids),
+        )

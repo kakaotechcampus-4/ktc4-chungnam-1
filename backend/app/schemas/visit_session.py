@@ -16,8 +16,14 @@ class CreateVisitSessionRequest(CamelModel):
     selected_card_ids: list[UUID] = Field(min_length=1, max_length=9)
 
 
+class AddCardsRequest(CamelModel):
+    """5-3 요청. 10~12번 중 면회 중 꺼낸 보충 카드."""
+
+    card_ids: list[UUID] = Field(min_length=1, max_length=3)
+
+
 class VisitSession(CamelModel):
-    """5-1 응답."""
+    """5-1, 5-3 응답."""
 
     schema_version: Literal[1] = 1
     session_id: UUID
