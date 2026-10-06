@@ -1,8 +1,8 @@
-"""면회 회차(`visit_sessions`) 저장소. 작업 B 담당 범위(5-1, 5-3)만 둠.
+"""면회 회차(`visit_sessions`)의 생성(5-1)과 보충 카드 추가(5-3).
 
-회차 상태 계산은 C의 `load_visit_session` 담당. 그 함수가 들어오기 전까지 5-1, 5-3 응답은
-항상 평가 전이라 `sessionStatus = evaluationPending`, `participantCount`와 `analysisId`는 null
-(작업 B 문서).
+5-1, 5-3은 평가 전 회차만 다루므로 `VisitSession`의 `sessionStatus`는 `evaluationPending`,
+`participantCount`와 `analysisId`는 null로 둠. 평가 뒤 상태까지 계산하는 공용
+`load_visit_session`이 들어오면 그 함수로 바꿈.
 """
 
 from uuid import UUID
@@ -24,7 +24,7 @@ def _already_used() -> AppError:
 
 
 async def load_visit_session(connection: DbConnection, session_id: UUID) -> VisitSession:
-    """C의 `load_visit_session`이 들어오면 그걸로 바꿈. 평가 전 회차만 맞음."""
+    """`VisitSession`을 만듦. 평가 전 회차만 다루므로 `sessionStatus`는 `evaluationPending`으로 고정."""
     cursor = await connection.execute(
         "SELECT v.session_id, v.profile_id, v.started_at, s.set_id,"
         "       (SELECT photo_id FROM photos p WHERE p.session_id = v.session_id) AS photo_id"

@@ -1,4 +1,4 @@
-"""카드 묶음(`card_sets`) 저장소. 작업 B 담당.
+"""카드 묶음(`card_sets`)의 상태 계산, 조회, 생성 요청과 생성 처리.
 
 - 상태: 저장하지 않음. 가장 최근 묶음의 `status`, `session_id`, 그 회차의 `evaluated_at`으로 계산(API 명세 4절)
 - 4-1 처리: worker가 임대한 작업 하나를 처리. 생성 함수는 밖에서 받음
@@ -290,7 +290,8 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
 
 
 def result_problems(result: CardGenerationResult, context: CardContext) -> list[str]:
-    """저장 전 검증(API 명세 4-1 처리). 문제가 있으면 `INVALID_GENERATION_RESULT`로 실패 처리."""
+    """저장 전 검증(API 명세 4-1 처리). 문제 목록을 돌려줌. 하나라도 있으면 부르는 쪽에서
+    `INVALID_GENERATION_RESULT`로 실패 처리."""
     problems = []
     if sorted(card.position for card in result.cards) != list(range(1, 13)):
         problems.append("카드가 12장이 아니거나 position 1~12가 한 번씩이 아니다")

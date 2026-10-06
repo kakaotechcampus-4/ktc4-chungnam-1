@@ -1,4 +1,4 @@
-"""작업 B(카드·면회) 테스트의 합성 데이터와 앱 구성. 이름과 내용은 모두 합성."""
+"""카드·면회 테스트의 합성 데이터와 앱 구성. 이름과 내용은 모두 합성."""
 
 from datetime import UTC, datetime
 from typing import Any
