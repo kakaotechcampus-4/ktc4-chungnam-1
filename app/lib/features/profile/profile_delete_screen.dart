@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -73,6 +74,8 @@ class _BodyState extends ConsumerState<_Body> {
       _failure = null;
     });
 
+    // 탈퇴가 끝나면 세션이 비므로 지울 계정을 먼저 붙잡아 둔다.
+    final accountId = ref.read(sessionProvider)?.account.accountId;
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -87,6 +90,9 @@ class _BodyState extends ConsumerState<_Body> {
 
     if (!mounted) return;
     forgetCareProfiles(ref);
+    if (accountId != null) {
+      ref.read(reportNoticeProvider.notifier).forgetAccount(accountId);
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('탈퇴가 완료됐어요.')));
@@ -196,7 +202,10 @@ class _BodyState extends ConsumerState<_Body> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.ink, width: 2),
+                    borderSide: const BorderSide(
+                      color: AppColors.ink,
+                      width: 2,
+                    ),
                   ),
                 ),
               ),

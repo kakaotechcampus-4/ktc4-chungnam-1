@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/auth_providers.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 
@@ -168,7 +169,10 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
         ? ready.first.id
         : state.selectedId;
     state = CareProfiles(entries: entries, selectedId: selectedId);
-    ref.read(_reportNoticesProvider.notifier).dismiss(id);
+    ref.read(_reportNoticesProvider.notifier).dismiss((
+      accountId: ref.read(sessionProvider)?.account.accountId,
+      profileId: id,
+    ));
   }
 
   String _newId() => 'local-${_nextId++}';
@@ -299,86 +303,111 @@ enum ReportNotice {
   ready,
 }
 
-/// 어르신마다의 리포트 알림이다.
+/// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
+///
+/// [accountId] 가 `null` 이면 서버 계정 없이 들어온 경우다(아이디와 비밀번호
+/// 목 로그인).
+typedef _NoticeKey = ({String? accountId, String profileId});
+
+/// 계정과 어르신마다의 리포트 알림이다.
 ///
 /// 리포트를 기다리는 동안 다른 어르신으로 바꿔도, 도착은 기다리던 어르신에게
-/// 남는다. 화면은 이것을 직접 보지 않고 [reportNoticeProvider] 를 본다.
-class _ReportNoticesNotifier extends Notifier<Map<String, ReportNotice>> {
-  /// 어르신마다 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난
+/// 남는다. 계정도 마찬가지다. 로그아웃해도 지우지 않고, 다른 계정에는 보이지
+/// 않다가 그 계정으로 다시 들어오면 다시 보인다. 화면은 이것을 직접 보지 않고
+/// [reportNoticeProvider] 를 본다.
+///
+/// 앱이 켜져 있는 동안만 기억한다. 계정이 없어지면(탈퇴) 그 계정 몫을 지운다.
+class _ReportNoticesNotifier extends Notifier<Map<_NoticeKey, ReportNotice>> {
+  /// 자리마다 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난
   /// 기다림의 결과는 버린다.
-  final _rounds = <String, int>{};
+  final _rounds = <_NoticeKey, int>{};
 
   bool _gone = false;
 
   @override
-  Map<String, ReportNotice> build() {
+  Map<_NoticeKey, ReportNotice> build() {
     ref.onDispose(() => _gone = true);
     return const {};
   }
 
-  int _nextRound(String profileId) =>
-      _rounds[profileId] = (_rounds[profileId] ?? 0) + 1;
+  int _nextRound(_NoticeKey key) => _rounds[key] = (_rounds[key] ?? 0) + 1;
 
-  void _set(String profileId, ReportNotice? notice) {
-    final next = Map<String, ReportNotice>.from(state);
-    notice == null ? next.remove(profileId) : next[profileId] = notice;
+  void _set(_NoticeKey key, ReportNotice? notice) {
+    final next = Map<_NoticeKey, ReportNotice>.from(state);
+    notice == null ? next.remove(key) : next[key] = notice;
     state = next;
   }
 
-  void dismiss(String profileId) {
-    _nextRound(profileId);
-    _set(profileId, null);
+  void dismiss(_NoticeKey key) {
+    _nextRound(key);
+    _set(key, null);
   }
 
-  void arrive(String profileId) {
-    _nextRound(profileId);
-    _set(profileId, ReportNotice.ready);
+  void arrive(_NoticeKey key) {
+    _nextRound(key);
+    _set(key, ReportNotice.ready);
   }
 
-  void startGenerating(String profileId) {
-    final round = _nextRound(profileId);
-    _set(profileId, ReportNotice.generating);
+  void startGenerating(_NoticeKey key) {
+    final round = _nextRound(key);
+    _set(key, ReportNotice.generating);
 
     unawaited(
       ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
         // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
-        if (_gone || _rounds[profileId] != round) return;
-        _set(profileId, ReportNotice.ready);
+        if (_gone || _rounds[key] != round) return;
+        _set(key, ReportNotice.ready);
       }),
     );
+  }
+
+  /// 계정 하나의 알림을 모두 지운다. 기다리던 리포트가 늦게 와도 버린다.
+  void forgetAccount(String accountId) {
+    final keys = {
+      ...state.keys,
+      ..._rounds.keys,
+    }.where((k) => k.accountId == accountId).toList();
+    for (final key in keys) {
+      _nextRound(key);
+    }
+    state = {
+      for (final e in state.entries)
+        if (e.key.accountId != accountId) e.key: e.value,
+    };
   }
 }
 
 final _reportNoticesProvider =
-    NotifierProvider<_ReportNoticesNotifier, Map<String, ReportNotice>>(
+    NotifierProvider<_ReportNoticesNotifier, Map<_NoticeKey, ReportNotice>>(
       _ReportNoticesNotifier.new,
     );
 
-/// 지금 보고 있는 어르신의 리포트 알림이다.
+/// 지금 로그인한 계정과 보고 있는 어르신의 리포트 알림이다.
 ///
 /// 다른 어르신의 리포트가 도착해도 이 어르신의 홈에는 띄우지 않는다. 다른
-/// 어르신의 알림을 어떻게 알릴지는 PM 확인 전이다.
+/// 어르신의 알림을 어떻게 알릴지는 PM 확인 전이다. 다른 계정의 알림은 띄우지
+/// 않는다.
 class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   @override
   ReportNotice? build() {
+    final accountId = ref.watch(
+      sessionProvider.select((s) => s?.account.accountId),
+    );
     final profileId = ref.watch(
       careProfilesProvider.select((p) => p.selected.id),
     );
-    return ref.watch(_reportNoticesProvider.select((m) => m[profileId]));
+    final key = (accountId: accountId, profileId: profileId);
+    return ref.watch(_reportNoticesProvider.select((m) => m[key]));
   }
-
-  /// 부르는 순간의 어르신이다. 기다리는 동안 어르신을 바꿔도 도착은 이 어르신
-  /// 에게 남는다.
-  String get _profileId => ref.read(careProfilesProvider).selected.id;
 
   _ReportNoticesNotifier get _notices =>
       ref.read(_reportNoticesProvider.notifier);
 
   /// 변경 사항 확인을 마쳤다.
-  void dismiss() => _notices.dismiss(_profileId);
+  void dismiss() => _notices.dismiss(_currentNoticeKey(ref));
 
   /// 리포트가 만들어졌다.
-  void arrive() => _notices.arrive(_profileId);
+  void arrive() => _notices.arrive(_currentNoticeKey(ref));
 
   /// 리포트를 만들기 시작했다. 다 되면 스스로 도착으로 바뀐다.
   ///
@@ -386,8 +415,18 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   /// 맡기므로 서버를 붙일 때 `mockRepositoryProvider` 만 갈아 끼우면 된다
   /// (`ADR-005`). 기다림을 화면이 아니라 이 상태가 안고 있어, 사용자가 홈을
   /// 떠나 다른 화면을 보고 있어도 도착은 알려진다.
-  void startGenerating() => _notices.startGenerating(_profileId);
+  void startGenerating() => _notices.startGenerating(_currentNoticeKey(ref));
+
+  /// 탈퇴한 계정의 알림을 지운다. 세션이 지워진 뒤에 부르므로 계정을 받는다.
+  void forgetAccount(String accountId) => _notices.forgetAccount(accountId);
 }
+
+/// 부르는 순간의 계정과 어르신이다. 기다리는 동안 어르신이나 계정을 바꿔도
+/// 도착은 이 자리에 남는다.
+_NoticeKey _currentNoticeKey(Ref ref) => (
+  accountId: ref.read(sessionProvider)?.account.accountId,
+  profileId: ref.read(careProfilesProvider).selected.id,
+);
 
 final reportNoticeProvider =
     NotifierProvider<ReportNoticeNotifier, ReportNotice?>(
