@@ -1,6 +1,6 @@
 """카드 생성(API 4절) 형식. JSON 이름은 필드 이름에서 camelCase로 만듦.
 
-- 앱과 주고받음: 4-1·4-2 응답 `CardGenerationStatus`
+- 앱과 주고받음: 4-1·4-2 응답 `CardGenerationStatus`, 4-3 응답 `CardSet`
 - 생성 함수와 주고받음(4-1 처리): 요청 `CardGenerationRequest`, 결과 `CardGenerationResult`
 """
 
@@ -23,6 +23,34 @@ class CardGenerationStatus(CamelModel):
 
     schema_version: Literal[1] = 1
     status: Literal["none", "running", "ready", "inVisit", "failed"]
+
+
+class CardTopic(CamelModel):
+    topic_id: UUID
+    title: str
+    description: str
+
+
+class Card(CamelModel):
+    card_id: UUID
+    position: int
+    topic: CardTopic
+    card_title: str
+    description: str
+    primary_question: str
+    follow_up_questions: list[str]
+    evidence_source: Literal["lifeFact", "photo", "profile", "none"]
+    evidence: list[dict[str, str]]
+    selected: bool
+
+
+class CardSet(CamelModel):
+    """4-3 응답. 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음."""
+
+    schema_version: Literal[1] = 1
+    set_id: UUID
+    used_by_session_id: UUID | None
+    cards: list[Card]
 
 
 # ── 4-1 처리: 요청 ────────────────────────────────────

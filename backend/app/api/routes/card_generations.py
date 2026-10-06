@@ -5,8 +5,12 @@ from fastapi import APIRouter, Path, status
 
 from app.api.deps import CurrentAccountDep, DbConnectionDep, SettingsDep
 from app.core.errors import AppError
-from app.schemas.card_generation import CardGenerationStatus
-from app.services.card_sets import generation_status, start_card_generation
+from app.schemas.card_generation import CardGenerationStatus, CardSet
+from app.services.card_sets import (
+    current_card_set,
+    generation_status,
+    start_card_generation,
+)
 from app.services.ownership import PROFILE, require_owned
 
 
@@ -67,3 +71,19 @@ async def get_card_generation_status(
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
     return CardGenerationStatus(status=await generation_status(connection, profile_id))
+
+
+@router.get(
+    "/api/v1/profiles/{profile_id}/card-generations/current",
+    response_model=CardSet,
+    response_model_by_alias=True,
+)
+async def get_current_card_set(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    profile_id: Annotated[UUID, Path()],
+) -> CardSet:
+    """4-3. 지금 쓸 카드 묶음. 고르기 전과 평가 전 회차에 쓰는 중에 같은 묶음."""
+
+    await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
+    return await current_card_set(connection, profile_id)

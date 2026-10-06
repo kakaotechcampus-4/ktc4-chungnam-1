@@ -15,10 +15,14 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from app.core.database import DbConnection
+from app.core.errors import AppError
 from app.schemas.card_generation import (
+    Card,
     CardContext,
     CardGenerationRequest,
     CardGenerationResult,
+    CardSet,
+    CardTopic,
     LifeFact,
     PastCard,
     Photo,
@@ -30,6 +34,14 @@ from app.schemas.card_generation import (
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
 
 logger = logging.getLogger("saerok.card_generation")
+
+# DB 값 → API 값
+EVIDENCE_SOURCE = {
+    "life_fact": "lifeFact",
+    "photo": "photo",
+    "profile": "profile",
+    "none": "none",
+}
 
 
 async def _latest(connection: DbConnection, profile_id: UUID) -> dict[str, Any] | None:
@@ -55,6 +67,43 @@ def _status(latest: dict[str, Any] | None) -> str:
 async def generation_status(connection: DbConnection, profile_id: UUID) -> str:
     """`none`, `running`, `ready`, `inVisit`, `failed`."""
     return _status(await _latest(connection, profile_id))
+
+
+async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSet:
+    """4-3. 상태가 `ready`나 `inVisit`인 가장 최근 묶음. 없으면 404."""
+    latest = await _latest(connection, profile_id)
+    if _status(latest) not in ("ready", "inVisit"):
+        raise AppError(
+            status_code=404,
+            error_code="CARD_GENERATION_NOT_FOUND",
+            message="쓸 수 있는 카드 묶음이 없습니다.",
+        )
+    cursor = await connection.execute(
+        "SELECT c.card_id, c.position, c.topic_id, t.title, t.description,"
+        "       c.card_title, c.description AS card_description, c.primary_question,"
+        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected"
+        "  FROM conversation_cards c JOIN profile_topics t ON t.topic_id = c.topic_id"
+        " WHERE c.set_id = %s ORDER BY c.position",
+        (latest["set_id"],),
+    )
+    cards = [
+        Card(
+            card_id=row["card_id"],
+            position=row["position"],
+            topic=CardTopic(
+                topic_id=row["topic_id"], title=row["title"], description=row["description"]
+            ),
+            card_title=row["card_title"],
+            description=row["card_description"],
+            primary_question=row["primary_question"],
+            follow_up_questions=row["follow_up_questions"],
+            evidence_source=EVIDENCE_SOURCE[row["evidence_source"]],
+            evidence=row["evidence"],
+            selected=row["selected"],
+        )
+        for row in await cursor.fetchall()
+    ]
+    return CardSet(set_id=latest["set_id"], used_by_session_id=latest["session_id"], cards=cards)
 
 
 async def start_card_generation(

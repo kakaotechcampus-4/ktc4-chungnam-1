@@ -187,3 +187,77 @@ def test_status_of_other_accounts_profile_is_not_found(migrated_database_url):
 
     res = _status(migrated_database_url, other_user, profile_id)
     assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"
+
+
+# ── 4-3 ──────────────────────────────────────────────
+def _current(database_url, user_id, profile_id):
+    app = make_app(database_url, user_id)
+    return request(app, "GET", f"/api/v1/profiles/{profile_id}/card-generations/current")
+
+
+def test_ready_set_is_current(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, _ = await completed_card_set(connection, profile_id, profile_evidence=True)
+        return user_id, profile_id, set_id
+
+    user_id, profile_id, set_id = with_db(migrated_database_url, build)
+
+    body = _current(migrated_database_url, user_id, profile_id).json()
+
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "cards"}
+    assert body["setId"] == str(set_id) and body["usedBySessionId"] is None
+    assert [card["position"] for card in body["cards"]] == list(range(1, 13))
+    first = body["cards"][0]
+    assert first["topic"]["title"] == "합성 주제 1"
+    assert first["evidenceSource"] == "profile"
+    assert first["evidence"] == [{"profileField": "occupation"}]
+    assert len(first["followUpQuestions"]) == 3 and first["selected"] is False
+
+
+def test_set_stays_current_until_its_visit_is_evaluated(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=False)
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true WHERE card_id = %s", (cards[0],)
+        )
+        return user_id, profile_id, set_id, session_id
+
+    user_id, profile_id, set_id, session_id = with_db(migrated_database_url, build)
+
+    body = _current(migrated_database_url, user_id, profile_id).json()
+
+    assert body["setId"] == str(set_id) and body["usedBySessionId"] == str(session_id)
+    assert [card["selected"] for card in body["cards"][:2]] == [True, False]
+
+
+@pytest.mark.parametrize("state", ["none", "running", "failed", "evaluated"])
+def test_no_current_set(migrated_database_url, state):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        if state in ("running", "failed"):
+            await card_set_in(connection, profile_id, state)
+        if state == "evaluated":
+            set_id, _ = await completed_card_set(connection, profile_id)
+            await visit_with(connection, profile_id, set_id, evaluated=True)
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    res = _current(migrated_database_url, user_id, profile_id)
+    assert res.status_code == 404 and res.json()["errorCode"] == "CARD_GENERATION_NOT_FOUND"
+
+
+def test_current_of_other_accounts_profile_is_not_found(migrated_database_url):
+    async def build(connection):
+        _, profile_id = await user_and_profile(connection)
+        await completed_card_set(connection, profile_id)
+        other_user, _ = await user_and_profile(connection)
+        return other_user, profile_id
+
+    other_user, profile_id = with_db(migrated_database_url, build)
+
+    res = _current(migrated_database_url, other_user, profile_id)
+    assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"
