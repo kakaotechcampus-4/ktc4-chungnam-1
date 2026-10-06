@@ -18,6 +18,8 @@ import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 
+import 'sample_profile.dart';
+
 /// 리포트 도착 시점을 테스트가 직접 정하는 저장소다.
 class _WaitingRepository extends MockRepository {
   _WaitingRepository();
@@ -52,6 +54,28 @@ class _FakeSessionStore implements SessionStore {
   Future<void> clear() async => _session = null;
 }
 
+/// 로그인한 계정의 어르신 목록을 서버처럼 내려준다.
+///
+/// 앱은 아직 서버의 프로필 목록(`api-spec.md` 2-1)을 받지 않아 로그아웃하면
+/// 목록이 비고 다시 들어와도 빈 목록이다. 알림은 서버를 붙였을 때처럼 같은
+/// 계정에 같은 어르신이 돌아오는 경우를 기준으로 확인한다.
+class _ServerLikeProfiles extends CareProfilesNotifier {
+  @override
+  CareProfiles build() {
+    final accountId = ref.watch(
+      sessionProvider.select((s) => s?.account.accountId),
+    );
+    if (accountId == null) {
+      return const CareProfiles(entries: [], selectedId: null);
+    }
+    final id = 'profile-of-$accountId';
+    return CareProfiles(
+      entries: [CareProfileEntry(id: id, basicInfo: sampleBasicInfo)],
+      selectedId: id,
+    );
+  }
+}
+
 /// 합성 계정이다. 실제 사용자 정보가 아니다.
 AuthSession _sessionOf(String accountId) => AuthSession(
   accessToken: 'fake-token-$accountId',
@@ -75,6 +99,7 @@ void main() {
     repository = _WaitingRepository();
     container = ProviderContainer(
       overrides: [
+        careProfilesProvider.overrideWith(_ServerLikeProfiles.new),
         mockRepositoryProvider.overrideWithValue(repository),
         // 서버에 닿지 않아도 로그아웃은 된다. 알림만 보려고 서버를 끊어 둔다.
         authApiProvider.overrideWithValue(

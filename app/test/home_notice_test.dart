@@ -15,6 +15,8 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 
+import 'sample_profile.dart';
+
 /// 리포트 도착 시점을 테스트가 직접 정하는 저장소다.
 ///
 /// 시간을 재는 대신 [ready] 를 완료시켜 도착을 알린다. 서버를 붙일 때도 같은
@@ -41,7 +43,10 @@ void main() {
 
     final repository = _WaitingRepository();
     final container = ProviderContainer(
-      overrides: [mockRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        withSampleProfile,
+        mockRepositoryProvider.overrideWithValue(repository),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -170,7 +175,7 @@ void main() {
 
       // 합성 어르신을 한 분 더 등록한다. 등록을 마치면 그 분으로 바뀐다.
       final profiles = container.read(careProfilesProvider.notifier);
-      final firstId = container.read(careProfilesProvider).selectedId;
+      final firstId = container.read(careProfilesProvider).selectedId!;
       final addedId = profiles.beginAdding()!;
       profiles.completeAdding(
         addedId,
