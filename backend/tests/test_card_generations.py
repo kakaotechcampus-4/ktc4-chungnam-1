@@ -4,6 +4,8 @@
 카드는 worker가 만들므로 4-1은 `running` 작업만 만듦.
 """
 
+import pytest
+
 from tests.card_fixtures import (
     card_set_in,
     completed_card_set,
@@ -118,3 +120,70 @@ def test_other_accounts_profile_is_not_found(migrated_database_url):
 
     assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"
     assert _sets(migrated_database_url, profile_id) == []
+
+
+# ── 4-2 ──────────────────────────────────────────────
+def _status(database_url, user_id, profile_id):
+    app = make_app(database_url, user_id)
+    return request(app, "GET", f"/api/v1/profiles/{profile_id}/card-generations/status")
+
+
+def test_status_is_none_without_any_card_set(migrated_database_url):
+    user_id, profile_id = with_db(migrated_database_url, user_and_profile)
+
+    res = _status(migrated_database_url, user_id, profile_id)
+
+    assert res.status_code == 200 and res.json() == {"schemaVersion": 1, "status": "none"}
+
+
+@pytest.mark.parametrize("status", ["running", "failed"])
+def test_status_of_running_and_failed_sets(migrated_database_url, status):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        await card_set_in(connection, profile_id, status)
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    assert _status(migrated_database_url, user_id, profile_id).json()["status"] == status
+
+
+@pytest.mark.parametrize(
+    ("visit", "expected"),
+    [(None, "ready"), ("pending", "inVisit"), ("evaluated", "none")],
+)
+def test_status_of_a_completed_set_follows_its_visit(migrated_database_url, visit, expected):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, _ = await completed_card_set(connection, profile_id)
+        if visit:
+            await visit_with(connection, profile_id, set_id, evaluated=visit == "evaluated")
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    assert _status(migrated_database_url, user_id, profile_id).json()["status"] == expected
+
+
+def test_status_follows_only_the_latest_set(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        await completed_card_set(connection, profile_id)
+        await card_set_in(connection, profile_id, "running")
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    assert _status(migrated_database_url, user_id, profile_id).json()["status"] == "running"
+
+
+def test_status_of_other_accounts_profile_is_not_found(migrated_database_url):
+    async def build(connection):
+        _, profile_id = await user_and_profile(connection)
+        other_user, _ = await user_and_profile(connection)
+        return other_user, profile_id
+
+    other_user, profile_id = with_db(migrated_database_url, build)
+
+    res = _status(migrated_database_url, other_user, profile_id)
+    assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"

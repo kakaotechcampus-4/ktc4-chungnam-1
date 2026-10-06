@@ -51,3 +51,19 @@ async def create_card_generation(
         prompt_version=settings.card_generation_prompt_version,
     )
     return CardGenerationStatus(status="running")
+
+
+@router.get(
+    "/api/v1/profiles/{profile_id}/card-generations/status",
+    response_model=CardGenerationStatus,
+    response_model_by_alias=True,
+)
+async def get_card_generation_status(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    profile_id: Annotated[UUID, Path()],
+) -> CardGenerationStatus:
+    """4-2. 홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`."""
+
+    await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
+    return CardGenerationStatus(status=await generation_status(connection, profile_id))
