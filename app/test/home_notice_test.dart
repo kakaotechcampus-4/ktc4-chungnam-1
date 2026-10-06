@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 
@@ -160,6 +161,47 @@ void main() {
       expect(find.text('8월 21일 만남'), findsOneWidget);
       expect(find.text('리포트가 도착했어요'), findsOneWidget);
       expect(find.text('눌러서 확인하기'), findsOneWidget);
+    });
+  });
+
+  group('어르신 전환', () {
+    testWidgets('화살표로 바꾸면 그 분의 알림으로 바로 바뀐다', (tester) async {
+      final (container, repository) = await openHome(tester);
+
+      // 합성 어르신을 한 분 더 등록한다. 등록을 마치면 그 분으로 바뀐다.
+      final profiles = container.read(careProfilesProvider.notifier);
+      final firstId = container.read(careProfilesProvider).selectedId;
+      final addedId = profiles.beginAdding()!;
+      profiles.completeAdding(
+        addedId,
+        const EnteredBasicInfo(
+          name: '테스트',
+          gender: 'female',
+          birthDate: '1940-01-01',
+          stage: ConditionStage.unknown,
+        ),
+      );
+      profiles.select(firstId);
+      container.read(reportNoticeProvider.notifier).arrive();
+      await tester.pump();
+
+      expect(find.text('리포트가 도착했어요'), findsOneWidget);
+
+      Future<void> tapArrow() async {
+        await tester.runAsync(() async {
+          await tester.tap(find.byTooltip('다음 분 보기'));
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        });
+        await tester.pump();
+      }
+
+      await tapArrow();
+      expect(container.read(careProfilesProvider).selectedId, addedId);
+      expect(find.text('리포트가 도착했어요'), findsNothing);
+
+      await tapArrow();
+      expect(container.read(careProfilesProvider).selectedId, firstId);
+      expect(find.text('리포트가 도착했어요'), findsOneWidget);
     });
   });
 }
