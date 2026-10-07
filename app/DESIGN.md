@@ -201,13 +201,14 @@
 | `hobby` | 취미 |
 | `family` | 가족 |
 
-`ChangeProposal.changes[]` — 변경 제안의 종류.
+`ChangeProposal` — 변경 제안의 종류.
 
 | 값 | 문구 |
 | --- | --- |
-| `topicPriority` + `direction: up` | 더 자주 꺼내기 |
-| `topicPriority` + `direction: down` | 당분간 쉬어가기 |
-| `lifeFactAdd` | 새로 알게 된 이야기 |
+| `topicProposals[].suggestedAction: more` | 더 자주 꺼내기 |
+| `topicProposals[].suggestedAction: less` | 당분간 쉬어가기 |
+| `topicProposals[].suggestedAction: exclude` | 제외하기 |
+| `lifeFactProposals[]` | 새로 알게 된 이야기 |
 
 이 문구는 FE 가 화면을 만들며 정한 초안이다. 제품 문구로 확정하려면 PM 확인이 필요하다.
 
