@@ -577,82 +577,138 @@ class CaregiverEvaluation {
   final String? freeNote;
 }
 
-/// 변경 제안 하나의 검토 상태. 계약에 정의된 넷이다.
+/// 변경 제안 하나의 검토 상태. 계약에 정의된 셋이다.
 ///
-/// [reverted] 는 보호자가 승인해 프로필에 반영한 변경을 나중에 되돌린 정상
-/// 상태이며, 값을 읽지 못한 경우가 아니다. 이미지 분석 후보의
-/// [TagReviewStatus] 에는 이 값이 없다.
+/// 승인한 제안을 되돌리는 기능은 없다. 승인으로 만든 생애 사실은 일대기에서
+/// 직접 고친다.
 enum ChangeReviewStatus {
   pending,
   accepted,
-  rejected,
-  reverted;
+  rejected;
 
   static ChangeReviewStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
-class ProposedChange {
-  const ProposedChange({
-    required this.changeId,
-    required this.changeType,
+/// 주제 제안의 행동. AI 가 제안한 값(`suggestedAction`)과 보호자가 고른 값에
+/// 함께 쓴다.
+enum TopicAction {
+  more,
+  less,
+  exclude;
+
+  static TopicAction? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
+/// 일대기에 더할 생애 정보 제안. `life_fact_proposals` 에 대응한다.
+///
+/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title] 과
+/// [content] 뿐이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
+/// 그대로 들고 있다.
+class LifeFactProposal {
+  const LifeFactProposal({
+    required this.proposalId,
+    required this.title,
+    required this.content,
     required this.reason,
     required this.reviewStatus,
-    this.topicTitle,
-    this.direction,
-    this.text,
   });
 
-  factory ProposedChange.fromJson(Map<String, dynamic> json) => ProposedChange(
-    changeId: json['changeId'] as String,
-    changeType: json['changeType'] as String,
-    topicTitle: json['topicTitle'] as String?,
-    direction: json['direction'] as String?,
-    text: json['text'] as String?,
+  factory LifeFactProposal.fromJson(Map<String, dynamic> json) =>
+      LifeFactProposal(
+        proposalId: json['proposalId'] as String,
+        title: json['title'] as String,
+        content: json['content'] as String,
+        reason: json['reason'] as String,
+        reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
+      );
+
+  final String proposalId;
+
+  /// 100자 이하.
+  final String title;
+  final String content;
+  final String reason;
+  final ChangeReviewStatus? reviewStatus;
+}
+
+/// 주제 제안이 가리키는 주제. `profile_topics` 에 대응한다.
+class ProposalTopic {
+  const ProposalTopic({
+    required this.topicId,
+    required this.title,
+    this.description,
+  });
+
+  factory ProposalTopic.fromJson(Map<String, dynamic> json) => ProposalTopic(
+    topicId: json['topicId'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String?,
+  );
+
+  final String topicId;
+  final String title;
+
+  /// 제목만으로는 무슨 이야기였는지 떠올리기 어려워 함께 보여준다. 이 화면을
+  /// 위해 계약에 더한 값이다. 아직 서버가 보내지 않을 수 있어 없으면 제목만
+  /// 보여준다.
+  final String? description;
+}
+
+/// 다음 카드 생성에서 주제를 더 다룰지, 덜 다룰지, 제외할지에 대한 제안.
+/// `topic_proposals` 에 대응한다.
+///
+/// [suggestedAction] 과 [reason] 은 AI 의 제안이다. 보호자는 다른 행동을 고를
+/// 수 있고, 고른 값은 승인할 때 따로 보낸다.
+class TopicProposal {
+  const TopicProposal({
+    required this.proposalId,
+    required this.cardId,
+    required this.topic,
+    required this.suggestedAction,
+    required this.reason,
+    required this.reviewStatus,
+  });
+
+  factory TopicProposal.fromJson(Map<String, dynamic> json) => TopicProposal(
+    proposalId: json['proposalId'] as String,
+    cardId: json['cardId'] as String,
+    topic: ProposalTopic.fromJson(json['topic'] as Map<String, dynamic>),
+    suggestedAction: TopicAction.parse(json['suggestedAction'] as String),
     reason: json['reason'] as String,
     reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
   );
 
-  final String changeId;
-
-  /// `topicPriority` 또는 `lifeFactAdd`.
-  final String changeType;
-  final String? topicTitle;
-  final String? direction;
-  final String? text;
+  final String proposalId;
+  final String cardId;
+  final ProposalTopic topic;
+  final TopicAction? suggestedAction;
   final String reason;
-
   final ChangeReviewStatus? reviewStatus;
 }
 
-/// `proposalStatus` 값. 계약에 정의된 둘이다.
-enum ProposalStatus {
-  pendingReview,
-  reviewed;
-
-  static ProposalStatus? parse(String raw) =>
-      values.where((v) => v.name == raw).firstOrNull;
-}
-
+/// 한 회차의 변경 제안. API 7-3 의 응답이다.
 class ChangeProposal {
   const ChangeProposal({
-    required this.proposalId,
-    required this.reportId,
-    required this.proposalStatus,
-    required this.changes,
+    required this.sessionId,
+    required this.lifeFactProposals,
+    required this.topicProposals,
   });
 
   factory ChangeProposal.fromJson(Map<String, dynamic> json) => ChangeProposal(
-    proposalId: json['proposalId'] as String,
-    reportId: json['reportId'] as String,
-    proposalStatus: ProposalStatus.parse(json['proposalStatus'] as String),
-    changes: (json['changes'] as List)
-        .map((e) => ProposedChange.fromJson(e as Map<String, dynamic>))
+    sessionId: json['sessionId'] as String,
+    lifeFactProposals: (json['lifeFactProposals'] as List)
+        .map((e) => LifeFactProposal.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    topicProposals: (json['topicProposals'] as List)
+        .map((e) => TopicProposal.fromJson(e as Map<String, dynamic>))
         .toList(),
   );
 
-  final String proposalId;
-  final String reportId;
-  final ProposalStatus? proposalStatus;
-  final List<ProposedChange> changes;
+  final String sessionId;
+  final List<LifeFactProposal> lifeFactProposals;
+  final List<TopicProposal> topicProposals;
+
+  bool get isEmpty => lifeFactProposals.isEmpty && topicProposals.isEmpty;
 }

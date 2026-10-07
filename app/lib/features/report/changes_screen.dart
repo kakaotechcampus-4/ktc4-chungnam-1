@@ -13,9 +13,9 @@ import '../../widgets/app_surfaces.dart';
 
 /// G-2 변경 사항 확인.
 ///
-/// 계약이 정한 규칙은 다음과 같다.
-/// - 남겨 둔 항목은 `accepted`, 지운 항목은 `rejected` 로 저장한다.
-/// - 반영하면 `proposalStatus` 를 `reviewed` 로 바꾼다.
+/// 계약이 정한 규칙은 다음과 같다(API 7-3, 7-4).
+/// - 남겨 둔 항목은 `accepted`, 지운 항목은 `rejected` 로 보낸다.
+/// - 회차의 `pending` 제안을 모두 한 번에 보낸다.
 /// - 승인 전까지 프로필에 반영하지 않는다.
 ///
 /// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목을 화면
@@ -53,9 +53,9 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
           onRetry: () => ref.invalidate(changeProposalProvider),
         ),
         data: (data) => _Body(
-          changes: data.changes
-              .where((c) => !_removed.contains(c.changeId))
-              .toList(),
+          changes: _ChangeItem.listOf(
+            data,
+          ).where((c) => !_removed.contains(c.id)).toList(),
           expandedId: _expandedId,
           onExpand: (id) =>
               setState(() => _expandedId = _expandedId == id ? null : id),
@@ -82,7 +82,7 @@ class _Body extends StatelessWidget {
     required this.onApply,
   });
 
-  final List<ProposedChange> changes;
+  final List<_ChangeItem> changes;
   final String? expandedId;
   final ValueChanged<String> onExpand;
   final ValueChanged<String> onRemove;
@@ -123,9 +123,9 @@ class _Body extends StatelessWidget {
             for (final change in changes) ...[
               _ChangeCard(
                 change: change,
-                expanded: expandedId == change.changeId,
-                onTap: () => onExpand(change.changeId),
-                onRemove: () => onRemove(change.changeId),
+                expanded: expandedId == change.id,
+                onTap: () => onExpand(change.id),
+                onRemove: () => onRemove(change.id),
               ),
               const SizedBox(height: AppSpacing.lg),
             ],
@@ -135,6 +135,47 @@ class _Body extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 화면에 보여줄 제안 한 건. 주제 제안과 생애 정보 제안을 한 목록으로 편다.
+class _ChangeItem {
+  const _ChangeItem({
+    required this.id,
+    required this.kindLabel,
+    required this.title,
+    required this.reason,
+  });
+
+  /// 주제 제안을 먼저, 생애 정보 제안을 뒤에 둔다.
+  static List<_ChangeItem> listOf(ChangeProposal proposal) => [
+    for (final topic in proposal.topicProposals)
+      _ChangeItem(
+        id: topic.proposalId,
+        kindLabel: _actionLabel(topic.suggestedAction),
+        title: topic.topic.title,
+        reason: topic.reason,
+      ),
+    for (final fact in proposal.lifeFactProposals)
+      _ChangeItem(
+        id: fact.proposalId,
+        kindLabel: '새로 알게 된 이야기',
+        title: fact.content,
+        reason: fact.reason,
+      ),
+  ];
+
+  /// 계약상 `suggestedAction` 은 `more`, `less`, `exclude` 셋이다.
+  static String _actionLabel(TopicAction? action) => switch (action) {
+    TopicAction.more => '더 자주 꺼내기',
+    TopicAction.less => '당분간 쉬어가기',
+    TopicAction.exclude => '제외하기',
+    null => unsupportedValueLabel,
+  };
+
+  final String id;
+  final String kindLabel;
+  final String title;
+  final String reason;
 }
 
 /// 변경 제안 한 건.
@@ -148,7 +189,7 @@ class _ChangeCard extends StatelessWidget {
     required this.onRemove,
   });
 
-  final ProposedChange change;
+  final _ChangeItem change;
   final bool expanded;
   final VoidCallback onTap;
   final VoidCallback onRemove;
@@ -169,7 +210,7 @@ class _ChangeCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(child: AppChip(_kindLabel)),
+              Expanded(child: AppChip(change.kindLabel)),
               IconButton(
                 onPressed: onRemove,
                 tooltip: '이 제안 지우기',
@@ -189,7 +230,7 @@ class _ChangeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: AppSpacing.md),
-                Text(_title, style: AppTypography.sectionTitle),
+                Text(change.title, style: AppTypography.sectionTitle),
 
                 if (expanded) ...[
                   const SizedBox(height: AppSpacing.lg),
@@ -226,17 +267,4 @@ class _ChangeCard extends StatelessWidget {
       ),
     );
   }
-
-  /// 계약상 `changeType` 은 `topicPriority` 와 `lifeFactAdd` 둘이고,
-  /// `direction` 은 `up` 과 `down` 이다.
-  String get _kindLabel {
-    if (change.changeType == 'lifeFactAdd') return '새로 알게 된 이야기';
-    return change.direction == 'up' ? '더 자주 꺼내기' : '당분간 쉬어가기';
-  }
-
-  /// `topicPriority` 는 주제 이름을, `lifeFactAdd` 는 더할 이야기를 보여준다.
-  /// 계약상 `lifeFactAdd` 는 `topicTitle` 을 갖지 않는다.
-  String get _title => change.changeType == 'lifeFactAdd'
-      ? (change.text ?? '')
-      : (change.topicTitle ?? '');
 }

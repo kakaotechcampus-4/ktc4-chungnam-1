@@ -193,27 +193,26 @@ void main() {
       );
     });
 
-    test('변경 제안은 두 가지 타입만 쓴다', () async {
+    test('주제 제안은 고른 카드당 하나이고 계약의 행동만 쓴다', () async {
+      const repository = MockRepository();
+      final proposal = await repository.loadChangeProposal();
+      final session = await repository.loadVisitSession();
+
+      final cardIds = proposal.topicProposals.map((p) => p.cardId).toList();
+      expect(cardIds.toSet(), hasLength(cardIds.length), reason: '카드당 최대 1개');
+      for (final topic in proposal.topicProposals) {
+        expect(session.selectedCardIds, contains(topic.cardId));
+        expect(topic.suggestedAction, isNotNull, reason: topic.proposalId);
+      }
+    });
+
+    test('생애 정보 제안은 제목과 내용을 비우지 않는다', () async {
       final proposal = await const MockRepository().loadChangeProposal();
 
-      for (final change in proposal.changes) {
-        expect(
-          change.changeType,
-          anyOf('topicPriority', 'lifeFactAdd'),
-          reason: change.changeId,
-        );
-        if (change.changeType == 'topicPriority') {
-          expect(change.direction, anyOf('up', 'down'));
-          expect(change.topicTitle, isNotNull);
-          expect(change.text, isNull, reason: 'topicPriority 는 text 를 갖지 않는다');
-        } else {
-          expect(change.text, isNotNull);
-          expect(
-            change.topicTitle,
-            isNull,
-            reason: 'lifeFactAdd 는 topicTitle 을 갖지 않는다',
-          );
-        }
+      for (final fact in proposal.lifeFactProposals) {
+        expect(fact.title.trim(), isNotEmpty, reason: fact.proposalId);
+        expect(fact.title.length, lessThanOrEqualTo(100));
+        expect(fact.content.trim(), isNotEmpty, reason: fact.proposalId);
       }
     });
   });
