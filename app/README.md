@@ -69,7 +69,7 @@
 | `/visit/review` | 보호자 소감 | F-1 |
 | `/visit/review/done` | 보호자 위로 | 설계 없음, PM 초안 |
 | `/report/:reportId` | 리포트 | G-1 |
-| `/report/:reportId/changes` | 변경 사항 확인 | G-2 |
+| `/report/:reportId/changes` | 변경 사항 확인. 대화 주제와 일대기에 추가 두 구역으로 나눈다 | G-2 |
 | `/profile` | 프로필 설정 | MYPAGE |
 | `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |

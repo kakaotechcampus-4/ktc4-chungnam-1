@@ -105,14 +105,8 @@ class _Body extends StatelessWidget {
             style: AppTypography.screenTitle,
           ),
           const SizedBox(height: AppSpacing.md),
-          const Text('남겨두신 것만 프로필에 반영해요.', style: AppTypography.body),
+          const Text('남겨두신 것만 반영해요.', style: AppTypography.body),
           const SizedBox(height: AppSpacing.xl),
-
-          Text(
-            changes.isEmpty ? '반영할 항목이 없어요' : '${changes.length}개를 반영해요',
-            style: AppTypography.sub,
-          ),
-          const SizedBox(height: AppSpacing.lg),
 
           if (changes.isEmpty)
             const EmptyStateView(
@@ -120,17 +114,58 @@ class _Body extends StatelessWidget {
               icon: Icons.inbox_outlined,
             )
           else
-            for (final change in changes) ...[
-              _ChangeCard(
-                change: change,
-                expanded: expandedId == change.id,
-                onTap: () => onExpand(change.id),
-                onRemove: () => onRemove(change.id),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
+            for (final kind in _ChangeKind.values)
+              if (changes.any((c) => c.kind == kind)) ...[
+                _SectionHeader(kind: kind),
+                for (final change in changes.where((c) => c.kind == kind)) ...[
+                  _ChangeCard(
+                    change: change,
+                    expanded: expandedId == change.id,
+                    onTap: () => onExpand(change.id),
+                    onRemove: () => onRemove(change.id),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+              ],
 
           const SizedBox(height: AppSpacing.lg),
+        ],
+      ),
+    );
+  }
+}
+
+/// 제안이 반영되는 곳. 화면을 이 순서로 나눈다.
+enum _ChangeKind {
+  /// 주제 제안. 다음 대화 카드를 만들 때 반영한다.
+  topic('대화 주제', '다음 대화 카드를 만들 때 반영해요.'),
+
+  /// 생애 정보 제안. 승인하면 일대기의 이야기가 된다.
+  lifeFact('일대기에 추가', '남겨두신 이야기를 일대기에 더해요.');
+
+  const _ChangeKind(this.title, this.description);
+
+  final String title;
+  final String description;
+}
+
+/// 구역 이름과 무엇이 어디에 반영되는지 알려주는 한 줄.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.kind});
+
+  final _ChangeKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(kind.title, style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.xs),
+          Text(kind.description, style: AppTypography.sub),
         ],
       ),
     );
@@ -140,6 +175,7 @@ class _Body extends StatelessWidget {
 /// 화면에 보여줄 제안 한 건. 주제 제안과 생애 정보 제안을 한 목록으로 편다.
 class _ChangeItem {
   const _ChangeItem({
+    required this.kind,
     required this.id,
     required this.kindLabel,
     required this.title,
@@ -150,6 +186,7 @@ class _ChangeItem {
   static List<_ChangeItem> listOf(ChangeProposal proposal) => [
     for (final topic in proposal.topicProposals)
       _ChangeItem(
+        kind: _ChangeKind.topic,
         id: topic.proposalId,
         kindLabel: _actionLabel(topic.suggestedAction),
         title: topic.topic.title,
@@ -157,6 +194,7 @@ class _ChangeItem {
       ),
     for (final fact in proposal.lifeFactProposals)
       _ChangeItem(
+        kind: _ChangeKind.lifeFact,
         id: fact.proposalId,
         kindLabel: '새로 알게 된 이야기',
         title: fact.content,
@@ -172,6 +210,7 @@ class _ChangeItem {
     null => unsupportedValueLabel,
   };
 
+  final _ChangeKind kind;
   final String id;
   final String kindLabel;
   final String title;
