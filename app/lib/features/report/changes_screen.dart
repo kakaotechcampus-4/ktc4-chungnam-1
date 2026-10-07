@@ -23,11 +23,11 @@ import 'story_edit_screen.dart';
 /// 고를 수 있다. 제외하기도 그중 하나다. 생애 정보 제안은 보호자가 제목과
 /// 내용을 고칠 수 있다.
 ///
-/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목, 고른
-/// 행동과 고친 이야기를 화면 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로
-/// 이동한다.
-/// 저장은 BE 가 단말 저장 인터페이스를 확정한 뒤 붙인다. `app/README.md` 의
-/// 영역 구분을 따른다.
+/// 반영 버튼을 누르면 남긴 항목, 고른 행동과 고친 이야기로 7-4 요청
+/// ([ProposalReview]) 을 만들어 저장소에 넘기고, 리포트 알림을 지운 뒤 홈으로
+/// 간다. 요청의 `action`, `title`, `content` 는 이 화면을 위해 계약에 더한
+/// 값이다. **지금은 목 데이터 단계라 저장소가 아무 데도 보내지 않는다.**
+/// 서버를 붙이면 [MockRepository.submitProposalReview] 자리가 바뀐다.
 class ReportChangesScreen extends ConsumerStatefulWidget {
   const ReportChangesScreen({required this.reportId, super.key});
 
@@ -51,6 +51,9 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
 
   /// 이유를 펼친 제안. 한 번에 하나만 펼친다.
   String? _expandedId;
+
+  /// 반영을 보내는 중. 두 번 보내지 않도록 버튼을 막는다.
+  bool _submitting = false;
 
   void _toggleReason(String id) =>
       setState(() => _expandedId = _expandedId == id ? null : id);
@@ -80,6 +83,46 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
     if (_expandedId == id) _expandedId = null;
   });
 
+  /// 남긴 주제의 최종 행동. 보호자가 고르지 않았으면 AI 제안이다.
+  TopicAction? _actionOf(TopicProposal topic) =>
+      _chosen[topic.proposalId] ?? topic.suggestedAction;
+
+  /// 회차의 제안을 모두 담은 7-4 요청을 만든다. 남긴 항목은 `accepted`, 뺀
+  /// 항목은 `rejected` 다. 모두 뺐으면 `반영하지 않고 마치기` 와 같다.
+  ProposalReview _review(ChangeProposal proposal) => ProposalReview(
+    lifeFacts: [
+      for (final fact in proposal.lifeFactProposals)
+        if (_removed.contains(fact.proposalId))
+          LifeFactReview.rejected(proposalId: fact.proposalId)
+        else
+          LifeFactReview.accepted(
+            proposalId: fact.proposalId,
+            title: _edited[fact.proposalId]?.title ?? fact.title,
+            content: _edited[fact.proposalId]?.content ?? fact.content,
+          ),
+    ],
+    topics: [
+      for (final topic in proposal.topicProposals)
+        if (_removed.contains(topic.proposalId))
+          TopicReview.rejected(proposalId: topic.proposalId)
+        else
+          TopicReview.accepted(
+            proposalId: topic.proposalId,
+            action: _actionOf(topic)!,
+          ),
+    ],
+  );
+
+  Future<void> _apply(ChangeProposal proposal) async {
+    setState(() => _submitting = true);
+    await ref
+        .read(mockRepositoryProvider)
+        .submitProposalReview(proposal.sessionId, _review(proposal));
+    if (!mounted) return;
+    ref.read(reportNoticeProvider.notifier).dismiss();
+    context.go(AppRoutes.home);
+  }
+
   @override
   Widget build(BuildContext context) {
     final proposal = ref.watch(changeProposalProvider);
@@ -100,12 +143,13 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
               .where((f) => !_removed.contains(f.proposalId))
               .toList();
 
+          // AI 제안을 읽지 못했고 보호자도 고르지 않은 주제는 보낼 행동이 없다.
+          final undecided = topics.any((t) => _actionOf(t) == null);
+
           return _Body(
             empty: topics.isEmpty && facts.isEmpty,
-            onApply: () {
-              ref.read(reportNoticeProvider.notifier).dismiss();
-              context.go(AppRoutes.home);
-            },
+            undecided: undecided,
+            onApply: _submitting || undecided ? null : () => _apply(data),
             sections: [
               if (topics.isNotEmpty)
                 _Section(
@@ -152,21 +196,41 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
 class _Body extends StatelessWidget {
   const _Body({
     required this.empty,
+    required this.undecided,
     required this.sections,
     required this.onApply,
   });
 
   final bool empty;
+
+  /// 행동을 고르지 않은 주제가 남아 반영할 수 없다.
+  final bool undecided;
   final List<_Section> sections;
-  final VoidCallback onApply;
+
+  /// `null` 이면 반영 버튼을 막는다.
+  final VoidCallback? onApply;
 
   @override
   Widget build(BuildContext context) {
     return ScreenBody(
       scrollable: true,
-      bottom: PrimaryButton(
-        label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
-        onPressed: onApply,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (undecided) ...[
+            const Text(
+              '어떻게 할지 고르지 않은 주제가 있어요.',
+              style: AppTypography.sub,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          PrimaryButton(
+            label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
+            onPressed: onApply,
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

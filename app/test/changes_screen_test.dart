@@ -3,7 +3,8 @@
 // 주제 제안은 다음 대화 카드에, 생애 정보 제안은 일대기에 반영된다. 반영되는
 // 곳이 다르므로 두 구역으로 나눠 보여준다. 주제 카드는 AI 제안이 처음에
 // 골라져 있고 보호자가 다른 행동을 고를 수 있다. 이야기 카드는 수정 화면에서
-// 제목과 내용을 고칠 수 있다. 값은 모두 합성이다.
+// 제목과 내용을 고칠 수 있다. 반영하면 넓힌 API 7-4 요청 모양으로 저장소에
+// 넘긴다. 값은 모두 합성이다.
 
 import 'dart:ui' show Tristate;
 
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:saerok/app/routes.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
@@ -31,6 +33,21 @@ const _topic = TopicProposal(
   reviewStatus: ChangeReviewStatus.pending,
 );
 
+/// 넘겨받은 7-4 요청을 기록하는 저장소. 아무 데도 보내지 않는다.
+class _RecordingRepository extends MockRepository {
+  String? sessionId;
+  Map<String, dynamic>? sent;
+
+  @override
+  Future<void> submitProposalReview(
+    String sessionId,
+    ProposalReview review,
+  ) async {
+    this.sessionId = sessionId;
+    sent = review.toJson();
+  }
+}
+
 const _fact = LifeFactProposal(
   proposalId: 'life_fact_proposal_test_001',
   title: '합성 제목',
@@ -44,6 +61,7 @@ Future<void> _open(
   List<TopicProposal> topics = const [_topic],
   List<LifeFactProposal> facts = const [_fact],
   double textScale = 1,
+  MockRepository repository = const MockRepository(),
 }) async {
   // 기준 화면 412 x 917 dp 보다 길게 잡아 스크롤 없이 모두 본다.
   tester.view.physicalSize = const Size(1236, 4800);
@@ -55,6 +73,7 @@ Future<void> _open(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        mockRepositoryProvider.overrideWithValue(repository),
         changeProposalProvider.overrideWith(
           (ref) async => ChangeProposal(
             sessionId: 'session_test_001',
@@ -73,6 +92,10 @@ Future<void> _open(
               path: AppRoutes.reportChanges,
               builder: (context, state) =>
                   const ReportChangesScreen(reportId: 'report_test_001'),
+            ),
+            GoRoute(
+              path: AppRoutes.home,
+              builder: (context, state) => const Scaffold(body: Text('홈 화면')),
             ),
             GoRoute(
               path: AppRoutes.storyEdit,
@@ -106,6 +129,15 @@ TextField _field(String label) =>
 
 FilledButton _doneButton(WidgetTester tester) =>
     tester.widget<FilledButton>(find.widgetWithText(FilledButton, '수정 완료'));
+
+FilledButton _applyButton(WidgetTester tester, String label) =>
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
+
+/// 아래 반영 버튼을 누르고 홈으로 갈 때까지 기다린다.
+Future<void> _apply(WidgetTester tester, String label) async {
+  await tester.tap(find.widgetWithText(FilledButton, label));
+  await tester.pumpAndSettle();
+}
 
 /// 첫 이야기 카드의 수정 화면을 연다.
 Future<void> _openEditor(WidgetTester tester) async {
@@ -491,6 +523,158 @@ void main() {
 
       expect(find.textContaining('고칠 이야기를 찾지 못했어요.'), findsOneWidget);
       expect(find.text('수정 완료'), findsNothing);
+    });
+  });
+
+  group('반영하기', () {
+    testWidgets('그대로 반영하면 AI 제안과 원래 이야기를 accepted 로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(tester, repository: repository);
+
+      await _apply(tester, '이대로 반영하기');
+
+      expect(repository.sessionId, 'session_test_001');
+      expect(repository.sent, {
+        'lifeFacts': [
+          {
+            'proposalId': 'life_fact_proposal_test_001',
+            'reviewStatus': 'accepted',
+            'title': '합성 제목',
+            'content': '합성 이야기 내용',
+          },
+        ],
+        'topics': [
+          {
+            'proposalId': 'topic_proposal_test_001',
+            'reviewStatus': 'accepted',
+            'action': 'more',
+          },
+        ],
+      });
+      expect(find.text('홈 화면'), findsOneWidget);
+    });
+
+    testWidgets('고른 행동과 고친 이야기를 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(tester, repository: repository);
+
+      await tester.tap(find.text('제외하기'));
+      await tester.pumpAndSettle();
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '고친 제목');
+      await tester.enterText(_fieldFinder('내용'), '고친 내용');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      await _apply(tester, '이대로 반영하기');
+
+      final sent = repository.sent!;
+      expect((sent['topics'] as List).single, {
+        'proposalId': 'topic_proposal_test_001',
+        'reviewStatus': 'accepted',
+        'action': 'exclude',
+      });
+      expect((sent['lifeFacts'] as List).single, {
+        'proposalId': 'life_fact_proposal_test_001',
+        'reviewStatus': 'accepted',
+        'title': '고친 제목',
+        'content': '고친 내용',
+      });
+    });
+
+    testWidgets('뺀 항목은 rejected 만 보내고 남긴 항목은 그대로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(tester, repository: repository);
+
+      // 주제 카드가 첫 번째다.
+      await _remove(tester, 0);
+      await _apply(tester, '이대로 반영하기');
+
+      final sent = repository.sent!;
+      expect((sent['topics'] as List).single, {
+        'proposalId': 'topic_proposal_test_001',
+        'reviewStatus': 'rejected',
+      });
+      expect(
+        ((sent['lifeFacts'] as List).single as Map)['reviewStatus'],
+        'accepted',
+      );
+    });
+
+    testWidgets('모두 빼고 마치면 모든 제안을 rejected 로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(tester, repository: repository);
+
+      await _remove(tester, 0);
+      await _remove(tester, 0);
+      await _apply(tester, '반영하지 않고 마치기');
+
+      expect(repository.sent, {
+        'lifeFacts': [
+          {
+            'proposalId': 'life_fact_proposal_test_001',
+            'reviewStatus': 'rejected',
+          },
+        ],
+        'topics': [
+          {'proposalId': 'topic_proposal_test_001', 'reviewStatus': 'rejected'},
+        ],
+      });
+    });
+
+    testWidgets('행동을 고르지 않은 주제가 있으면 반영을 막고 알린다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [],
+        topics: const [
+          TopicProposal(
+            proposalId: 'topic_proposal_test_003',
+            cardId: 'card_test_003',
+            topic: ProposalTopic(topicId: 'topic_test_003', title: '합성 주제'),
+            suggestedAction: null,
+            reason: '합성 이유',
+            reviewStatus: ChangeReviewStatus.pending,
+          ),
+        ],
+      );
+
+      expect(find.text('어떻게 할지 고르지 않은 주제가 있어요.'), findsOneWidget);
+      expect(_applyButton(tester, '이대로 반영하기').onPressed, isNull);
+
+      await tester.tap(find.text('당분간 쉬어가기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('어떻게 할지 고르지 않은 주제가 있어요.'), findsNothing);
+      await _apply(tester, '이대로 반영하기');
+      expect(
+        ((repository.sent!['topics'] as List).single as Map)['action'],
+        'less',
+      );
+    });
+
+    testWidgets('고르지 않은 주제를 빼면 반영할 수 있다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [
+          TopicProposal(
+            proposalId: 'topic_proposal_test_003',
+            cardId: 'card_test_003',
+            topic: ProposalTopic(topicId: 'topic_test_003', title: '합성 주제'),
+            suggestedAction: null,
+            reason: '합성 이유',
+            reviewStatus: ChangeReviewStatus.pending,
+          ),
+        ],
+      );
+
+      await _remove(tester, 0);
+
+      expect(_applyButton(tester, '이대로 반영하기').onPressed, isNotNull);
     });
   });
 }

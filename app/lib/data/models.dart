@@ -712,3 +712,72 @@ class ChangeProposal {
 
   bool get isEmpty => lifeFactProposals.isEmpty && topicProposals.isEmpty;
 }
+
+/// 주제 제안 하나의 검토 결과. API 7-4 요청의 `topics[]` 한 항목이다.
+///
+/// [action] 은 보호자가 최종으로 고른 행동이다. AI 제안을 그대로 둔 경우도
+/// 담는다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에 더한 것이다.
+class TopicReview {
+  const TopicReview.accepted({required this.proposalId, required this.action})
+    : reviewStatus = ChangeReviewStatus.accepted;
+
+  const TopicReview.rejected({required this.proposalId})
+    : reviewStatus = ChangeReviewStatus.rejected,
+      action = null;
+
+  final String proposalId;
+  final ChangeReviewStatus reviewStatus;
+  final TopicAction? action;
+
+  Map<String, dynamic> toJson() => {
+    'proposalId': proposalId,
+    'reviewStatus': reviewStatus.name,
+    if (action != null) 'action': action!.name,
+  };
+}
+
+/// 생애 정보 제안 하나의 검토 결과. API 7-4 요청의 `lifeFacts[]` 한 항목이다.
+///
+/// [title] 과 [content] 는 일대기에 저장할 최종 값이다. 보호자가 고치지 않았으면
+/// 제안 그대로다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에
+/// 더한 것이다.
+class LifeFactReview {
+  const LifeFactReview.accepted({
+    required this.proposalId,
+    required this.title,
+    required this.content,
+  }) : reviewStatus = ChangeReviewStatus.accepted;
+
+  const LifeFactReview.rejected({required this.proposalId})
+    : reviewStatus = ChangeReviewStatus.rejected,
+      title = null,
+      content = null;
+
+  final String proposalId;
+  final ChangeReviewStatus reviewStatus;
+  final String? title;
+  final String? content;
+
+  Map<String, dynamic> toJson() => {
+    'proposalId': proposalId,
+    'reviewStatus': reviewStatus.name,
+    if (title != null) 'title': title,
+    if (content != null) 'content': content,
+  };
+}
+
+/// 한 회차의 변경 제안 검토. API 7-4 요청이다.
+///
+/// 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, 뺀
+/// 항목은 `rejected` 다.
+class ProposalReview {
+  const ProposalReview({required this.lifeFacts, required this.topics});
+
+  final List<LifeFactReview> lifeFacts;
+  final List<TopicReview> topics;
+
+  Map<String, dynamic> toJson() => {
+    'lifeFacts': [for (final r in lifeFacts) r.toJson()],
+    'topics': [for (final r in topics) r.toJson()],
+  };
+}
