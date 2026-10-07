@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import 'story_edit_screen.dart';
 
 /// G-2 변경 사항 확인.
 ///
@@ -19,10 +20,11 @@ import '../../widgets/app_surfaces.dart';
 /// - 승인 전까지 프로필에 반영하지 않는다.
 ///
 /// 주제 제안은 AI 가 제안한 행동이 처음에 골라져 있고, 보호자가 다른 행동을
-/// 고를 수 있다. 제외하기도 그중 하나다.
+/// 고를 수 있다. 제외하기도 그중 하나다. 생애 정보 제안은 보호자가 제목과
+/// 내용을 고칠 수 있다.
 ///
-/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목과 고른
-/// 행동을 화면 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로
+/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목, 고른
+/// 행동과 고친 이야기를 화면 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로
 /// 이동한다.
 /// 저장은 BE 가 단말 저장 인터페이스를 확정한 뒤 붙인다. `app/README.md` 의
 /// 영역 구분을 따른다.
@@ -44,11 +46,34 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
   /// 보호자가 고른 주제 행동. 없으면 AI 제안을 따른다.
   final _chosen = <String, TopicAction>{};
 
+  /// 보호자가 고친 이야기. 없으면 AI 가 제안한 제목과 내용을 따른다.
+  final _edited = <String, StoryDraft>{};
+
   /// 이유를 펼친 제안. 한 번에 하나만 펼친다.
   String? _expandedId;
 
   void _toggleReason(String id) =>
       setState(() => _expandedId = _expandedId == id ? null : id);
+
+  Future<void> _edit(LifeFactProposal fact) async {
+    final current =
+        _edited[fact.proposalId] ??
+        StoryDraft(title: fact.title, content: fact.content);
+    final result = await StoryEditScreen.open(
+      context,
+      reportId: widget.reportId,
+      initial: current,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      // 원래 제안과 같게 되돌렸으면 고친 것으로 치지 않는다.
+      if (result.title == fact.title && result.content == fact.content) {
+        _edited.remove(fact.proposalId);
+      } else {
+        _edited[fact.proposalId] = result;
+      }
+    });
+  }
 
   void _remove(String id) => setState(() {
     _removed.add(id);
@@ -108,8 +133,10 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
                     for (final fact in facts)
                       _LifeFactCard(
                         proposal: fact,
-                        expanded: _expandedId == fact.proposalId,
-                        onTap: () => _toggleReason(fact.proposalId),
+                        edited: _edited[fact.proposalId],
+                        onEdit: () => _edit(fact),
+                        reasonOpen: _expandedId == fact.proposalId,
+                        onToggleReason: () => _toggleReason(fact.proposalId),
                         onRemove: () => _remove(fact.proposalId),
                       ),
                   ],
@@ -494,83 +521,140 @@ class _RemoveButton extends StatelessWidget {
   }
 }
 
-/// 생애 정보 제안 한 장. 누르면 이유가 펼쳐진다.
+/// 생애 정보 제안 한 장.
+///
+/// 주제 카드와 같은 틀이다. 위에 새 이야기 표시와 제목, 그 아래 내용, 그 아래
+/// `이야기 수정하기`, 선 아래에 접힌 AI 제안 이유를 둔다. 보호자가 고친 값이
+/// 있으면 그 값을 보여주고 고쳤다고 알린다. 제안 이유는 AI 가 처음 제안한
+/// 내용에 대한 것이라 그대로 둔다.
 class _LifeFactCard extends StatelessWidget {
   const _LifeFactCard({
     required this.proposal,
-    required this.expanded,
-    required this.onTap,
+    required this.edited,
+    required this.onEdit,
+    required this.reasonOpen,
+    required this.onToggleReason,
     required this.onRemove,
   });
 
   final LifeFactProposal proposal;
-  final bool expanded;
-  final VoidCallback onTap;
+
+  /// 보호자가 고친 제목과 내용. 고치지 않았으면 `null` 이다.
+  final StoryDraft? edited;
+  final VoidCallback onEdit;
+  final bool reasonOpen;
+  final VoidCallback onToggleReason;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final title = edited?.title ?? proposal.title;
+    final content = edited?.content ?? proposal.content;
+
     return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.xl,
-      ),
+      padding: EdgeInsets.zero,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Expanded(child: AppChip('새로 알게 된 이야기')),
-              _RemoveButton(onPressed: onRemove),
-            ],
-          ),
           Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.md),
-            child: Column(
+            // 지우기 버튼은 카드 모서리 가까이 올리고, 제목은 그만큼 내려
+            // 카드 위 여백을 지킨다. 주제 카드와 같다.
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              0,
+            ),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: AppSpacing.md),
-                Text(proposal.content, style: AppTypography.sectionTitle),
-
-                if (expanded) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  AppSurfaceBox(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.lg),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: AppColors.textSub,
+                        const Padding(
+                          // 제목 첫 줄의 가운데에 맞춘다.
+                          padding: EdgeInsets.only(top: 3),
+                          child: _NewBadge(),
                         ),
-                        const SizedBox(width: AppSpacing.md),
+                        const SizedBox(width: AppSpacing.sm),
                         Expanded(
-                          child: Text(
-                            proposal.reason,
-                            style: AppTypography.sub,
-                          ),
+                          child: Text(title, style: AppTypography.sectionTitle),
                         ),
                       ],
                     ),
                   ),
-                ] else ...[
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    '눌러서 이유 보기',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.textDisabled,
-                    ),
-                  ),
-                ],
+                ),
+                _RemoveButton(onPressed: onRemove),
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.sm,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(content, style: AppTypography.sub),
+                if (edited != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    '직접 고친 이야기예요.',
+                    style: AppTypography.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                SecondaryButton(label: '이야기 수정하기', onPressed: onEdit),
+              ],
+            ),
+          ),
+          const Divider(height: 1, thickness: 1, color: AppColors.line),
+          _ReasonFold(
+            reason: proposal.reason,
+            open: reasonOpen,
+            onToggle: onToggleReason,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// 일대기에 새로 더해질 이야기라는 표시. 화면 낭독기에는 `새 이야기` 로 읽힌다.
+class _NewBadge extends StatelessWidget {
+  const _NewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '새 이야기',
+      child: ExcludeSemantics(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: 2,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.ink,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Text(
+            'NEW',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.background,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
       ),
     );
   }

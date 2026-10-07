@@ -2,17 +2,21 @@
 //
 // 주제 제안은 다음 대화 카드에, 생애 정보 제안은 일대기에 반영된다. 반영되는
 // 곳이 다르므로 두 구역으로 나눠 보여준다. 주제 카드는 AI 제안이 처음에
-// 골라져 있고 보호자가 다른 행동을 고를 수 있다. 값은 모두 합성이다.
+// 골라져 있고 보호자가 다른 행동을 고를 수 있다. 이야기 카드는 수정 화면에서
+// 제목과 내용을 고칠 수 있다. 값은 모두 합성이다.
 
 import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/changes_screen.dart';
+import 'package:saerok/features/report/story_edit_screen.dart';
 
 const _topic = TopicProposal(
   proposalId: 'topic_proposal_test_001',
@@ -59,9 +63,24 @@ Future<void> _open(
           ),
         ),
       ],
-      child: MaterialApp(
+      // 이야기 수정 화면을 오가므로 앱과 같은 두 경로를 둔다.
+      child: MaterialApp.router(
         theme: buildAppTheme(),
-        home: const ReportChangesScreen(reportId: 'report_test_001'),
+        routerConfig: GoRouter(
+          initialLocation: AppRoutes.reportChangesOf('report_test_001'),
+          routes: [
+            GoRoute(
+              path: AppRoutes.reportChanges,
+              builder: (context, state) =>
+                  const ReportChangesScreen(reportId: 'report_test_001'),
+            ),
+            GoRoute(
+              path: AppRoutes.storyEdit,
+              builder: (context, state) =>
+                  StoryEditScreen(initial: state.extra! as StoryDraft),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -75,6 +94,24 @@ Finder _option(String label) =>
 bool _isSelected(WidgetTester tester, String label) =>
     tester.getSemantics(_option(label)).flagsCollection.isSelected ==
     Tristate.isTrue;
+
+/// 수정 화면에서 [label] 이름표가 붙은 입력칸.
+Finder _fieldFinder(String label) => find.descendant(
+  of: find.ancestor(of: find.text(label), matching: find.byType(Column)).first,
+  matching: find.byType(TextField),
+);
+
+TextField _field(String label) =>
+    _fieldFinder(label).evaluate().single.widget as TextField;
+
+FilledButton _doneButton(WidgetTester tester) =>
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, '수정 완료'));
+
+/// 첫 이야기 카드의 수정 화면을 연다.
+Future<void> _openEditor(WidgetTester tester) async {
+  await tester.tap(find.text('이야기 수정하기'));
+  await tester.pumpAndSettle();
+}
 
 /// [index] 번째 카드의 지우기 버튼을 누른다.
 Future<void> _remove(WidgetTester tester, int index) async {
@@ -277,6 +314,183 @@ void main() {
           reason: label,
         );
       }
+    });
+  });
+
+  group('일대기에 추가 카드', () {
+    testWidgets('새 이야기 표시 옆에 제목, 그 아래 내용과 수정 버튼을 둔다', (tester) async {
+      await _open(tester, topics: const []);
+
+      final badge = tester.getRect(find.text('NEW'));
+      final title = tester.getRect(find.text('합성 제목'));
+      final content = tester.getRect(find.text('합성 이야기 내용'));
+      final edit = tester.getRect(find.text('이야기 수정하기'));
+      final reason = tester.getRect(find.text('AI 제안 이유 보기'));
+      final remove = tester.getRect(find.byTooltip('이 제안 지우기'));
+
+      expect(badge.right, lessThanOrEqualTo(title.left));
+      expect(badge.top, lessThan(title.bottom), reason: '제목과 같은 줄에 있다');
+      expect(title.bottom, lessThanOrEqualTo(content.top));
+      expect(content.bottom, lessThan(edit.top));
+      expect(edit.bottom, lessThan(reason.top));
+      expect(remove.left, greaterThanOrEqualTo(title.right));
+      expect(find.bySemanticsLabel('새 이야기'), findsOneWidget);
+    });
+
+    testWidgets('AI 제안 이유는 접혀 있다가 누르면 펼친다', (tester) async {
+      await _open(tester, topics: const []);
+
+      expect(find.text('합성 이야기 이유'), findsNothing);
+
+      await tester.tap(find.text('AI 제안 이유 보기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('합성 이야기 이유'), findsOneWidget);
+    });
+
+    testWidgets('이야기 수정하기를 누르면 제목과 내용이 채워진 수정 화면이 열린다', (tester) async {
+      await _open(tester, topics: const []);
+
+      await _openEditor(tester);
+
+      expect(find.byType(StoryEditScreen), findsOneWidget);
+      expect(_field('제목').controller!.text, '합성 제목');
+      expect(_field('내용').controller!.text, '합성 이야기 내용');
+    });
+
+    testWidgets('수정 완료를 누르면 돌아와 고친 이야기를 보여준다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+
+      await tester.enterText(_fieldFinder('제목'), '고친 제목');
+      await tester.enterText(_fieldFinder('내용'), '고친 내용');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StoryEditScreen), findsNothing);
+      expect(find.text('고친 제목'), findsOneWidget);
+      expect(find.text('고친 내용'), findsOneWidget);
+      expect(find.text('합성 이야기 내용'), findsNothing);
+      expect(find.text('직접 고친 이야기예요.'), findsOneWidget);
+
+      // 제안 이유는 AI 가 처음 제안한 내용에 대한 것이라 그대로다.
+      await tester.tap(find.text('AI 제안 이유 보기'));
+      await tester.pumpAndSettle();
+      expect(find.text('합성 이야기 이유'), findsOneWidget);
+    });
+
+    testWidgets('다시 열면 고친 값에서 이어서 고친다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '고친 제목');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      await _openEditor(tester);
+
+      expect(_field('제목').controller!.text, '고친 제목');
+    });
+
+    testWidgets('원래대로 되돌리면 고친 것으로 치지 않는다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '고친 제목');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '합성 제목');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('합성 제목'), findsOneWidget);
+      expect(find.text('직접 고친 이야기예요.'), findsNothing);
+    });
+
+    testWidgets('뒤로 가면 고친 값을 버린다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '버릴 제목');
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('뒤로'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StoryEditScreen), findsNothing);
+      expect(find.text('합성 제목'), findsOneWidget);
+      expect(find.text('버릴 제목'), findsNothing);
+    });
+  });
+
+  group('이야기 수정 화면', () {
+    testWidgets('제목은 100자까지만 받고 쓴 글자 수를 보여준다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+
+      await tester.enterText(_fieldFinder('제목'), '가' * 120);
+      await tester.pump();
+
+      expect(_field('제목').controller!.text.length, 100);
+      expect(find.text('100/100'), findsOneWidget);
+    });
+
+    testWidgets('제목이나 내용이 비면 수정 완료를 누를 수 없다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+
+      await tester.enterText(_fieldFinder('제목'), '   ');
+      await tester.pump();
+      expect(_doneButton(tester).onPressed, isNull);
+
+      await tester.enterText(_fieldFinder('제목'), '합성 제목');
+      await tester.enterText(_fieldFinder('내용'), '');
+      await tester.pump();
+      expect(_doneButton(tester).onPressed, isNull);
+
+      await tester.enterText(_fieldFinder('내용'), '합성 내용');
+      await tester.pump();
+      expect(_doneButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('앞뒤 공백은 떼고 돌려준다', (tester) async {
+      await _open(tester, topics: const []);
+      await _openEditor(tester);
+
+      await tester.enterText(_fieldFinder('제목'), '  고친 제목  ');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('고친 제목'), findsOneWidget);
+    });
+
+    testWidgets('고칠 이야기 없이 주소로 들어오면 안내한다', (tester) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      final router = GoRouter(
+        initialLocation: AppRoutes.storyEditOf('report_test_001'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.storyEdit,
+            builder: (context, state) => state.extra is StoryDraft
+                ? StoryEditScreen(initial: state.extra! as StoryDraft)
+                : const StoryEditMissingView(),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('고칠 이야기를 찾지 못했어요.'), findsOneWidget);
+      expect(find.text('수정 완료'), findsNothing);
     });
   });
 }

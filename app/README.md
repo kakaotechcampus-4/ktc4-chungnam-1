@@ -70,6 +70,7 @@
 | `/visit/review/done` | 보호자 위로 | 설계 없음, PM 초안 |
 | `/report/:reportId` | 리포트 | G-1 |
 | `/report/:reportId/changes` | 변경 사항 확인. 대화 주제와 일대기에 추가 두 구역으로 나눈다 | G-2 |
+| `/report/:reportId/changes/story` | 이야기 수정. 변경 사항 확인이 `extra`로 넘긴 제목(100자 이하)과 내용을 고치고 `수정 완료`로 돌려준다. 뒤로 가면 버린다 | 설계 없음 |
 | `/profile` | 프로필 설정 | MYPAGE |
 | `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |
