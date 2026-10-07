@@ -208,7 +208,7 @@
 | `topicProposals[].suggestedAction: more` | 더 자주 꺼내기 |
 | `topicProposals[].suggestedAction: less` | 당분간 쉬어가기 |
 | `topicProposals[].suggestedAction: exclude` | 제외하기 |
-| `lifeFactProposals[]` | 새로 알게 된 이야기 |
+| `lifeFactProposals[]` | 구역 이름 `일대기에 추가`, 카드에는 `NEW` 표시 |
 
 주제 카드는 세 행동을 한 줄에 하나씩 둔다. 처음에는 `suggestedAction`이 골라져 있고 그 줄 오른쪽에 `AI 제안`을 적는다. 보호자는 다른 행동을 고를 수 있으며, 고른 줄은 검정 면에 흰 글자와 체크 표시로 나타내고 바로 아래에 바뀌는 점을 한 줄로 보여준다.
 
