@@ -18,8 +18,12 @@ import '../../widgets/app_surfaces.dart';
 /// - 회차의 `pending` 제안을 모두 한 번에 보낸다.
 /// - 승인 전까지 프로필에 반영하지 않는다.
 ///
-/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목을 화면
-/// 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로 이동한다.
+/// 주제 제안은 AI 가 제안한 행동이 처음에 골라져 있고, 보호자가 다른 행동을
+/// 고를 수 있다. 제외하기도 그중 하나다.
+///
+/// **지금은 목 데이터 단계라 위 저장을 수행하지 않는다.** 지운 항목과 고른
+/// 행동을 화면 안에 모아 두기만 하고, 반영 버튼은 리포트 알림을 지우고 홈으로
+/// 이동한다.
 /// 저장은 BE 가 단말 저장 인터페이스를 확정한 뒤 붙인다. `app/README.md` 의
 /// 영역 구분을 따른다.
 class ReportChangesScreen extends ConsumerStatefulWidget {
@@ -33,12 +37,23 @@ class ReportChangesScreen extends ConsumerStatefulWidget {
 }
 
 class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
-  /// 사용자가 지운 항목. 계약상 `rejected` 가 될 항목이지만 지금은 저장하지
+  /// 사용자가 지운 제안. 계약상 `rejected` 가 될 항목이지만 지금은 저장하지
   /// 않고 화면 표시에만 쓴다.
   final _removed = <String>{};
 
-  /// 이유를 펼친 항목. 한 번에 하나만 펼친다.
+  /// 보호자가 고른 주제 행동. 없으면 AI 제안을 따른다.
+  final _chosen = <String, TopicAction>{};
+
+  /// 이유를 펼친 제안. 한 번에 하나만 펼친다.
   String? _expandedId;
+
+  void _toggleReason(String id) =>
+      setState(() => _expandedId = _expandedId == id ? null : id);
+
+  void _remove(String id) => setState(() {
+    _removed.add(id);
+    if (_expandedId == id) _expandedId = null;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -52,22 +67,56 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
           message: '변경 사항을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(changeProposalProvider),
         ),
-        data: (data) => _Body(
-          changes: _ChangeItem.listOf(
-            data,
-          ).where((c) => !_removed.contains(c.id)).toList(),
-          expandedId: _expandedId,
-          onExpand: (id) =>
-              setState(() => _expandedId = _expandedId == id ? null : id),
-          onRemove: (id) => setState(() {
-            _removed.add(id);
-            if (_expandedId == id) _expandedId = null;
-          }),
-          onApply: () {
-            ref.read(reportNoticeProvider.notifier).dismiss();
-            context.go(AppRoutes.home);
-          },
-        ),
+        data: (data) {
+          final topics = data.topicProposals
+              .where((t) => !_removed.contains(t.proposalId))
+              .toList();
+          final facts = data.lifeFactProposals
+              .where((f) => !_removed.contains(f.proposalId))
+              .toList();
+
+          return _Body(
+            empty: topics.isEmpty && facts.isEmpty,
+            onApply: () {
+              ref.read(reportNoticeProvider.notifier).dismiss();
+              context.go(AppRoutes.home);
+            },
+            sections: [
+              if (topics.isNotEmpty)
+                _Section(
+                  title: '대화 주제',
+                  description: '다음 대화 카드를 만들 때 반영해요.',
+                  cards: [
+                    for (final topic in topics)
+                      _TopicCard(
+                        proposal: topic,
+                        chosen:
+                            _chosen[topic.proposalId] ?? topic.suggestedAction,
+                        onChoose: (action) =>
+                            setState(() => _chosen[topic.proposalId] = action),
+                        reasonOpen: _expandedId == topic.proposalId,
+                        onToggleReason: () => _toggleReason(topic.proposalId),
+                        onRemove: () => _remove(topic.proposalId),
+                      ),
+                  ],
+                ),
+              if (facts.isNotEmpty)
+                _Section(
+                  title: '일대기에 추가',
+                  description: '남겨두신 이야기를 일대기에 더해요.',
+                  cards: [
+                    for (final fact in facts)
+                      _LifeFactCard(
+                        proposal: fact,
+                        expanded: _expandedId == fact.proposalId,
+                        onTap: () => _toggleReason(fact.proposalId),
+                        onRemove: () => _remove(fact.proposalId),
+                      ),
+                  ],
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -75,17 +124,13 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
 
 class _Body extends StatelessWidget {
   const _Body({
-    required this.changes,
-    required this.expandedId,
-    required this.onExpand,
-    required this.onRemove,
+    required this.empty,
+    required this.sections,
     required this.onApply,
   });
 
-  final List<_ChangeItem> changes;
-  final String? expandedId;
-  final ValueChanged<String> onExpand;
-  final ValueChanged<String> onRemove;
+  final bool empty;
+  final List<_Section> sections;
   final VoidCallback onApply;
 
   @override
@@ -93,7 +138,7 @@ class _Body extends StatelessWidget {
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
-        label: changes.isEmpty ? '반영하지 않고 마치기' : '이대로 반영하기',
+        label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
         onPressed: onApply,
       ),
       child: Column(
@@ -104,30 +149,15 @@ class _Body extends StatelessWidget {
             '다음 만남 때는\n이렇게 바꿀까요?',
             style: AppTypography.screenTitle,
           ),
-          const SizedBox(height: AppSpacing.md),
-          const Text('남겨두신 것만 반영해요.', style: AppTypography.body),
           const SizedBox(height: AppSpacing.xl),
 
-          if (changes.isEmpty)
+          if (empty)
             const EmptyStateView(
               message: '모두 지우셨어요.\n이대로 마쳐도 괜찮아요.',
               icon: Icons.inbox_outlined,
             )
           else
-            for (final kind in _ChangeKind.values)
-              if (changes.any((c) => c.kind == kind)) ...[
-                _SectionHeader(kind: kind),
-                for (final change in changes.where((c) => c.kind == kind)) ...[
-                  _ChangeCard(
-                    change: change,
-                    expanded: expandedId == change.id,
-                    onTap: () => onExpand(change.id),
-                    onRemove: () => onRemove(change.id),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-              ],
+            ...sections,
 
           const SizedBox(height: AppSpacing.lg),
         ],
@@ -136,99 +166,344 @@ class _Body extends StatelessWidget {
   }
 }
 
-/// 제안이 반영되는 곳. 화면을 이 순서로 나눈다.
-enum _ChangeKind {
-  /// 주제 제안. 다음 대화 카드를 만들 때 반영한다.
-  topic('대화 주제', '다음 대화 카드를 만들 때 반영해요.'),
-
-  /// 생애 정보 제안. 승인하면 일대기의 이야기가 된다.
-  lifeFact('일대기에 추가', '남겨두신 이야기를 일대기에 더해요.');
-
-  const _ChangeKind(this.title, this.description);
+/// 반영되는 곳이 같은 제안의 묶음. 구역 이름 아래에 어디에 반영되는지 한 줄로
+/// 알리고 카드를 한 장씩 쌓는다.
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    required this.description,
+    required this.cards,
+  });
 
   final String title;
   final String description;
-}
-
-/// 구역 이름과 무엇이 어디에 반영되는지 알려주는 한 줄.
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.kind});
-
-  final _ChangeKind kind;
+  final List<Widget> cards;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.only(bottom: AppSpacing.section),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(kind.title, style: AppTypography.sectionTitle),
+          Text(title, style: AppTypography.sectionTitle),
           const SizedBox(height: AppSpacing.xs),
-          Text(kind.description, style: AppTypography.sub),
+          Text(description, style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.lg),
+          for (final (i, card) in cards.indexed) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.lg),
+            card,
+          ],
         ],
       ),
     );
   }
 }
 
-/// 화면에 보여줄 제안 한 건. 주제 제안과 생애 정보 제안을 한 목록으로 편다.
-class _ChangeItem {
-  const _ChangeItem({
-    required this.kind,
-    required this.id,
-    required this.kindLabel,
-    required this.title,
-    required this.reason,
-  });
-
-  /// 주제 제안을 먼저, 생애 정보 제안을 뒤에 둔다.
-  static List<_ChangeItem> listOf(ChangeProposal proposal) => [
-    for (final topic in proposal.topicProposals)
-      _ChangeItem(
-        kind: _ChangeKind.topic,
-        id: topic.proposalId,
-        kindLabel: _actionLabel(topic.suggestedAction),
-        title: topic.topic.title,
-        reason: topic.reason,
-      ),
-    for (final fact in proposal.lifeFactProposals)
-      _ChangeItem(
-        kind: _ChangeKind.lifeFact,
-        id: fact.proposalId,
-        kindLabel: '새로 알게 된 이야기',
-        title: fact.content,
-        reason: fact.reason,
-      ),
-  ];
-
-  /// 계약상 `suggestedAction` 은 `more`, `less`, `exclude` 셋이다.
-  static String _actionLabel(TopicAction? action) => switch (action) {
+/// 주제 행동마다 화면에 쓰는 문구. 계약상 `more`, `less`, `exclude` 셋이다.
+extension on TopicAction {
+  String get label => switch (this) {
     TopicAction.more => '더 자주 꺼내기',
     TopicAction.less => '당분간 쉬어가기',
     TopicAction.exclude => '제외하기',
-    null => unsupportedValueLabel,
   };
 
-  final _ChangeKind kind;
-  final String id;
-  final String kindLabel;
-  final String title;
-  final String reason;
+  /// 골랐을 때 바로 아래에 보여주는 설명.
+  String get effect => switch (this) {
+    TopicAction.more => '다음 추천에서 이 주제의 우선순위를 높여요.',
+    TopicAction.less => '다음 추천에서 이 주제의 우선순위를 낮춰요.',
+    TopicAction.exclude => '앞으로 이 주제는 추천하지 않아요.',
+  };
 }
 
-/// 변경 제안 한 건.
+/// 주제 제안 한 장.
 ///
-/// 위에 종류를, 그 아래 어떤 주제인지 크게 보여준다. 눌러야 이유가 펼쳐진다.
-class _ChangeCard extends StatelessWidget {
-  const _ChangeCard({
-    required this.change,
+/// 위에 주제 제목과 설명, 그 아래 행동 세 줄, 선 아래에 접힌 AI 제안 이유를
+/// 둔다. 행동은 글자가 길어 한 줄에 셋을 두지 않고 한 줄에 하나씩 둔다.
+class _TopicCard extends StatelessWidget {
+  const _TopicCard({
+    required this.proposal,
+    required this.chosen,
+    required this.onChoose,
+    required this.reasonOpen,
+    required this.onToggleReason,
+    required this.onRemove,
+  });
+
+  final TopicProposal proposal;
+
+  /// 지금 고른 행동. AI 제안을 읽지 못했고 아직 고르지 않았으면 `null` 이다.
+  final TopicAction? chosen;
+  final ValueChanged<TopicAction> onChoose;
+  final bool reasonOpen;
+  final VoidCallback onToggleReason;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = proposal.topic.description;
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            // 지우기 버튼은 카드 모서리 가까이 올리고, 제목은 그만큼 내려
+            // 카드 위 여백을 지킨다.
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              0,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          proposal.topic.title,
+                          style: AppTypography.sectionTitle,
+                        ),
+                        if (description != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(description, style: AppTypography.sub),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                _RemoveButton(onPressed: onRemove),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.lg,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (i, action) in TopicAction.values.indexed) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.sm),
+                  _ActionOption(
+                    action: action,
+                    selected: chosen == action,
+                    suggested: proposal.suggestedAction == action,
+                    onTap: () => onChoose(action),
+                  ),
+                  if (chosen == action)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                        AppSpacing.lg,
+                        AppSpacing.xs,
+                      ),
+                      child: Text(action.effect, style: AppTypography.sub),
+                    ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, thickness: 1, color: AppColors.line),
+          _ReasonFold(
+            reason: proposal.reason,
+            open: reasonOpen,
+            onToggle: onToggleReason,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 주제 행동 한 줄.
+///
+/// 고른 줄은 검정 면에 흰 글자로 강조하고, 색만으로 알리지 않도록 왼쪽에
+/// 체크 표시를 함께 둔다. AI 가 제안한 줄은 오른쪽에 `AI 제안` 을 적는다.
+class _ActionOption extends StatelessWidget {
+  const _ActionOption({
+    required this.action,
+    required this.selected,
+    required this.suggested,
+    required this.onTap,
+  });
+
+  final TopicAction action;
+  final bool selected;
+  final bool suggested;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? AppColors.background : AppColors.ink;
+    final radius = BorderRadius.circular(AppRadius.button);
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: Material(
+        color: selected ? AppColors.ink : AppColors.background,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: selected ? AppColors.ink : AppColors.line),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: AppSizes.control),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 22,
+                    color: selected ? AppColors.background : AppColors.line,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      action.label,
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: foreground,
+                      ),
+                    ),
+                  ),
+                  if (suggested) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'AI 제안',
+                      style: AppTypography.caption.copyWith(
+                        color: selected
+                            ? AppColors.background
+                            : AppColors.textSub,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 카드 아래의 접힌 AI 제안 이유. 누르면 연한 회색 상자에 이유가 펼쳐진다.
+class _ReasonFold extends StatelessWidget {
+  const _ReasonFold({
+    required this.reason,
+    required this.open,
+    required this.onToggle,
+  });
+
+  final String reason;
+  final bool open;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          button: true,
+          expanded: open,
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: open
+                ? null
+                : const BorderRadius.vertical(
+                    bottom: Radius.circular(AppRadius.card),
+                  ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: AppSizes.control),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xl,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text('AI 제안 이유 보기', style: AppTypography.sub),
+                    ),
+                    Icon(
+                      open ? Icons.expand_less : Icons.expand_more,
+                      color: AppColors.textSub,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (open)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              0,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
+            child: AppSurfaceBox(child: Text(reason, style: AppTypography.sub)),
+          ),
+      ],
+    );
+  }
+}
+
+/// 이번 반영에서 이 제안만 빼는 버튼. 주제의 제외하기와 다르다.
+class _RemoveButton extends StatelessWidget {
+  const _RemoveButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: '이 제안 지우기',
+      iconSize: 22,
+      color: AppColors.textSub,
+      constraints: const BoxConstraints(
+        minWidth: AppSizes.minTouch,
+        minHeight: AppSizes.minTouch,
+      ),
+      icon: const Icon(Icons.close),
+    );
+  }
+}
+
+/// 생애 정보 제안 한 장. 누르면 이유가 펼쳐진다.
+class _LifeFactCard extends StatelessWidget {
+  const _LifeFactCard({
+    required this.proposal,
     required this.expanded,
     required this.onTap,
     required this.onRemove,
   });
 
-  final _ChangeItem change;
+  final LifeFactProposal proposal;
   final bool expanded;
   final VoidCallback onTap;
   final VoidCallback onRemove;
@@ -249,18 +524,8 @@ class _ChangeCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(child: AppChip(change.kindLabel)),
-              IconButton(
-                onPressed: onRemove,
-                tooltip: '이 제안 지우기',
-                iconSize: 22,
-                color: AppColors.textSub,
-                constraints: const BoxConstraints(
-                  minWidth: AppSizes.minTouch,
-                  minHeight: AppSizes.minTouch,
-                ),
-                icon: const Icon(Icons.close),
-              ),
+              const Expanded(child: AppChip('새로 알게 된 이야기')),
+              _RemoveButton(onPressed: onRemove),
             ],
           ),
           Padding(
@@ -269,7 +534,7 @@ class _ChangeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: AppSpacing.md),
-                Text(change.title, style: AppTypography.sectionTitle),
+                Text(proposal.content, style: AppTypography.sectionTitle),
 
                 if (expanded) ...[
                   const SizedBox(height: AppSpacing.lg),
@@ -285,7 +550,10 @@ class _ChangeCard extends StatelessWidget {
                         ),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
-                          child: Text(change.reason, style: AppTypography.sub),
+                          child: Text(
+                            proposal.reason,
+                            style: AppTypography.sub,
+                          ),
                         ),
                       ],
                     ),
