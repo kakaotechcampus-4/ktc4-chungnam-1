@@ -10,7 +10,8 @@
 앱을 다시 실행할 때는 저장한 세션으로 `GET /auth/me` 를 호출해 두 단계를 건너뛴다.
 
 로그아웃(`POST /auth/logout`)은 그 세션을 폐기하고, 탈퇴(`DELETE /auth/me`)는 계정과
-동의 이력을 지운 뒤 그 세션을 폐기한다.
+동의 이력을 지운 뒤 그 세션을 폐기한다. 탈퇴 이유를 고르면 계정과 연결하지 않고 함께
+저장한다. 선택 동의는 `PATCH /auth/me/consents` 로 바꾼다.
 """
 
 import logging
@@ -30,16 +31,19 @@ from app.schemas.auth import (
     AccountConsentResponse,
     AccountResponse,
     AuthenticatedResponse,
+    ConsentChangeRequest,
     ConsentItemResponse,
     ConsentRequest,
     ConsentRequiredResponse,
     GoogleLoginRequest,
     LoginResponse,
+    WithdrawalRequest,
 )
 from app.services.accounts import (
     OPTIONAL_CONSENTS,
     REQUIRED_CONSENTS,
     Account,
+    Withdrawal,
 )
 from app.schemas.common import ErrorResponse
 from app.services.session_tokens import TokenIssuer
@@ -59,7 +63,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
         401: "인증 실패",
         404: "계정 없음",
         409: "동의 버전 불일치",
-        422: "요청 형식 오류 또는 필수 동의 누락",
+        422: "요청 형식 오류, 필수 동의 누락 또는 필수 동의 변경",
         503: "로그인 또는 DB 설정 미완료, 구글 인증 서버 확인 실패",
     }
     return {
@@ -178,6 +182,24 @@ async def read_current_account(account: CurrentAccountDep) -> AccountResponse:
     return _to_account_response(account)
 
 
+@router.patch(
+    "/me/consents",
+    response_model=AccountResponse,
+    responses=_errors(401, 404, 422, 503),
+)
+async def change_optional_consents(
+    payload: ConsentChangeRequest,
+    account: CurrentAccountDep,
+    accounts: AccountServiceDep,
+) -> AccountResponse:
+    # 직전 동의 이력을 복사해 보낸 선택 동의만 바꾼 이력을 더한다. 필수 동의는 바꿀 수 없다.
+    updated = await accounts.change_optional_consents(
+        account.account_id, payload.submitted()
+    )
+    logger.info("optional_consents_changed")
+    return _to_account_response(updated)
+
+
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -194,15 +216,22 @@ async def logout(
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_errors(401, 404, 503),
+    responses=_errors(401, 404, 422, 503),
 )
 async def delete_current_account(
     session: CurrentSessionDep,
     account: CurrentAccountDep,
     accounts: AccountServiceDep,
     revocations: SessionRevocationsDep,
+    # 탈퇴 이유를 고르지 않았으면 본문 없이 보낸다.
+    payload: WithdrawalRequest | None = None,
 ) -> None:
-    await accounts.delete(account.account_id)
+    withdrawal = (
+        Withdrawal(reasons=tuple(payload.reasons), other_text=payload.other_text)
+        if payload is not None
+        else None
+    )
+    await accounts.delete(account.account_id, withdrawal=withdrawal)
     # 계정이 지워졌으므로 같은 계정의 다른 세션은 `ACCOUNT_NOT_FOUND` 로 거절된다.
     # 요청에 쓴 세션은 여기서 폐기해 단말에 남더라도 다시 통과하지 않게 한다.
     await revocations.revoke(session)
