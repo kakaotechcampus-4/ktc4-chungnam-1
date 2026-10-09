@@ -7,10 +7,14 @@ from app.schemas.speech_analysis import (
     SpeechAnalysisRequest,
     SpeechAnalysisResult,
 )
+from app.schemas.visit_report_generation import (
+    VisitReportRequest,
+    VisitReportResult,
+)
 
 
 class AiServerClient:
-    """내부 AI 서버의 음성 분석 API를 호출한다."""
+    """내부 AI 서버의 음성 분석(8-1)과 리포트 생성(8-3) API를 호출한다."""
 
     def __init__(
         self,
@@ -78,5 +82,60 @@ class AiServerClient:
                 status_code=502,
                 error_code="INVALID_AI_RESPONSE",
                 message="음성 분석 서버의 응답 형식이 올바르지 않습니다.",
+            )
+        return result
+
+    async def generate_visit_report(
+        self,
+        payload: VisitReportRequest,
+    ) -> VisitReportResult:
+        """리포트 생성(API 8-3). 오류 코드는 `analyze_speech`와 같다."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                transport=self._transport,
+            ) as client:
+                response = await client.post(
+                    "/internal/v1/visit-reports",
+                    json=payload.model_dump(mode="json", by_alias=True),
+                )
+        except httpx.TimeoutException as error:
+            raise AppError(
+                status_code=504,
+                error_code="AI_SERVER_TIMEOUT",
+                message="리포트 생성 서버의 응답 시간이 초과되었습니다.",
+                retryable=True,
+            ) from error
+        except httpx.RequestError as error:
+            raise AppError(
+                status_code=503,
+                error_code="AI_SERVER_UNAVAILABLE",
+                message="리포트 생성 서버에 연결할 수 없습니다.",
+                retryable=True,
+            ) from error
+
+        if not response.is_success:
+            raise AppError(
+                status_code=502,
+                error_code="AI_SERVER_ERROR",
+                message="리포트 생성 서버가 요청을 처리하지 못했습니다.",
+                retryable=response.status_code >= 500,
+            )
+
+        try:
+            result = VisitReportResult.model_validate(response.json())
+        except ValueError as error:
+            raise AppError(
+                status_code=502,
+                error_code="INVALID_AI_RESPONSE",
+                message="리포트 생성 서버의 응답 형식이 올바르지 않습니다.",
+            ) from error
+
+        if result.analysis_id != payload.analysis_id:
+            raise AppError(
+                status_code=502,
+                error_code="INVALID_AI_RESPONSE",
+                message="리포트 생성 서버의 응답 형식이 올바르지 않습니다.",
             )
         return result

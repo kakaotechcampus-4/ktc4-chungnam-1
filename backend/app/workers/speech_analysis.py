@@ -9,6 +9,7 @@ from app.services.speech_analysis_jobs import (
     SpeechAnalysisJob,
 )
 from app.services.speech_analysis_pipeline import create_speech_worker
+from app.services.visit_report_generator import VisitReportGenerator
 from app.workers.base import Worker, run_worker_main
 
 
@@ -20,6 +21,10 @@ def create_worker(settings: Settings) -> Worker[SpeechAnalysisJob]:
         )
     database_url = settings.database_url
     lease_seconds = settings.speech_analysis_lease_seconds
+    ai_server = AiServerClient(
+        base_url=settings.ai_server_url,
+        timeout_seconds=settings.ai_server_timeout_seconds,
+    )
     return create_speech_worker(
         jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
             connection, lease_seconds=lease_seconds
@@ -30,15 +35,11 @@ def create_worker(settings: Settings) -> Worker[SpeechAnalysisJob]:
             presigned_ttl_seconds=settings.speech_audio_presigned_ttl_seconds,
             server_side_encryption=settings.speech_audio_s3_encryption,
         ),
-        ai_server=AiServerClient(
-            base_url=settings.ai_server_url,
-            timeout_seconds=settings.ai_server_timeout_seconds,
-        ),
+        ai_server=ai_server,
         open_connection=lambda: connect(database_url),
         lease_seconds=lease_seconds,
-        # STT 연결 범위에서는 결과 수신과 원본 삭제 후 sttCompleted에서 멈춘다.
-        # 리포트 계약이 연결되면 같은 worker에 ReportGenerator를 주입한다.
-        report_generator=None,
+        # STT 뒤 같은 작업에서 리포트(8-3)까지 만든다.
+        report_generator=VisitReportGenerator(ai_server=ai_server),
     )
 
 
