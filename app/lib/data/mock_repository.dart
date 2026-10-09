@@ -33,7 +33,7 @@ class MockRepository {
   static const _demoPhotoImages = {
     'profile_photo_demo_001': 'asset:assets/images/family.webp',
     'profile_photo_demo_002': 'asset:assets/images/visitation.webp',
-    'profile_photo_demo_003': 'asset:assets/images/patient.webp',
+    'profile_photo_demo_003': 'asset:assets/images/patient-male.webp',
   };
 
   Future<ProfileBundle> loadProfile() async {

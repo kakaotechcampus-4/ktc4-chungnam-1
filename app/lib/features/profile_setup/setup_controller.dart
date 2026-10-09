@@ -1,6 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import '../../data/providers.dart';
+import '../profile/photo_description_store.dart';
 import 'photo_picker.dart';
 import 'photo_uploader.dart';
 import 'setup_steps.dart';
@@ -77,11 +81,20 @@ class SetupDraft {
 
 /// 어느 단계에 있는지와 모은 값을 함께 들고 있다.
 class SetupState {
-  const SetupState({this.stepIndex = 0, this.draft = const SetupDraft()});
+  const SetupState({
+    this.stepIndex = 0,
+    this.draft = const SetupDraft(),
+    this.reachedIndex = 0,
+  });
 
   /// 0 = 기본 정보, 1 ~ 4 = 생애 정보, 5 = 사진.
   final int stepIndex;
   final SetupDraft draft;
+
+  /// 지금까지 가 본 가장 먼 단계. 화면을 나가려면 뒤로 가기로 기본 정보까지
+  /// 돌아와야 하므로, 나갈 때의 [stepIndex] 는 늘 0 이다. 이어서 입력할 때는
+  /// 이 값으로 연다.
+  final int reachedIndex;
 
   static const _photoIndex = 1 + lifeFactStepCount;
 
@@ -98,8 +111,21 @@ class SetupState {
   /// 사진이 마지막 단계다. 사진에서 태그를 고르던 단계는 없앴다.
   bool get isLast => stepIndex >= _photoIndex;
 
-  SetupState copyWith({int? stepIndex, SetupDraft? draft}) =>
-      SetupState(stepIndex: stepIndex ?? this.stepIndex, draft: draft ?? this.draft);
+  /// 이어서 입력할 때 열 단계. 가 본 가장 먼 단계지만, 기본 정보를 비웠으면
+  /// 마칠 수 없으므로 기본 정보부터 연다.
+  int get resumeIndex {
+    if (!draft.basicInfoFilled) return 0;
+    return math.min(math.max(stepIndex, reachedIndex), _photoIndex);
+  }
+
+  SetupState copyWith({int? stepIndex, SetupDraft? draft}) {
+    final step = stepIndex ?? this.stepIndex;
+    return SetupState(
+      stepIndex: step,
+      draft: draft ?? this.draft,
+      reachedIndex: math.max(reachedIndex, step),
+    );
+  }
 }
 
 const lifeFactStepCount = 4;
@@ -109,6 +135,11 @@ class SetupController extends Notifier<SetupState> {
   SetupState build() => const SetupState();
 
   void updateDraft(SetupDraft draft) => state = state.copyWith(draft: draft);
+
+  /// 입력 중이던 분의 입력을 가 본 가장 먼 단계부터 다시 연다
+  /// ([SetupState.resumeIndex]). 앞 단계로는 뒤로 가기로 돌아갈 수 있다.
+  void restore(SetupState saved) =>
+      state = saved.copyWith(stepIndex: saved.resumeIndex);
 
   /// 다음 단계로 간다.
   ///
@@ -210,8 +241,65 @@ class SetupController extends Notifier<SetupState> {
     final facts = Map<String, String>.from(state.draft.facts)..remove(category);
     updateDraft(state.draft.copyWith(facts: facts));
   }
+
+  /// 입력을 마친다. 입력한 어르신을 목록에 넣고 그 분으로 바꾼다.
+  ///
+  /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작한다. [addingId] 가
+  /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 서버 저장
+  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와 사진은 아직
+  /// 넘기지 않는다.
+  void finish({String? addingId}) {
+    final draft = state.draft;
+    if (!draft.basicInfoFilled) return;
+
+    String two(int value) => value.toString().padLeft(2, '0');
+    final info = EnteredBasicInfo(
+      name: draft.name.trim(),
+      gender: draft.gender!,
+      birthDate:
+          '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
+      stage: draft.stage!,
+    );
+    final profiles = ref.read(careProfilesProvider.notifier);
+    if (addingId == null) {
+      profiles.startWith(info);
+      return;
+    }
+    profiles.completeAdding(addingId, info);
+    ref.read(pendingSetupsProvider.notifier).remove(addingId);
+  }
 }
 
 final setupControllerProvider = NotifierProvider<SetupController, SetupState>(
   SetupController.new,
 );
+
+/// `입력 중` 인 분마다 입력하던 값과 단계다.
+///
+/// 입력 화면은 한 번에 한 분만 다루므로, 화면을 떠나도 그 분의 입력이 남도록
+/// 여기에 옮겨 둔다. 다시 열면 [SetupController.restore] 로 되살린다.
+/// 앱이 켜져 있는 동안만 기억한다.
+class PendingSetups extends Notifier<Map<String, SetupState>> {
+  @override
+  Map<String, SetupState> build() => const {};
+
+  void save(String id, SetupState setup) => state = {...state, id: setup};
+
+  void remove(String id) => state = {...state}..remove(id);
+}
+
+final pendingSetupsProvider =
+    NotifierProvider<PendingSetups, Map<String, SetupState>>(PendingSetups.new);
+
+/// 앱만 기억하던 어르신 정보와 입력값을 지운다. 로그아웃과 탈퇴 뒤에 부른다.
+///
+/// 같은 휴대폰으로 다른 사람이 로그인해도 앞사람의 어르신 정보가 보이지 않게
+/// 한다. 어르신 번호는 다시 1 부터 매겨지므로, 어르신마다 고친 사진 설명도
+/// 함께 지워야 다음 사람의 같은 번호 어르신에 남지 않는다.
+void forgetCareProfiles(WidgetRef ref) {
+  ref
+    ..invalidate(careProfilesProvider)
+    ..invalidate(setupControllerProvider)
+    ..invalidate(pendingSetupsProvider)
+    ..invalidate(editedPhotoDescriptionsProvider);
+}

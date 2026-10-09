@@ -243,6 +243,19 @@ class ProfilePhoto {
   final String? errorCode;
 
   final String createdAt;
+
+  /// 같은 사진을 다른 어르신의 것으로 붙인다. 목 사진을 어르신마다 나눠 쓸 때만
+  /// 쓴다. 서버가 붙으면 사진은 처음부터 어르신마다 따로 온다.
+  ProfilePhoto forProfile(String profileId) => ProfilePhoto(
+    photoId: photoId,
+    profileId: profileId,
+    imageUrl: imageUrl,
+    imageUrlExpiresAt: imageUrlExpiresAt,
+    analysisStatus: analysisStatus,
+    description: description,
+    errorCode: errorCode,
+    createdAt: createdAt,
+  );
 }
 
 /// 프로필 화면이 한 번에 쓰는 묶음이다. `assets/mock/profile.json` 한 파일에 해당한다.
@@ -587,8 +600,7 @@ class CaregiverEvaluation {
 /// 변경 제안 하나의 검토 상태. 계약에 정의된 넷이다.
 ///
 /// [reverted] 는 보호자가 승인해 프로필에 반영한 변경을 나중에 되돌린 정상
-/// 상태이며, 값을 읽지 못한 경우가 아니다. 이미지 분석 후보의
-/// [TagReviewStatus] 에는 이 값이 없다.
+/// 상태이며, 값을 읽지 못한 경우가 아니다.
 enum ChangeReviewStatus {
   pending,
   accepted,

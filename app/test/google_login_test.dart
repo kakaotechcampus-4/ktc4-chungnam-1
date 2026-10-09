@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -26,6 +27,9 @@ import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
+import 'package:saerok/features/profile_setup/setup_controller.dart';
+
+import 'sample_profile.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
 
@@ -1081,6 +1085,50 @@ void main() {
       expect(find.byType(LoginScreen), findsOneWidget);
       expect(store.stored, isNull, reason: '풀린 세션은 남기지 않는다');
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
+    });
+
+    testWidgets('세션이 풀려 로그인으로 돌아가면 단말의 어르신도 비운다', (tester) async {
+      await _pumpWithProfile(
+        tester,
+        _app(
+          api: _api(
+            MockClient(
+              (request) async => _json(_errorBody('SESSION_EXPIRED'), 401),
+            ),
+          ),
+          google: _FakeGoogleAuthenticator(),
+          store: _FakeSessionStore(_signedIn()),
+          session: _signedIn(),
+          initialLocation: AppRoutes.profileDelete,
+        ),
+      );
+
+      // 등록을 마친 분과 입력하다 멈춘 분을 하나씩 둔다.
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ProfileDeleteScreen)),
+      );
+      final profiles = container.read(careProfilesProvider.notifier);
+      final doneId = profiles.beginAdding()!;
+      profiles.completeAdding(doneId, sampleBasicInfo);
+      final pendingId = profiles.beginAdding()!;
+      container
+          .read(pendingSetupsProvider.notifier)
+          .save(pendingId, const SetupState(stepIndex: 1));
+      expect(container.read(careProfilesProvider).selected?.id, doneId);
+
+      await tester.tap(find.widgetWithText(FilledButton, '탈퇴하기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(
+        container.read(careProfilesProvider).entries,
+        isEmpty,
+        reason: '다음에 로그인한 계정에 앞 계정의 어르신을 보이지 않는다',
+      );
+      expect(container.read(careProfilesProvider).selected, isNull);
+      expect(container.read(pendingSetupsProvider), isEmpty);
     });
 
     testWidgets('서버 계정 없이 들어오면 서버를 부르지 않고 알린다', (tester) async {

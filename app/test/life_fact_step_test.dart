@@ -56,6 +56,7 @@ Widget _wrap({
   ValueChanged<String>? onCaptured,
   VoidCallback? onCleared,
   _FixedSpeech? speech,
+  String? initialText,
 }) => ProviderScope(
   overrides: [
     speechInputProvider.overrideWith(
@@ -69,6 +70,7 @@ Widget _wrap({
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
         child: LifeFactStepView(
           step: _step,
+          initialText: initialText,
           onCaptured: onCaptured ?? (_) {},
           onCleared: onCleared ?? () {},
         ),
@@ -410,6 +412,60 @@ void main() {
       expect(captured, '30년 동안 초등학교 선생님을 하셨어요.');
       expect(find.text('30년 동안 초등학교 선생님을 하셨어요.'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+  });
+
+  group('적어 둔 답', () {
+    // 합성 문장이다. 실제 어르신의 생애 정보가 아니다.
+    const saved = '합성 예시 답입니다';
+
+    testWidgets('있으면 입력칸에 채워 보여주고 다시 알리지 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      var captured = 0;
+      var cleared = 0;
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          initialText: saved,
+          onCaptured: (_) => captured++,
+          onCleared: () => cleared++,
+        ),
+      );
+
+      expect(find.widgetWithText(TextField, saved), findsOneWidget);
+      expect(
+        find.text('목소리를 잘 듣지 못했어요.'),
+        findsNothing,
+        reason: '실패해서 온 것이 아니다',
+      );
+      expect(captured, 0, reason: '이미 저장본에 있는 값이다');
+      expect(cleared, 0);
+    });
+
+    testWidgets('채운 답을 고치면 고친 문장을 넘긴다', (tester) async {
+      _useReferenceScreen(tester);
+      String? captured;
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          initialText: saved,
+          onCaptured: (text) => captured = text,
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '$saved 고침');
+
+      expect(captured, '$saved 고침');
+    });
+
+    testWidgets('공백뿐이면 방법 고르기부터 연다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), initialText: '  '),
+      );
+
+      expect(find.text('말로 답하기'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
     });
   });
 }

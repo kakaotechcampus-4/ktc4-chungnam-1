@@ -4,6 +4,8 @@
 // 그 데이터가 `lib/data/models.dart` 로 문제없이 읽히는지 본다. 계약이 바뀌면
 // 둘 중 하나가 먼저 깨진다.
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
@@ -22,6 +24,22 @@ void main() {
     // 알림 수신은 선택 동의다. 이 목 데이터는 수락한 계정을 담는다.
     expect(account.consent['pushNotification']?.granted, isTrue);
     expect(account.consent['serviceData']?.granted, isTrue);
+  });
+
+  test('목 사진이 가리키는 앱 그림이 모두 있다', () async {
+    // 그림 파일 이름이 바뀌면 갤러리에 깨진 그림이 뜬다. 화면을 띄우지 않고 여기서 잡는다.
+    final bundle = await repository.loadProfile();
+    const scheme = 'asset:';
+    final assets = [
+      for (final photo in bundle.photos)
+        if (photo.imageUrl.startsWith(scheme))
+          photo.imageUrl.substring(scheme.length),
+    ];
+
+    expect(assets, hasLength(bundle.photos.length));
+    for (final path in assets) {
+      expect(File(path).existsSync(), isTrue, reason: path);
+    }
   });
 
   test('프로필을 읽는다', () async {

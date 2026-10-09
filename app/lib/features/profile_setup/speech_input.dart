@@ -107,6 +107,6 @@ class _MockRecording implements SpeechRecording {
 }
 
 final speechInputProvider = FutureProvider<SpeechInput>((ref) async {
-  final bundle = await ref.watch(profileProvider.future);
+  final bundle = await ref.watch(profileSampleProvider.future);
   return MockSpeechInput(bundle);
 });
