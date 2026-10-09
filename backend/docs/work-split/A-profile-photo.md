@@ -29,6 +29,7 @@
 | 2-4 | `PATCH` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
 | 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 | 바로 |
 | 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 | 바로 |
+| 2-8 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
 | 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 | 사진 동의 설계 후(미정 3) |
 | 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 | 3-1과 함께 |
 | 3-3 | | 사진 설명 확인 | 미정 | 미정 1 결정 후 |
@@ -42,7 +43,7 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
-| `profiles` | 2-2 생성, 2-4 수정 | B가 2-5에서 세부 정보 네 항목을 쓴다(카드 작업 생성과 같은 트랜잭션이어야 해서) |
+| `profiles` | 2-2 생성, 2-4 수정, 2-8 삭제 | B가 2-5에서 세부 정보 네 항목을 쓴다(카드 작업 생성과 같은 트랜잭션이어야 해서). 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
 
@@ -57,7 +58,7 @@
 ## 작업 순서
 
 1. `create_life_fact`를 만들어 C에게 공유한다.
-2. 2-2, 2-1, 2-3, 2-4로 프로필 흐름을 만든다. 사진은 3-1 전까지 항상 빈 배열이다.
+2. 2-2, 2-1, 2-3, 2-4, 2-8로 프로필 흐름을 만든다. 사진은 3-1 전까지 항상 빈 배열이다.
 3. 2-6, 2-7
 4. 1-6, 1-5 탈퇴 이유
 5. 사진 동의 설계 후 3-1, 3-2와 2-3의 사진 URL. 설계 전에는 시작하지 않는다([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분))
@@ -167,7 +168,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 ### 2-1. `GET /api/v1/profiles` — 신규
 
-현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정한다.
+현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정하고, 어르신 목록과 홈의 어르신 표시에 쓴다.
 
 응답 `200`
 
@@ -177,6 +178,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
   "profiles": [
     {
       "profileId": "00000000-0000-4000-8000-000000000101",
+      "name": "김○○",
+      "gender": "female",
       "setupStatus": "completed"
     }
   ]
@@ -184,11 +187,14 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 ```
 
 - `setupStatus`: `inProgress`, `completed`
-- 목록이 비었으면 기본 정보 입력부터, `inProgress`이면 그 `profileId`로 세부 정보 입력부터 이어서, `completed`이면 홈으로 간다.
+- 입력 중(`inProgress`)인 프로필도 담는다. 만든 순서(`created_at`)대로 반환한다.
+- 목록이 비었으면 홈으로 간다. 입력을 마친(`completed`) 프로필이 생길 때까지 앱은 대화 카드, 면회와 리포트처럼 프로필이 필요한 기능을 막는다.
+- `completed`인 프로필이 있으면 홈으로 간다. `inProgress`인 프로필만 있을 때 어디로 갈지는 미정([미정 사항](#미정-사항) 9)
 
 **구현 메모**
 
 - `setupStatus`는 `EXISTS (SELECT 1 FROM card_sets WHERE profile_id = ...)`로 계산한다.
+- `name`, `gender`는 `profiles`에서 읽는다. 순서는 `ORDER BY created_at`이며 `idx_profiles_user(user_id, created_at)`를 탄다.
 
 <br>
 
@@ -217,15 +223,15 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 응답 `201` — [Profile](#profile), `setupStatus`는 `inProgress`
 
-- 계정당 1개다. DB에 유일 제약이 없으므로 서버가 확인한다.
+- 계정당 최대 3개다. 입력 중(`inProgress`)인 프로필도 센다. DB에 개수 제약이 없으므로 서버가 확인한다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
-| 409 | `PROFILE_ALREADY_EXISTS` | 계정에 이미 프로필이 있음 |
+| 409 | `PROFILE_LIMIT_EXCEEDED` | 계정에 이미 프로필이 3개 있음 |
 
 **구현 메모**
 
-- 계정당 1개는 DB 유일 제약이 없다. 같은 트랜잭션에서 `SELECT 1 FROM users WHERE user_id = %s FOR UPDATE`로 계정 행을 잠근 뒤 확인하고 넣는다. 동시 요청에도 하나만 생긴다.
+- 계정당 3개는 DB 제약이 없다. 같은 트랜잭션에서 `SELECT 1 FROM users WHERE user_id = %s FOR UPDATE`로 계정 행을 잠근 뒤 `profiles` 개수를 세고 넣는다. 동시 요청에도 3개를 넘지 않는다.
 - `condition.stage`는 `condition_stage`, `condition.symptomNote`는 `symptom_note`다.
 
 <br>
@@ -278,7 +284,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 ### 2-6. `POST /api/v1/profiles/{profileId}/life-facts` — 신규
 
-마이페이지에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
+일대기에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
 
 요청
 
@@ -318,6 +324,28 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - `require_owned(connection, LIFE_FACT, fact_id, ...)`로 확인한다.
+
+<br>
+
+### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
+
+어르신 목록에서 프로필 하나를 지운다. 그 프로필의 생애 정보, 사진, 주제와 대화 카드, 면회 기록(평가, 음성 분석 작업, 리포트, 변경 제안)을 함께 삭제한다. 계정과 다른 프로필은 남는다. 사진과 음성 원본은 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣어 지운다.
+
+본문 없음.
+
+응답 `204`
+
+- 마지막 프로필도 지울 수 있다. 지운 뒤 2-1은 빈 목록을 돌려준다.
+- 카드 생성이나 음성 분석이 처리 중인 프로필의 삭제는 미정([미정 사항](#미정-사항) 8)
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_NOT_FOUND` |
+
+**구현 메모**
+
+- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- 카드와 주제가 있는 프로필을 지우는 테스트를 더한다. `conversation_cards`의 `profile_topics` 참조에는 `ON DELETE`가 없어 같은 삭제 안의 CASCADE 순서에 기대며, 1-5에도 아직 이 경우의 테스트가 없다.
 
 <br>
 
@@ -518,3 +546,5 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
 | 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
 | 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
+| 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
+| 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
