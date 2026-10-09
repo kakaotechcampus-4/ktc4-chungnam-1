@@ -1,6 +1,6 @@
 # BE 영역
 
-담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정은 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
 MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 현재 RTX 3060 Ti는 개발용이며 시연 장비의 사양과 처리 성능은 추가 실험 후 정한다. 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
 
@@ -149,8 +149,9 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
         → status=authenticated  → 홈
         → status=consentRequired → 동의 화면 → POST /auth/consent → 홈
 
+    프로필 설정의 선택 동의 변경 → PATCH /auth/me/consents
     프로필 설정의 로그아웃 → POST /auth/logout → 로그인 화면
-    회원 탈퇴 확인의 탈퇴하기 → DELETE /auth/me → 로그인 화면
+    회원 탈퇴 확인의 탈퇴하기 → DELETE /auth/me (탈퇴 이유는 선택) → 로그인 화면
 
 구글 인증에 성공한 것만으로는 계정을 만들지 않는다. 필수 동의가 모두 완료될 때 계정과 동의 이력을 함께 만든다. 필수 동의를 거부하거나 중단하면 계정이 남지 않는다.
 
@@ -161,8 +162,9 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `POST` | `/auth/google` | 구글 ID 토큰 검증. 계정이 있으면 세션 발급, 없으면 동의 요청 |
 | `POST` | `/auth/consent` | 필수 동의 제출. 계정과 동의 이력 생성 후 세션 발급 |
 | `GET` | `/auth/me` | 세션으로 현재 계정 조회 (`Authorization: Bearer <accessToken>`) |
+| `PATCH` | `/auth/me/consents` | 선택 동의 변경. 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 추가 |
 | `POST` | `/auth/logout` | 요청에 쓴 세션 폐기. 본문 없이 `204` |
-| `DELETE` | `/auth/me` | 회원 탈퇴. 계정과 동의 이력을 지우고 요청에 쓴 세션 폐기. 본문 없이 `204` |
+| `DELETE` | `/auth/me` | 회원 탈퇴. 계정과 그 아래 기록을 지우고 요청에 쓴 세션 폐기. 탈퇴 이유는 선택 본문. `204` |
 
 요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
@@ -195,11 +197,16 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 `POST /auth/consent` 는 `registrationToken`, `consentVersion`, `consents`(네 항목 모두 boolean)와 선택값 `displayName` 을 받고 `status=authenticated` 응답을 준다.
 
-`POST /auth/logout` 과 `DELETE /auth/me` 는 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. 앱 화면의 탈퇴 이유 설문은 서버로 보내지 않는다.
+`POST /auth/logout` 은 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. `DELETE /auth/me` 는 탈퇴 이유를 선택 본문(`reasons`, `otherText`)으로 받으며, 고르지 않았으면 본문 없이 보낸다.
 
+`PATCH /auth/me/consents` 는 선택 동의(`serviceImprovement`, `pushNotification`) 중 보낸 항목만 바꾼다([API 1-6](../docs/architecture/api-spec.md#1-6-patch-authmeconsents--신규)).
+
+- 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 행을 더하며 약관 버전은 직전 이력의 값을 쓴다. 같은 계정의 동시 변경이 서로를 덮지 않도록 계정 행을 잠근 뒤 더한다.
+- 값은 `true`, `false`만 받는다. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 `REQUIRED_CONSENT_NOT_CHANGEABLE`(422), 본문이 비었거나 `null`을 보내면 `INVALID_REQUEST`(422)다.
 - 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.
 - 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
 - DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체를 실제로 지우는 처리는 아직 없다(아래 "아직 정하지 않은 것").
+- 탈퇴 이유는 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣고 계정 ID는 넣지 않는다. `reasons`는 1개 이상이고 중복을 받지 않으며, `otherText`는 `other`를 고른 경우에만 비우지 않고 보낸다. 조건이 맞지 않으면 `INVALID_REQUEST`(422)이며 계정을 지우지 않는다. `otherText`는 로그에 남기지 않는다.
 
 ### 세션
 
@@ -227,6 +234,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름 |
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
+| `REQUIRED_CONSENT_NOT_CHANGEABLE` | 422 | 선택 동의 변경에 필수 동의를 보냄 |
 | `CONSENT_VERSION_MISMATCH` | 409 | 앱이 보낸 약관 버전이 서버와 다름 |
 | `UNAUTHENTICATED` | 401 | 세션이 없거나 유효하지 않음. 로그아웃이나 탈퇴로 폐기한 세션 포함 |
 | `SESSION_EXPIRED` | 401 | 세션 만료. 다시 로그인 필요 |
@@ -260,6 +268,29 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
+
+## 프로필과 생애 정보 API
+
+[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 2-5(프로필 입력 마치기)는 작업 B가 만든다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
+
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `GET` | `/api/v1/profiles` | 현재 계정의 프로필 목록. 만든 순서이며 입력 중인 프로필도 담는다 |
+| `POST` | `/api/v1/profiles` | 기본 정보로 프로필 생성. `201`, `setupStatus`는 `inProgress` |
+| `GET` | `/api/v1/profiles/{profileId}` | 프로필과 생애 정보 |
+| `PATCH` | `/api/v1/profiles/{profileId}` | 기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정 |
+| `DELETE` | `/api/v1/profiles/{profileId}` | 프로필 하나와 그 아래 기록 삭제. `204` |
+| `POST` | `/api/v1/profiles/{profileId}/life-facts` | 일대기에서 생애 정보 추가. `201` |
+| `PATCH` | `/api/v1/life-facts/{factId}` | 생애 정보 중 보낸 필드만 수정 |
+
+- `setupStatus`는 저장하지 않고 `card_sets` 행이 있는지로 계산한다.
+- 계정당 프로필은 입력 중인 것을 포함해 3개까지다. DB 제약이 없으므로 같은 트랜잭션에서 계정 행을 `FOR UPDATE`로 잠근 뒤 세어, 동시 요청에도 넘지 않는다. 넘으면 `PROFILE_LIMIT_EXCEEDED`(409)다.
+- 2-4의 세부 정보 네 항목은 `null`을 보내면 지운다. 이름, 성별, 생년월일과 `condition`은 `null`로 지울 수 없다. `condition`은 한 덩어리로 바꾸므로 `symptomNote`를 빼면 `null`로 저장한다. 본문이 비어 있으면 바꾸지 않고 현재 프로필을 돌려준다.
+- 빈 문자열과 공백만 있는 값은 이름, 세부 정보와 생애 정보의 제목과 내용에서 `INVALID_REQUEST`(422)다. DB CHECK도 막지만 요청 검증이 먼저 거절한다.
+- 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
+- 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
+- 응답의 `photos`는 3-1 전까지 항상 빈 배열이다. 사진 보관과 분석 동의 설계(미정 3) 후 3-1, 3-2와 함께 `ProfilePhoto`와 `imageUrl`을 붙인다.
+- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
 
 ## AI 음성 분석 연동
 
