@@ -25,18 +25,30 @@ final photoDescriptionStoreProvider = Provider<PhotoDescriptionStore>(
   (ref) => const MockPhotoDescriptionStore(),
 );
 
-/// 보호자가 고쳐 저장한 설명을 `photoId` 별로 들고 있다.
+/// 고친 설명 하나가 속한 자리. 같은 휴대폰을 쓰는 계정과 어르신마다 따로 둔다.
+///
+/// [accountId] 가 `null` 이면 서버 세션 없이 들어온 경우다.
+typedef PhotoDescriptionKey = ({
+  String? accountId,
+  String profileId,
+  String photoId,
+});
+
+/// 보호자가 고쳐 저장한 설명을 계정, 어르신, 사진마다 들고 있다.
 ///
 /// 서버가 저장한 값을 다시 내려주기 전까지 화면은 이 값을 AI 설명보다 앞세운다.
-class EditedPhotoDescriptions extends Notifier<Map<String, String>> {
+/// 어르신 정보와 함께 앱이 켜져 있는 동안만 기억하고, 로그아웃이나 탈퇴로
+/// 어르신 정보를 지울 때 함께 지운다(`forgetCareProfiles`).
+class EditedPhotoDescriptions
+    extends Notifier<Map<PhotoDescriptionKey, String>> {
   @override
-  Map<String, String> build() => const {};
+  Map<PhotoDescriptionKey, String> build() => const {};
 
-  void put(String photoId, String description) =>
-      state = {...state, photoId: description};
+  void put(PhotoDescriptionKey key, String description) =>
+      state = {...state, key: description};
 }
 
 final editedPhotoDescriptionsProvider =
-    NotifierProvider<EditedPhotoDescriptions, Map<String, String>>(
+    NotifierProvider<EditedPhotoDescriptions, Map<PhotoDescriptionKey, String>>(
       EditedPhotoDescriptions.new,
     );

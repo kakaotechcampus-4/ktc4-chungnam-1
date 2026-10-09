@@ -5,6 +5,7 @@ import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_text_field.dart';
+import '../auth/auth_providers.dart';
 import 'photo_description_store.dart';
 
 /// 프로필 설정의 갤러리.
@@ -27,9 +28,12 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
 
   String? _selectedId;
   final _text = TextEditingController();
-  bool _saving = false;
-  bool _saved = false;
-  bool _saveFailed = false;
+
+  /// 저장 결과는 그 사진에만 붙인다. 저장하는 동안 다른 사진을 골라도 그 사진의
+  /// 입력칸과 안내가 바뀌지 않게 사진마다 기억한다.
+  final _savingIds = <String>{};
+  String? _savedId;
+  String? _failedId;
 
   @override
   void dispose() {
@@ -40,15 +44,22 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
   ProfilePhoto? get _selected =>
       widget.photos.where((photo) => photo.photoId == _selectedId).firstOrNull;
 
+  /// 고친 설명을 찾는 자리. 계정과 어르신이 다르면 같은 사진이라도 따로 둔다.
+  PhotoDescriptionKey _keyOf(ProfilePhoto photo) => (
+    accountId: ref.read(sessionProvider)?.account.accountId,
+    profileId: photo.profileId,
+    photoId: photo.photoId,
+  );
+
   /// 지금 화면에 보여줄 설명. 보호자가 고친 것이 있으면 그것이다.
   String? _currentDescription(ProfilePhoto photo) =>
-      ref.read(editedPhotoDescriptionsProvider)[photo.photoId] ??
+      ref.read(editedPhotoDescriptionsProvider)[_keyOf(photo)] ??
       photo.description;
 
   void _toggle(ProfilePhoto photo) {
     setState(() {
-      _saved = false;
-      _saveFailed = false;
+      _savedId = null;
+      _failedId = null;
       if (_selectedId == photo.photoId) {
         _selectedId = null;
         return;
@@ -60,10 +71,12 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
 
   Future<void> _save(ProfilePhoto photo) async {
     final description = _text.text.trim();
+    // 저장을 누른 때의 계정과 어르신에 남긴다. 기다리는 동안 바뀌어도 그대로다.
+    final key = _keyOf(photo);
     setState(() {
-      _saving = true;
-      _saved = false;
-      _saveFailed = false;
+      _savingIds.add(photo.photoId);
+      _savedId = null;
+      _failedId = null;
     });
 
     try {
@@ -71,19 +84,20 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
           .read(photoDescriptionStoreProvider)
           .save(photoId: photo.photoId, description: description);
       if (!mounted) return;
-      ref
-          .read(editedPhotoDescriptionsProvider.notifier)
-          .put(photo.photoId, description);
+      ref.read(editedPhotoDescriptionsProvider.notifier).put(key, description);
       setState(() {
-        _saving = false;
-        _saved = true;
-        _text.text = description;
+        _savingIds.remove(photo.photoId);
+        // 그 사이 다른 사진을 골랐으면 지금 입력칸은 그 사진의 것이다.
+        if (_selectedId == photo.photoId) {
+          _savedId = photo.photoId;
+          _text.text = description;
+        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _saving = false;
-        _saveFailed = true;
+        _savingIds.remove(photo.photoId);
+        if (_selectedId == photo.photoId) _failedId = photo.photoId;
       });
     }
   }
@@ -91,8 +105,9 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
   @override
   Widget build(BuildContext context) {
     final photos = widget.photos;
-    // 고친 설명이 저장되면 표시를 다시 그린다.
+    // 고친 설명이 저장되거나 계정이 바뀌면 표시를 다시 그린다.
     final edited = ref.watch(editedPhotoDescriptionsProvider);
+    ref.watch(sessionProvider.select((s) => s?.account.accountId));
 
     if (photos.isEmpty) {
       return Text(
@@ -117,7 +132,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                           photo: photos[start + col],
                           number: start + col + 1,
                           edited: edited.containsKey(
-                            photos[start + col].photoId,
+                            _keyOf(photos[start + col]),
                           ),
                           selected: photos[start + col].photoId == _selectedId,
                           onTap: () => _toggle(photos[start + col]),
@@ -140,15 +155,15 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
           const SizedBox(height: AppSpacing.lg),
           _DescriptionPanel(
             photo: selected,
-            edited: edited.containsKey(selected.photoId),
+            edited: edited.containsKey(_keyOf(selected)),
             controller: _text,
             current: _currentDescription(selected) ?? '',
-            saving: _saving,
-            saved: _saved,
-            saveFailed: _saveFailed,
+            saving: _savingIds.contains(selected.photoId),
+            saved: _savedId == selected.photoId,
+            saveFailed: _failedId == selected.photoId,
             onChanged: () => setState(() {
-              _saved = false;
-              _saveFailed = false;
+              _savedId = null;
+              _failedId = null;
             }),
             onSave: () => _save(selected),
           ),
