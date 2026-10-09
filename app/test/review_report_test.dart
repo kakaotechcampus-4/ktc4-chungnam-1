@@ -9,11 +9,13 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/review/review_controller.dart';
 
+import 'sample_profile.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   ProviderContainer makeContainer() {
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: [withSampleProfile]);
     addTearDown(container.dispose);
     return container;
   }
@@ -222,6 +224,7 @@ void main() {
     final ready = Completer<void>();
     final container = ProviderContainer(
       overrides: [
+        withSampleProfile,
         mockRepositoryProvider.overrideWithValue(_WaitingRepository(ready)),
       ],
     );

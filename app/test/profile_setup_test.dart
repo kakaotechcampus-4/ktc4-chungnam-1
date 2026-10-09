@@ -207,6 +207,115 @@ void main() {
     });
   });
 
+  group('이어서 입력', () {
+    // 합성 문장이다. 실제 어르신의 생애 정보가 아니다.
+    const savedText = '합성 예시 답입니다';
+
+    Future<ProviderContainer> openAt(
+      WidgetTester tester,
+      SetupState saved,
+    ) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(setupControllerProvider.notifier).restore(saved);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: const ProfileSetupScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return container;
+    }
+
+    // 기본 정보를 채운 합성 저장본이다.
+    const filled = SetupDraft(
+      name: '김○○',
+      gender: 'female',
+      birthYear: 1943,
+      birthMonth: 3,
+      birthDay: 12,
+      stage: ConditionStage.mildCognitiveImpairment,
+    );
+
+    test('뒤로 가기로 나와도 가 본 가장 먼 단계를 기억한다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final controller = container.read(setupControllerProvider.notifier)
+        ..updateDraft(filled);
+
+      // 셋째 항목까지 갔다가 화면을 나가려고 기본 정보까지 돌아온다.
+      for (var i = 0; i < 3; i++) {
+        controller.next();
+      }
+      while (controller.back()) {}
+      final saved = container.read(setupControllerProvider);
+      expect(saved.stepIndex, 0);
+
+      controller.restore(saved);
+
+      expect(container.read(setupControllerProvider).stepIndex, 3);
+    });
+
+    test('기본 정보를 비웠으면 기본 정보부터 연다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container
+          .read(setupControllerProvider.notifier)
+          .restore(const SetupState(reachedIndex: 3));
+
+      expect(
+        container.read(setupControllerProvider).stepIndex,
+        0,
+        reason: '그대로 끝까지 가면 마칠 수 없다',
+      );
+    });
+
+    test('사진을 빼 태그 단계가 없으면 사진 단계에서 연다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container
+          .read(setupControllerProvider.notifier)
+          .restore(const SetupState(draft: filled, reachedIndex: 6));
+
+      expect(container.read(setupControllerProvider).isPhoto, isTrue);
+    });
+
+    testWidgets('가 본 가장 먼 항목에서 열고 앞 항목의 답도 채워 둔다', (tester) async {
+      final first = lifeFactSteps[0];
+      final third = lifeFactSteps[2];
+      final container = await openAt(
+        tester,
+        SetupState(
+          reachedIndex: 3,
+          draft: filled.copyWith(facts: {first.category: savedText}),
+        ),
+      );
+
+      expect(find.text(third.question), findsOneWidget);
+      expect(find.text('말로 답하기'), findsOneWidget, reason: '셋째 항목은 아직 답이 없다');
+
+      container.read(setupControllerProvider.notifier)
+        ..back()
+        ..back();
+      await tester.pumpAndSettle();
+
+      expect(find.text(first.question), findsOneWidget);
+      expect(find.widgetWithText(TextField, savedText), findsOneWidget);
+      expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
+    });
+  });
+
   group('다음 버튼 자리', () {
     /// 화면을 띄우고 지금 보이는 행동 버튼의 사각형과 스크롤 영역을 돌려준다.
     Future<(Rect button, Rect viewport)> openSetup(

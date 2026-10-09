@@ -12,6 +12,8 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/report/story_edit_screen.dart';
 
+import 'sample_profile.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -32,7 +34,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: overrides,
+          overrides: [withSampleProfile, ...overrides],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,
