@@ -131,8 +131,10 @@ GoRouter buildRouter() {
           // 고칠 이야기는 변경 사항 확인에서만 넘어온다. 주소로 직접 들어오거나
           // 앱을 다시 띄우면 비어 있다.
           final initial = state.extra;
-          if (initial is! StoryDraft) return const StoryEditMissingView();
-          return StoryEditScreen(initial: initial);
+          if (initial is! StoryDraft) {
+            return const _NeedsProfile(child: StoryEditMissingView());
+          }
+          return _NeedsProfile(child: StoryEditScreen(initial: initial));
         },
       ),
       GoRoute(
