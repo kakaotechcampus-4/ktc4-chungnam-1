@@ -66,6 +66,16 @@ abstract final class AppRoutes {
 
   static String reportChangesOf(String reportId) => '/report/$reportId/changes';
 
+  /// G-2 에서 여는 이야기 수정. 변경 사항 확인이 `extra` 로 고칠 이야기를
+  /// 넘기고, `수정 완료` 를 누르면 고친 값을 돌려받는다.
+  ///
+  /// `/report/story-edit` 처럼 두면 `/report/:reportId` 가 먼저 잡아 리포트
+  /// 화면이 열린다. 변경 사항 확인 아래에 둔다.
+  static const storyEdit = '/report/:reportId/changes/story';
+
+  static String storyEditOf(String reportId) =>
+      '/report/$reportId/changes/story';
+
   /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
   static const profile = '/profile';
 

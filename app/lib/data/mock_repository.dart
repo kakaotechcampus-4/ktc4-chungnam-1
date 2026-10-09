@@ -72,4 +72,13 @@ class MockRepository {
       json['changeProposal'] as Map<String, dynamic>,
     );
   }
+
+  /// 변경 제안 검토를 보낸다. API 7-4 자리다.
+  ///
+  /// 목 데이터 단계라 아무 데도 저장하지 않는다. 서버를 붙이면 이 자리가
+  /// `POST /api/v1/visit-sessions/{sessionId}/proposals/review` 호출로 바뀐다.
+  Future<void> submitProposalReview(
+    String sessionId,
+    ProposalReview review,
+  ) async {}
 }

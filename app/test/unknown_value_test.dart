@@ -28,7 +28,7 @@ void main() {
       'ChangeReviewStatus': ChangeReviewStatus.parse,
       'SessionStatus': SessionStatus.parse,
       'ReportStatus': ReportStatus.parse,
-      'ProposalStatus': ProposalStatus.parse,
+      'TopicAction': TopicAction.parse,
       'CareRecipientReaction': CareRecipientReaction.parse,
       'CaregiverReaction': CaregiverReaction.parse,
       'VisitMood': VisitMood.parse,
@@ -83,42 +83,25 @@ void main() {
     });
   });
 
-  group('되돌린 변경은 정상 상태다', () {
-    // reverted 는 보호자가 승인해 반영한 변경을 나중에 되돌린 상태다. 값을 읽지
-    // 못한 경우가 아니므로 null 이 되면 안 된다.
-    test('ChangeReviewStatus 는 reverted 를 읽는다', () {
-      expect(ChangeReviewStatus.parse('reverted'), ChangeReviewStatus.reverted);
-    });
-
-    test('TagReviewStatus 는 reverted 를 읽지 않는다', () {
-      // 이미지 분석 후보에는 되돌릴 대상이 없다. 두 타입을 다시 합치면 깨진다.
-      expect(TagReviewStatus.parse('reverted'), isNull);
+  group('검토 상태는 계약의 값만 읽는다', () {
+    // 승인한 제안을 되돌리는 기능이 계약에서 빠졌다. reverted 를 다시 읽으면
+    // 계약에 없는 상태가 화면까지 흘러간다.
+    test('ChangeReviewStatus 는 reverted 를 읽지 않는다', () {
+      expect(ChangeReviewStatus.parse('reverted'), isNull);
     });
 
     test('두 타입의 값 목록이 계약과 같다', () {
-      expect(TagReviewStatus.values.map((v) => v.name), [
-        'pending',
-        'accepted',
-        'rejected',
-      ]);
-      expect(ChangeReviewStatus.values.map((v) => v.name), [
-        'pending',
-        'accepted',
-        'rejected',
-        'reverted',
-      ]);
+      const contract = ['pending', 'accepted', 'rejected'];
+      expect(TagReviewStatus.values.map((v) => v.name), contract);
+      expect(ChangeReviewStatus.values.map((v) => v.name), contract);
     });
 
-    test('변경 제안이 reverted 를 담는다', () {
-      final change = ProposedChange.fromJson({
-        'changeId': 'change_001',
-        'changeType': 'lifeFactAdd',
-        'text': '바다를 좋아하셨다',
-        'reason': '면회에서 다시 말씀하셨다',
-        'reviewStatus': 'reverted',
-      });
-
-      expect(change.reviewStatus, ChangeReviewStatus.reverted);
+    test('주제 행동의 값 목록이 계약과 같다', () {
+      expect(TopicAction.values.map((v) => v.name), [
+        'more',
+        'less',
+        'exclude',
+      ]);
     });
   });
 
@@ -175,51 +158,39 @@ void main() {
     });
 
     test('없어도 되는 값은 null 로 담긴다', () {
-      final change = ProposedChange.fromJson({
-        'changeId': 'change_002',
-        'changeType': 'topicPriority',
-        'topicTitle': '고향',
-        'direction': 'up',
+      final proposal = TopicProposal.fromJson({
+        'proposalId': 'topic_proposal_001',
+        'cardId': 'card_001',
+        'topic': {'topicId': 'topic_001', 'title': '고향'},
+        'suggestedAction': 'more',
         'reason': '반응이 좋았다',
-        'reviewStatus': 'accepted',
+        'reviewStatus': 'pending',
       });
 
-      // lifeFactAdd 가 아니라 text 를 갖지 않는다. 이것은 정상이다.
-      expect(change.text, isNull);
-      expect(change.reviewStatus, ChangeReviewStatus.accepted);
+      // 주제 설명은 이 화면을 위해 더한 값이라 아직 오지 않을 수 있다.
+      expect(proposal.topic.description, isNull);
+      expect(proposal.suggestedAction, TopicAction.more);
+    });
+
+    test('주제 행동이 계약에 없으면 null 로 담긴다', () {
+      final proposal = TopicProposal.fromJson({
+        'proposalId': 'topic_proposal_002',
+        'cardId': 'card_002',
+        'topic': {'topicId': 'topic_002', 'title': '직업'},
+        'suggestedAction': 'sideways',
+        'reason': '확인이 필요하다',
+        'reviewStatus': 'pending',
+      });
+
+      expect(proposal.suggestedAction, isNull);
+      expect(proposal.topic.title, '직업');
     });
   });
 
   group('enum 이 아닌 상태 문자열은 아직 걸러지지 않는다', () {
     // 계약이 값을 정해 둔 자리인데 String 으로 남아 무엇이든 통과한다.
-    // sessionStatus, reportStatus, proposalStatus 는 이 PR 에서 enum 으로
-    // 올렸고 아래 셋은 남았다. 이 PR 범위 밖이라 현재 동작만 적어 둔다.
-    test('changeType 은 계약에 없는 값도 통과한다', () {
-      final change = ProposedChange.fromJson({
-        'changeId': 'change_003',
-        'changeType': 'lifeFactRemove',
-        'reason': '확인이 필요하다',
-        'reviewStatus': 'pending',
-      });
-
-      // 계약의 값은 topicPriority 와 lifeFactAdd 둘뿐이다.
-      expect(change.changeType, 'lifeFactRemove');
-    });
-
-    test('direction 은 계약에 없는 값도 통과한다', () {
-      final change = ProposedChange.fromJson({
-        'changeId': 'change_004',
-        'changeType': 'topicPriority',
-        'topicTitle': '직업',
-        'direction': 'sideways',
-        'reason': '확인이 필요하다',
-        'reviewStatus': 'pending',
-      });
-
-      // 계약의 값은 up 과 down 둘뿐이다.
-      expect(change.direction, 'sideways');
-    });
-
+    // 변경 제안의 changeType 과 direction 은 계약에서 빠지고 TopicAction 으로
+    // 바뀌었다. 아래 하나가 남았다. 범위 밖이라 현재 동작만 적어 둔다.
     test('sourceType 은 계약에 없는 값도 통과한다', () {
       final fact = LifeFact.fromJson({
         'factId': 'fact_001',

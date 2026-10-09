@@ -2,10 +2,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
+import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
+import 'package:saerok/features/report/report_screen.dart';
+import 'package:saerok/features/report/story_edit_screen.dart';
 
 import 'sample_profile.dart';
 
@@ -13,7 +18,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   /// 화면 하나를 그 경로로 띄운다.
-  Future<void> openAt(WidgetTester tester, String location) async {
+  Future<void> openAt(
+    WidgetTester tester,
+    String location, {
+    List<Override> overrides = const [],
+  }) async {
     tester.view.physicalSize = const Size(1236, 2751);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -25,7 +34,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [withSampleProfile],
+          overrides: [withSampleProfile, ...overrides],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,
@@ -74,6 +83,45 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('변경 사항 확인에서 이야기 수정하기를 누르면 수정 화면이 열린다', (tester) async {
+      // 이야기 수정 경로가 `/report/:reportId` 와 겹치면 리포트 화면이 열린다.
+      // 경로만 보므로 asset 을 읽지 않고 합성 제안 하나를 바로 넣는다.
+      await openAt(
+        tester,
+        AppRoutes.reportChangesOf('report_demo_001'),
+        overrides: [
+          changeProposalProvider.overrideWith(
+            (ref) async => const ChangeProposal(
+              sessionId: 'session_test_001',
+              topicProposals: [],
+              lifeFactProposals: [
+                LifeFactProposal(
+                  proposalId: 'life_fact_proposal_test_001',
+                  title: '합성 제목',
+                  content: '합성 내용',
+                  reason: '합성 이유',
+                  reviewStatus: ChangeReviewStatus.pending,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+      await tester.tap(find.text('이야기 수정하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StoryEditScreen), findsOneWidget);
+      expect(find.byType(ReportScreen), findsNothing);
+    });
+
+    testWidgets('이야기 수정 주소로 바로 들어오면 안내만 보여준다', (tester) async {
+      await openAt(tester, AppRoutes.storyEditOf('report_demo_001'));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(StoryEditMissingView), findsOneWidget);
+    });
+
     testWidgets('기록에서 연 리포트에는 변경 사항 버튼이 없다', (tester) async {
       await openAt(tester, AppRoutes.reportOf('report_demo_001'));
       expect(
@@ -86,11 +134,7 @@ void main() {
         tester,
         AppRoutes.reportOf('report_demo_001', fromHistory: true),
       );
-      expect(
-        find.text('변경 사항 확인하기'),
-        findsNothing,
-        reason: '이미 반영을 마친 회차다',
-      );
+      expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이미 반영을 마친 회차다');
     });
 
     testWidgets('보류된 일대기는 안내를 보여준다', (tester) async {

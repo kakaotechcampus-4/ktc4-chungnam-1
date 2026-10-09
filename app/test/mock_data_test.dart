@@ -75,14 +75,14 @@ void main() {
       reason: '명절 음식은 쓰지 않았다고 답한 카드다',
     );
     expect(evaluation.cardReviews.last.caregiverReaction, isNull);
-    // 반영이 끝난 상태라 pending 이 남아 있지 않다.
-    expect(proposal.proposalStatus, ProposalStatus.reviewed);
-    expect(
-      proposal.changes.where(
-        (c) => c.reviewStatus == ChangeReviewStatus.pending,
-      ),
-      isEmpty,
-    );
+    // 변경 사항 확인 화면이 읽는 7-3 응답이라 모두 확인 전이다.
+    expect(proposal.sessionId, 'session_demo_001');
+    expect(proposal.topicProposals, isNotEmpty);
+    expect(proposal.lifeFactProposals, isNotEmpty);
+    expect([
+      ...proposal.topicProposals.map((p) => p.reviewStatus),
+      ...proposal.lifeFactProposals.map((p) => p.reviewStatus),
+    ], everyElement(ChangeReviewStatus.pending));
   });
 
   test('provider 를 갈아끼우면 화면이 보는 값이 바뀐다', () async {
