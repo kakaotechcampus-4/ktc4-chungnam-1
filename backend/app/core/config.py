@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     speech_analysis_lease_seconds: int = Field(default=900, ge=60)
     speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
+    # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른
+    # 비공개 버킷에 저장한다. 비어 있으면 사진 업로드와 조회 URL 생성을 거절한다.
+    image_s3_bucket: str = ""
+    image_s3_region: str = "ap-northeast-2"
+    image_s3_prefix: str = "photos"
+    image_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
+    image_presigned_ttl_seconds: int = Field(default=900, ge=60)
+    max_image_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
+
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
     # `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 그 웹 클라이언트 ID가
     # 되므로, FE 가 어떤 값을 쓰는지 확인한 뒤 채운다. 비어 있으면 로그인을 거부한다.

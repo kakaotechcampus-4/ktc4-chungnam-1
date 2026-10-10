@@ -103,7 +103,7 @@ class PhotoTagsStep extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(profileProvider);
+    final profile = ref.watch(profileSampleProvider);
 
     return profile.when(
       loading: () => const SizedBox(

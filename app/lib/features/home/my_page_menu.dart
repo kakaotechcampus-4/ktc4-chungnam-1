@@ -1,14 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
+import '../profile/profile_dialogs.dart';
 
 /// 하단 탭의 `마이페이지` 를 누르면 뜨는 메뉴다.
 ///
 /// 이 탭은 화면으로 바로 가지 않고 두 곳으로 갈라진다. 프로필 설정과 리포트
 /// 기록이다.
+///
+/// 등록한 어르신이 없으면 프로필 설정은 계정 항목만 보여주고, 리포트 기록은
+/// 등록부터 안내한다.
 Future<void> showMyPageMenu(BuildContext context) {
+  final hasProfile = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(careProfilesProvider).hasSelected;
+
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.background,
@@ -25,7 +36,7 @@ Future<void> showMyPageMenu(BuildContext context) {
             _MenuRow(
               icon: Icons.person_outline,
               label: '프로필 설정',
-              detail: '어르신 정보와 사진을 확인해요',
+              detail: hasProfile ? '어르신 정보와 사진을 확인해요' : '약관 동의와 계정을 관리해요',
               onTap: () {
                 Navigator.pop(sheetContext);
                 context.push(AppRoutes.profile);
@@ -38,6 +49,10 @@ Future<void> showMyPageMenu(BuildContext context) {
               detail: '지난 면회 리포트를 다시 볼 수 있어요',
               onTap: () {
                 Navigator.pop(sheetContext);
+                if (!hasProfile) {
+                  showProfileRequiredDialog(context);
+                  return;
+                }
                 context.push(AppRoutes.reports);
               },
             ),

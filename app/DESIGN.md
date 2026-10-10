@@ -140,7 +140,7 @@
 | `logo.webp` | 스플래시 (A-1) |
 | `onboarding.webp` | 처음 오셨네요 (B-1) |
 | `main.webp` | 홈 |
-| `patient.webp` | 프로필 설정 상단 원형 사진 |
+| `patient-male.webp`, `patient-female.webp` | 어르신 기본 프로필 사진. 성별에 맞춰 고른다 |
 | `family.webp` | 세부 정보 입력에서 첨부하는 가족 사진 |
 | `visitation.webp` | 면회 인증샷 |
 

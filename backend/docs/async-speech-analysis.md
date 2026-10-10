@@ -33,7 +33,7 @@ Flutter
 BE API
   ├─ 세션 인증
   ├─ 계정 필수 동의 확인
-  ├─ 면회 소유권·피보호자 확인·녹음 허가 확인
+  ├─ 면회 소유권·보호자 평가 제출 확인
   ├─ WAV/PCM 16-bit/16kHz/mono 검증
   ├─ 파일 크기와 SHA-256 계산
   ├─ 비공개 S3 업로드
@@ -48,7 +48,7 @@ BE worker
   ├─ AI 서버 동기 API 호출
   ├─ SpeechAnalysisResult 및 analysisId 검증
   ├─ S3 원본 삭제
-  └─ sttCompleted 기록
+  └─ 전사문 임시 저장과 sttCompleted 기록
 
 Flutter
   └─ analysisId 상태 조회
@@ -76,6 +76,8 @@ uploading → queued → transcribing → sttCompleted
 | `failed` | 정상 결과를 만들지 못함 | 실패 안내 및 후속 동작 |
 
 현재 기본 worker는 리포트 생성기를 주입하지 않으므로 `sttCompleted`에서 멈춘다.
+전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
+worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
 
 ## 4. 공개 API
 
@@ -172,27 +174,24 @@ BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검
 | `app/services/audio_validation.py` | 크기, SHA-256, WAV 규격과 음성 데이터 누락 검사 |
 | `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
-| `app/services/speech_analysis_pipeline.py` | 제출 서비스와 STT worker 처리 순서 |
+| `app/services/speech_analysis_pipeline.py` | 제출 서비스, 음성 대기열과 STT 처리 함수 |
+| `app/workers/base.py` | 임대, 처리와 실패 기록을 반복하는 worker 공통 골격 |
 | `app/workers/speech_analysis.py` | 독립 worker 실행 진입점 |
 | `app/clients/ai_server.py` | 내부 AI 서버 HTTP 클라이언트와 오류 매핑 |
-| `alembic/versions/a8c31f17d902_add_async_speech_analysis_jobs.py` | 작업 테이블 및 참여자 수 migration |
+| `alembic/versions/f8fd6d0e862c_initial_schema.py` | 작업 테이블을 포함한 initial migration |
 | `database/init.sql` | 빈 개발 DB용 최신 bootstrap 스키마 |
 | `tests/test_speech_analyses.py` | API, 중복 제출, worker와 AI 계약 테스트 |
 | `tests/test_audio_storage.py` | S3 암호화, URL 수명과 삭제 어댑터 테스트 |
 
-## 7. 데이터베이스 변경
+## 7. 데이터베이스
 
-`visit_sessions`에 다음 필드를 추가한다.
-
-```text
-participant_count SMALLINT NULL CHECK (participant_count BETWEEN 1 AND 8)
-```
-
+스키마는 `alembic/versions/f8fd6d0e862c_initial_schema.py`(`database/init.sql`과 같음)를
+따른다. 회차 상태와 참여자 수는 `visit_sessions`에 저장하지 않고 작업과 평가로 계산한다.
 `speech_analysis_jobs`에는 다음 정보를 저장한다.
 
 ```text
 analysis_id
-session_id                 한 면회당 하나로 UNIQUE
+session_id                 실패하지 않은 작업은 한 면회당 하나
 status
 participant_count
 s3_object_key              직접 식별정보와 원래 파일명 제외
@@ -200,14 +199,19 @@ size_bytes
 sha256
 data_expires_at
 attempt_count
-lease_expires_at
+lease_expires_at           uploading, transcribing, generatingReport에서 필수
 error_code
 audio_deleted_at
 stt_completed_at
+transcript                 sttCompleted, generatingReport에서만. 리포트 생성 입력
+transcript_expires_at      STT 완료 후 24시간
+transcript_deleted_at
 created_at / updated_at / completed_at
 ```
 
-전사문, AI 응답 본문과 Presigned URL은 작업 테이블에 저장하지 않는다.
+전사문은 리포트 생성 요청(API 8-3)에 넣을 구간(시작, 끝, 화자 라벨, 문장)만 저장하고
+단어별 시각과 확률은 저장하지 않는다. 작업이 끝나면 지운다. AI 응답 본문과 Presigned
+URL은 저장하지 않는다.
 
 ## 8. 환경 설정
 
@@ -416,20 +420,17 @@ worker와 API는 같은 PostgreSQL과 S3 설정을 사용해야 한다.
 
 ### 11.1 테스트 사전 데이터
 
-현재 저장소에는 면회 세션 생성 API와 계정 PostgreSQL 영속화가 아직 없다. 따라서 실제
-API 통합 테스트에는 다음 조건을 만족하는 합성 개발 데이터가 필요하다.
+계정은 로그인 API가 PostgreSQL에 만들지만 면회 회차(5-1)와 보호자 평가(6-1) API는 아직
+없다. 따라서 실제 API 통합 테스트에는 다음 조건을 만족하는 합성 개발 데이터가 필요하다.
 
-- 로그인 세션이 가리키는 `accountId`와 같은 UUID의 `users.user_id`
+- 합성 개발 계정으로 로그인해 만든 `users` 행과 동의 이력
 - 해당 사용자의 `profiles` 행
 - 그 프로필에 속한 `visit_sessions` 행
-- `session_status = 'ended'`
-- `recording_authorization_granted = true`
-- `careRecipientConfirmation`이 승인된 `session_consents` 행
-- 로그인 계정의 `serviceData`, `sensitiveData` 동의
+- 보호자 평가를 마친 회차: `evaluated_at`, `evaluation_satisfaction`,
+  `evaluation_reaction`이 채워짐
 
-실제 사용자의 식별자나 면회 자료를 복사해서 테스트 데이터를 만들지 않는다. 계정 DB
-연결과 면회 세션 API가 완성되기 전까지는 합성 개발 계정과 명시적인 테스트 fixture만
-사용한다.
+실제 사용자의 식별자나 면회 자료를 복사해서 테스트 데이터를 만들지 않는다. 면회 회차와
+평가 API가 완성되기 전까지는 합성 개발 계정과 명시적인 테스트 fixture만 사용한다.
 
 ### 11.2 합성 WAV 만들기
 
@@ -494,6 +495,7 @@ SELECT status,
        attempt_count,
        audio_deleted_at IS NOT NULL AS audio_deleted,
        stt_completed_at IS NOT NULL AS stt_completed,
+       transcript IS NOT NULL AS transcript_stored,
        error_code
   FROM speech_analysis_jobs
  WHERE analysis_id = '<analysis-id>';
@@ -507,6 +509,7 @@ participant_count = 2
 attempt_count = 1
 audio_deleted = true
 stt_completed = true
+transcript_stored = true
 error_code = null
 ```
 
@@ -529,7 +532,8 @@ error_code = null
 | 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨 |
 | 인증 없음 | 401 `UNAUTHENTICATED` |
 | 다른 계정의 면회 | 404 `VISIT_SESSION_NOT_FOUND` |
-| 피보호자 확인 또는 녹음 허가 없음 | 404, 업로드 없음 |
+| 보호자 평가 전 | 409 `EVALUATION_REQUIRED`, 업로드 없음 |
+| 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
 | AI 시간 초과 | 작업 `failed`, `AI_SERVER_TIMEOUT` |
@@ -537,6 +541,7 @@ error_code = null
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | S3 삭제 실패 | 작업을 STT 완료로 표시하지 않음, Lifecycle 삭제 대상 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |
+| STT 완료 후 24시간 안에 리포트 미저장 | 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 
 오류 응답과 로그에서 WAV 내용, 전사문, Presigned URL, 객체 키, 인증 토큰과 AI 오류
 본문이 노출되지 않는지도 함께 확인한다.
@@ -563,15 +568,18 @@ accessToken         → Authorization Bearer
 ## 14. 현재 제한과 후속 작업
 
 - ADR-008은 아직 `proposed`이며 FE, AI, PM의 공동 확인이 남아 있다.
-- 실제 PostgreSQL 계정 저장소와 면회 세션 생성·종료 API가 아직 없다.
+- 면회 회차 생성(5-1)과 보호자 평가(6-1) API가 아직 없다.
 - 실제 S3 버킷, IAM과 Lifecycle은 저장소 밖의 운영 환경에서 구성해야 한다.
 - AI 서버 브랜치와 실제 GPU 환경의 통합 실행은 별도로 확인해야 한다.
 - 독립 실행 가능한 Mock AI HTTP 서버는 없으며 테스트의 `FakeAiServer`는 pytest에서만
   사용한다.
-- 자동 재시도, 사용자 재시도, 취소와 worker 장애 복구는 아직 없다.
+- worker가 멈춘 작업은 임대가 만료되면 정리한다. 업로드 중이던 작업은 지워 다시 제출할
+  수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도,
+  사용자 재시도와 취소는 아직 없다.
 - 리포트 생성 계약과 저장 구현은 없으며 기본 worker는 `sttCompleted`에서 멈춘다.
-- 전사문은 DB에 저장하지 않는다. 리포트 생성기를 연결할 때 같은 worker 메모리에서
-  즉시 전달한다. 장애 복구를 위해 저장해야 한다면 개인정보 처리 기준을 다시 결정한다.
+- 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
+  작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
+  worker가 매 주기에 확인해 지운다.
 - 앱 재실행 후 홈 타일 전체를 복구할 면회 목록 API는 별도 기능이다. 현재는 앱이
   `analysisId`를 알고 있을 때 단건 상태 조회가 가능하다.
 

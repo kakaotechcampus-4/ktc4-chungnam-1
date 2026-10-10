@@ -1,0 +1,14 @@
+# 비밀값은 이미지에 넣지 않는다. 실행할 때 compose의 env_file로 주입한다.
+.env
+.env.*
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 실행에 필요 없는 자료
+tests/
+docs/
+database/
+scripts/
