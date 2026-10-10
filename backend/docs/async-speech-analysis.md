@@ -21,8 +21,8 @@ S3에 임시 저장한 뒤 별도 worker에서 AI 서버의 STT 파이프라인�
 2. 백엔드가 WAV를 S3에 임시 저장하고 AI 서버에 STT 처리를 요청한 뒤 검증된 응답을
    받는다.
 
-리포트 생성은 이 범위와 분리한다. 리포트 생성기가 없어도 STT 성공은
-`sttCompleted`로 기록하며, 리포트까지 만들어진 것처럼 `completed`로 표시하지 않는다.
+리포트 생성(API 8-3)은 이 문서 범위 밖이며 [README의 평가와 리포트 API](../README.md#평가와-리포트-api)에
+정리한다. STT 성공은 `sttCompleted`로 기록하며, 리포트까지 저장해야 `completed`로 표시한다.
 
 ## 2. 전체 처리 흐름
 
@@ -75,7 +75,9 @@ uploading → queued → transcribing → sttCompleted
 | `completed` | 리포트 저장까지 완료 | 완성된 리포트 타일 |
 | `failed` | 정상 결과를 만들지 못함 | 실패 안내 및 후속 동작 |
 
-현재 기본 worker는 리포트 생성기를 주입하지 않으므로 `sttCompleted`에서 멈춘다.
+기본 worker는 STT 뒤 리포트 생성기(8-3)를 부르고, 리포트와 변경 제안을 저장한 뒤에만
+`completed`로 바꾼다. AI 서버가 8-3(`POST /internal/v1/visit-reports`)에 응답하지 못하면
+작업은 `sttCompleted`를 지나 `failed`(`AI_SERVER_ERROR` 등)로 끝난다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
 
@@ -483,7 +485,9 @@ queued → transcribing → sttCompleted
 ```
 
 짧은 파일은 `transcribing` 상태를 조회하기 전에 끝날 수 있다. 최종
-`sttCompleted`와 `errorCode: null`을 확인한다.
+`sttCompleted`와 `errorCode: null`을 확인한다. 기본 worker는 리포트 생성기(8-3)까지
+부르므로, Mock AI 서버가 8-3에 응답하지 않으면 그 뒤 `failed`(`AI_SERVER_ERROR`)가 된다.
+STT 경로만 확인할 때는 `stt_completed`와 `audio_deleted`로 판단한다.
 
 ### 11.5 DB 확인
 

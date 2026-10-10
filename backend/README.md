@@ -304,8 +304,8 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
-있다. 리포트 생성 모델과 저장 계약은 아직 연결되지 않았으므로 기본 worker는 STT 성공
-후 `sttCompleted`에서 멈추고 `completed`로 과장하지 않는다. 전사문은 리포트 생성
+있다. worker는 STT 뒤 같은 작업에서 리포트 생성기(8-3, [평가와 리포트 API](#평가와-리포트-api))로
+리포트와 변경 제안을 저장한 뒤에만 `completed`로 바꾼다. 전사문은 리포트 생성
 입력으로 작업에 임시 저장하며, STT 완료 후 24시간 안에 리포트를 저장하지 못하면 지우고
 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. worker는 위의 공통 골격으로 동작하며,
 임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도와
@@ -385,3 +385,69 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 | `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
 | `SAEROK_IMAGE_PRESIGNED_TTL_SECONDS` | 조회와 AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB |
+
+## 평가와 리포트 API
+
+[API 명세 5~8절](../docs/architecture/api-spec.md) 중 작업 C가 맡은 보호자 평가, 회차 목록,
+리포트와 변경 제안이다. 회차 생성(5-1)과 보충 카드(5-3)는 작업 B, 생애 정보와 프로필은
+작업 A가 맡는다. 라우트는 `app/api/routes/evaluations.py`, `app/api/routes/reports.py`,
+서비스는 `app/services/` 아래 `session_status.py`, `evaluations.py`, `reports.py`,
+`proposals.py`, `visit_report_generator.py`에 있다.
+
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 5-4 회차 목록. 최근 회차부터, `limit` 기본 20, 최대 100 |
+| `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-1 보호자 평가 저장. `201` |
+| `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-4 보호자 평가 조회 |
+| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만 |
+| `GET` | `/api/v1/visit-sessions/{sessionId}/report` | 7-2 리포트 |
+| `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 7-3 변경 제안 |
+| `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 7-4 변경 제안 확인 |
+
+- `sessionStatus`는 저장하지 않고 `load_visit_session`(`app/services/session_status.py`)이
+  평가, 음성 분석 작업과 리포트로 계산한다. `participantCount`, `analysisId`는 가장 최근
+  작업의 값이다.
+- 6-1은 평가 전 회차에만 저장한다(`EVALUATION_ALREADY_SUBMITTED`(409)). 회차 행을
+  `FOR UPDATE`로 잠가 동시 제출을 한 번만 받는다. 카드 평가는 `review_reaction`에 쓰고
+  쓰지 않은 카드는 `notUsed`, 답하지 않은 카드는 `null`이다.
+- `mood`는 만족도로 계산하고(1~2 `hard`, 3 `normal`, 4~5 `good`), `visitDate`는
+  `started_at`의 한국 시간 날짜다. 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회 URL을
+  만든다.
+- 7-4는 회차 행을 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고, 승인한 생애 정보
+  제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
+  `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면
+  아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
+- 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → AI 서버 호출(트랜잭션 밖) →
+  응답 검증 → 리포트, 카드 요약, 변경 제안 저장(한 트랜잭션) 순서다. 검증에 걸리면 아무것도
+  저장하지 않고 작업을 `INVALID_AI_RESPONSE`로 실패시킨다.
+- 8-3 응답 검증의 보수적인 임시 정책(AI 담당자와 합의 필요): `reaction`이 `notUsed`이거나
+  `null`인 카드에 `less`, `exclude`를 제안하면 응답 전체를 실패로 본다. PM 결정(2026-09-19)은
+  그 사실"만으로" 제안하지 않는 것인데, 백엔드는 제안의 근거를 판별할 수 없기 때문이다.
+
+| `errorCode` | HTTP | 설명 |
+| --- | --- | --- |
+| `VISIT_SESSION_NOT_FOUND` | 404 | 회차가 없거나 다른 계정의 회차 |
+| `EVALUATION_NOT_FOUND` | 404 | 6-4. 평가 전 |
+| `REPORT_NOT_FOUND` | 404 | 7-2 ~ 7-4. 리포트 저장 전 |
+| `EVALUATION_ALREADY_SUBMITTED` | 409 | 6-1. 이미 평가함 |
+| `PROPOSAL_ALREADY_REVIEWED` | 409 | 7-4. 이미 확인한 회차 |
+| `INVALID_CARD_REVIEW` | 422 | 6-1. 선택 카드가 아니거나, 중복이거나, `wasUsed`와 `caregiverReaction`의 짝이 틀림 |
+| `INVALID_PROPOSAL_REVIEW` | 422 | 7-4. `pending` 제안이 빠졌거나 다른 회차의 제안이거나 중복 |
+| `IMAGE_STORAGE_UNAVAILABLE`, `IMAGE_STORAGE_NOT_CONFIGURED` | 503 | 7-2. 면회 사진의 조회 URL을 만들지 못함 |
+| `LIFE_FACT_STORE_NOT_READY` | 503 | 7-4. 임시 가드. 아래 참고 |
+
+worker가 작업 실패로 남기는 코드: `INVALID_AI_RESPONSE`, `AI_SERVER_TIMEOUT`,
+`AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `REPORT_ALREADY_GENERATED`(이미 리포트가 있는 회차),
+`EVALUATION_REQUIRED`(평가 없는 회차. 6-2가 막으므로 정상 흐름에서는 생기지 않음).
+
+### 다른 작업과 병합한 뒤 정리할 것
+
+- 작업 A(PR #105)의 `create_life_fact`: 7-4는 그 함수를 함수 안에서 가져온다. 모듈이 없으면
+  DB를 쓰기 전에 `LIFE_FACT_STORE_NOT_READY`(503)로 거절한다. #105 병합 뒤 맨 위 import로 옮기고
+  이 가드, 오류 코드와 그 테스트를 지운다. 생애 정보 승인 테스트
+  (`tests/test_proposal_review_life_facts.py`)는 그 전까지 건너뛴다.
+- 작업 B(PR #99)의 `VisitSession`과 `load_visit_session`: #99에는 상태를 `evaluationPending`으로
+  고정한 임시 `load_visit_session`(`app/services/visit_sessions.py`)과 같은 모양의 `VisitSession`
+  (`app/schemas/visit_session.py`)이 있다. 이 저장소의 `app/schemas/reports.py`의 `VisitSession`은
+  JSON 이름과 필드가 같은 임시 중복이다. #99 병합 뒤 B의 임시 구현이
+  `session_status.load_visit_session`을 쓰게 하고 `VisitSession`은 B의 모델 하나로 합친다.
