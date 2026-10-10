@@ -1,4 +1,4 @@
-/// 환자 정보 최초 입력(B-2 ~ B-8)의 단계 정의다.
+/// 환자 정보 최초 입력(B-2 ~ B-7)의 단계 정의다.
 ///
 /// 생애 정보 항목은 `docs/architecture/data-contracts.md` 의 `LifeFact.category`
 /// 와 `LifeFactCollectionState` 를 따른다. 계약에 없는 항목을 만들지 않는다.
@@ -61,9 +61,8 @@ const lifeFactSteps = <LifeFactStep>[
 enum SetupStage {
   basicInfo,
   lifeFacts,
-  photo,
-  photoTags;
+  photo;
 
   /// 진행 표시에 쓰는 전체 단계 수. 생애 정보는 항목마다 한 단계씩 센다.
-  static int get total => 2 + lifeFactSteps.length + 1;
+  static int get total => 2 + lifeFactSteps.length;
 }

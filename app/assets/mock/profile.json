@@ -18,7 +18,9 @@
       "fact_demo_003"
     ],
     "photoIds": [
-      "profile_photo_demo_001"
+      "profile_photo_demo_001",
+      "profile_photo_demo_002",
+      "profile_photo_demo_003"
     ],
     "createdAt": "2026-08-21T12:00:00+09:00",
     "updatedAt": "2026-08-21T12:22:00+09:00"
@@ -80,52 +82,41 @@
       }
     ]
   },
-  "profilePhoto": {
-    "photoId": "profile_photo_demo_001",
-    "profileId": "profile_demo_001",
-    "localUri": "local://gallery/profile_photo_demo_001",
-    "acceptedTags": [
-      "한복",
-      "가족사진"
-    ],
-    "createdAt": "2026-08-21T12:20:00+09:00"
-  },
-  "imageAnalysisCandidate": {
-    "photoId": "profile_photo_demo_001",
-    "profileId": "profile_demo_001",
-    "analysisStatus": "completed",
-    "candidates": [
-      {
-        "candidateId": "candidate_demo_001",
-        "text": "한복",
-        "reviewStatus": "accepted"
+  "photos": [
+    {
+      "schemaVersion": 1,
+      "photoId": "profile_photo_demo_001",
+      "profileId": "profile_demo_001",
+      "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/profile_photo_demo_001.jpg",
+      "imageUrlExpiresAt": "2026-08-21T12:35:00+09:00",
+      "analysisStatus": "completed",
+      "description": "한복을 입은 어르신 두 분과 가족이 함께 찍은 사진이에요.",
+      "error": null,
+      "createdAt": "2026-08-21T12:20:00+09:00"
+    },
+    {
+      "schemaVersion": 1,
+      "photoId": "profile_photo_demo_002",
+      "profileId": "profile_demo_001",
+      "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/profile_photo_demo_002.jpg",
+      "imageUrlExpiresAt": "2026-08-21T12:35:00+09:00",
+      "analysisStatus": "processing",
+      "description": null,
+      "error": null,
+      "createdAt": "2026-08-21T12:21:00+09:00"
+    },
+    {
+      "schemaVersion": 1,
+      "photoId": "profile_photo_demo_003",
+      "profileId": "profile_demo_001",
+      "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/profile_photo_demo_003.jpg",
+      "imageUrlExpiresAt": "2026-08-21T12:35:00+09:00",
+      "analysisStatus": "failed",
+      "description": null,
+      "error": {
+        "errorCode": "AI_SERVER_ERROR"
       },
-      {
-        "candidateId": "candidate_demo_002",
-        "text": "결혼식",
-        "reviewStatus": "rejected"
-      },
-      {
-        "candidateId": "candidate_demo_003",
-        "text": "가족사진",
-        "reviewStatus": "accepted"
-      },
-      {
-        "candidateId": "candidate_demo_004",
-        "text": "꽃다발",
-        "reviewStatus": "pending"
-      },
-      {
-        "candidateId": "candidate_demo_005",
-        "text": "정원",
-        "reviewStatus": "rejected"
-      },
-      {
-        "candidateId": "candidate_demo_006",
-        "text": "바닷가",
-        "reviewStatus": "pending"
-      }
-    ],
-    "error": null
-  }
+      "createdAt": "2026-08-21T12:22:00+09:00"
+    }
+  ]
 }

@@ -27,8 +27,23 @@ class MockRepository {
     return Account.fromJson(json['account'] as Map<String, dynamic>);
   }
 
+  /// 목 사진의 `imageUrl` 은 계약 예시 주소라 열리지 않는다. 화면에서 볼 수
+  /// 있도록 앱에 든 합성 그림으로 바꿔 끼운다. 공동 목 데이터는 계약 형식대로
+  /// 두고 이 사본을 읽을 때만 바꾼다.
+  static const _demoPhotoImages = {
+    'profile_photo_demo_001': 'asset:assets/images/family.webp',
+    'profile_photo_demo_002': 'asset:assets/images/visitation.webp',
+    'profile_photo_demo_003': 'asset:assets/images/patient-male.webp',
+  };
+
   Future<ProfileBundle> loadProfile() async {
-    return ProfileBundle.fromJson(await _read('profile.json'));
+    final json = await _read('profile.json');
+    for (final photo in json['photos'] as List? ?? const []) {
+      final map = photo as Map<String, dynamic>;
+      final image = _demoPhotoImages[map['photoId']];
+      if (image != null) map['imageUrl'] = image;
+    }
+    return ProfileBundle.fromJson(json);
   }
 
   Future<List<ConversationCard>> loadConversationCards() async {

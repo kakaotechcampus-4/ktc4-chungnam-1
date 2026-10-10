@@ -225,8 +225,8 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
   ];
 });
 
-/// 입력 흐름이 쓰는 목 데이터 묶음이다. 사진의 이야기 소재 후보와 음성 입력
-/// 예시를 여기서 읽는다.
+/// 입력 흐름이 쓰는 목 데이터 묶음이다. 음성 입력 예시와 목 사진을 여기서
+/// 읽는다.
 ///
 /// 첫 분을 입력하는 동안에는 고른 어르신이 없으므로 [profileProvider] 를 쓰지
 /// 않는다.
@@ -236,7 +236,9 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
-/// 기본 정보는 입력한 값이다. 세부 정보와 사진은 아직 목 데이터 그대로다.
+/// 기본 정보는 입력한 값이다. 세부 정보는 아직 목 데이터 그대로다. 사진은 목
+/// 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
+/// 올린 사진으로 바뀐다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
@@ -257,8 +259,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photo: bundle.photo,
-    tagCandidates: bundle.tagCandidates,
+    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
 
@@ -313,8 +314,8 @@ enum ReportNotice {
 
 /// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
 ///
-/// [accountId] 가 `null` 이면 서버 계정 없이 들어온 경우다(아이디와 비밀번호
-/// 목 로그인).
+/// [accountId] 가 `null` 이면 서버 세션 없이 들어온 경우다(구글 설정이 없는
+/// 디버그 빌드의 임시 건너뛰기).
 typedef _NoticeKey = ({String? accountId, String profileId});
 
 /// 계정과 어르신마다의 리포트 알림이다.

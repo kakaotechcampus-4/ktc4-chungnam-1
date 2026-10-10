@@ -71,6 +71,14 @@ void main() {
     return (container, repository);
   }
 
+  testWidgets('상단에는 알림만 있고 메뉴 아이콘은 없다', (tester) async {
+    await openHome(tester);
+
+    expect(find.byTooltip('알림'), findsOneWidget);
+    expect(find.byTooltip('메뉴'), findsNothing);
+    expect(find.byIcon(Icons.menu), findsNothing);
+  });
+
   group('만드는 중 알림', () {
     testWidgets('알릴 것이 없으면 자리도 없다', (tester) async {
       await openHome(tester);

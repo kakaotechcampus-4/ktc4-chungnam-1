@@ -1,7 +1,6 @@
 /// 동의 항목을 보여주는 조각들이다.
 ///
-/// 아이디와 비밀번호로 가입하는 A-3 회원가입과 구글 로그인 뒤의 동의 화면이
-/// 같은 문구를 같은 모양으로 보여야 해서 한곳에 둔다. 문구 자체는
+/// 구글 로그인 뒤의 동의 화면이 쓰는 조각과 안내 문구다. 문구 자체는
 /// `consent_terms.dart` 에 있고 여기서 새로 쓰지 않는다.
 library;
 
@@ -26,9 +25,8 @@ class ConsentRow extends StatelessWidget {
   /// 이 화면에서 필수로 취급할 항목인지.
   ///
   /// 항목을 정의한 [ConsentTerm.required] 대신 화면이 넘긴 값을 쓴다. 구글
-  /// 동의 화면은 서버가 준 `requiredConsents` 를 넘기고, 아직 서버에 보내지
-  /// 않는 A-3 회원가입은 [ConsentTerm.required] 를 그대로 넘긴다. 표시와
-  /// 제출 판정이 갈리지 않도록 한 곳에서 받는다.
+  /// 동의 화면은 서버가 준 `requiredConsents` 를 넘긴다. 표시와 제출 판정이
+  /// 갈리지 않도록 한 곳에서 받는다.
   final bool required;
 
   final bool checked;

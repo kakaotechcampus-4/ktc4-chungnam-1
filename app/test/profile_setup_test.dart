@@ -2,14 +2,26 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/design/theme.dart';
+import 'package:saerok/features/profile_setup/photo_picker.dart';
 import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
+
+/// 앨범을 열면 사진 한 장을 고른 것으로 친다.
+class _OnePhotoPicker implements PhotoPicker {
+  const _OnePhotoPicker();
+
+  @override
+  Future<List<PickedPhoto>> pick({required int limit}) async => const [
+    PickedPhoto('photo_1.jpg'),
+  ];
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -68,7 +80,7 @@ void main() {
       );
     });
 
-    test('사진을 올리지 않으면 태그 단계를 건너뛴다', () {
+    test('사진 단계가 마지막이고 태그 단계는 없다', () {
       final container = makeContainer();
       final controller = container.read(setupControllerProvider.notifier);
 
@@ -76,27 +88,16 @@ void main() {
       for (var i = 0; i < 1 + lifeFactStepCount; i++) {
         controller.next();
       }
-      expect(container.read(setupControllerProvider).isPhoto, isTrue);
-
-      controller.next();
-      final state = container.read(setupControllerProvider);
-      expect(state.isPhotoTags, isFalse, reason: '사진이 없으면 태그를 고를 수 없다');
+      var state = container.read(setupControllerProvider);
+      expect(state.isPhoto, isTrue);
       expect(state.isLast, isTrue);
-    });
+      expect(state.progress, 1.0);
 
-    test('사진을 올리면 태그 단계로 간다', () {
-      final container = makeContainer();
-      final controller = container.read(setupControllerProvider.notifier);
-
-      for (var i = 0; i < 1 + lifeFactStepCount; i++) {
-        controller.next();
-      }
-      controller.updateDraft(
-        container.read(setupControllerProvider).draft.copyWith(hasPhoto: true),
-      );
+      // 사진을 올려도 더 갈 단계가 없다.
+      controller.addPhotos(const [PickedPhoto('photo_1.jpg')]);
       controller.next();
-
-      expect(container.read(setupControllerProvider).isPhotoTags, isTrue);
+      state = container.read(setupControllerProvider);
+      expect(state.isPhoto, isTrue, reason: '마지막 단계에서는 화면이 흐름을 끝낸다');
     });
 
     test('음성 항목은 값이 담기기 전까지 건너뛸 수 있고 담기면 다음이 된다', () {
@@ -149,6 +150,14 @@ void main() {
   });
 
   group('음성 입력 대역', () {
+    /// 녹음을 시작하고 곧바로 끝내 결과를 받는다.
+    Future<SpeechOutcome> listen(
+      MockSpeechInput input, {
+      required String category,
+      required int attempt,
+    }) async =>
+        (await input.start(category: category, attempt: attempt)).finish();
+
     test('목 데이터가 직접 입력으로 끝난 항목은 2회 알아듣지 못한다', () async {
       final bundle = await const MockRepository().loadProfile();
       final input = MockSpeechInput(bundle);
@@ -157,11 +166,11 @@ void main() {
       expect(bundle.stateOf('hobby')?.status, CollectionStatus.manualFallback);
 
       expect(
-        await input.listen(category: 'hobby', attempt: 1),
+        await listen(input, category: 'hobby', attempt: 1),
         isA<SpeechNotHeard>(),
       );
       expect(
-        await input.listen(category: 'hobby', attempt: 2),
+        await listen(input, category: 'hobby', attempt: 2),
         isA<SpeechNotHeard>(),
       );
     });
@@ -172,7 +181,7 @@ void main() {
 
       for (final step in lifeFactSteps.where((s) => s.category != 'hobby')) {
         expect(
-          await input.listen(category: step.category, attempt: 1),
+          await listen(input, category: step.category, attempt: 1),
           isA<SpeechHeard>(),
           reason: '${step.category} 는 한 번에 인식되어야 한다',
         );
@@ -186,7 +195,7 @@ void main() {
       // profile.json 에 hometown LifeFact 는 없다.
       expect(bundle.factOf('hometown'), isNull);
 
-      final outcome = await input.listen(category: 'hometown', attempt: 1);
+      final outcome = await listen(input, category: 'hometown', attempt: 1);
       final example = lifeFactSteps
           .firstWhere((s) => s.category == 'hometown')
           .examples
@@ -200,7 +209,7 @@ void main() {
       final bundle = await const MockRepository().loadProfile();
       final input = MockSpeechInput(bundle);
 
-      final outcome = await input.listen(category: 'occupation', attempt: 1);
+      final outcome = await listen(input, category: 'occupation', attempt: 1);
 
       expect(outcome, isA<SpeechHeard>());
       expect((outcome as SpeechHeard).text, bundle.factOf('occupation')?.text);
@@ -321,6 +330,7 @@ void main() {
     Future<(Rect button, Rect viewport)> openSetup(
       WidgetTester tester, {
       int advance = 0,
+      List<Override> overrides = const [],
     }) async {
       const dpr = 3.0;
       tester.view.physicalSize = const Size(411 * dpr, 891 * dpr);
@@ -331,7 +341,7 @@ void main() {
       );
       addTearDown(tester.view.reset);
 
-      final container = ProviderContainer();
+      final container = ProviderContainer(overrides: overrides);
       addTearDown(container.dispose);
 
       await tester.pumpWidget(
@@ -377,6 +387,29 @@ void main() {
         button.top,
         greaterThanOrEqualTo(viewport.bottom),
         reason: '스크롤 영역 밖에 있어야 고정이다',
+      );
+    });
+
+    testWidgets('사진 단계에서 흐름을 마치고 태그를 고르러 가지 않는다', (tester) async {
+      await openSetup(
+        tester,
+        advance: 1 + lifeFactStepCount,
+        overrides: [
+          photoPickerProvider.overrideWithValue(const _OnePhotoPicker()),
+        ],
+      );
+
+      expect(find.widgetWithText(OutlinedButton, '건너뛰기'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '다음'), findsNothing);
+
+      await tester.tap(find.text('사진 추가하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(FilledButton, '마치기'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, '다음'),
+        findsNothing,
+        reason: '사진 다음에 태그 단계가 없다',
       );
     });
   });

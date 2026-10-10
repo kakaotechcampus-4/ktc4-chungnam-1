@@ -43,6 +43,8 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   record: ^7.1.1
   path_provider: ^2.1.6
+  # B-7 사진 올리기에서 기기 앨범을 연다. 안드로이드 시스템 사진 선택기를 써서 저장소 권한을 받지 않는다.
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

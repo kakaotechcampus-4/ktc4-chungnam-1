@@ -4,6 +4,8 @@
 // 그 데이터가 `lib/data/models.dart` 로 문제없이 읽히는지 본다. 계약이 바뀌면
 // 둘 중 하나가 먼저 깨진다.
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
@@ -24,17 +26,45 @@ void main() {
     expect(account.consent['serviceData']?.granted, isTrue);
   });
 
+  test('목 사진이 가리키는 앱 그림이 모두 있다', () async {
+    // 그림 파일 이름이 바뀌면 갤러리에 깨진 그림이 뜬다. 화면을 띄우지 않고 여기서 잡는다.
+    final bundle = await repository.loadProfile();
+    const scheme = 'asset:';
+    final assets = [
+      for (final photo in bundle.photos)
+        if (photo.imageUrl.startsWith(scheme))
+          photo.imageUrl.substring(scheme.length),
+    ];
+
+    expect(assets, hasLength(bundle.photos.length));
+    for (final path in assets) {
+      expect(File(path).existsSync(), isTrue, reason: path);
+    }
+  });
+
   test('프로필을 읽는다', () async {
     final bundle = await repository.loadProfile();
 
     expect(bundle.profile.stage, ConditionStage.mildCognitiveImpairment);
     expect(bundle.lifeFacts, hasLength(3));
-    // accepted 된 후보만 acceptedTags 에 담긴다.
-    final accepted = bundle.tagCandidates
-        .where((c) => c.reviewStatus == TagReviewStatus.accepted)
-        .map((c) => c.text)
-        .toList();
-    expect(accepted, bundle.photo.acceptedTags);
+    // 사진은 분석 완료, 분석 중, 실패를 한 장씩 담는다.
+    expect(bundle.photos.map((p) => p.analysisStatus), [
+      PhotoAnalysisStatus.completed,
+      PhotoAnalysisStatus.processing,
+      PhotoAnalysisStatus.failed,
+    ]);
+    // 설명은 분석이 끝난 사진에만 있다.
+    expect(bundle.photos.map((p) => p.description != null), [
+      isTrue,
+      isFalse,
+      isFalse,
+    ]);
+    expect(bundle.photos.last.errorCode, 'AI_SERVER_ERROR');
+    expect(
+      bundle.profile.photoIds,
+      bundle.photos.map((p) => p.photoId),
+      reason: '프로필이 가리키는 사진과 사진 목록이 같아야 한다',
+    );
   });
 
   test('대화 카드 12장을 읽는다', () async {

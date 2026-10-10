@@ -4,7 +4,7 @@
 /// 계정이 없고, 여기서 필수 동의를 제출해야 계정과 동의 이력이 함께 만들어진다
 /// (ADR-007). 중간에 나가면 계정은 남지 않는다.
 ///
-/// 보여주는 문구는 A-3 회원가입과 같은 `consent_terms.dart` 를 쓴다. 다만 어떤
+/// 보여주는 문구는 `consent_terms.dart` 를 쓴다. 다만 어떤
 /// 항목이 필수인지는 앱 상수가 아니라 `POST /auth/google` 이 준
 /// `requiredConsents` 로 판단한다. 서버가 거절 기준을 갖고 있으므로 같은 곳을
 /// 본다(PR #50 리뷰).
@@ -159,8 +159,8 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
       appBar: const AppTopBar(),
       body: ScreenBody(
         scrollable: true,
-        // A-3 과 같은 이유로 버튼을 아래에 고정하지 않는다. 약관까지 읽고
-        // 내려와야 누를 수 있어 버튼이 늘 보일 이유가 없다.
+        // 버튼을 아래에 고정하지 않는다. 약관까지 읽고 내려와야 누를 수
+        // 있어 버튼이 늘 보일 이유가 없다.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
