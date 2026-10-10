@@ -1,0 +1,19 @@
+{
+  "_comment": "합성 페르소나. 시작 상태는 scenarios/first-visit.json. 보호자가 시집살이 이야기를 막는다. 회차마다 시집살이 이야기가 하나씩 새로 들어와, 막은 범위가 새 이야기까지 지켜지는지 본다.",
+  "start": "first-visit",
+  "first_visit_at": "2026-09-01T10:00:00+09:00",
+  "visit_every_days": 7,
+  "cards_selected_per_visit": 9,
+  "more_probability": 0.5,
+  "likes": ["노래", "라디오", "재봉", "한복", "수선"],
+  "dislikes": ["장날", "장터", "시장"],
+  "taboo": ["시집", "시어머니", "시댁", "시누이", "며느리"],
+  "fact_pool": [
+    {"round": 1, "title": "시어머니와 김장", "content": "시집와서 해마다 시어머니와 김장을 하셨대요."},
+    {"round": 2, "title": "시댁 우물", "content": "시집살이할 때 새벽마다 우물물을 길으셨대요."},
+    {"round": 3, "title": "시누이들", "content": "시집와서 시누이들과 한방에서 지내셨대요."},
+    {"round": 4, "title": "시댁 제사", "content": "시댁 제사 때마다 전을 부치셨대요."},
+    {"round": 5, "title": "친정 나들이", "content": "명절이면 친정에 다녀오셨대요."},
+    {"round": 6, "title": "수선집 개업", "content": "서른에 동인천에 수선집을 차리셨대요."}
+  ]
+}

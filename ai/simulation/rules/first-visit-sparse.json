@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "_comment": "합성 데이터. 첫 면회, 초기 세부 질문을 모두 건너뛰고 추가 정보·사진도 없음",
+  "profile": {
+    "ageBand": "70s",
+    "gender": "male",
+    "conditionStage": "unknown"
+  },
+  "initialDetails": {
+    "occupation": null,
+    "hometown": null,
+    "hobby": null,
+    "family": null
+  },
+  "lifeFacts": [],
+  "photos": [],
+  "visits": [],
+  "topicPreferences": []
+}

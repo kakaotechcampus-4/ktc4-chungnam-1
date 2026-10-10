@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "_comment": "합성 데이터. 첫 면회, 초기 세부 정보 네 칸과 추가 정보·사진이 있음",
+  "profile": {
+    "ageBand": "80s",
+    "gender": "female",
+    "conditionStage": "mildCognitiveImpairment"
+  },
+  "initialDetails": {
+    "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨고 단골도 많았대요.",
+    "hometown": "충남 서천 바닷가 마을에서 나고 자라셨어요.",
+    "hobby": "옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요.",
+    "family": "스물셋에 결혼하셨고 아들 둘을 키우셨어요. 명절이면 온 식구가 모여서 음식을 하셨대요."
+  },
+  "lifeFacts": [
+    {
+      "factId": "f-101",
+      "title": "좋아하시는 음식",
+      "content": "봄이면 쑥을 캐서 쑥떡을 해 드셨대요.",
+      "origin": "profile"
+    }
+  ],
+  "photos": [
+    {
+      "photoId": "p-201",
+      "description": "한복을 입은 여성과 가족으로 보이는 네 사람이 나란히 앉아 찍은 사진이다. 배경은 실내로 보인다."
+    }
+  ],
+  "visits": [],
+  "topicPreferences": []
+}
