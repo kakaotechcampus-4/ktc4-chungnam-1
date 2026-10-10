@@ -61,6 +61,11 @@ PostgreSQL 스키마의 소유권은 Alembic migration에 있다. `backend/datab
 migration을 먼저 바꾸고 `init.sql`을 그에 맞춘다(자세한 로컬 적용 방법은
 `backend/database/로컬설정법.md` 참고).
 
+초기 migration 교체는 공용 DB와 실제 데이터가 없는 초기 개발 단계에만 허용한다.
+공용 DB를 사용하기 시작했거나 실제 데이터가 쌓인 뒤에는 이미 적용된 migration을
+수정하거나 교체하지 않는다. 이후 스키마 변경은 새 migration으로 추가하고 기존
+데이터를 유지한 채 적용한다. 변경을 맞추기 위해 공용 DB를 삭제하고 재생성하지 않는다.
+
 `SAEROK_DATABASE_URL`(`.env`)에 연결 문자열을 설정한 뒤 다음으로 최신 스키마를 적용한다.
 
 ```powershell
