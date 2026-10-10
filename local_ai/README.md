@@ -23,6 +23,17 @@
 
 모델 선택 기록에는 출처, 버전, 해시, 라이선스, 입출력, 실행 환경, 처리 시간, 메모리, 정확도, 실패 사례와 재검토 조건을 남긴다. 실행 명령과 결과는 실제로 검증한 것만 기록한다.
 
+## 생성 기능 코드
+
+backend가 부르는 카드 생성이 있다.
+
+| 폴더 | 내용 |
+| --- | --- |
+| [`card_generation/`](card_generation/README.md) | 카드 생성. 면회 전에 backend가 모은 context로 카드 12장과 새로 만들 주제를 만든다 |
+| `common/` | LLM 설정과 모델 주소 목록(`ENDPOINTS`), 정해진 형식으로 답 받기 |
+
+생성 기능은 DB를 읽지도 쓰지도 않는다. `pyproject.toml`은 `local_ai/`에 하나 두고, backend가 경로 의존성으로 설치할 때는 `card_generation`과 `common`만 들어간다.
+
 ## 찾아볼 문서
 
 | 필요한 내용 | 문서 |
