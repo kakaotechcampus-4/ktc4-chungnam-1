@@ -58,18 +58,18 @@
 | 2-2 | 기본 정보 입력 | `POST` | `/api/v1/profiles` | 신규 |
 | 2-3 | 마이페이지 | `GET` | `/api/v1/profiles/{profileId}` | 신규 |
 | 2-4 | 기본 정보, 세부 정보 수정 | `PATCH` | `/api/v1/profiles/{profileId}` | 신규 |
-| 2-5 | 프로필 입력 마치기 | `POST` | `/api/v1/profiles/{profileId}/complete-setup` | 신규 |
+| 2-5 | 프로필 입력 마치기 | | 2-4 → 4-1로 대신함 | 삭제 |
 | 2-6 | 생애 정보 추가 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 |
 | 2-7 | 생애 정보 수정 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 |
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 사진 설명 확인 | | | 미정 |
 | 4-1 | 홈 | `POST` | `/api/v1/profiles/{profileId}/card-generations` | 신규 |
-| 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/latest` | 신규 |
-| 4-3 | 대화 카드 선택 | `GET` | `/api/v1/card-generations/{setId}` | 신규 |
+| 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 |
+| 4-3 | 대화 카드 선택 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 |
 | 5-1 | 녹음 시작 | `POST` | `/api/v1/visit-sessions` | 신규 |
 | 5-2 | 면회 사진 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 |
-| 5-3 | 대화 카드 보충 | `POST` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
+| 5-3 | 대화 카드 보충 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
 | 5-4 | 홈 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 신규 |
 | 6-1 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
 | 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 완료 |
@@ -80,7 +80,7 @@
 | 7-3 | 변경 사항 확인 | `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 신규 |
 | 7-4 | 변경 사항 확인 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 신규 |
 | 8-1 | (내부) STT | `POST` | `/internal/v1/speech-analyses` | 완료 |
-| 8-2 | (내부) 카드 생성 | `POST` | `/internal/v1/card-generations` | 신규 |
+| 8-2 | (내부) 카드 생성 | | 4-1 처리로 옮김 | 삭제 |
 | 8-3 | (내부) 리포트 생성 | `POST` | `/internal/v1/visit-reports` | 신규 |
 | 8-4 | (내부) 이미지 분석 | `POST` | `/internal/v1/image-analyses` | 신규 |
 
@@ -90,12 +90,12 @@
 
     [로그인]      1-1 → (consentRequired) 1-2 → 2-1
                   2-1 결과 없음 → 2-2부터, setupStatus=inProgress → 그 프로필로 온보딩 이어서, completed → 홈
-    [온보딩]      2-2 → 3-1 → 3-2 폴링 → (3-3 미정) → 2-5 (카드 생성 시작)
-    [홈]          4-2 폴링, 5-4
+    [온보딩]      2-2 → 3-1 → 3-2 폴링 → (3-3 미정) → 2-4 (세부 정보) → 4-1 (카드 생성 시작)
+    [홈]          4-2, 5-4. 카드 받기: 4-1 → 4-2 폴링, 또는 `ready`·`inVisit`면 4-3(4절 표)
     [카드 선택]   4-3 → 면회 사진 촬영(단말)
-    [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말)
+    [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
     [평가]        6-1 → 6-2 → 6-3 폴링
-    [리포트]      7-2, 6-4 → 7-3 → 7-4 → 4-1 (다음 카드 생성)
+    [리포트]      7-2, 6-4 → 7-3 → 7-4
     [마이페이지]  2-3, 2-4, 2-6, 2-7, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
 <br>
@@ -242,7 +242,7 @@
 
 피보호자의 이름, 성별, 생년월일은 서버의 `profiles`에 저장한다. 내부 API(8절) 요청에는 넣지 않고 BE가 생년월일로 계산한 연령대만 보낸다.
 
-프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 2-5가 세부 정보 저장과 첫 카드 생성 작업을 한 트랜잭션에서 만들므로, 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다.
+프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 온보딩은 첫 카드 생성 작업(4-1)으로 끝나므로, 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다.
 
 ### 2-1. `GET /api/v1/profiles` — 신규
 
@@ -330,44 +330,9 @@
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
 
-### 2-5. `POST /api/v1/profiles/{profileId}/complete-setup` — 신규
+### 2-5. 프로필 입력 마치기 — 삭제
 
-온보딩의 `마치기`에서 호출한다. 세부 정보 네 항목을 저장하고 카드 생성을 시작한다.
-
-요청
-
-```json
-{
-  "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨어요.",
-  "hometown": null,
-  "hobby": "노래 부르기를 좋아하셨어요.",
-  "family": null
-}
-```
-
-- 네 항목을 모두 보낸다. 건너뛴 항목은 `null`이며 빈 문자열은 받지 않는다.
-- 음성과 텍스트 중 어떤 방식으로 입력했는지와 항목별 입력 시도 상태는 단말에서만 쓰고 보내지 않는다.
-
-응답 `202`
-
-```json
-{
-  "schemaVersion": 1,
-  "profileId": "00000000-0000-4000-8000-000000000101",
-  "setupStatus": "completed",
-  "cardGeneration": {
-    "setId": "00000000-0000-4000-8000-000000000401",
-    "generationStatus": "running"
-  }
-}
-```
-
-- 네 항목 저장과 카드 생성 작업 생성을 한 트랜잭션으로 처리한다.
-
-| HTTP | `errorCode` |
-| --- | --- |
-| 404 | `PROFILE_NOT_FOUND` |
-| 409 | `SETUP_ALREADY_COMPLETED` |
+2026-10-06 삭제. 온보딩의 `마치기`에서 세부 정보 네 항목은 2-4로 저장하고, 4-1로 첫 카드 생성을 시작한다.
 
 ### 2-6. `POST /api/v1/profiles/{profileId}/life-facts` — 신규
 
@@ -464,56 +429,227 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 ## 4. 대화 카드
 
-카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다. 홈의 `오늘의 대화카드 받기`는 최신 작업이 `completed`이고 아직 회차에 쓰이지 않았을 때(`usedBySessionId`가 `null`) 활성화한다.
+카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
+
+홈의 `오늘의 대화카드 받기`는 4-2의 `status`로 정한다. 4-1~4-3 모두 계정은 Bearer 토큰, 프로필은 경로의 `profileId`로 정하고 요청 본문은 없다.
+
+| 4-2 `status` | 최근 작업 | 버튼 | 누르면 |
+| --- | --- | --- | --- |
+| `none` | 없음, 또는 평가까지 끝난 회차에 쓰임 | 카드 받기 | 4-1 → 4-2 폴링 |
+| `running` | 만드는 중 | 만드는 중 | — |
+| `ready` | 다 만들었고 아직 안 씀 | 카드 받기 | 4-3 → 카드 고르기 |
+| `inVisit` | 평가 전 회차(면회 중이거나 중간에 나감)에 쓰임 | 면회 이어서 하기 | 4-3 → 면회 화면 |
+| `failed` | 실패 | 카드 받기 | 4-1 → 4-2 폴링 |
+
+상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
 ### 4-1. `POST /api/v1/profiles/{profileId}/card-generations` — 신규
 
-카드 생성 작업을 만든다. 본문 없음.
+카드를 만들어 달라고 요청한다. 작업만 만들고 바로 끝난다.
 
 호출 시점
 
-- 7-4 완료 후
-- 4-2 결과가 `failed`일 때 다시 시도
-- 변경 제안이 없는 리포트 뒤의 호출 시점은 미정([미정 사항](#미정-사항) 2)
+- 온보딩의 `마치기`(2-4 다음)
+- 홈에서 `오늘의 대화카드 받기`를 눌렀을 때(4-2 `status`가 `none`이나 `failed`)
 
 응답 `202`
 
 ```json
-{
-  "schemaVersion": 1,
-  "setId": "00000000-0000-4000-8000-000000000401",
-  "profileId": "00000000-0000-4000-8000-000000000101",
-  "generationStatus": "running"
-}
+{ "schemaVersion": 1, "status": "running" }
 ```
 
-- `running` 작업이 이미 있으면 새로 만들지 않고 그 작업을 `200`으로 반환한다.
-- 서버는 8-2를 호출하고 카드 12장과 새 주제를 저장한다.
+- 이미 만드는 중이면 새로 만들지 않고 같은 응답을 준다.
+- 평가 전 회차가 지금 묶음을 쓰는 중(`inVisit`)이면 409로 거절한다. 새 묶음이 생기면 면회 중인 카드를 4-3으로 받을 수 없게 되기 때문이다.
+- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다.
+- 카드 생성 worker가 작업을 가져가 카드 12장과 새 주제를 저장한다(아래 처리). 앱은 4-2를 폴링한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
-| 409 | `PROFILE_SETUP_INCOMPLETE` |
+| 409 | `VISIT_IN_PROGRESS` (평가 전 회차가 있음), `CARD_SET_READY` (아직 쓰지 않은 묶음이 있음) |
+| 503 | `CARD_GENERATION_NOT_CONFIGURED` (LLM 키가 설정되지 않음) |
 
-### 4-2. `GET /api/v1/profiles/{profileId}/card-generations/latest` — 신규
+#### 4-1 카드 생성 처리
 
-가장 최근 카드 생성 작업이다. 홈에서 버튼 상태를 정한다. `running`이면 폴링한다.
+LLM은 ML API를 백엔드에서 이용. 
 
-응답 `200` — [CardSet](#cardset)
+    context 조립(DB 읽기) → 생성 함수 호출(LLM, 트랜잭션 밖, 별도 스레드) → 결과 검증 → 저장(한 트랜잭션)
+
+요청 (`app.schemas.card_generation.CardGenerationRequest`)
+
+```json
+{
+  "schemaVersion": 1,
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "context": {
+    "ageRange": "80s",
+    "profileFacts": {
+      "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨어요.",
+      "hometown": null,
+      "hobby": "노래 부르기를 좋아하셨어요.",
+      "family": null
+    },
+    "lifeFacts": [
+      {
+        "factId": "00000000-0000-4000-8000-000000000111",
+        "title": "단골손님",
+        "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+        "createdAt": "2026-08-21T15:00:00+09:00",
+        "source": "visit"
+      }
+    ],
+    "photos": [
+      {
+        "photoId": "00000000-0000-4000-8000-000000000121",
+        "description": "한복을 입은 사람들이 잔치 자리에 모여 있는 사진이에요."
+      }
+    ],
+    "topics": [
+      {
+        "topicId": "00000000-0000-4000-8000-000000000451",
+        "title": "노래 이야기",
+        "description": "즐겨 부르시던 노래와 그 노래에 얽힌 기억을 여쭤보는 주제예요.",
+        "evidence": [ { "profileField": "hobby" } ],
+        "createdAt": "2026-08-14T12:30:00+09:00",
+        "feedback": [
+          { "action": "more", "decidedAt": "2026-08-21T15:00:00+09:00" }
+        ]
+      }
+    ],
+    "visits": [
+      {
+        "sessionId": "00000000-0000-4000-8000-000000000201",
+        "startedAt": "2026-08-21T14:00:00+09:00",
+        "setId": "00000000-0000-4000-8000-000000000400"
+      }
+    ],
+    "pastCards": [
+      {
+        "cardId": "00000000-0000-4000-8000-000000000500",
+        "setId": "00000000-0000-4000-8000-000000000400",
+        "topicId": "00000000-0000-4000-8000-000000000451",
+        "position": 1,
+        "cardTitle": "즐겨 부르던 노래",
+        "primaryQuestion": "젊으셨을 때 즐겨 부르던 노래가 있으셨어요?",
+        "evidence": [ { "profileField": "hobby" } ],
+        "selected": true,
+        "reviewReaction": "positive"
+      }
+    ]
+  }
+}
+```
+
+- `model`, `promptVersion`: BE 설정값(`SAEROK_CARD_GENERATION_MODEL`, `SAEROK_CARD_GENERATION_PROMPT_VERSION`). 4-1에서 `card_sets`를 `running`으로 만들 때 저장하고 그 값을 그대로 넘긴다. `promptVersion`은 카드 생성 방식의 번호(정수)이며 카드 생성은 아는 번호만 받는다.
+- `schemaVersion`: 요청과 결과 JSON 형식의 버전. 받는 쪽은 모르는 버전을 거절한다.
+- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다.
+- `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
+- `photos`: 분석이 끝난 프로필 사진(`session_id`가 없음)의 설명(3-3)
+- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다.
+- `visits`: 평가까지 끝난 회차(`evaluated_at` 있음)만, 시간순. 녹음을 시작했다가 그만둔 회차는 넣지 않는다.
+- `pastCards`: 그 회차에 쓰인 카드 묶음의 카드. 직전에 보여 준 주제를 미루고, 지난번과 다른 장면을 고르는 데 쓴다. 회차에 쓰이지 않은 묶음은 넣지 않는다.
+- 면회 평가 메모, 리포트 본문, 전사문은 넣지 않는다.
+- BE는 요청의 `context`를 `card_sets.generation_log`의 `input`에 저장한다.
+
+결과 (`CardGenerationResult`)
+
+```json
+{
+  "schemaVersion": 1,
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "cards": [
+    {
+      "position": 1,
+      "topic": { "topicId": "00000000-0000-4000-8000-000000000451" },
+      "cardTitle": "즐겨 부르던 노래",
+      "description": "자주 흥얼거리시던 노래를 함께 떠올려 보는 카드예요.",
+      "primaryQuestion": "젊으셨을 때 즐겨 부르던 노래가 있으셨어요?",
+      "followUpQuestions": [
+        "그 노래는 어디서 처음 들으셨어요?",
+        "누구와 함께 부르곤 하셨어요?",
+        "그 노래를 들으면 어떤 장면이 떠오르세요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [ { "profileField": "hobby" } ],
+      "extra": { "...": "..." }
+    },
+    {
+      "position": 2,
+      "topic": {
+        "title": "재봉 일",
+        "description": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요.",
+        "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ]
+      },
+      "cardTitle": "수선집 시절",
+      "description": "수선집을 하시던 때의 손님과 옷 이야기를 나누는 카드예요.",
+      "primaryQuestion": "어떤 옷을 주로 만드셨어요?",
+      "followUpQuestions": [
+        "일할 때 자주 쓰던 도구가 있었어요?",
+        "함께 일하던 분들은 어떤 분들이었어요?",
+        "가장 기억에 남는 옷은 무엇이었어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
+      "extra": { "...": "..." }
+    }
+  ],
+  "log": { "...": "..." }
+}
+```
+
+- 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
+- `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
+- `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나이며, 카드의 근거 항목은 모두 `evidenceSource`와 같은 종류다(`lifeFact`는 `factId`, `photo`는 `photoId`, `profile`은 `profileField`). `profileField`는 context의 `profileFacts`에서 값이 있는 항목만 가리킨다.
+- `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 내용을 보지 않고 `generation_log`에만 남긴다.
+- `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
+
+검증과 저장
+
+- BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목·설명·첫 질문·꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
+- 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, 카드별 `extra`).
+
+실패
+
+| `errorCode` | 뜻 |
+| --- | --- |
+| `INVALID_CONTEXT` | 입력 형식이 맞지 않거나 모르는 `promptVersion` |
+| `NOT_ENOUGH_TOPICS` | 다시 찾아도 서로 다른 주제로 12장을 채우지 못함 |
+| `TEXT_CHECK_FAILED` | 문안이 금지 표현 검사(최근 기억 확인, 의료 표현)에 두 번 걸림 |
+| `LLM_UNAVAILABLE` | 엘리스 API 연결 실패, 시간 초과, 호출 한도 |
+| `CARD_GENERATION_FAILED` | 그 밖의 실패 |
+| `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
+
+
+### 4-2. `GET /api/v1/profiles/{profileId}/card-generations/status` — 신규
+
+홈 버튼 상태다. `running`이면 폴링한다.
+
+응답 `200`
+
+```json
+{ "schemaVersion": 1, "status": "ready" }
+```
+
+- `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
+- 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
 | --- | --- |
-| 404 | `CARD_GENERATION_NOT_FOUND` |
+| 404 | `PROFILE_NOT_FOUND` |
 
-### 4-3. `GET /api/v1/card-generations/{setId}` — 신규
+### 4-3. `GET /api/v1/profiles/{profileId}/card-generations/current` — 신규
+
+지금 쓸 카드 묶음이다. 4-2가 `ready`(고르기 전)나 `inVisit`(면회 시작은 했고, 평가 전)일 때 그 묶음을 준다. 카드 고르기, 면회 중, 중간에 나갔다 돌아온 경우 모두 같은 카드를 받는다. 평가(6-1)를 마치면 더는 나오지 않는다.
 
 응답 `200` — [CardSet](#cardset)
 
-- `cards`는 `completed`일 때만 채운다. `position` 1~9는 선택 화면용, 10~12는 면회 중 보충용이다.
+- `position` 1~9는 선택 화면용, 10~12는 면회 중 보충용이다.
 
 | HTTP | `errorCode` |
 | --- | --- |
-| 404 | `CARD_GENERATION_NOT_FOUND` |
+| 404 | `PROFILE_NOT_FOUND`, `CARD_GENERATION_NOT_FOUND`(쓸 묶음이 없음) |
 
 <br>
 
@@ -549,7 +685,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 }
 ```
 
-- `selectedCardIds`는 1~9개이며 해당 작업의 `position` 1~9 안에서 고른다.
+- `selectedCardIds`는 중복 없이 1~9개이며 해당 작업의 `position` 1~9 안에서 고른다.
 
 응답 `201` — [VisitSession](#visitsession), `sessionStatus`는 `evaluationPending`
 
@@ -586,9 +722,9 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 422 | `INVALID_IMAGE_FORMAT` |
 | 503 | `IMAGE_STORAGE_UNAVAILABLE` (`retryable: true`), `IMAGE_STORAGE_NOT_CONFIGURED` |
 
-### 5-3. `POST /api/v1/visit-sessions/{sessionId}/cards` — 신규
+### 5-3. `PATCH /api/v1/visit-sessions/{sessionId}/cards` — 신규
 
-면회 중 보충 카드를 추가한다.
+면회 중 꺼낸 보충 카드를 회차의 고른 카드에 더한다. 보충 카드 세 장(10~12번)은 4-3으로 언제든 볼 수 있다.
 
 요청
 
@@ -596,7 +732,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 { "cardIds": ["00000000-0000-4000-8000-000000000510"] }
 ```
 
-- 같은 작업의 `position` 10~12 안에서 고른다. 이미 추가한 카드는 무시한다.
+- 같은 묶음의 `position` 10~12 안에서 중복 없이 고른다(1~3개). 이미 더한 카드는 무시하므로 같은 요청을 다시 보내도 결과가 같다.
 
 응답 `200` — [VisitSession](#visitsession)
 
@@ -843,7 +979,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 - 모든 제안을 `settled`로 바꾼다.
 - `accepted`인 생애 정보 제안은 생애 정보로 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다.
-- `accepted`인 주제 제안은 `topic_feedback`에 `suggestedAction`을 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 보호자가 다른 행동을 고를 수 있는지는 미정([미정 사항](#미정-사항) 4)
+- `accepted`인 주제 제안은 `topic_feedback`에 `suggestedAction`을 기록하고 다음 카드 생성(4-1)의 `topics`에 반영한다. 보호자가 다른 행동을 고를 수 있는지는 미정([미정 사항](#미정-사항) 4)
 - `rejected` 항목은 반영하지 않는다.
 
 | HTTP | `errorCode` | 언제 |
@@ -862,7 +998,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다.
 
-8-2~8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다.
+8-3, 8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다. 카드 생성은 AI 서버를 거치지 않으며 4-1에 적는다(8-2 삭제).
 
 ### 8-1. `POST /internal/v1/speech-analyses` — 완료
 
@@ -913,101 +1049,9 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 - 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
-### 8-2. `POST /internal/v1/card-generations` — 신규
+### 8-2. 카드 생성 — 삭제
 
-요청
-
-```json
-{
-  "schemaVersion": 1,
-  "setId": "00000000-0000-4000-8000-000000000401",
-  "context": {
-    "ageRange": "80s",
-    "conditionStage": "mildCognitiveImpairment",
-    "profileFacts": {
-      "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨어요.",
-      "hometown": null,
-      "hobby": "노래 부르기를 좋아하셨어요.",
-      "family": null
-    },
-    "lifeFacts": [
-      {
-        "factId": "00000000-0000-4000-8000-000000000111",
-        "title": "단골손님",
-        "content": "수선집에 오래 다닌 단골손님이 많았어요."
-      }
-    ],
-    "topics": [
-      {
-        "topicId": "00000000-0000-4000-8000-000000000451",
-        "title": "노래 이야기",
-        "description": "즐겨 부르시던 노래와 그 노래에 얽힌 기억을 여쭤보는 주제예요.",
-        "feedback": [
-          { "action": "more", "decidedAt": "2026-08-21T15:00:00+09:00" }
-        ]
-      }
-    ]
-  },
-  "constraints": {
-    "avoidRecentMemoryCheck": true,
-    "avoidMedicalInterpretation": true
-  }
-}
-```
-
-- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`)
-- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 첫 생성에는 빈 배열이다.
-- 사진 설명은 3-3이 정해질 때까지 넣지 않는다.
-- BE는 요청의 `context`를 `card_sets.generation_log`의 `input`에 저장한다.
-
-응답 `200`
-
-```json
-{
-  "schemaVersion": 1,
-  "setId": "00000000-0000-4000-8000-000000000401",
-  "model": "synthetic-model",
-  "promptVersion": "card-v1",
-  "cards": [
-    {
-      "position": 1,
-      "topic": { "topicId": "00000000-0000-4000-8000-000000000451" },
-      "cardTitle": "즐겨 부르던 노래",
-      "description": "자주 흥얼거리시던 노래를 함께 떠올려 보는 카드예요.",
-      "primaryQuestion": "젊으셨을 때 즐겨 부르던 노래가 있으셨어요?",
-      "followUpQuestions": [
-        "그 노래는 어디서 처음 들으셨어요?",
-        "누구와 함께 부르곤 하셨어요?",
-        "그 노래를 들으면 어떤 장면이 떠오르세요?"
-      ],
-      "evidenceSource": "lifeFact",
-      "evidence": [ { "...": "미정" } ]
-    },
-    {
-      "position": 2,
-      "topic": {
-        "title": "재봉 일",
-        "description": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요."
-      },
-      "cardTitle": "수선집 시절",
-      "description": "수선집을 하시던 때의 손님과 옷 이야기를 나누는 카드예요.",
-      "primaryQuestion": "어떤 옷을 주로 만드셨어요?",
-      "followUpQuestions": [
-        "일할 때 자주 쓰던 도구가 있었어요?",
-        "함께 일하던 분들은 어떤 분들이었어요?",
-        "가장 기억에 남는 옷은 무엇이었어요?"
-      ],
-      "evidenceSource": "lifeFact",
-      "evidence": [ { "...": "미정" } ]
-    }
-  ]
-}
-```
-
-- 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
-- `topic`: 기존 주제면 `topicId`, 새 주제면 `title`과 `description`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 주제는 겹치지 않는다.
-- `evidenceSource`: `lifeFact`, `photo`, `none`. `none`이면 `evidence`는 빈 배열이다. `evidence` 항목 형식은 미정([미정 사항](#미정-사항) 5)
-- `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
+AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 카드 생성 처리](#4-1-카드-생성-처리)).
 
 ### 8-3. `POST /internal/v1/visit-reports` — 신규
 
@@ -1221,12 +1265,12 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 
 ### CardSet
 
+4-3의 응답이다. 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음이다.
+
 ```json
 {
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
-  "profileId": "00000000-0000-4000-8000-000000000101",
-  "generationStatus": "completed",
   "usedBySessionId": null,
   "cards": [
     {
@@ -1246,19 +1290,17 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
         "가장 기억에 남는 옷은 무엇이었어요?"
       ],
       "evidenceSource": "lifeFact",
-      "evidence": [ { "...": "미정" } ],
+      "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
       "selected": false
     }
-  ],
-  "error": null,
-  "createdAt": "2026-08-21T12:30:00+09:00"
+  ]
 }
 ```
 
-- `generationStatus`: `running`, `completed`, `failed`
-- `usedBySessionId`: 이 카드 묶음으로 만든 회차. 없으면 `null`
-- `cards`: `completed`일 때 12장, 그 밖에는 `[]`
-- `error`: `failed`일 때 `{ "errorCode": "..." }`, 그 밖에는 `null`
+- `setId`: 녹음을 시작할 때 5-1에 보낸다.
+- `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
+- `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
 ### VisitSession
 
@@ -1388,10 +1430,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
-| 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
-| 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
+| 1 | 사진 설명은 확인 없이 쓰고 원하는 보호자만 고친다(3-3, BE 리더 방향). | 3-3, 8-4 | PM |
+| 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
 | 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
 | 4 | 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지. `topic_feedback.action`과 `topic_proposals.suggested_action`이 별도 컬럼 | 7-4 | 스키마 작성자 |
-| 5 | 카드 근거(`evidence`) 항목 형식. 세부 정보 네 항목은 `fact_id`가 없음 | 8-2, CardSet | AI |
-| 6 | 카드 생성 작업의 `model`, `prompt_version`. 생성(`running`) 시점부터 NOT NULL이라 8-2 응답 전에 값이 필요함 | 4-1, 8-2 | 스키마 작성자, AI |
 | 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
