@@ -12,7 +12,7 @@
 | [동의안](consent-draft.md) | 기존 동의 구조 확정, 사진 보관 개정안은 PR #92 검토 중, 외부 업체 정보 미정 | 필수 동의, 사진 등록과 분석의 구분, 선택 동의와 가명정보 활용 문구 |
 | [기능 대응표](consent-mapping.md) | 운영 중 | 동의 문구별 기능, 법적 쟁점, 대응 수준과 남은 조건 |
 
-동의와 임시 처리 경계는 [ADR-001](../architecture/decisions/ADR-001-consent-and-temporary-processing.md), STT와 VLM의 온프레미스 GPU 1대 처리 및 서버 중심 데이터 관리 방향은 [ADR-006](../architecture/decisions/ADR-006-server-side-ai-processing.md)을 따른다. 외부 STT와 LLM 문구는 업체 정보와 처리 조건이 확정된 뒤 완성한다.
+동의와 임시 처리 기준은 [ADR-001](../architecture/decisions/ADR-001-consent-and-temporary-processing.md), 실행 위치는 [ADR-006의 후속 방향](../architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. STT는 GPU 서버, 사진 설명과 카드 및 리포트는 ML API 활용 방향이며 실제 사용자 자료의 외부 전송 승인과는 구분한다. 외부 업체 정보와 처리 조건이 확정된 뒤 동의 문구를 완성한다. 이번 참조 정정은 보관 기간이나 법적 판단을 바꾸지 않는다.
 
 ## 현재 확정된 데이터 원칙
 
