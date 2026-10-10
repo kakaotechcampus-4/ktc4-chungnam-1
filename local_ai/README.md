@@ -23,6 +23,22 @@
 
 모델 선택 기록에는 출처, 버전, 해시, 라이선스, 입출력, 실행 환경, 처리 시간, 메모리, 정확도, 실패 사례와 재검토 조건을 남긴다. 실행 명령과 결과는 실제로 검증한 것만 기록한다.
 
+## 생성 기능 코드
+
+backend가 부르는 생성 기능 세 가지와, 이걸 합성 페르소나로 돌려 보는 시뮬레이터가 있다.
+
+| 폴더 | 내용 |
+| --- | --- |
+| [`card_generation/`](card_generation/README.md) | 카드 생성. 면회 전에 backend가 모은 context로 카드 12장과 새로 만들 주제를 만든다 |
+| `report_generation/` | 면회 리포트. 면회 뒤 전사, 소감, 고른 카드로 제목, 본문, 카드별 요약을 만든다 |
+| `proposal_generation/` | 변경 제안. 면회 뒤 이야기 후보와 카드 주제 조정(more·less·exclude)을 제안한다 |
+| `common/` | LLM 설정과 모델 주소 목록(`ENDPOINTS`), 정해진 형식으로 답 받기, 리포트·변경 제안이 같이 쓰는 #106 형식(`visit_report.py`) |
+| [`simulation/`](simulation/README.md) | 시뮬레이션. 합성 페르소나로 면회를 회차마다 이어서 돌린다 |
+
+리포트와 변경 제안은 #106 내부 API(8-3) 요청을 받고, `common.visit_report.combine()`으로 #106 응답 하나로 합친다. 쓰는 법은 각 패키지의 `__init__.py` 설명에 있다.
+
+생성 기능은 DB를 읽지도 쓰지도 않는다. `pyproject.toml`은 `local_ai/`에 하나 두고, backend가 경로 의존성으로 설치할 때는 생성 기능 셋과 `common`만 들어간다.
+
 ## 찾아볼 문서
 
 | 필요한 내용 | 문서 |

@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>면회 시뮬레이션 작업대</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 작업대: 위에 제목과 탭, 실행 탭은 단계 · 대화와 산출물 · 요청 기록 세 패널. 좁으면 한 줄로 쌓는다. */
+:root {
+  --bg: #f2f3f6; --panel: #ffffff; --sunken: #f6f7f9; --fg: #1b1f27; --muted: #5d6573; --faint: #8e95a1; --line: #e4e6eb;
+  --accent: #3554a5; --accent-soft: #e8edf8; --ok: #2b7a4b; --ok-soft: #e5f3ea; --warn: #9a640f; --bad: #b03b3b; --bad-soft: #f9e5e5;
+  --bubble-p: #f4ede3; --bubble-c: #3554a5; --bubble-c-fg: #ffffff; --mark: #fff7d9;
+  --shadow: 0 1px 2px rgba(20, 28, 45, 0.06), 0 1px 1px rgba(20, 28, 45, 0.03);
+  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #101318; --panel: #181c23; --sunken: #1e232b; --fg: #e7e9ee; --muted: #a0a7b3; --faint: #767d89; --line: #2a303a;
+  --accent: #9fb5ea; --accent-soft: #232d44; --ok: #7fcf9c; --ok-soft: #1c3226; --warn: #e3b061; --bad: #ef8e8e; --bad-soft: #3b2222;
+  --bubble-p: #2c2722; --bubble-c: #34508f; --bubble-c-fg: #f2f5fc; --mark: #3a3420; --shadow: none; color-scheme: dark; } }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.55; }
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; padding: 12px 20px; }
+h1 { font-size: 1.05rem; font-weight: 700; margin: 0; }
+h2 { font-size: 0.9rem; font-weight: 600; margin: 0; }
+nav { display: inline-flex; gap: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+nav button { font: inherit; background: none; border: 0; border-radius: 7px; padding: 5px 14px; color: var(--muted); cursor: pointer; }
+nav button[aria-selected="true"] { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+.status { margin-left: auto; font-size: 0.8rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--sunken); color: var(--muted); }
+.status.run { background: var(--ok-soft); color: var(--ok); } .status.err { background: var(--bad-soft); color: var(--bad); }
+.btn { font: inherit; font-size: 0.86rem; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 5px 14px; border-radius: 8px; cursor: pointer; box-shadow: var(--shadow); }
+.btn.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+main { overflow: hidden; min-height: 0; }
+.page { height: 100%; overflow: auto; padding: 4px 20px 20px; }
+.muted { color: var(--muted); } .faint { color: var(--faint); } .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.small { font-size: 0.8rem; }
+.label { font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.86rem; color: var(--muted); }
+select, input[type=number] { font: inherit; font-size: 0.86rem; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
+input[type=number] { width: 64px; }
+
+.runbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 12px; }
+.live { display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(0, 0.95fr); gap: 12px; height: calc(100% - 70px); min-height: 480px; }
+@media (max-width: 1100px) { .live { grid-template-columns: minmax(0, 1fr); height: auto; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+@media (max-width: 1100px) { .col { max-height: 70vh; } }
+.col > .head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.col > .body { overflow: auto; padding: 8px 0; min-height: 0; display: grid; gap: 4px; align-content: start; }
+.empty { padding: 8px 14px; color: var(--faint); font-size: 0.84rem; }
+.visit-h { font-size: 0.74rem; font-weight: 600; color: var(--muted); padding: 10px 14px 2px; }
+.stage { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 0.84rem; padding: 3px 14px; }
+.stage.active { color: var(--ok); font-weight: 600; }
+.stage .t { font-family: var(--mono); font-size: 0.74rem; color: var(--faint); }
+.msg { display: grid; gap: 2px; max-width: 84%; padding: 2px 14px; }
+.msg.patient { justify-self: start; } .msg.caregiver { justify-self: end; justify-items: end; }
+.msg .name { font-size: 0.72rem; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.bubble { padding: 8px 12px; border-radius: 14px; font-size: 0.9rem; }
+.msg.patient .bubble { background: var(--bubble-p); border-top-left-radius: 4px; }
+.msg.caregiver .bubble { background: var(--bubble-c); color: var(--bubble-c-fg); border-top-right-radius: 4px; }
+.cardref { font-family: var(--mono); font-size: 0.68rem; background: var(--accent-soft); color: var(--accent); padding: 0 6px; border-radius: 4px; }
+.note { margin: 2px 14px; padding: 4px 10px; font-size: 0.8rem; color: var(--muted); background: var(--sunken); border-radius: 8px; justify-self: center; }
+.out { margin: 4px 14px; padding: 8px 12px; background: var(--sunken); border-radius: 10px; }
+.out summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; }
+.out ul { margin: 6px 0 0; padding-left: 1.1em; font-size: 0.82rem; }
+pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 0.74rem; background: var(--panel); border: 1px solid var(--line); padding: 8px; border-radius: 8px; max-height: 360px; overflow: auto; }
+.req { border-bottom: 1px solid var(--line); }
+.req summary { cursor: pointer; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; font-size: 0.8rem; align-items: baseline; padding: 5px 14px; list-style: none; }
+.req summary::-webkit-details-marker { display: none; }
+.req summary:hover { background: var(--sunken); }
+.req .k { font-size: 0.7rem; font-weight: 600; color: var(--accent); }
+.req .k.tool { color: var(--ok); } .req .k.retry, .req .k.err { color: var(--bad); }
+.req > div { padding: 0 14px 10px; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; }
+.filters label { font-size: 0.76rem; }
+
+.edit { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; }
+@media (max-width: 900px) { .edit { grid-template-columns: minmax(0, 1fr); height: auto; } }
+.list { display: grid; gap: 2px; align-content: start; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; overflow: auto; }
+.list button { text-align: left; font: inherit; border: 0; border-radius: 8px; background: none; color: var(--fg); padding: 7px 10px; cursor: pointer; display: grid; gap: 1px; }
+.list button:hover { background: var(--sunken); }
+.list button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.list .path { font-family: var(--mono); font-size: 0.7rem; color: var(--faint); font-weight: 400; }
+.editor { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; }
+.editor h2 { font-size: 1rem; }
+textarea { font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; width: 100%; height: 100%; min-height: 420px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); color: var(--fg); }
+.msgline { font-size: 0.82rem; } .msgline.ok { color: var(--ok); } .msgline.bad { color: var(--bad); }
+.edited { font-size: 0.7rem; color: var(--warn); font-weight: 600; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; background: var(--panel); }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--sunken); color: var(--muted); font-size: 0.76rem; font-weight: 600; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+a { color: var(--accent); }
+.dbbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 12px; }
+</style>
+<script src="/static/dbview.js"></script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>면회 시뮬레이션 작업대</h1>
+    <nav id="tabs">
+      <button type="button" data-tab="run" aria-selected="true">실행</button>
+      <button type="button" data-tab="persona" aria-selected="false">페르소나</button>
+      <button type="button" data-tab="prompts" aria-selected="false">프롬프트</button>
+      <button type="button" data-tab="db" aria-selected="false">DB</button>
+      <button type="button" data-tab="history" aria-selected="false">기록</button>
+    </nav>
+    <span class="status" id="status">대기 중</span>
+  </header>
+  <main>
+    <section class="page" id="tab-run">
+      <div class="runbar">
+        <label>페르소나 <select id="run-persona"></select></label>
+        <label>추천 판 <select id="run-recommender"><option value="topics">주제판 (PR #84 스키마)</option></select></label>
+        <label>회차 <input type="number" id="run-visits" min="1" max="10" value="5"></label>
+        <label>시드 <input type="number" id="run-seed" value="7"></label>
+        <button type="button" class="btn primary" id="run-start">시작</button>
+        <button type="button" class="btn" id="run-stop" disabled>다음 회차 전에 멈춤</button>
+        <span class="muted" id="run-info"></span>
+      </div>
+      <div class="live">
+        <div class="col"><div class="head"><h2>단계</h2><span class="small faint">걸린 시간</span></div><div class="body" id="stages"><p class="empty">시작하면 회차별 단계가 여기에 쌓입니다.</p></div></div>
+        <div class="col"><div class="head"><h2>대화와 중간 산출물</h2><span class="muted" id="cur-visit"></span></div>
+          <div class="body" id="feed"><p class="empty">면회 대화는 한 턴씩, 단계별 산출물은 끝나는 대로 나타납니다.</p></div></div>
+        <div class="col"><div class="head"><h2>요청 기록</h2>
+          <div class="filters">
+            <label><input type="checkbox" data-f="llm" checked> LLM</label>
+            <label><input type="checkbox" data-f="tool" checked> 도구</label>
+            <label><input type="checkbox" data-f="retry" checked> 재시도·오류</label>
+          </div></div>
+          <div class="body" id="reqs"><p class="empty">LLM 요청과 도구 호출이 여기에 나타납니다. 누르면 입력과 출력이 펼쳐집니다.</p></div></div>
+      </div>
+    </section>
+
+    <section class="page" id="tab-persona" hidden>
+      <div class="edit">
+        <div class="list" id="persona-list"></div>
+        <div class="editor">
+          <div><h2 id="persona-title">페르소나</h2>
+            <p class="muted">어르신의 숨은 생애사(life_story)와 앨범의 실제 내용, 보호자의 속마음은 시뮬레이션 역할만 봅니다. 추천 시스템은 보호자가 앱에 입력하거나 승인한 것만 압니다. caregiver.visit_intents는 시험용으로, 정한 회차 10턴째에 보호자가 그 이야기를 꺼내게 합니다.</p></div>
+          <textarea id="persona-text" spellcheck="false" aria-label="페르소나 JSON"></textarea>
+          <div><button type="button" class="btn primary" id="persona-save">저장</button> <span class="msgline" id="persona-msg"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="tab-prompts" hidden>
+      <div class="edit">
+        <div class="list" id="prompt-list"></div>
+        <div class="editor">
+          <div><h2 id="prompt-title">프롬프트</h2><p class="muted mono" id="prompt-path"></p></div>
+          <textarea id="prompt-text" spellcheck="false" aria-label="프롬프트"></textarea>
+          <div><button type="button" class="btn primary" id="prompt-save">저장</button>
+            <button type="button" class="btn" id="prompt-restore">원본으로 되돌리기</button> <span class="msgline" id="prompt-msg"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="tab-db" hidden>
+      <div class="dbbar">
+        <label>기록 <select id="db-run"></select></label>
+        <span class="muted small" id="db-info"></span>
+      </div>
+      <div id="db-view"></div>
+    </section>
+
+    <section class="page" id="tab-history" hidden>
+      <div class="scroll"><table><thead><tr><th>실행</th><th>추천 판</th><th>시작</th><th>회차</th><th>상태</th><th></th></tr></thead><tbody id="history"></tbody></table></div>
+    </section>
+  </main>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) { if (v == null || v === false) continue; if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else e.setAttribute(k, v); }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || `요청 실패 (${r.status})`);
+  return body;
+}
+const KIND = { period: "시절", place: "장소", person: "사람", activity: "활동", topic: "주제" };
+const REC = { topics: "주제판" };
+const ACTION = { more: "더 자주", less: "덜 자주", exclude: "추천하지 않기" };
+const DEC = { accept: "승인", edit: "수정 후 승인", reject: "거절", change: "바꿔서 반영", ignore: "반영 안 함" };
+
+// ── 탭
+document.getElementById("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#tabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  ["run", "persona", "prompts", "db", "history"].forEach(t => $("tab-" + t).hidden = t !== b.dataset.tab);
+  if (b.dataset.tab === "db") loadDbRuns();
+  if (b.dataset.tab === "history") loadHistory();
+  if (b.dataset.tab === "prompts") loadPrompts();
+  if (b.dataset.tab === "persona") loadPersonas();
+});
+
+// ── 실행 화면 렌더링
+let stageEls = {}, curVisit = null, pending = {}, liveRun = null, liveSnaps = [];
+function resetLive() {
+  liveSnaps = []; if ($("db-run").value === "__live__") dbView.set(liveSnaps, { emptyText: LIVE_EMPTY });
+  $("stages").replaceChildren(); $("feed").replaceChildren(); $("reqs").replaceChildren();
+  stageEls = {}; curVisit = null; pending = {};
+}
+function fmtTime(ts) { const d = new Date(ts * 1000); return d.toTimeString().slice(0, 8); }
+function outputView(e) {
+  const d = e.data;
+  let body;
+  if (e.what === "추천 카드") body = h("ul", {}, d.map(c => h("li", {}, `#${c.position} ${c.card_title} `,
+      h("span", { class: "muted" }, `[${c.bucket}] ` + c.elements.map(x => `${KIND[x.kind]}:${x.name}`).join(", ")))));
+  else if (e.what === "보호자 선택") body = h("ul", {}, d.selected.map(p => h("li", {}, `#${p.position} 고름 · ${p.why}`)),
+      d.skipped.map(p => h("li", { class: "muted" }, `#${p.position} 안 고름 · ${p.why}`)));
+  else if (e.what === "프로필 입력") body = h("ul", {}, Object.entries(d.answers).map(([k, v]) => h("li", {}, `${k}: ${v || "건너뜀"}`)),
+      h("li", {}, d.photo ? `사진: ${d.photo.description} · 태그 ${d.photo.tags_chosen.join(", ")}` : "사진: 건너뜀"), h("li", { class: "muted" }, d.why));
+  else if (e.what === "소감") body = h("div", {}, h("p", {}, `만족도 ${d.satisfaction}/5 · ${d.reaction} · ${d.note}`),
+      h("ul", {}, d.card_reviews.map(r => h("li", {}, `#${r.position} ${r.reaction || "답하지 않음"}`))));
+  else if (e.what === "리포트") body = h("div", {}, h("p", {}, h("b", {}, d.title)), h("p", {}, d.body));
+  else if (e.what === "변경 제안") body = h("ul", {}, d.facts.map(f => h("li", {}, `이야기 후보: ${f.title} · ${f.content}`)),
+      d.topics.map(t => h("li", {}, `주제 조정: ${t.topic_name} → ${ACTION[t.suggested_action]} · ${t.reason}`)));
+  else if (e.what === "보호자 확인") body = h("ul", {}, d.facts.map(f => h("li", {}, `이야기 ${f.index}: ${f.keep ? "반영" : "× 뺌"}${f.new_content ? " (고침)" : ""} · ${f.why}`)),
+      d.topics.map(t => h("li", {}, `주제 ${t.index}: ${t.keep ? ACTION[t.action] : "× 뺌"}${t.new_name ? " · 이름 고침: " + t.new_name : ""} · ${t.why}`)),
+      d.manual_stories.map(m => h("li", {}, `직접 추가: ${m.title} · ${m.content}`)));
+  else if (e.what === "보호자 평가") body = h("div", {}, h("p", {}, `만족도 ${d.evaluation.satisfaction}/5 · ${d.evaluation.note}`),
+      h("ul", {}, d.reviews.map(r => h("li", {}, `#${r.position} ${r.used ? r.reaction : "쓰지 않음"}`))));
+  else if (e.what === "시스템 제안") body = h("ul", {}, d.facts.map(f => h("li", {}, `이야기 후보: ${f.title} · ${f.content}`)),
+      d.adjustments.map(a => h("li", {}, `조정: ${a.card_title} → ${ACTION[a.suggested_action]}`)));
+  else if (e.what === "보호자 결정") body = h("ul", {}, d.facts.map(f => h("li", {}, `이야기 ${f.index}: ${DEC[f.decision]} · ${f.why}`)),
+      d.adjustments.map(a => h("li", {}, `조정 ${a.index}: ${DEC[a.decision]} ${ACTION[a.action]} 범위 ${a.scope} · ${a.why}`)));
+  else body = h("pre", {}, JSON.stringify(d, null, 2));
+  return h("details", { class: "out", open: "" }, h("summary", {}, e.visit ? `${e.visit}회차 · ${e.what}` : e.what), body,
+    h("details", {}, h("summary", { class: "muted" }, "원본 JSON"), h("pre", {}, JSON.stringify(d, null, 2))));
+}
+function reqRow(kind, label, right, details) {
+  return h("details", { class: "req", "data-k": kind }, h("summary", {}, h("span", { class: `k ${kind}` }, label), right[0], h("span", { class: "muted mono" }, right[1])), details);
+}
+function applyFilters() {
+  const on = new Set([...document.querySelectorAll(".filters input:checked")].map(i => i.dataset.f));
+  document.querySelectorAll("#reqs .req").forEach(r => r.hidden = !on.has(r.dataset.k === "err" ? "retry" : r.dataset.k));
+}
+document.querySelector(".filters").addEventListener("change", applyFilters);
+function handle(e) {
+  if (e.kind === "run_start") { $("run-info").textContent = `${e.run} · ${REC[e.recommender] || ""} · ${e.visits}회차`; liveRun = e.run; }
+  if (e.kind === "db_snapshot") { liveSnaps.push({ id: e.id, label: e.label, visit: e.visit, tables: e.tables });
+    $("feed").append(h("p", { class: "note" }, `DB 스냅숏: ${e.visit ? e.visit + "회차 · " : ""}${e.label} (DB 탭에서 보기)`));
+    if ($("db-run").value === "__live__") dbView.set(liveSnaps, { follow: true });
+    return; }
+  if (e.kind === "visit_start") { curVisit = e.visit; $("cur-visit").textContent = `${e.visit}회차 진행 중`;
+    $("stages").append(h("p", { class: "visit-h" }, `${e.visit}회차 · ${e.date.slice(0, 10)}`));
+    $("feed").append(h("p", { class: "visit-h" }, `${e.visit}회차`)); }
+  if (e.kind === "stage_start") { const el = h("div", { class: "stage active" }, h("span", {}, e.name.replace(/^\d+회차 · /, "").replace(/^처음 한 번 · /, "")), h("span", { class: "t" }, ""));
+    stageEls[e.name] = el; $("stages").append(el); }
+  if (e.kind === "stage_end" && stageEls[e.name]) { stageEls[e.name].className = "stage"; stageEls[e.name].lastChild.textContent = `${e.seconds}초`; }
+  if (e.kind === "card_added") { $("feed").append(h("p", { class: "note" }, `보호자가 앱에서 카드 #${e.position} "${e.card_title}"를 추가함`)); }
+  if (e.kind === "turn") { $("feed").append(h("div", { class: `msg ${e.speaker}` },
+      h("span", { class: "name" }, e.speaker === "patient" ? "어르신" : "보호자", e.card_position ? h("span", { class: "cardref" }, `카드 #${e.card_position}`) : null,
+        e.story_ids && e.story_ids.length ? h("span", { class: "faint" }, `생애 ${e.story_ids.join(", ")}`) : null,
+        e.probe ? h("span", { class: "cardref" }, "시험용 메모 뒤") : null),
+      h("div", { class: "bubble" }, e.text)));
+    $("feed").scrollTop = $("feed").scrollHeight; }
+  if (e.kind === "output") { $("feed").append(outputView(e)); $("feed").scrollTop = $("feed").scrollHeight; }
+  if (e.kind === "llm_start") { pending[e.id] = e; }
+  if (e.kind === "llm_end") { const s = pending[e.id] || {}; delete pending[e.id];
+    $("reqs").append(reqRow("llm", "LLM", [h("span", {}, s.stage || e.stage || "-"), `${e.seconds}초 · 입력 ${e.input_tokens} / 출력 ${e.output_tokens}`],
+      h("div", {}, h("p", { class: "label" }, `시스템 프롬프트 (메시지 ${s.messages ?? "?"}개 중 첫 번째)`), h("pre", {}, s.system || ""),
+        h("p", { class: "label" }, "마지막 입력"), h("pre", {}, s.last || ""), h("p", { class: "label" }, "출력"), h("pre", {}, e.output || ""),
+        e.tool_calls ? [h("p", { class: "label" }, "도구 호출"), h("pre", {}, e.tool_calls)] : null))); }
+  if (e.kind === "tool_end") { const s = pending[e.id] || {}; delete pending[e.id];
+    $("reqs").append(reqRow("tool", "도구", [h("span", {}, s.name || "도구"), `${e.seconds}초`],
+      h("div", {}, h("p", { class: "label" }, "입력"), h("pre", {}, s.input || ""), h("p", { class: "label" }, "출력"), h("pre", {}, e.output || "")))); }
+  if (e.kind === "tool_start") { pending[e.id] = e; }
+  if (e.kind === "retry" || e.kind === "llm_error" || e.kind === "run_error") {
+    $("reqs").append(reqRow(e.kind === "retry" ? "retry" : "err", e.kind === "retry" ? "재시도" : "오류", [h("span", {}, e.role || e.stage || ""), ""], h("pre", {}, e.error || ""))); }
+  if (e.kind === "visit_end") { $("feed").append(h("p", { class: "note" }, `${e.visit}회차 끝 · ${e.seconds}초 · 이야기 ${e.applied.facts.length}개 저장, 결정 ${e.applied.feedback.length}건 반영`)); }
+  if (e.kind === "run_end") { $("cur-visit").textContent = e.failure ? `중단: ${e.failure}` : `${e.visits}회차 완료`; }
+  applyFilters();
+}
+let source = null;
+function follow(since = 0) {
+  if (source) source.close();
+  source = new EventSource(`/api/events?since=${since}`);
+  source.onmessage = (m) => handle(JSON.parse(m.data));
+  source.onerror = () => { source.close(); source = null; poll(); };
+}
+async function poll() {
+  try {
+    const s = await api("/api/status");
+    $("status").textContent = s.running ? (s.stopping ? "멈추는 중" : "실행 중") : (s.error ? "오류" : "대기 중");
+    $("status").className = "status" + (s.running ? " run" : s.error ? " err" : "");
+    $("run-start").disabled = s.running; $("run-stop").disabled = !s.running;
+    return s;
+  } catch (err) { $("status").textContent = "서버 연결 안 됨"; $("status").className = "status err"; }
+}
+setInterval(poll, 3000);
+$("run-start").addEventListener("click", async () => {
+  resetLive();
+  try {
+    await api("/api/run", { method: "POST", body: JSON.stringify({ persona: $("run-persona").value, recommender: $("run-recommender").value, visits: +$("run-visits").value, seed: +$("run-seed").value }) });
+    follow(0); poll();
+  } catch (err) { $("run-info").textContent = err.message; }
+});
+$("run-stop").addEventListener("click", async () => { await api("/api/stop", { method: "POST" }); poll(); });
+
+// ── 페르소나
+let currentPersona = null;
+async function loadPersonas() {
+  const names = await api("/api/personas");
+  $("persona-list").replaceChildren(...names.map(n => h("button", { type: "button", "data-n": n, "aria-current": String(n === currentPersona) }, h("span", {}, n))));
+  if (!currentPersona && names.length) openPersona(names[0]);
+}
+async function openPersona(name) {
+  currentPersona = name; const p = await api(`/api/personas/${name}`);
+  $("persona-title").textContent = name; $("persona-text").value = p.text; $("persona-msg").textContent = "";
+  document.querySelectorAll("#persona-list button").forEach(b => b.setAttribute("aria-current", String(b.dataset.n === name)));
+}
+$("persona-list").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) openPersona(b.dataset.n); });
+$("persona-save").addEventListener("click", async () => {
+  try { await api(`/api/personas/${currentPersona}`, { method: "PUT", body: JSON.stringify({ text: $("persona-text").value }) });
+    $("persona-msg").textContent = "저장했습니다. 다음 실행부터 반영됩니다."; $("persona-msg").className = "msgline ok"; }
+  catch (err) { $("persona-msg").textContent = err.message; $("persona-msg").className = "msgline bad"; }
+});
+
+// ── 프롬프트
+let prompts = [], currentPrompt = null;
+async function loadPrompts() {
+  prompts = await api("/api/prompts");
+  $("prompt-list").replaceChildren(...prompts.map(p => h("button", { type: "button", "data-k": p.key, "aria-current": String(p.key === currentPrompt) },
+    h("span", {}, p.label, p.edited ? h("span", { class: "edited" }, " · 고침") : null), h("span", { class: "path" }, p.path))));
+  if (!currentPrompt && prompts.length) openPrompt(prompts[0].key);
+}
+function openPrompt(key) {
+  currentPrompt = key; const p = prompts.find(x => x.key === key);
+  $("prompt-title").textContent = p.label; $("prompt-path").textContent = p.path; $("prompt-text").value = p.text; $("prompt-msg").textContent = "";
+  document.querySelectorAll("#prompt-list button").forEach(b => b.setAttribute("aria-current", String(b.dataset.k === key)));
+}
+$("prompt-list").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) openPrompt(b.dataset.k); });
+$("prompt-save").addEventListener("click", async () => {
+  try { await api(`/api/prompts/${currentPrompt}`, { method: "PUT", body: JSON.stringify({ text: $("prompt-text").value }) });
+    $("prompt-msg").textContent = "저장했습니다. 다음 LLM 요청부터 반영됩니다."; $("prompt-msg").className = "msgline ok"; await loadPrompts(); }
+  catch (err) { $("prompt-msg").textContent = err.message; $("prompt-msg").className = "msgline bad"; }
+});
+$("prompt-restore").addEventListener("click", async () => {
+  try { await api(`/api/prompts/${currentPrompt}/restore`, { method: "POST" }); await loadPrompts(); openPrompt(currentPrompt);
+    $("prompt-msg").textContent = "원본으로 되돌렸습니다."; $("prompt-msg").className = "msgline ok"; }
+  catch (err) { $("prompt-msg").textContent = err.message; $("prompt-msg").className = "msgline bad"; }
+});
+
+// ── DB
+const LIVE_EMPTY = "실행이 시작되면 프로필 입력 직후, 회차마다 카드 저장 직후와 변경 반영 직후에 DB를 찍습니다.";
+const dbView = DBView.mount($("db-view"), { emptyText: LIVE_EMPTY });
+async function loadDbRuns() {
+  const keep = $("db-run").value, rows = await api("/api/runs").catch(() => []);
+  $("db-run").replaceChildren(h("option", { value: "__live__" }, liveRun ? `지금 실행 · ${liveRun}` : "지금 실행"),
+    ...rows.filter(r => r.name !== liveRun).map(r => h("option", { value: r.name }, `${r.name} · ${r.visits}회차`)));
+  $("db-run").value = keep && [...$("db-run").options].some(o => o.value === keep) ? keep : "__live__";
+  showDbRun();
+}
+async function showDbRun() {
+  const name = $("db-run").value;
+  if (name === "__live__") { dbView.set(liveSnaps, { emptyText: LIVE_EMPTY }); $("db-info").textContent = "실시간으로 새 시점이 추가됩니다."; return; }
+  const data = await api(`/api/runs/${name}`);
+  const snaps = DBView.fromRun(data);
+  dbView.set(snaps, { emptyText: "이 기록에는 DB 스냅숏이 없습니다." });
+  $("db-info").textContent = data.db_snapshots ? `시점 ${snaps.length}개`
+    : snaps.length ? `예전 형식 기록: 회차가 끝난 뒤만, 고른 열만 있습니다 (시점 ${snaps.length}개)` : "DB 스냅숏을 남기기 전 기록입니다.";
+}
+$("db-run").addEventListener("change", showDbRun);
+
+// ── 기록
+async function loadHistory() {
+  const rows = await api("/api/runs");
+  $("history").replaceChildren(...rows.map(r => h("tr", {}, h("td", { class: "mono" }, r.name), h("td", {}, REC[r.recommender] || r.recommender), h("td", {}, (r.started_at || "").slice(0, 16).replace("T", " ")),
+    h("td", { class: "mono" }, r.visits), h("td", {}, r.failure ? h("span", { class: "msgline bad" }, r.failure) : "완료"),
+    h("td", {}, h("a", { href: `/runs/${r.name}/view`, target: "_blank", rel: "noopener" }, "결과 보기"),
+      r.has_events ? [" · ", h("a", { href: "#", "data-replay": r.name }, "진행 로그 다시 보기")] : null))));
+}
+$("history").addEventListener("click", async (e) => {
+  const a = e.target.closest("[data-replay]"); if (!a) return; e.preventDefault();
+  const evs = await api(`/api/runs/${a.dataset.replay}/events`);
+  document.querySelector('#tabs [data-tab="run"]').click(); resetLive(); evs.forEach(handle);
+});
+
+// ── 시작
+(async () => {
+  const names = await api("/api/personas").catch(() => []);
+  $("run-persona").replaceChildren(...names.map(n => h("option", { value: n }, n)));
+  const s = await poll();
+  if (s && s.running) follow(0);
+})();
+</script>
+</body>
+</html>
