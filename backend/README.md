@@ -44,6 +44,8 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, 공개 범위와 AI 서버 연결은 정하지 않았다.
+
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
 | 생존 확인 | `GET /health/live` |
@@ -58,6 +60,11 @@ PostgreSQL 스키마의 소유권은 Alembic migration에 있다. `backend/datab
 빈 개발 DB를 한 번에 세우는 bootstrap 스크립트일 뿐이며, 스키마가 바뀌면 Alembic
 migration을 먼저 바꾸고 `init.sql`을 그에 맞춘다(자세한 로컬 적용 방법은
 `backend/database/로컬설정법.md` 참고).
+
+초기 migration 교체는 공용 DB와 실제 데이터가 없는 초기 개발 단계에만 허용한다.
+공용 DB를 사용하기 시작했거나 실제 데이터가 쌓인 뒤에는 이미 적용된 migration을
+수정하거나 교체하지 않는다. 이후 스키마 변경은 새 migration으로 추가하고 기존
+데이터를 유지한 채 적용한다. 변경을 맞추기 위해 공용 DB를 삭제하고 재생성하지 않는다.
 
 `SAEROK_DATABASE_URL`(`.env`)에 연결 문자열을 설정한 뒤 다음으로 최신 스키마를 적용한다.
 
@@ -101,6 +108,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
+- **`PhotoAnalysisQueue`는 사진 동의 설계 전에는 worker에 연결하지 않는다.** 지금은 `pending`인 프로필 사진을 모두 가져오지만, [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지 못하게 한다. 분석 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지면 그 조건을 가져오기 조건에 더한다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정

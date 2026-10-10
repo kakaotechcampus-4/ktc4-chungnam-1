@@ -7,6 +7,8 @@ import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/design/theme.dart';
 
+import 'sample_profile.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -23,6 +25,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [withSampleProfile],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,

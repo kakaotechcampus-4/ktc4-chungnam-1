@@ -8,7 +8,7 @@ import 'speech_input.dart';
 
 /// 생애 정보 한 항목의 상태.
 enum _Phase {
-  /// 답하는 방법을 고르기 전. 화면에 들어오면 여기서 시작한다.
+  /// 답하는 방법을 고르기 전. 적어 둔 답이 없으면 여기서 시작한다.
   choosing,
 
   /// 마이크를 누르기 전.
@@ -37,10 +37,15 @@ class LifeFactStepView extends ConsumerStatefulWidget {
     required this.step,
     required this.onCaptured,
     required this.onCleared,
+    this.initialText,
     super.key,
   });
 
   final LifeFactStep step;
+
+  /// 이 항목에 이미 적어 둔 답. 입력하다 나갔다 돌아오거나 앞 단계로 돌아왔을
+  /// 때 들고 온다. 있으면 빈 화면 대신 이 답을 글 입력칸에 채워 보여준다.
+  final String? initialText;
 
   /// 문장을 얻었을 때. 직접 입력으로 얻은 것도 포함한다.
   final ValueChanged<String> onCaptured;
@@ -61,6 +66,18 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   /// 직접 입력에 음성 실패로 온 것인지, 사용자가 처음부터 고른 것인지.
   /// 따로 값을 두지 않고 음성 시도 횟수로 구분한다.
   bool get _cameFromFailure => _attempt >= 2;
+
+  @override
+  void initState() {
+    super.initState();
+    // 말로 얻은 답인지 글로 얻은 답인지는 남지 않는다. 어느 쪽이든 고칠 수 있게
+    // 글 입력칸에 채운다. 값은 이미 저장본에 있으므로 다시 알리지 않는다.
+    final saved = widget.initialText?.trim() ?? '';
+    if (saved.isNotEmpty) {
+      _phase = _Phase.manualInput;
+      _manual.text = saved;
+    }
+  }
 
   @override
   void dispose() {

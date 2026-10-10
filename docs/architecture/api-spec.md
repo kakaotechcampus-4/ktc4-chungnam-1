@@ -44,23 +44,24 @@
 
 상태: `완료` 구현됨, `미병합` 구현됐으나 develop에 병합 전, `수정` 기존 API 변경, `신규` 새로 구현, `미정` 결정 전
 
-`완료`인 6-2, 6-3, 8-1의 기존 구현은 이전 스키마의 회차 상태(`session_status`)와 회차 동의(`session_consents`)를 사용하므로 새 스키마에 맞춰 고쳐야 한다.
+6-2, 6-3, 8-1은 공통 기반 작업에서 새 스키마와 worker 공통 골격에 맞췄다.
 
 | # | 화면 | 메서드 | 경로 | 상태 |
 | --- | --- | --- | --- | --- |
 | 1-1 | 로그인 | `POST` | `/auth/google` | 완료 |
 | 1-2 | 가입 동의 | `POST` | `/auth/consent` | 완료 |
 | 1-3 | 앱 시작 | `GET` | `/auth/me` | 완료 |
-| 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 미병합 |
+| 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 완료 |
 | 1-5 | 회원 탈퇴 | `DELETE` | `/auth/me` | 수정 |
 | 1-6 | 프로필 설정 | `PATCH` | `/auth/me/consents` | 신규 |
-| 2-1 | 로그인 직후 | `GET` | `/api/v1/profiles` | 신규 |
+| 2-1 | 로그인 직후, 어르신 목록 | `GET` | `/api/v1/profiles` | 신규 |
 | 2-2 | 기본 정보 입력 | `POST` | `/api/v1/profiles` | 신규 |
-| 2-3 | 마이페이지 | `GET` | `/api/v1/profiles/{profileId}` | 신규 |
+| 2-3 | 마이페이지, 일대기 | `GET` | `/api/v1/profiles/{profileId}` | 신규 |
 | 2-4 | 기본 정보, 세부 정보 수정 | `PATCH` | `/api/v1/profiles/{profileId}` | 신규 |
 | 2-5 | 프로필 입력 마치기 | `POST` | `/api/v1/profiles/{profileId}/complete-setup` | 신규 |
 | 2-6 | 생애 정보 추가 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 |
 | 2-7 | 생애 정보 수정 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 |
+| 2-8 | 어르신 목록 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 |
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 사진 설명 확인 | | | 미정 |
@@ -72,7 +73,7 @@
 | 5-3 | 대화 카드 보충 | `POST` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
 | 5-4 | 홈 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 신규 |
 | 6-1 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
-| 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 수정 |
+| 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 완료 |
 | 6-3 | 홈 | `GET` | `/api/v1/speech-analyses/{analysisId}` | 완료 |
 | 6-4 | 리포트 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
 | 7-1 | 리포트 기록 | `GET` | `/api/v1/profiles/{profileId}/reports` | 신규 |
@@ -88,15 +89,17 @@
 
 ## 호출 순서
 
-    [로그인]      1-1 → (consentRequired) 1-2 → 2-1
-                  2-1 결과 없음 → 2-2부터, setupStatus=inProgress → 그 프로필로 온보딩 이어서, completed → 홈
+    [로그인]      1-1 → (consentRequired) 1-2 → [온보딩]
+                  1-1 (authenticated) → 2-1 → 빈 목록이거나 completed가 있으면 홈, inProgress만 있으면 미정(9)
     [온보딩]      2-2 → 3-1 → 3-2 폴링 → (3-3 미정) → 2-5 (카드 생성 시작)
     [홈]          4-2 폴링, 5-4
+    [어르신 목록] 2-1, 2-8 (삭제). 빈 슬롯 → [온보딩]
     [카드 선택]   4-3 → 면회 사진 촬영(단말)
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말)
     [평가]        6-1 → 6-2 → 6-3 폴링
     [리포트]      7-2, 6-4 → 7-3 → 7-4 → 4-1 (다음 카드 생성)
-    [마이페이지]  2-3, 2-4, 2-6, 2-7, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
+    [일대기]      2-3, 2-6, 2-7
+    [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
 <br>
 
@@ -183,7 +186,7 @@
 
 응답 `200` — [Account](#account)
 
-### 1-4. `POST /auth/logout` — 미병합
+### 1-4. `POST /auth/logout` — 완료
 
 요청에 사용한 세션을 폐기한다. 본문 없음.
 
@@ -246,7 +249,7 @@
 
 ### 2-1. `GET /api/v1/profiles` — 신규
 
-현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정한다.
+현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정하고, 어르신 목록과 홈의 어르신 표시에 쓴다.
 
 응답 `200`
 
@@ -256,6 +259,8 @@
   "profiles": [
     {
       "profileId": "00000000-0000-4000-8000-000000000101",
+      "name": "김○○",
+      "gender": "female",
       "setupStatus": "completed"
     }
   ]
@@ -263,7 +268,9 @@
 ```
 
 - `setupStatus`: `inProgress`, `completed`
-- 목록이 비었으면 기본 정보 입력부터, `inProgress`이면 그 `profileId`로 세부 정보 입력부터 이어서, `completed`이면 홈으로 간다.
+- 입력 중(`inProgress`)인 프로필도 담는다. 만든 순서(`created_at`)대로 반환한다.
+- 목록이 비었으면 홈으로 간다. 입력을 마친(`completed`) 프로필이 생길 때까지 앱은 대화 카드, 면회와 리포트처럼 프로필이 필요한 기능을 막는다.
+- `completed`인 프로필이 있으면 홈으로 간다. `inProgress`인 프로필만 있을 때 어디로 갈지는 미정([미정 사항](#미정-사항) 9)
 
 ### 2-2. `POST /api/v1/profiles` — 신규
 
@@ -290,11 +297,11 @@
 
 응답 `201` — [Profile](#profile), `setupStatus`는 `inProgress`
 
-- 계정당 1개다. DB에 유일 제약이 없으므로 서버가 확인한다.
+- 계정당 최대 3개다. 입력 중(`inProgress`)인 프로필도 센다. DB에 개수 제약이 없으므로 서버가 확인한다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
-| 409 | `PROFILE_ALREADY_EXISTS` | 계정에 이미 프로필이 있음 |
+| 409 | `PROFILE_LIMIT_EXCEEDED` | 계정에 이미 프로필이 3개 있음 |
 
 ### 2-3. `GET /api/v1/profiles/{profileId}` — 신규
 
@@ -371,7 +378,7 @@
 
 ### 2-6. `POST /api/v1/profiles/{profileId}/life-facts` — 신규
 
-마이페이지에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
+일대기에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
 
 요청
 
@@ -405,6 +412,21 @@
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `LIFE_FACT_NOT_FOUND` |
+
+### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
+
+어르신 목록에서 프로필 하나를 지운다. 그 프로필의 생애 정보, 사진, 주제와 대화 카드, 면회 기록(평가, 음성 분석 작업, 리포트, 변경 제안)을 함께 삭제한다. 계정과 다른 프로필은 남는다. 사진과 음성 원본은 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣어 지운다.
+
+본문 없음.
+
+응답 `204`
+
+- 마지막 프로필도 지울 수 있다. 지운 뒤 2-1은 빈 목록을 돌려준다.
+- 카드 생성이나 음성 분석이 처리 중인 프로필의 삭제는 미정([미정 사항](#미정-사항) 8)
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_NOT_FOUND` |
 
 <br>
 
@@ -690,7 +712,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 409 | `EVALUATION_ALREADY_SUBMITTED` |
 | 422 | `INVALID_CARD_REVIEW` |
 
-### 6-2. `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` — 수정
+### 6-2. `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` — 완료
 
 면회 음성과 참여자 수를 제출한다.
 
@@ -825,15 +847,27 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 ```json
 {
   "lifeFacts": [
-    { "proposalId": "00000000-0000-4000-8000-000000000801", "reviewStatus": "accepted" }
+    {
+      "proposalId": "00000000-0000-4000-8000-000000000801",
+      "reviewStatus": "accepted",
+      "title": "한복",
+      "content": "한복과 두루마기를 주로 만드셨어요."
+    }
   ],
   "topics": [
-    { "proposalId": "00000000-0000-4000-8000-000000000802", "reviewStatus": "rejected" }
+    {
+      "proposalId": "00000000-0000-4000-8000-000000000802",
+      "reviewStatus": "accepted",
+      "action": "more"
+    }
   ]
 }
 ```
 
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
+- `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
+  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자 이하이고 둘 다 비울 수 없다.
+  - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
 
@@ -842,8 +876,8 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 서버 처리
 
 - 모든 제안을 `settled`로 바꾼다.
-- `accepted`인 생애 정보 제안은 생애 정보로 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다.
-- `accepted`인 주제 제안은 `topic_feedback`에 `suggestedAction`을 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 보호자가 다른 행동을 고를 수 있는지는 미정([미정 사항](#미정-사항) 4)
+- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
+- `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
 
 | HTTP | `errorCode` | 언제 |
@@ -851,6 +885,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
 
 <br>
 
@@ -1367,7 +1402,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
       "cardId": "00000000-0000-4000-8000-000000000501",
       "topic": {
         "topicId": "00000000-0000-4000-8000-000000000452",
-        "title": "재봉 일"
+        "title": "재봉 일",
+        "description": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요."
       },
       "suggestedAction": "more",
       "reason": "재봉 일 이야기에 반응이 좋으셨어요.",
@@ -1377,8 +1413,10 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 }
 ```
 
+- `topic.description`: 주제 설명이다. [CardSet](#cardset)의 `topic.description`, 8-2의 `topics[].description`과 같은 값이다.
 - `suggestedAction`: `more`, `less`, `exclude`
 - `reviewStatus`: `pending`, `accepted`, `rejected`. DB에는 `pending`과 `settled`만 저장하므로, `settled`인 제안은 승인 결과(생애 정보 또는 주제 피드백)가 있으면 `accepted`, 없으면 `rejected`로 반환한다.
+- `lifeFactProposals`의 `title`, `content`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
 
 <br>
 
@@ -1391,7 +1429,9 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 | 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
 | 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
-| 4 | 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지. `topic_feedback.action`과 `topic_proposals.suggested_action`이 별도 컬럼 | 7-4 | 스키마 작성자 |
 | 5 | 카드 근거(`evidence`) 항목 형식. 세부 정보 네 항목은 `fact_id`가 없음 | 8-2, CardSet | AI |
 | 6 | 카드 생성 작업의 `model`, `prompt_version`. 생성(`running`) 시점부터 NOT NULL이라 8-2 응답 전에 값이 필요함 | 4-1, 8-2 | 스키마 작성자, AI |
 | 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
+| 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
+| 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
+| 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |

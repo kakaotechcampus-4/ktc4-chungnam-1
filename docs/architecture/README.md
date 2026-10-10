@@ -56,6 +56,7 @@ flowchart TD
 | 주제 카드 생성과 다음 면회 반영 | [전체 기능 설계 검토안](card-generation-flow.md) |
 | 객체, 필드와 상태 | [공통 데이터 계약](data-contracts.md) |
 | API 경로, 요청과 오류 코드 | [API 명세](api-spec.md) |
+| 작업 중단과 실패 후 재처리, 앱 안내 | [복구 기준 검토안](processing-recovery.md), 검토 중 |
 | 화면용 합성 자료 | [목 데이터](mock/README.md) |
 | 선택 이유와 과거 결정 | [ADR 목록](decisions/README.md) |
 
