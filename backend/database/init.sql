@@ -147,11 +147,14 @@ CREATE TABLE conversation_cards (
     set_id              UUID     NOT NULL,
     profile_id          UUID     NOT NULL,
     topic_id            UUID     NOT NULL,
-    card_title          VARCHAR(100) NOT NULL,
+    card_title          VARCHAR(100) NOT NULL CHECK (card_title ~ '\S'),
     position            SMALLINT NOT NULL CHECK (position BETWEEN 1 AND 12),
-    description         TEXT     NOT NULL,
-    primary_question    TEXT     NOT NULL,
-    follow_up_questions TEXT[]   NOT NULL CHECK (cardinality(follow_up_questions) >= 1),
+    description         TEXT     NOT NULL CHECK (description ~ '\S'),
+    primary_question    TEXT     NOT NULL CHECK (primary_question ~ '\S'),
+    follow_up_questions TEXT[]   NOT NULL CHECK (
+        cardinality(follow_up_questions) = 3
+        AND coalesce(follow_up_questions[1] ~ '\S' AND follow_up_questions[2] ~ '\S'
+                     AND follow_up_questions[3] ~ '\S', false)),
     evidence_source     VARCHAR(10) NOT NULL CHECK (evidence_source IN ('life_fact', 'photo', 'profile', 'none')),
     evidence            JSONB    NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(evidence) = 'array'),
     selected            BOOLEAN  NOT NULL DEFAULT false,

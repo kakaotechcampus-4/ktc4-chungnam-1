@@ -63,8 +63,11 @@ def fake_result(request, *, reuse_topic=None, positions=range(1, 13)) -> CardGen
     )
 
 
-async def _seed(connection):
-    """평가까지 끝난 회차(결정 하나 포함)와 평가 전 회차가 있는 프로필에 running 작업 생성."""
+async def _seed(connection, actions=("more",)):
+    """평가까지 끝난 회차(결정 포함)와 평가 전 회차가 있는 프로필에 running 작업 생성.
+
+    결정은 이전 묶음 1번 카드 주제에 대한 `actions`. 두 번째부터는 그 주제를 새 묶음에서 다시
+    쓰고 평가까지 끝낸 회차에서 내린 결정이고, `decided_at`도 순서대로 늦어짐."""
     user_id, profile_id = await user_and_profile(connection)
     await connection.execute(
         "UPDATE profiles SET hobby = '합성 취미' WHERE profile_id = %s", (profile_id,)
@@ -88,23 +91,32 @@ async def _seed(connection):
         "UPDATE visit_sessions SET evaluation_note = '합성 평가 메모' WHERE session_id = %s",
         (done,),
     )
-    pending_set, _ = await completed_card_set(connection, profile_id)
-    await visit_with(connection, profile_id, pending_set, evaluated=False)
     topic_id = await value(
         connection, "SELECT topic_id FROM conversation_cards WHERE card_id = %s", (old_cards[0],)
     )
-    proposal_id = await value(
-        connection,
-        "INSERT INTO topic_proposals (session_id, profile_id, card_id, topic_id,"
-        " suggested_action, reason, status) VALUES (%s, %s, %s, %s, 'more', '합성 이유', 'settled')"
-        " RETURNING proposal_id",
-        (done, profile_id, old_cards[0], topic_id),
-    )
-    await connection.execute(
-        "INSERT INTO topic_feedback (profile_id, topic_id, proposal_id, action)"
-        " VALUES (%s, %s, %s, 'more')",
-        (profile_id, topic_id, proposal_id),
-    )
+    session_id, card_id = done, old_cards[0]
+    for order, action in enumerate(actions):
+        if order:
+            again_set, again_cards = await completed_card_set(connection, profile_id)
+            card_id = again_cards[0]
+            await connection.execute(
+                "UPDATE conversation_cards SET topic_id = %s WHERE card_id = %s", (topic_id, card_id)
+            )
+            session_id = await visit_with(connection, profile_id, again_set, evaluated=True)
+        proposal_id = await value(
+            connection,
+            "INSERT INTO topic_proposals (session_id, profile_id, card_id, topic_id,"
+            " suggested_action, reason, status) VALUES (%s, %s, %s, %s, %s, '합성 이유', 'settled')"
+            " RETURNING proposal_id",
+            (session_id, profile_id, card_id, topic_id, action),
+        )
+        await connection.execute(
+            "INSERT INTO topic_feedback (profile_id, topic_id, proposal_id, action, decided_at)"
+            " VALUES (%s, %s, %s, %s, now() + make_interval(mins => %s))",
+            (profile_id, topic_id, proposal_id, action, order),
+        )
+    pending_set, _ = await completed_card_set(connection, profile_id)
+    await visit_with(connection, profile_id, pending_set, evaluated=False)
     set_id = await value(
         connection,
         "INSERT INTO card_sets (profile_id, status, model, prompt_version)"
@@ -114,13 +126,13 @@ async def _seed(connection):
     return profile_id, set_id, old_set, topic_id
 
 
-def _process(database_url, generate):
+def _process(database_url, generate, *, actions=("more",)):
     queue = CardGenerationQueue()
     processor = CardGenerationProcessor(queue=queue, generate=generate)
 
     async def scenario():
         async with connect(database_url) as connection:
-            _, set_id, _, _ = await _seed(connection)
+            _, set_id, _, _ = await _seed(connection, actions)
             job = await queue.claim(connection, lease_seconds=600)
             await processor(connection, job)
             cursor = await connection.execute("SELECT * FROM card_sets WHERE set_id = %s", (set_id,))
@@ -200,6 +212,10 @@ def test_generation_error_fails_the_job_with_its_code_and_input(migrated_databas
         or setattr(result.cards[2], "evidence", [{"profileField": "hobby"}]),
         lambda result: setattr(result.cards[3], "card_title", "가" * 101),
         lambda result: setattr(result.cards[4].topic, "title", "   "),
+        lambda result: setattr(result.cards[5], "primary_question", " \n"),
+        lambda result: result.cards[6].follow_up_questions.__setitem__(1, "  "),
+        lambda result: setattr(result.cards[7], "card_title", ""),
+        lambda result: setattr(result.cards[8], "description", "\t"),
     ],
     ids=[
         "eleven-cards",
@@ -211,6 +227,10 @@ def test_generation_error_fails_the_job_with_its_code_and_input(migrated_databas
         "evidence-kind-mismatch",
         "long-title",
         "blank-topic-title",
+        "blank-primary-question",
+        "blank-follow-up",
+        "blank-card-title",
+        "blank-description",
     ],
 )
 def test_result_that_breaks_the_contract_is_not_saved(migrated_database_url, break_result):
@@ -223,6 +243,29 @@ def test_result_that_breaks_the_contract_is_not_saved(migrated_database_url, bre
 
     assert (card_set["status"], card_set["error_code"]) == ("failed", "INVALID_GENERATION_RESULT")
     assert cards == []
+
+
+@pytest.mark.parametrize(
+    "actions, status",
+    [
+        (("exclude",), "failed"),
+        (("more", "exclude"), "failed"),
+        (("more",), "completed"),
+    ],
+    ids=["excluded", "excluded-later", "not-excluded"],
+)
+def test_excluded_topic_is_not_saved(migrated_database_url, actions, status):
+    seen = {}
+
+    def generate(request):
+        seen["topic"] = request.context.topics[0]
+        return fake_result(request, reuse_topic=request.context.topics[0].topic_id)
+
+    card_set, cards = _process(migrated_database_url, generate, actions=actions)
+
+    assert [feedback.action for feedback in seen["topic"].feedback] == list(actions)
+    assert card_set["status"] == status
+    assert len(cards) == (12 if status == "completed" else 0)
 
 
 def test_worker_needs_database_and_ml_key():

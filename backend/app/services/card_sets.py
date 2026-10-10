@@ -296,6 +296,12 @@ def result_problems(result: CardGenerationResult, context: CardContext) -> list[
     if sorted(card.position for card in result.cards) != list(range(1, 13)):
         problems.append("카드가 12장이 아니거나 position 1~12가 한 번씩이 아니다")
     known_topics = {topic.topic_id for topic in context.topics}
+    # 보호자가 제외한 주제. 제외되면 카드에 다시 안 나와 다음 결정도 생기지 않음
+    excluded_topics = {
+        topic.topic_id
+        for topic in context.topics
+        if any(feedback.action == "exclude" for feedback in topic.feedback)
+    }
     reused = [card.topic.topic_id for card in result.cards if card.topic.topic_id]
     if len(reused) != len(set(reused)):
         problems.append("한 묶음 안에 같은 기존 주제가 두 번 있다")
@@ -306,8 +312,13 @@ def result_problems(result: CardGenerationResult, context: CardContext) -> list[
     for card in result.cards:
         if len(card.follow_up_questions) != 3:
             problems.append(f"{card.position}번: 꼬리 질문이 3개가 아니다")
+        texts = (card.card_title, card.description, card.primary_question, *card.follow_up_questions)
+        if not all(text.strip() for text in texts):
+            problems.append(f"{card.position}번: 카드 제목, 설명, 질문 중 빈 것이 있다")
         if card.topic.topic_id and card.topic.topic_id not in known_topics:
             problems.append(f"{card.position}번: 이 프로필에 없는 주제")
+        if card.topic.topic_id in excluded_topics:
+            problems.append(f"{card.position}번: 보호자가 제외한 주제")
         if not card.topic.topic_id and not (
             (card.topic.title or "").strip() and (card.topic.description or "").strip()
         ):
