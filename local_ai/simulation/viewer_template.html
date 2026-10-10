@@ -1,0 +1,363 @@
+<title>면회 시뮬레이션 기록</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 머리에 두 사람 소개, 그 아래 탭. 회차 화면은 핵심 숫자 줄 → 카드 타일 → 대화 말풍선과 제안 패널 → DB 패널. */
+:root {
+  --bg: #f2f3f6; --panel: #ffffff; --sunken: #f6f7f9; --fg: #1b1f27; --muted: #5d6573; --faint: #8e95a1; --line: #e4e6eb;
+  --accent: #3554a5; --accent-soft: #e8edf8;
+  --ok: #2b7a4b; --ok-soft: #e5f3ea; --warn: #9a640f; --warn-soft: #f8eedb; --bad: #b03b3b; --bad-soft: #f9e5e5; --new: #3554a5; --new-soft: #e8edf8;
+  --k-period: #efe9f8; --k-period-fg: #5b3f8f; --k-place: #e3f2f0; --k-place-fg: #23675d;
+  --k-person: #f8efe2; --k-person-fg: #84561a; --k-activity: #e8eef9; --k-activity-fg: #2f4f8f;
+  --bubble-p: #f4ede3; --bubble-c: #3554a5; --bubble-c-fg: #ffffff;
+  --mark: #fff7d9;
+  --shadow: 0 1px 2px rgba(20, 28, 45, 0.06), 0 1px 1px rgba(20, 28, 45, 0.03);
+  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101318; --panel: #181c23; --sunken: #1e232b; --fg: #e7e9ee; --muted: #a0a7b3; --faint: #767d89; --line: #2a303a;
+  --accent: #9fb5ea; --accent-soft: #232d44; --ok: #7fcf9c; --ok-soft: #1c3226; --warn: #e3b061; --warn-soft: #382d1a;
+  --bad: #ef8e8e; --bad-soft: #3b2222; --new: #9fb5ea; --new-soft: #232d44;
+  --k-period: #2b2440; --k-period-fg: #c8b5ee; --k-place: #1d3330; --k-place-fg: #8fd3c7; --k-person: #3a2e1d; --k-person-fg: #e6c08a;
+  --k-activity: #222c42; --k-activity-fg: #a9bfee; --bubble-p: #2c2722; --bubble-c: #34508f; --bubble-c-fg: #f2f5fc;
+  --mark: #3a3420; --shadow: none; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #101318; --panel: #181c23; --sunken: #1e232b; --fg: #e7e9ee; --muted: #a0a7b3; --faint: #767d89; --line: #2a303a;
+  --accent: #9fb5ea; --accent-soft: #232d44; --ok: #7fcf9c; --ok-soft: #1c3226; --warn: #e3b061; --warn-soft: #382d1a;
+  --bad: #ef8e8e; --bad-soft: #3b2222; --new: #9fb5ea; --new-soft: #232d44;
+  --k-period: #2b2440; --k-period-fg: #c8b5ee; --k-place: #1d3330; --k-place-fg: #8fd3c7; --k-person: #3a2e1d; --k-person-fg: #e6c08a;
+  --k-activity: #222c42; --k-activity-fg: #a9bfee; --bubble-p: #2c2722; --bubble-c: #34508f; --bubble-c-fg: #f2f5fc;
+  --mark: #3a3420; --shadow: none; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 80px; display: grid; gap: 22px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.3; }
+h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; font-weight: 700; }
+h3 { font-size: 0.98rem; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--muted); } .faint { color: var(--faint); } .small { font-size: 0.84rem; } .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 0.76rem; font-weight: 600; color: var(--muted); letter-spacing: 0.03em; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.panel > .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; }
+.stack { display: grid; gap: 18px; }
+
+/* 머리 */
+.who { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.person { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; }
+.person > div { min-width: 0; }
+.person dd { overflow-wrap: anywhere; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 1rem; }
+.avatar.p { background: var(--bubble-p); color: var(--k-person-fg); }
+.avatar.c { background: var(--accent-soft); color: var(--accent); }
+.person dl { margin: 6px 0 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; font-size: 0.86rem; }
+.person dt { color: var(--muted); }
+.person dd { margin: 0; }
+.runline { font-size: 0.8rem; color: var(--faint); }
+
+/* 탭 */
+nav.tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: 10px; padding: 3px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 3; justify-self: start; }
+nav.tabs button { font: inherit; font-size: 0.9rem; background: none; border: 0; border-radius: 7px; padding: 6px 14px; color: var(--muted); cursor: pointer; }
+nav.tabs button[aria-selected="true"] { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 숫자 줄 */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; display: grid; gap: 2px; }
+.metric b { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.metric span { font-size: 0.8rem; color: var(--muted); }
+
+/* 태그와 상태 */
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 1px 8px; border-radius: 6px; white-space: nowrap; }
+.tag .k { font-size: 0.7rem; opacity: 0.75; }
+.tag.period { background: var(--k-period); color: var(--k-period-fg); } .tag.place { background: var(--k-place); color: var(--k-place-fg); }
+.tag.person { background: var(--k-person); color: var(--k-person-fg); } .tag.activity, .tag.topic { background: var(--k-activity); color: var(--k-activity-fg); }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.st { font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.st.continue { color: var(--ok); } .st.resting { color: var(--warn); } .st.excluded { color: var(--bad); } .st.new { color: var(--new); }
+.pill { font-size: 0.74rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.acc { background: var(--accent-soft); color: var(--accent); }
+
+/* 카드 타일 */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.tile.off { opacity: 0.55; }
+.tile .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tile .no { font-family: var(--mono); font-size: 0.78rem; color: var(--faint); }
+.tile .title { font-weight: 600; font-size: 1rem; }
+.tile .q { font-size: 0.88rem; }
+.tile details summary { cursor: pointer; font-size: 0.8rem; color: var(--muted); }
+.tile details ul { margin: 6px 0 0; padding-left: 1.1em; font-size: 0.84rem; color: var(--muted); }
+.tile .why { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.r-positive { color: var(--ok); } .r-negative { color: var(--bad); } .r-neutral, .r-notUsed { color: var(--muted); }
+.subhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+/* 대화 */
+.split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 940px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.chat { display: grid; gap: 10px; max-height: 860px; overflow-y: auto; padding: 4px 2px; }
+.msg { display: grid; gap: 3px; max-width: 82%; }
+.msg.patient { justify-self: start; }
+.msg.caregiver { justify-self: end; justify-items: end; }
+.msg .name { font-size: 0.74rem; color: var(--muted); padding-inline: 4px; display: flex; gap: 6px; align-items: center; }
+.bubble { padding: 9px 13px; border-radius: 16px; font-size: 0.92rem; line-height: 1.55; }
+.msg.patient .bubble { background: var(--bubble-p); border-top-left-radius: 4px; }
+.msg.caregiver .bubble { background: var(--bubble-c); color: var(--bubble-c-fg); border-top-right-radius: 4px; }
+.cardref { font-family: var(--mono); font-size: 0.7rem; background: var(--accent-soft); color: var(--accent); padding: 0 6px; border-radius: 4px; }
+
+/* 제안 */
+.item { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 6px; }
+.item:first-of-type { border-top: 0; padding-top: 0; }
+.item .head { display: flex; justify-content: space-between; gap: 6px 12px; align-items: center; flex-wrap: wrap; }
+.item .title { font-weight: 600; }
+.quote { font-size: 0.86rem; color: var(--muted); background: var(--sunken); border-radius: 8px; padding: 6px 10px; }
+.carer { font-size: 0.84rem; color: var(--muted); }
+.carer::before { content: "보호자 "; font-weight: 600; color: var(--fg); }
+.scope { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.8rem; }
+.scope .opt { padding: 1px 8px; border-radius: 6px; border: 1px dashed var(--line); color: var(--muted); }
+.scope .opt.sug { border-style: solid; border-color: var(--accent); color: var(--accent); }
+.scope .opt.on { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+
+/* 표 */
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; background: var(--panel); }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: 0.76rem; color: var(--muted); background: var(--sunken); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td.c { text-align: center; }
+tr.fresh td { background: var(--mark); }
+tr.fresh td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.dbtable td { font-family: var(--mono); font-size: 0.78rem; max-width: 380px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.seg button { font: inherit; font-size: 0.82rem; background: none; border: 0; border-radius: 6px; padding: 4px 10px; color: var(--muted); cursor: pointer; }
+.seg button[aria-selected="true"] { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+.seg .n { font-family: var(--mono); font-size: 0.72rem; margin-left: 4px; color: var(--faint); }
+.seg .plus { color: var(--warn); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.8rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="stack">
+    <div><p class="eyebrow" id="eyebrow">합성 페르소나 면회 시뮬레이션</p><h1 id="title">면회 기록</h1></div>
+    <div class="who" id="who"></div>
+    <p class="small muted">어르신의 숨은 생애사와 보호자의 속마음은 시뮬레이션 역할만 봤습니다. 추천 시스템은 보호자가 앱에 입력하거나 승인한 것과, 화자를 가린 녹음 글만 봤습니다. 모든 인물과 내용은 합성입니다.</p>
+  </header>
+  <nav class="tabs" id="tabs" aria-label="보기"></nav>
+  <main id="view"></main>
+</div>
+
+<script type="application/json" id="run">__RUN_JSON__</script>
+<script>/*__DBVIEW_JS__*/</script>
+<script>
+const run = JSON.parse(document.getElementById("run").textContent);
+const P = run.persona, story = P.patient.life_story, visits = run.visits;
+const KIND = { period: "시절", place: "장소", person: "사람", activity: "활동", topic: "주제" };
+const TOPICS = run.recommender === "topics";  // 주제판(PR #84 구조)이면 true, 요소판(proto_*)이면 false
+const UNIT = TOPICS ? "주제" : "요소";
+const GROUP = { active: "보통", excluded: "추천 안 함", new: "새로 생김" };
+const BUCKET = { continue: "이어 가기", new: "새 이야기", revisit: "다시 꺼내기" };
+const REACT = { positive: "좋았어요", neutral: "보통이에요", negative: "아쉬웠어요", notUsed: "쓰지 않음" };
+const ACTION = { more: "더 자주", less: "덜 자주", exclude: "추천하지 않기" };
+const ACTPILL = { more: "ok", less: "warn", exclude: "bad" };
+const MOODREACT = { pleased: "기뻐하셨어요", calm: "차분하셨어요", angry: "언짢아하셨어요", lowEnergy: "기운이 없으셨어요", unknown: "잘 모르겠어요" };
+const EMO = { positive: "즐거움", painful: "아픔", mixed: "섞임", neutral: "담담" };
+
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+const tag = (kind, name, group) => h("span", { class: `tag ${kind}` }, h("span", { class: "k" }, KIND[kind] || kind), name,
+  group && !["active", "new"].includes(group) ? h("span", { class: `st ${group}` }, " · " + GROUP[group]) : null);
+const savedIds = (v) => new Set([...v.applied.facts, ...(v.applied.manual || [])].map(f => f.story_id).filter(Boolean));
+const panel = (title, right, ...kids) => h("div", { class: "panel" }, h("div", { class: "ph" }, h("h3", {}, title), right || null), ...kids);
+
+function renderWho() {
+  const ob = run.onboarding || {}, ans = ob.answers || {}, c = P.caregiver;
+  const LABEL = { occupation: "하시던 일", hometown: "고향", hobby: "취미", family: "가족" };
+  const dl = (pairs) => h("dl", {}, pairs.flatMap(([t, d]) => [h("dt", {}, t), h("dd", {}, d)]));
+  document.getElementById("who").append(
+    h("div", { class: "panel person" }, h("div", { class: "avatar p" }, "어"), h("div", {},
+      h("h3", {}, (ob.basic && ob.basic.name) ? `${ob.basic.name} 어르신` : "어르신"), h("p", { class: "small muted" }, P.patient.summary),
+      dl(Object.entries(LABEL).map(([k, t]) => [t, ans[k] || h("span", { class: "faint" }, "보호자가 건너뜀")]).concat(
+        [["사진", ob.photo ? ob.photo.description : h("span", { class: "faint" }, "넣지 않음")]])))),
+    h("div", { class: "panel person" }, h("div", { class: "avatar c" }, (c.relation || "보")[0]), h("div", {},
+      h("h3", {}, c.relation), h("p", { class: "small muted" }, c.summary),
+      dl([["피하고 싶은 것", c.wants_to_avoid], ["바라는 것", c.hopes]]),
+      h("p", { class: "runline" }, `${run.llm} · 시드 ${run.seed} · ` + (TOPICS ? "주제판(PR #84 구조)" : `요소판(proto_*) · 범위 선택 화면 ${P.visits.scope_ui ? "있음" : "없음(지금 앱)"}`)
+        + (run.failure ? ` · 중단: ${run.failure}` : "")))));
+  document.getElementById("eyebrow").textContent = `합성 페르소나 면회 시뮬레이션 · ${TOPICS ? "주제판 · PR #84 DB 구조" : "요소판 · 시험용 proto_* 테이블"}`;
+  document.getElementById("title").textContent = `${(ob.basic && ob.basic.name) || "어르신"} 어르신 면회 기록`;
+}
+
+function overview() {
+  const root = h("div", { class: "stack" });
+  const saved = new Set(visits.flatMap(v => [...savedIds(v)]));
+  const revealed = new Set(visits.flatMap(v => v.revealed_story_ids));
+  const fabricated = visits.flatMap(v => [...v.applied.facts, ...(v.applied.manual || [])].filter(f => f.fabricated));
+  const fb = visits.flatMap(v => v.applied.feedback);
+  const count = (a) => fb.filter(f => f.action === a).length;
+  root.append(h("div", { class: "metrics" },
+    ...[[`${visits.length}회`, "면회"], [`${revealed.size}/${story.length}`, "대화에서 나온 숨은 생애"], [`${saved.size}/${story.length}`, "DB에 저장된 생애"],
+      [`${fabricated.length}개`, "생애에 없는 저장 이야기"], [`${count("more")} / ${count("less")} / ${count("exclude")}`, "더 자주 / 덜 자주 / 추천 안 함"]]
+      .map(([b, s]) => h("div", { class: "metric" }, h("b", {}, b), h("span", {}, s)))));
+
+  root.append(panel("회차별 흐름", null, h("div", { class: "scroll" }, h("table", {},
+    h("thead", {}, h("tr", {}, ...["회차", "어르신 기분", "고른 카드", "면회 중 추가", "대화", "이야기 저장", "주제 결정", "만족도", "시간"].map(t => h("th", {}, t)))),
+    h("tbody", {}, visits.map(v => h("tr", {}, h("td", { class: "mono" }, `${v.no}회`), h("td", {}, v.mood),
+      h("td", { class: "mono" }, v.cards.filter(c => c.selected && !c.added_in_visit).length), h("td", { class: "mono" }, (v.added_cards || []).length),
+      h("td", { class: "mono" }, `${v.transcript.length}턴`),
+      h("td", { class: "mono" }, `${v.applied.facts.length} / ${v.proposals.facts.length}` + ((v.applied.manual || []).length ? ` · 직접 ${v.applied.manual.length}` : "")),
+      h("td", {}, h("div", { class: "tags" }, v.applied.feedback.length ? v.applied.feedback.map(f => h("span", { class: `pill ${ACTPILL[f.action]}` }, ACTION[f.action])) : h("span", { class: "faint small" }, "없음"))),
+      h("td", { class: "mono" }, `${v.evaluation.satisfaction}/5`), h("td", { class: "mono" }, `${v.timings.total}초`))))))));
+
+  const knows = new Set(P.caregiver.knows);
+  root.append(panel("숨은 생애사가 드러난 과정", h("span", { class: "legend" }, h("span", {}, "● 대화에서 꺼냄"), h("span", {}, "■ DB에 저장"), h("span", {}, "시스템은 이 표를 보지 못합니다")),
+    h("div", { class: "scroll" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "생애"), h("th", {}, "시절"), h("th", {}, "기억"), h("th", {}, "보호자"), ...visits.map(v => h("th", { class: "c" }, `${v.no}회`)))),
+      h("tbody", {}, story.map(s => h("tr", {}, h("td", {}, s.text), h("td", { class: "muted" }, s.period),
+        h("td", {}, h("span", { class: `pill ${s.emotion === "painful" ? "bad" : s.emotion === "positive" ? "ok" : ""}` }, EMO[s.emotion] || s.emotion)),
+        h("td", { class: "c muted small" }, knows.has(s.id) ? "앎" : ""),
+        ...visits.map(v => { const sv = savedIds(v).has(s.id), sd = v.revealed_story_ids.includes(s.id);
+          return h("td", { class: "c mono" }, sv ? h("span", { class: "st continue" }, "■") : sd ? "●" : h("span", { class: "faint" }, "·")); }))))))));
+
+  const names = new Map();
+  visits.forEach((v, i) => (TOPICS ? v.state_after.topics : v.state_after.elements).forEach(e => {
+    const kind = TOPICS ? "topic" : e.kind, name = TOPICS ? e.title : e.name, key = `${kind}:${name}`;
+    if (!names.has(key)) names.set(key, { kind, name, by: {} });
+    names.get(key).by[i] = TOPICS ? e.group : e.effective_group;
+  }));
+  const changed = [...names.values()].filter(e => Object.values(e.by).some(g => g !== "revisit"));
+  const order = { period: 0, place: 1, person: 2, activity: 3, topic: 4 };
+  changed.sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name, "ko"));
+  root.append(panel(`보호자 결정으로 바뀐 ${UNIT}`, h("span", { class: "small muted" }, `전체 ${UNIT} ${names.size}개 중 ${changed.length}개`),
+    changed.length ? h("div", { class: "scroll" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, UNIT), ...visits.map(v => h("th", {}, `${v.no}회 뒤`)))),
+      h("tbody", {}, changed.map(e => h("tr", {}, h("td", {}, tag(e.kind, e.name)),
+        ...visits.map((v, i) => h("td", {}, e.by[i] && e.by[i] !== "active" ? h("span", { class: `st ${e.by[i]}` }, GROUP[e.by[i]]) : h("span", { class: "faint small" }, e.by[i] ? "보통" : "")))))))) : h("p", { class: "muted" }, "아직 없음")));
+  if (run.topic_eval) root.append(topicSizePanel(run.topic_eval));
+  return root;
+}
+
+function topicSizePanel(te) {
+  const S = te.summary, byId = Object.fromEntries(story.map(s => [s.id, s]));
+  const acts = (a) => a.length ? h("div", { class: "tags" }, a.map(x => h("span", { class: `pill ${ACTPILL[x]}` }, ACTION[x]))) : h("span", { class: "faint small" }, "결정 없음");
+  const groups = Object.entries(te.by_story).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  const general = te.topics.filter(t => t.kind === "general");
+  const U = TOPICS ? "주제" : "활동 요소", ukind = TOPICS ? "topic" : "activity";
+  return panel(`카드 단위(${U}) 크기`, h("span", { class: "small muted" }, "평가자가 숨은 생애와 대조한 결과입니다. 시스템은 이 대조를 보지 못합니다."),
+    h("div", { class: "metrics" }, [[`${S.topics}개`, `만들어진 ${U}`], [`${S.stories_split}/${S.stories_covered}`, `${U} 2개 이상으로 쪼개진 생애 / ${U}가 닿은 생애`],
+      [`${S.max_topics_per_story}개`, `생애 항목 하나에 붙은 최대 ${U} 수`], [`${S.max_topics_per_period ?? "-"}개`, `시절 하나에 붙은 최대 ${U} 수`],
+      [`${S.general}개`, `생애와 상관없는 일반 ${U}`]]
+      .map(([b, s]) => h("div", { class: "metric" }, h("b", {}, b), h("span", {}, s)))),
+    te.by_period ? h("div", { class: "scroll" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "시절"), h("th", {}, `${U} 수`), h("th", {}, `${U}와 결정`))),
+      h("tbody", {}, Object.entries(te.by_period).sort((a, b) => b[1].length - a[1].length).map(([pd, idx]) => h("tr", {},
+        h("td", {}, pd), h("td", { class: "mono" }, idx.length),
+        h("td", {}, h("div", { class: "tags" }, idx.map(i => { const t = te.topics[i];
+          return h("span", { class: `tag ${ukind}` }, t.title, t.actions.length ? h("span", { class: "st continue" }, " · " + t.actions.map(a => ACTION[a]).join(", ")) : null); })))))))) : null,
+    h("div", { class: "scroll" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "생애"), h("th", {}, `이 생애를 다룬 ${U}`), h("th", {}, "카드로 나온 회차"), h("th", {}, "결정"))),
+      h("tbody", {}, groups.flatMap(([sid, idx]) => idx.map((ti, k) => { const t = te.topics[ti], s = byId[sid] || { text: sid, emotion: "" };
+        return h("tr", {}, k === 0 ? h("td", { rowspan: String(idx.length) }, h("span", { class: "mono faint" }, sid + " "), s.text,
+            s.emotion === "painful" ? h("span", { class: "pill bad" }, " 아픔") : null) : null,
+          h("td", {}, tag(ukind, t.title), h("p", { class: "small faint" }, t.note)),
+          h("td", { class: "mono" }, t.visits.join(", ")), h("td", {}, acts(t.actions))); }))))),
+    general.length ? h("details", {}, h("summary", { class: "small muted" }, `생애와 상관없는 일반 ${U} ${general.length}개`),
+      h("div", { class: "tags" }, general.map(t => h("span", { class: `tag ${ukind}`, title: t.description }, `${t.title} · ${t.visits.join(",")}회`)))) : null);
+}
+
+function tile(c) {
+  const status = c.added_in_visit ? ["면회 중 추가", "acc"] : c.selected ? ["고름", "acc"] : c.position > 9 ? ["안 씀", ""] : ["안 고름", ""];
+  return h("div", { class: "tile" + (c.selected ? " on" : " off") },
+    h("div", { class: "top" }, h("span", { class: "no" }, `#${c.position} · ${BUCKET[c.bucket] || c.bucket}`), h("span", { class: `pill ${status[1]}` }, status[0])),
+    h("p", { class: "title" }, c.card_title),
+    TOPICS ? h("div", { class: "tags" }, tag("topic", c.topic.title, c.topic.group), c.topic.new ? h("span", { class: "st new" }, "새 주제") : null)
+      : h("div", { class: "tags" }, c.elements.map(e => tag(e.kind, e.name, e.group))),
+    h("p", { class: "q" }, c.primary_question),
+    h("details", {}, h("summary", {}, "꼬리 질문과 근거"), h("ul", {}, c.follow_up_questions.map(q => h("li", {}, q))),
+      c.evidence_texts.length ? h("p", { class: "small muted" }, "근거: " + c.evidence_texts.join(" / ")) : null,
+      TOPICS ? [h("p", { class: "small muted" }, `주제 설명: ${c.topic.description}`), h("p", { class: "small muted" }, `연결 판정: ${c.topic.match_reason}`),
+        h("p", { class: "small muted mono" }, `evidence_source: ${c.evidence_source}` + (c.evidence_lost && c.evidence_lost.length ? ` · 스키마에 넣지 못한 근거 ${c.evidence_lost.map(r => r.field || JSON.stringify(r)).join(", ")}` : ""))] : null),
+    c.report_summary ? h("p", { class: "small" }, "리포트 요약: ", c.report_summary) : null,
+    c.selected ? h("p", { class: "small" }, "보호자 평가: ", h("span", { class: c.review ? `r-${c.review}` : "faint" }, c.review ? REACT[c.review] : "답하지 않음")) : null,
+    c.select_why ? h("p", { class: "why" }, c.select_why) : null);
+}
+
+
+function visitView(v, i) {
+  const root = h("div", { class: "stack" });
+  const ev = v.evaluation, rep = v.report || { title: "", body: "" };
+  const fbs = v.applied.feedback;
+  root.append(h("div", { class: "subhead" }, h("h2", {}, `${v.no}회차 면회`), h("span", { class: "muted" }, v.date.slice(0, 10)), v.today ? h("span", { class: "small muted" }, `보호자 사정: ${v.today}`) : null,
+    v.probe_intent ? h("span", { class: "pill warn" }, "시험용 의도를 넣은 회차") : null));
+  root.append(h("div", { class: "metrics" },
+    ...[[v.mood, "어르신 기분"], [`${ev.satisfaction}/5`, "보호자 만족도"], [`${v.cards.filter(c => c.selected && !c.added_in_visit).length}장 + ${(v.added_cards || []).length}장`, "고른 카드 + 면회 중 추가"],
+      [`${v.transcript.length}턴`, "대화"], [`${v.applied.facts.length}개`, "저장된 이야기"], [fbs.length ? ["more", "less", "exclude"].filter(a => fbs.some(f => f.action === a)).map(a => `${ACTION[a]} ${fbs.filter(f => f.action === a).length}`).join(" · ") : "없음", "주제 결정"], [`${v.timings.total}초`, "걸린 시간"]]
+      .map(([b, s]) => h("div", { class: "metric" }, h("b", {}, b), h("span", {}, s)))));
+
+  const pick = v.cards.filter(c => c.position <= 9), reserve = v.cards.filter(c => c.position > 9);
+  root.append(panel("받은 카드", h("span", { class: "small muted" }, `추천 후보 ${v.recommend.candidates}개 · 다시 찾기 ${v.recommend.refills.length}번`),
+    h("p", { class: "eyebrow" }, "1~9번 · 고르는 카드"), h("div", { class: "tiles" }, pick.map(tile)),
+    h("p", { class: "eyebrow" }, "10~12번 · 면회 중 추가용"), h("div", { class: "tiles" }, reserve.map(tile))));
+
+  const cg = P.caregiver.relation;
+  const chat = h("div", { class: "chat" }, v.transcript.map(t => h("div", { class: `msg ${t.speaker}` },
+    h("span", { class: "name" }, t.speaker === "patient" ? "어르신" : cg, t.card_position ? h("span", { class: "cardref" }, `카드 #${t.card_position}`) : null,
+      t.state && t.state !== "talking" ? h("span", { class: "small muted" }, t.state === "asleep" ? "잠듦" : "지침") : null,
+      t.probe ? h("span", { class: "pill warn" }, "시험용 메모를 받고 한 말") : null),
+    h("div", { class: "bubble" }, t.text))));
+  const facts = v.proposals.facts.length ? v.proposals.facts.map(f => { const d = f.decision || {}, edited = d.new_title || d.new_content;
+    return h("div", { class: "item" }, h("div", { class: "head" }, h("span", { class: "title" }, d.new_title || f.title),
+        h("span", { class: `pill ${d.keep === false ? "bad" : edited ? "warn" : "ok"}` }, d.keep === false ? "뺌" : edited ? "고쳐서 반영" : "반영")),
+      h("p", { class: "small" }, d.new_content || f.content), f.quote ? h("p", { class: "quote" }, `“${f.quote}”`) : null,
+      d.why ? h("p", { class: "carer" }, d.why) : null); }) : [h("p", { class: "small muted" }, "제안 없음")];
+  const topics = v.proposals.adjustments.length ? v.proposals.adjustments.map(a => { const d = a.decision || {}, kept = d.keep !== false, act = d.action || a.suggested_action;
+    return h("div", { class: "item" }, h("div", { class: "head" }, tag(TOPICS ? "topic" : a.topic_kind, d.new_name || a.topic_name),
+        kept ? h("span", { class: `pill ${ACTPILL[act]}` }, ACTION[act] + (act !== a.suggested_action ? " (바꿈)" : "")) : h("span", { class: "pill bad" }, "뺌")),
+      h("p", { class: "small muted" }, `카드 #${a.card_position} ${a.card_title} · AI 제안 ${ACTION[a.suggested_action]} · ${a.reason}`),
+      !TOPICS && a.scope_options ? h("div", { class: "scope" }, h("span", { class: "faint" }, "결정이 붙는 범위"), a.scope_options.map(o =>
+        h("span", { class: "opt" + (o.scope === a.suggested_scope ? " sug" : "") + (kept && o.scope === (d.scope || a.suggested_scope) ? " on" : "") }, `${KIND[o.kind]} ${o.name}${o.inherited ? " (상위)" : ""}`))) : null,
+      d.why ? h("p", { class: "carer" }, d.why) : null); }) : [h("p", { class: "small muted" }, "제안 없음")];
+  const right = h("div", { class: "stack" },
+    panel("보호자 소감", h("span", { class: "pill" }, MOODREACT[ev.reaction] || ev.reaction), ev.note ? h("p", { class: "small" }, ev.note) : h("p", { class: "small faint" }, "남긴 말 없음")),
+    panel("리포트", null, h("p", { class: "title" }, rep.title), h("p", { class: "small" }, rep.body),
+      v.stt_labels ? h("p", { class: "small faint" }, `시스템이 받은 녹음 글: ${v.stt_labels.caregiver} = 보호자, ${v.stt_labels.patient} = 어르신 (시스템은 이 대응을 모름)`) : null),
+    panel("변경 사항 확인 · 이야기", null, ...facts),
+    panel("변경 사항 확인 · 대화 주제", null, ...topics,
+      h("p", { class: "small faint" }, TOPICS ? "결정은 카드에 붙은 주제(profile_topics)에 붙습니다. topic_proposals에 제안이, topic_feedback에 보호자 결정이 남습니다."
+        : P.visits.scope_ui ? "채워진 범위가 보호자가 고른 범위입니다." : "지금 앱에는 범위 선택 화면이 없어 시스템이 제안한 범위(테두리)에 결정이 붙습니다.")),
+    (v.applied.manual || []).length ? panel("보호자가 직접 추가한 이야기", null, h("ul", { class: "small" }, v.applied.manual.map(m => h("li", {}, `${m.title}: ${m.content}`)))) : null);
+  root.append(h("div", { class: "split" }, panel(`면회 대화`, h("span", { class: "small muted" }, `${v.transcript.length}턴`), chat), right));
+  return root;
+}
+
+function dbTab() {
+  const root = h("div");
+  DBView.mount(root, { emptyText: "이 기록에는 DB 스냅숏이 없습니다." }).set(DBView.fromRun(run));
+  return root;
+}
+
+const tabs = [{ id: "overview", label: "요약", render: overview }, ...visits.map((v, i) => ({ id: `v${v.no}`, label: `${v.no}회차${v.probe_intent ? " *" : ""}`, render: () => visitView(v, i) })),
+  { id: "db", label: "DB", render: dbTab }];
+function show(id) {
+  const tab = tabs.find(t => t.id === id) || tabs[0];
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.id === tab.id)));
+  document.getElementById("view").replaceChildren(tab.render());
+  try { history.replaceState(null, "", "#" + tab.id); } catch (e) {}
+}
+renderWho();
+const nav = document.getElementById("tabs");
+tabs.forEach(t => nav.append(h("button", { type: "button", "data-id": t.id, "aria-selected": "false", text: t.label })));
+nav.addEventListener("click", e => { const b = e.target.closest("button"); if (b) show(b.dataset.id); });
+show((location.hash || "").slice(1));
+</script>

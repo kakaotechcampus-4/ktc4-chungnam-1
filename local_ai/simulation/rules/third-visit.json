@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 2,
+  "_comment": "합성 데이터. 세 번째 면회. 좋았어요·아쉬웠어요·안 씀·답 없음, 더 자주 주제, 더 자주에서 쉬어가기로 바뀐 주제, 근거가 지워진 더 자주 주제, 추천하지 않기 포함",
+  "profile": {
+    "ageBand": "80s",
+    "gender": "female",
+    "conditionStage": "mildDementia"
+  },
+  "initialDetails": {
+    "occupation": "재봉 일을 오래 하셨어요. 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요.",
+    "hometown": "충남 서천 바닷가 마을에서 나고 자라셨어요.",
+    "hobby": null,
+    "family": "아들 둘을 키우셨어요. 명절이면 온 식구가 모여서 전을 부치셨대요."
+  },
+  "lifeFacts": [
+    {
+      "factId": "f-301",
+      "title": "라디오와 노래",
+      "content": "일하실 때 라디오에서 옛날 노래가 나오면 따라 부르셨어요.",
+      "origin": "visit"
+    },
+    {
+      "factId": "f-302",
+      "title": "시장 나들이",
+      "content": "장날이면 서천 장에 가서 생선을 사 오셨대요.",
+      "origin": "profile"
+    }
+  ],
+  "photos": [
+    {
+      "photoId": "p-301",
+      "description": "바닷가 모래밭에서 젊은 여성이 바구니를 들고 서 있는 흑백 사진이다."
+    }
+  ],
+  "visits": [
+    {
+      "visitIndex": 1,
+      "startedAt": "2026-09-14T10:00:00+09:00",
+      "cards": [
+        {
+          "topicKey": "sewing_work",
+          "topicTitle": "재봉 일",
+          "position": 1,
+          "inVisit": true,
+          "reviewOutcome": "positive",
+          "evidence": [
+            {
+              "field": "occupation"
+            }
+          ]
+        },
+        {
+          "topicKey": "school_days",
+          "topicTitle": "학창 시절",
+          "position": 2,
+          "inVisit": true,
+          "reviewOutcome": "negative",
+          "evidence": []
+        },
+        {
+          "topicKey": "holiday_food",
+          "topicTitle": "명절 음식",
+          "position": 3,
+          "inVisit": true,
+          "reviewOutcome": "notUsed",
+          "evidence": [
+            {
+              "field": "family"
+            }
+          ]
+        },
+        {
+          "topicKey": "tailor_shop_regulars",
+          "topicTitle": "수선집 단골",
+          "position": 4,
+          "inVisit": false,
+          "reviewOutcome": null,
+          "evidence": [
+            {
+              "factId": "f-deleted"
+            }
+          ]
+        },
+        {
+          "topicKey": "seaside_home",
+          "topicTitle": "고향 바닷가",
+          "position": 5,
+          "inVisit": false,
+          "reviewOutcome": null,
+          "evidence": [
+            {
+              "field": "hometown"
+            }
+          ]
+        },
+        {
+          "topicKey": "military_service",
+          "topicTitle": "군대 이야기",
+          "position": 6,
+          "inVisit": false,
+          "reviewOutcome": null,
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "visitIndex": 2,
+      "startedAt": "2026-09-21T10:00:00+09:00",
+      "cards": [
+        {
+          "topicKey": "old_songs",
+          "topicTitle": "옛날 노래",
+          "position": 1,
+          "inVisit": true,
+          "reviewOutcome": "positive",
+          "evidence": [
+            {
+              "factId": "f-301"
+            }
+          ]
+        },
+        {
+          "topicKey": "sewing_work",
+          "topicTitle": "재봉 일",
+          "position": 2,
+          "inVisit": true,
+          "reviewOutcome": "positive",
+          "evidence": [
+            {
+              "field": "occupation"
+            }
+          ]
+        },
+        {
+          "topicKey": "market_day",
+          "topicTitle": "장날 풍경",
+          "position": 3,
+          "inVisit": true,
+          "reviewOutcome": null,
+          "evidence": [
+            {
+              "factId": "f-302"
+            }
+          ]
+        },
+        {
+          "topicKey": "seaside_home",
+          "topicTitle": "고향 바닷가",
+          "position": 4,
+          "inVisit": true,
+          "reviewOutcome": null,
+          "evidence": [
+            {
+              "field": "hometown"
+            }
+          ]
+        },
+        {
+          "topicKey": "spring_greens",
+          "topicTitle": "봄나물",
+          "position": 10,
+          "inVisit": true,
+          "reviewOutcome": "neutral",
+          "evidence": []
+        }
+      ]
+    }
+  ],
+  "topicPreferences": [
+    {
+      "topicKey": "old_songs",
+      "topicTitle": "옛날 노래",
+      "description": "좋아하시던 옛날 노래와 그때의 분위기를 여쭤보는 주제예요.",
+      "evidence": [
+        {
+          "factId": "f-301"
+        }
+      ],
+      "intent": "more",
+      "decidedAt": "2026-09-21T11:30:00+09:00",
+      "visitsSince": 0,
+      "origin": "proposal"
+    },
+    {
+      "topicKey": "school_days",
+      "topicTitle": "학창 시절",
+      "description": "학교에 다니시던 때를 여쭤보는 주제예요.",
+      "evidence": [],
+      "intent": "rest",
+      "decidedAt": "2026-09-21T11:30:00+09:00",
+      "visitsSince": 0,
+      "origin": "proposal"
+    },
+    {
+      "topicKey": "tailor_shop_regulars",
+      "topicTitle": "수선집 단골",
+      "description": "수선집 단골손님들과의 이야기를 여쭤보는 주제예요.",
+      "evidence": [
+        {
+          "factId": "f-deleted"
+        }
+      ],
+      "intent": "more",
+      "decidedAt": "2026-09-14T11:30:00+09:00",
+      "visitsSince": 1,
+      "origin": "proposal"
+    },
+    {
+      "topicKey": "military_service",
+      "topicTitle": "군대 이야기",
+      "description": "군 복무 시절의 이야기를 여쭤보는 주제예요.",
+      "evidence": [],
+      "intent": "exclude",
+      "decidedAt": "2026-09-21T12:00:00+09:00",
+      "visitsSince": 0,
+      "origin": "caregiver"
+    }
+  ]
+}

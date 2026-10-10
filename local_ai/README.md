@@ -25,7 +25,7 @@
 
 ## 생성 기능 코드
 
-backend가 부르는 생성 기능 세 가지가 있다.
+backend가 부르는 생성 기능 세 가지와, 이걸 합성 페르소나로 돌려 보는 시뮬레이터가 있다.
 
 | 폴더 | 내용 |
 | --- | --- |
@@ -33,6 +33,7 @@ backend가 부르는 생성 기능 세 가지가 있다.
 | `report_generation/` | 면회 리포트. 면회 뒤 전사, 소감, 고른 카드로 제목, 본문, 카드별 요약을 만든다 |
 | `proposal_generation/` | 변경 제안. 면회 뒤 이야기 후보와 카드 주제 조정(more·less·exclude)을 제안한다 |
 | `common/` | LLM 설정과 모델 주소 목록(`ENDPOINTS`), 정해진 형식으로 답 받기, 리포트·변경 제안이 같이 쓰는 #106 형식(`visit_report.py`) |
+| [`simulation/`](simulation/README.md) | 시뮬레이션. 합성 페르소나로 면회를 회차마다 이어서 돌린다 |
 
 리포트와 변경 제안은 #106 내부 API(8-3) 요청을 받고, `common.visit_report.combine()`으로 #106 응답 하나로 합친다. 쓰는 법은 각 패키지의 `__init__.py` 설명에 있다.
 

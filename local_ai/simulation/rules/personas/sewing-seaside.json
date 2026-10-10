@@ -1,0 +1,18 @@
+{
+  "_comment": "합성 페르소나. 시작 상태는 scenarios/first-visit.json(서천 출신, 동인천 수선집). 보호자의 숨은 취향은 시스템이 보지 못하고 시뮬레이터만 쓴다.",
+  "start": "first-visit",
+  "first_visit_at": "2026-09-01T10:00:00+09:00",
+  "visit_every_days": 7,
+  "cards_selected_per_visit": 9,
+  "more_probability": 0.5,
+  "likes": ["노래", "라디오", "재봉", "한복", "수선"],
+  "dislikes": ["장날", "장터", "시장"],
+  "taboo": ["바다", "바닷", "갯벌", "해변", "모래밭"],
+  "fact_pool": [
+    {"round": 1, "title": "성당 성가대", "content": "젊을 때 성당 성가대에서 노래를 부르셨대요."},
+    {"round": 2, "title": "아들들 옷", "content": "아들들 어릴 때 재봉틀로 옷을 지어 입히셨대요."},
+    {"round": 3, "title": "서천 갯벌", "content": "어릴 때 서천 갯벌에서 조개를 캐셨대요."},
+    {"round": 4, "title": "수선집 옆 다방", "content": "수선집 옆 다방에서 단골손님들과 차를 드셨대요."},
+    {"round": 5, "title": "장날 고무신", "content": "장날이면 읍내에 나가 고무신을 사 신으셨대요."}
+  ]
+}
