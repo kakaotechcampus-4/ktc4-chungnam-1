@@ -25,14 +25,17 @@
 
 ## 생성 기능 코드
 
-backend가 부르는 카드 생성이 있다.
+backend가 부르는 생성 기능이 있다.
 
 | 폴더 | 내용 |
 | --- | --- |
 | [`card_generation/`](card_generation/README.md) | 카드 생성. 면회 전에 backend가 모은 context로 카드 12장과 새로 만들 주제를 만든다 |
-| `common/` | LLM 설정과 모델 주소 목록(`ENDPOINTS`), 정해진 형식으로 답 받기 |
+| `report_generation/` | 면회 리포트. 면회 뒤 전사, 소감, 고른 카드로 제목, 본문, 카드별 요약을 만든다 |
+| `common/` | LLM 설정과 모델 주소 목록(`ENDPOINTS`), 정해진 형식으로 답 받기, 리포트·변경 제안이 같이 쓰는 #106 형식(`visit_report.py`) |
 
-생성 기능은 DB를 읽지도 쓰지도 않는다. `pyproject.toml`은 `local_ai/`에 하나 두고, backend가 경로 의존성으로 설치할 때는 `card_generation`과 `common`만 들어간다.
+리포트는 #106 내부 API(8-3) 요청을 받는다. 쓰는 법은 `report_generation/__init__.py` 설명에 있다.
+
+생성 기능은 DB를 읽지도 쓰지도 않는다. `pyproject.toml`은 `local_ai/`에 하나 두고, backend가 경로 의존성으로 설치할 때는 생성 기능과 `common`만 들어간다.
 
 ## 찾아볼 문서
 
