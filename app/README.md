@@ -110,9 +110,9 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | 프로필 설정 | 지금 어르신의 기본 정보를 보여준다. 약관 동의는 계정 공통이라 `계정 약관 동의`로 표시한다 |
 | 회원 탈퇴 | 계정 전체를 지우므로 특정 어르신 이름을 부르지 않는다 |
 
-어르신마다 나뉘는 것은 기본 정보, 홈 리포트 알림, 대화 카드 선택이다. 세부 정보, 사진, 대화 카드와 리포트는 아직 목 데이터 한 벌을 함께 쓴다. 어르신별 데이터는 서버를 붙이면 `profileId` 기준 API(`api-spec.md` 2절, 4-2, 5-4, 7-1)가 내려준다.
+어르신마다 나뉘는 것은 기본 정보, 세부 정보 네 항목(직업·고향·취미·가족), 홈 리포트 알림, 대화 카드 선택이다. 그 밖의 생애 정보, 사진, 대화 카드와 리포트는 아직 목 데이터 한 벌을 함께 쓴다. 어르신별 데이터는 서버를 붙이면 `profileId` 기준 API(`api-spec.md` 2절, 4-2, 5-4, 7-1)가 내려준다.
 
-입력한 기본 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 등록을 마친 분의 세부 정보와 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
+입력한 기본 정보, 세부 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 세부 정보는 `Profile`의 `occupation`, `hometown`, `hobby`, `family`로 다루며 건너뛴 항목은 `null`이다. 등록을 마친 분의 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
 
 홈 리포트 알림은 계정과 어르신마다 따로 둔다. 로그아웃해도 지우지 않으며, 다른 계정으로 들어오면 보이지 않고 원래 계정으로 다시 들어오면 다시 보인다. 로그아웃한 사이 도착한 리포트도 기다리던 계정에 남는다. 탈퇴하면 그 계정의 알림만 지운다. 이 알림도 앱이 켜져 있는 동안만 기억한다. 다만 지금은 로그아웃하면 어르신 목록이 비므로, 같은 계정으로 다시 들어와도 알림을 띄울 어르신이 없다. 서버의 프로필 목록을 받으면 같은 어르신이 돌아와 알림도 다시 보인다.
 
