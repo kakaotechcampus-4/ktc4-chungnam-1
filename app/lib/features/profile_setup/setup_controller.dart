@@ -246,8 +246,8 @@ class SetupController extends Notifier<SetupState> {
   ///
   /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작한다. [addingId] 가
   /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 서버 저장
-  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와 사진은 아직
-  /// 넘기지 않는다.
+  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 기본 정보와 세부 정보 네
+  /// 항목을 넘긴다. 사진은 아직 넘기지 않는다.
   void finish({String? addingId}) {
     final draft = state.draft;
     if (!draft.basicInfoFilled) return;
@@ -260,12 +260,13 @@ class SetupController extends Notifier<SetupState> {
           '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
       stage: draft.stage!,
     );
+    final details = EnteredDetails.fromFacts(draft.facts);
     final profiles = ref.read(careProfilesProvider.notifier);
     if (addingId == null) {
-      profiles.startWith(info);
+      profiles.startWith(info, details: details);
       return;
     }
-    profiles.completeAdding(addingId, info);
+    profiles.completeAdding(addingId, info, details: details);
     ref.read(pendingSetupsProvider.notifier).remove(addingId);
   }
 }
