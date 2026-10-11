@@ -19,6 +19,9 @@ import 'story_edit_screen.dart';
 /// - 회차의 `pending` 제안을 모두 한 번에 보낸다.
 /// - 승인 전까지 프로필에 반영하지 않는다.
 ///
+/// 이미 승인하거나 거절한 제안과 상태를 읽지 못한 제안은 보여주지도 보내지도
+/// 않는다. 검토할 제안이 하나도 없으면 아무것도 보내지 않고 홈으로만 간다.
+///
 /// 주제 제안은 AI 가 제안한 행동이 처음에 골라져 있고, 보호자가 다른 행동을
 /// 고를 수 있다. 제외하기도 그중 하나다. 생애 정보 제안은 보호자가 제목과
 /// 내용을 고칠 수 있다.
@@ -87,11 +90,12 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
   TopicAction? _actionOf(TopicProposal topic) =>
       _chosen[topic.proposalId] ?? topic.suggestedAction;
 
-  /// 회차의 제안을 모두 담은 7-4 요청을 만든다. 남긴 항목은 `accepted`, 뺀
-  /// 항목은 `rejected` 다. 모두 뺐으면 `반영하지 않고 마치기` 와 같다.
+  /// 회차의 `pending` 제안을 모두 담은 7-4 요청을 만든다. 남긴 항목은
+  /// `accepted`, 뺀 항목은 `rejected` 다. 모두 뺐으면 `반영하지 않고 마치기` 와
+  /// 같다.
   ProposalReview _review(ChangeProposal proposal) => ProposalReview(
     lifeFacts: [
-      for (final fact in proposal.lifeFactProposals)
+      for (final fact in proposal.pendingLifeFacts)
         if (_removed.contains(fact.proposalId))
           LifeFactReview.rejected(proposalId: fact.proposalId)
         else
@@ -102,7 +106,7 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
           ),
     ],
     topics: [
-      for (final topic in proposal.topicProposals)
+      for (final topic in proposal.pendingTopics)
         if (_removed.contains(topic.proposalId))
           TopicReview.rejected(proposalId: topic.proposalId)
         else
@@ -119,6 +123,11 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
         .read(mockRepositoryProvider)
         .submitProposalReview(proposal.sessionId, _review(proposal));
     if (!mounted) return;
+    _finish();
+  }
+
+  /// 리포트 알림을 지우고 홈으로 간다. 검토할 제안이 없으면 보내지 않고 이것만 한다.
+  void _finish() {
     ref.read(reportNoticeProvider.notifier).dismiss();
     context.go(AppRoutes.home);
   }
@@ -136,10 +145,12 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
           onRetry: () => ref.invalidate(changeProposalProvider),
         ),
         data: (data) {
-          final topics = data.topicProposals
+          if (data.nothingPending) return _NothingToReview(onDone: _finish);
+
+          final topics = data.pendingTopics
               .where((t) => !_removed.contains(t.proposalId))
               .toList();
-          final facts = data.lifeFactProposals
+          final facts = data.pendingLifeFacts
               .where((f) => !_removed.contains(f.proposalId))
               .toList();
 
@@ -193,6 +204,25 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
   }
 }
 
+/// 검토할 제안이 없을 때. 이미 반영한 회차를 다시 열었거나 남은 제안의 상태를
+/// 읽지 못한 경우다. 같은 제안을 다시 보내지 않도록 반영 버튼을 두지 않는다.
+class _NothingToReview extends StatelessWidget {
+  const _NothingToReview({required this.onDone});
+
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenBody(
+      bottom: PrimaryButton(label: '홈으로', onPressed: onDone),
+      child: const EmptyStateView(
+        message: '새로 확인할 변경 사항이 없어요.',
+        icon: Icons.inbox_outlined,
+      ),
+    );
+  }
+}
+
 class _Body extends StatelessWidget {
   const _Body({
     required this.empty,
@@ -236,10 +266,7 @@ class _Body extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: AppSpacing.sm),
-          const Text(
-            '다음 만남 때는\n이렇게 바꿀까요?',
-            style: AppTypography.screenTitle,
-          ),
+          const Text('다음 만남 때는\n이렇게 바꿀까요?', style: AppTypography.screenTitle),
           const SizedBox(height: AppSpacing.xl),
 
           if (empty)

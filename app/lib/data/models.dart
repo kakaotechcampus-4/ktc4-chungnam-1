@@ -55,6 +55,7 @@ class Account {
   }
 
   final String accountId;
+
   /// `google` 하나뿐이다. 계약에 다른 제공자를 더하는 것은 계약 변경으로 본다.
   final String authProvider;
   final String displayName;
@@ -711,6 +712,22 @@ class ChangeProposal {
   final List<TopicProposal> topicProposals;
 
   bool get isEmpty => lifeFactProposals.isEmpty && topicProposals.isEmpty;
+
+  /// 아직 검토하지 않은(`pending`) 생애 정보 제안. 검토는 이것만 보낸다.
+  /// 이미 승인하거나 거절한 제안과 상태를 읽지 못한 제안은 다시 보내지 않는다.
+  List<LifeFactProposal> get pendingLifeFacts => [
+    for (final p in lifeFactProposals)
+      if (p.reviewStatus == ChangeReviewStatus.pending) p,
+  ];
+
+  /// 아직 검토하지 않은(`pending`) 주제 제안. [pendingLifeFacts] 와 같은 규칙이다.
+  List<TopicProposal> get pendingTopics => [
+    for (final p in topicProposals)
+      if (p.reviewStatus == ChangeReviewStatus.pending) p,
+  ];
+
+  /// 검토할 제안이 하나도 없다. 이미 반영한 회차를 다시 열었을 때다.
+  bool get nothingPending => pendingLifeFacts.isEmpty && pendingTopics.isEmpty;
 }
 
 /// 주제 제안 하나의 검토 결과. API 7-4 요청의 `topics[]` 한 항목이다.
@@ -768,7 +785,7 @@ class LifeFactReview {
 
 /// 한 회차의 변경 제안 검토. API 7-4 요청이다.
 ///
-/// 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, 뺀
+/// 회차의 `pending` 제안만 모두 담는다. 화면에 남긴 항목은 `accepted`, 뺀
 /// 항목은 `rejected` 다.
 class ProposalReview {
   const ProposalReview({required this.lifeFacts, required this.topics});

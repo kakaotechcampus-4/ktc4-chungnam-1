@@ -677,4 +677,119 @@ void main() {
       expect(_applyButton(tester, '이대로 반영하기').onPressed, isNotNull);
     });
   });
+
+  group('이미 처리한 제안', () {
+    const acceptedFact = LifeFactProposal(
+      proposalId: 'life_fact_proposal_test_002',
+      title: '승인한 제목',
+      content: '승인한 이야기 내용',
+      reason: '합성 이유',
+      reviewStatus: ChangeReviewStatus.accepted,
+    );
+    const rejectedTopic = TopicProposal(
+      proposalId: 'topic_proposal_test_002',
+      cardId: 'card_test_002',
+      topic: ProposalTopic(topicId: 'topic_test_002', title: '거절한 주제'),
+      suggestedAction: TopicAction.less,
+      reason: '합성 이유',
+      reviewStatus: ChangeReviewStatus.rejected,
+    );
+    // 계약에 없는 상태값이라 읽지 못한 제안.
+    const unknownFact = LifeFactProposal(
+      proposalId: 'life_fact_proposal_test_003',
+      title: '상태 모를 제목',
+      content: '상태 모를 내용',
+      reason: '합성 이유',
+      reviewStatus: null,
+    );
+
+    testWidgets('검토할 제안이 없으면 보내지 않고 홈으로만 간다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [acceptedFact],
+        topics: const [rejectedTopic],
+      );
+
+      expect(find.text('새로 확인할 변경 사항이 없어요.'), findsOneWidget);
+      expect(find.text('승인한 제목'), findsNothing);
+      expect(find.text('이대로 반영하기'), findsNothing);
+      expect(find.text('반영하지 않고 마치기'), findsNothing);
+
+      await tester.tap(find.text('홈으로'));
+      await tester.pumpAndSettle();
+
+      expect(repository.sent, isNull);
+      expect(find.text('홈 화면'), findsOneWidget);
+    });
+
+    testWidgets('처리한 제안이 섞여 있으면 pending 제안만 보여주고 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [acceptedFact, _fact],
+        topics: const [_topic, rejectedTopic],
+      );
+
+      expect(find.text('승인한 제목'), findsNothing);
+      expect(find.text('거절한 주제'), findsNothing);
+
+      await _apply(tester, '이대로 반영하기');
+
+      expect(repository.sent, {
+        'lifeFacts': [
+          {
+            'proposalId': 'life_fact_proposal_test_001',
+            'reviewStatus': 'accepted',
+            'title': '합성 제목',
+            'content': '합성 이야기 내용',
+          },
+        ],
+        'topics': [
+          {
+            'proposalId': 'topic_proposal_test_001',
+            'reviewStatus': 'accepted',
+            'action': 'more',
+          },
+        ],
+      });
+    });
+
+    testWidgets('상태를 읽지 못한 제안은 보여주지도 보내지도 않는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [unknownFact, _fact],
+      );
+
+      expect(find.text('상태 모를 제목'), findsNothing);
+
+      await _apply(tester, '이대로 반영하기');
+
+      final ids = [
+        for (final r in repository.sent!['lifeFacts'] as List)
+          (r as Map)['proposalId'],
+      ];
+      expect(ids, ['life_fact_proposal_test_001']);
+    });
+
+    testWidgets('상태를 읽지 못한 제안만 있으면 보내지 않는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [unknownFact],
+        topics: const [],
+      );
+
+      expect(find.text('새로 확인할 변경 사항이 없어요.'), findsOneWidget);
+      await tester.tap(find.text('홈으로'));
+      await tester.pumpAndSettle();
+
+      expect(repository.sent, isNull);
+    });
+  });
 }
