@@ -9,9 +9,10 @@ import '../../widgets/app_scaffold.dart';
 import 'basic_info_step.dart';
 import 'life_fact_step.dart';
 import 'photo_steps.dart';
+import 'photo_uploader.dart';
 import 'setup_controller.dart';
 
-/// B-2 ~ B-8 환자 정보 최초 입력.
+/// B-2 ~ B-7 환자 정보 최초 입력.
 ///
 /// 여러 단계를 한 경로에서 다룬다. 뒤로 가기는 이전 단계로 돌아가고, 첫 단계에서
 /// 누르면 화면을 벗어난다.
@@ -135,23 +136,11 @@ class _StepBody extends StatelessWidget {
       );
     }
 
-    if (state.isPhoto) {
-      return PhotoUploadStep(
-        hasPhoto: state.draft.hasPhoto,
-        onPicked: () =>
-            controller.updateDraft(state.draft.copyWith(hasPhoto: true)),
-        onRemoved: () =>
-            controller.updateDraft(state.draft.copyWith(hasPhoto: false)),
-      );
-    }
-
-    return PhotoTagsStep(
-      accepted: state.draft.acceptedTags,
-      onToggle: (tag) {
-        final next = Set<String>.from(state.draft.acceptedTags);
-        next.contains(tag) ? next.remove(tag) : next.add(tag);
-        controller.updateDraft(state.draft.copyWith(acceptedTags: next));
-      },
+    return PhotoUploadStep(
+      photos: state.draft.photos,
+      canEdit: state.draft.canEditPhotos,
+      onAdded: controller.addPhotos,
+      onRemoved: controller.removePhoto,
     );
   }
 }
@@ -186,25 +175,59 @@ class _Actions extends StatelessWidget {
           : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
     }
 
-    if (state.isPhoto) {
-      return state.draft.hasPhoto
-          ? PrimaryButton(label: '다음', onPressed: controller.next)
-          : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
+    // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다. 마치면 입력한 분을
+    // 목록에 넣고 홈으로 간다.
+    final draft = state.draft;
+    void finish() {
+      final name = draft.name.trim();
+      final messenger = ScaffoldMessenger.of(context);
+      controller.finish(addingId: addingId);
+      context.go(AppRoutes.home);
+      if (addingId != null) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('지금부터 $name 어르신과 함께해요')));
+      }
     }
 
-    return PrimaryButton(
-      label: '마치기',
-      onPressed: () {
-        final name = state.draft.name.trim();
-        final messenger = ScaffoldMessenger.of(context);
-        controller.finish(addingId: addingId);
-        context.go(AppRoutes.home);
-        if (addingId != null) {
-          messenger
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text('지금부터 $name 어르신과 함께해요')));
-        }
-      },
-    );
+    if (!draft.hasPhoto) {
+      return SecondaryButton(label: '건너뛰기', onPressed: finish);
+    }
+    if (draft.isUploadingPhotos) {
+      return const PrimaryButton(label: '올리는 중이에요', onPressed: null);
+    }
+    // 완료를 보고 직접 넘어가도록 자동으로 옮기지 않는다.
+    if (draft.allPhotosUploaded) {
+      return PrimaryButton(label: '홈으로', onPressed: finish);
+    }
+    if (draft.hasFailedPhoto) {
+      final retryable = draft.photos.any(
+        (photo) =>
+            photo.status == PhotoUploadStatus.waiting ||
+            (photo.failure?.retryable ?? false),
+      );
+      void dropAndGoHome() {
+        controller.dropFailedPhotos();
+        finish();
+      }
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (retryable) ...[
+            PrimaryButton(
+              label: '다시 올리기',
+              onPressed: controller.uploadPhotos,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          SecondaryButton(
+            label: '올리지 못한 사진은 빼고 마치기',
+            onPressed: dropAndGoHome,
+          ),
+        ],
+      );
+    }
+    return PrimaryButton(label: '마치기', onPressed: controller.uploadPhotos);
   }
 }

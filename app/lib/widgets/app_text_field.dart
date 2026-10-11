@@ -17,6 +17,7 @@ class AppTextField extends StatelessWidget {
     this.errorText,
     this.onChanged,
     this.suffix,
+    this.maxLines = 1,
     super.key,
   });
 
@@ -30,6 +31,9 @@ class AppTextField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final Widget? suffix;
 
+  /// 여러 줄을 받으려면 늘린다. `null` 이면 내용만큼 늘어난다.
+  final int? maxLines;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -40,6 +44,7 @@ class AppTextField extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: obscureText,
+          maxLines: maxLines,
           keyboardType: keyboardType,
           onChanged: onChanged,
           style: AppTypography.body,
