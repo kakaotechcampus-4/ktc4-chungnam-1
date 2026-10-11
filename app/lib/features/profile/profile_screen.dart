@@ -204,9 +204,7 @@ class _BodyState extends State<_Body> {
                 ],
               ),
       ),
-      const SizedBox(height: AppSpacing.lg),
-
-      SecondaryButton(label: '내용 추가하기', onPressed: () {}),
+      // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
       const SizedBox(height: AppSpacing.section),
 
       _Section(
