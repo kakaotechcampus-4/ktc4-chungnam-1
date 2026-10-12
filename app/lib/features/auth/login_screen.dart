@@ -5,9 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
 import '../../design/tokens.dart';
-import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
-import '../../widgets/app_text_field.dart';
 import 'auth_messages.dart';
 import 'auth_providers.dart';
 import 'consent_form.dart';
@@ -15,8 +13,7 @@ import 'google_sign_in_button.dart';
 
 /// A-2 로그인.
 ///
-/// 구글 로그인만 서버에 붙어 있다. 아이디와 비밀번호는 아직 인증이 붙지 않아,
-/// 채우면 홈으로 넘어가는 목 화면이다.
+/// 구글 로그인 하나만 둔다. 아이디와 비밀번호는 받지 않는다(ADR-007).
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -25,30 +22,22 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _loginId = TextEditingController();
-  final _password = TextEditingController();
-  bool _obscure = true;
-
   /// 구글 로그인을 기다리는 중이다.
   bool _busy = false;
 
   AuthFailure? _failure;
-
-  bool get _canSubmit =>
-      _loginId.text.trim().isNotEmpty && _password.text.isNotEmpty;
-
-  @override
-  void dispose() {
-    _loginId.dispose();
-    _password.dispose();
-    super.dispose();
-  }
 
   /// 구글 계정으로 로그인한다.
   ///
   /// 계정이 이미 있으면 바로 홈으로 가고, 없으면 동의 화면으로 넘긴다. 구글
   /// 인증만으로는 계정이 만들어지지 않는다(ADR-007).
   Future<void> _signInWithGoogle() async {
+    // 구글 설정이 준비되기 전까지 화면을 확인하기 위한 임시 길이다.
+    if (ref.read(skipGoogleLoginProvider)) {
+      context.go(AppRoutes.profileCreate);
+      return;
+    }
+
     setState(() {
       _busy = true;
       _failure = null;
@@ -89,66 +78,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final failure = _failure;
+    final skipping = ref.watch(skipGoogleLoginProvider);
 
     return Scaffold(
       body: ScreenBody(
         scrollable: true,
-        // 로그인 버튼과 가입 안내를 아래에 고정하지 않고 본문과 함께 흘려보낸다.
-        // 고정 영역이 168dp 를 가져가서, 화면이 작은 기기에 키보드가 올라오면
-        // 비밀번호 칸이 스크롤 영역 밖으로 밀렸다.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: AppSpacing.xxxl),
             const Text('로그인', style: AppTypography.screenTitle),
             const SizedBox(height: AppSpacing.section),
-            AppTextField(
-              label: '아이디',
-              controller: _loginId,
-              hintText: '아이디를 입력해주세요',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            AppTextField(
-              label: '비밀번호',
-              controller: _password,
-              hintText: '비밀번호를 입력해주세요',
-              obscureText: _obscure,
-              onChanged: (_) => setState(() {}),
-              suffix: IconButton(
-                onPressed: () => setState(() => _obscure = !_obscure),
-                icon: Icon(
-                  _obscure
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  color: AppColors.textSub,
-                ),
-                tooltip: _obscure ? '비밀번호 보기' : '비밀번호 가리기',
-              ),
-            ),
-
-            const SizedBox(height: AppSpacing.xxl),
-
-            PrimaryButton(
-              label: '로그인',
-              onPressed: _canSubmit ? () => context.go(AppRoutes.home) : null,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('계정이 없으신가요?', style: AppTypography.sub),
-                const SizedBox(width: AppSpacing.sm),
-                AppTextButton(
-                  label: '회원가입',
-                  onPressed: () => context.push(AppRoutes.signup),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: AppSpacing.xxl),
-            const _OrDivider(),
-            const SizedBox(height: AppSpacing.xl),
 
             if (failure != null) ...[
               AuthNotice(message: authFailureMessage(failure)),
@@ -162,28 +102,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
 
+            if (skipping) ...[
+              const SizedBox(height: AppSpacing.lg),
+              const Text(
+                '개발용: 구글 로그인 설정이 없어 누르면 바로 정보 입력으로 넘어가요.',
+                style: AppTypography.caption,
+                textAlign: TextAlign.center,
+              ),
+            ],
+
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _OrDivider extends StatelessWidget {
-  const _OrDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        Expanded(child: Divider()),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          child: Text('또는', style: AppTypography.sub),
-        ),
-        Expanded(child: Divider()),
-      ],
     );
   }
 }

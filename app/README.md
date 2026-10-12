@@ -19,7 +19,7 @@
 | `flutter test` | 테스트와 목 데이터 원본 비교 |
 | `flutter build apk --debug` | 디버그 APK 빌드 |
 
-구글 로그인을 실제로 눌러 보려면 `flutter run` 에 [구글 로그인](#구글-로그인)의 `--dart-define` 둘을 함께 넘긴다. 넘기지 않으면 버튼이 설정 오류만 알린다. 나머지 화면은 값 없이도 그대로 돌아간다.
+구글 로그인을 실제로 눌러 보려면 `flutter run` 에 [구글 로그인](#구글-로그인)의 `--dart-define` 둘을 함께 넘긴다. 넘기지 않은 디버그 빌드에서는 버튼을 누르면 구글을 부르지 않고 바로 환자 정보 입력(`/profile/create`)으로 넘어간다(임시, `skipGoogleLoginProvider`). BE의 구글 클라이언트 ID와 SHA-1 등록이 준비될 때까지 화면을 확인하기 위한 길이며, 서버 세션이 없어 로그아웃과 탈퇴는 동작하지 않는다. 릴리스 빌드에서는 꺼지고 설정 오류를 알린다. 설정이 준비되면 지운다.
 
 기존 검증 기록: 2026-09-06, Windows 11과 Galaxy S23+ (SM S916N), Android 15 (API 35), arm64 실기기에서 위 명령과 앱 실행을 확인했다.
 
@@ -37,6 +37,7 @@
 | 구글 로그인 / HTTP | `google_sign_in` 7.2.0 / `http` 1.6.0 |
 | 세션 보관 | `flutter_secure_storage` 11.2.0 |
 | 녹음 / 저장 경로 | `record` 7.1.1 / `path_provider` 2.1.6 |
+| 사진 고르기 | `image_picker` 1.2.3 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -58,9 +59,8 @@
 | --- | --- | --- |
 | `/splash` | 스플래시 | A-1 |
 | `/login` | 로그인 | A-2 |
-| `/signup` | 회원가입과 동의 | A-3 |
 | `/onboarding` | 처음 오셨네요 | B-1 |
-| `/profile/create` | 환자 정보 입력 (7단계). `?adding=<id>`이면 어르신 추가 | B-2 ~ B-8 |
+| `/profile/create` | 환자 정보 입력 (6단계). `?adding=<id>`이면 어르신 추가 | B-2 ~ B-7. B-8 사진 태그 고르기는 삭제 |
 | `/home` | 홈 | HOME, HOME-1 |
 | `/cards` | 오늘의 대화 카드 | C-1 ~ C-3 |
 | `/visit/photo` | 면회 전 사진 | D-1 |
@@ -79,9 +79,17 @@
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
 
+B-7 사진 올리기는 기기 앨범에서 최대 5장을 고르고, 고른 사진은 X로 뺄 수 있다. 앨범은 [photo_picker.dart](lib/features/profile_setup/photo_picker.dart)의 `PhotoPicker` 뒤에 두어 테스트에서 바꿔 끼운다. 안드로이드 시스템 사진 선택기를 쓰므로 저장소 권한을 받지 않는다. 고른 사진은 단말 경로로만 들고 있다가 `마치기`를 누를 때 한 장씩 올린다. 그래서 그 전에는 X로 빼도 서버에 남지 않는다.
+
+올리는 동안에는 빼기, 추가와 뒤로 가기를 막는다. 사진마다 `완료` 또는 `실패`를 표시하고, 모두 올리면 `홈으로`를 눌러 넘어간다. 사진 분석은 기다리지 않는다. 실패한 사진은 다시 올리거나 빼고 마칠 수 있다. 용량 초과와 형식 오류처럼 다시 올려도 안 되는 실패에는 `다시 올리기`를 보여주지 않는다. 올라간 사진은 지우는 API가 없어 X를 숨긴다. 업로드는 [photo_uploader.dart](lib/features/profile_setup/photo_uploader.dart)의 `PhotoUploader` 뒤에 둔 목이며 0.8초 뒤 성공한다. API 3-1과 그 앞의 프로필 생성(2-2)이 앱에 연결되면 이 자리를 바꾼다.
+
+B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했어요` → `말씀을 글로 옮기고 있어요` 순서로 나눠 보여준다. 옮기는 중에는 마이크와 방법 바꾸기를 누를 수 없다. 이를 위해 [speech_input.dart](lib/features/profile_setup/speech_input.dart)의 `SpeechInput`을 녹음 시작(`start`)과 녹음 끝(`SpeechRecording.finish`)으로 나눴다. 이 형태는 FE가 화면 상태에 맞춰 둔 임시 인터페이스이며 AI 확정이 필요하다. 지금은 목이 1.2초 뒤 결과를 돌려준다.
+
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
-`/profile`의 로그아웃과 `/profile/delete`의 탈퇴하기는 서버에 연결했다([로그아웃과 탈퇴](#로그아웃과-탈퇴)). `/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
+`/profile`의 로그아웃과 `/profile/delete`의 탈퇴하기는 서버에 연결했다([로그아웃과 탈퇴](#로그아웃과-탈퇴)). `/profile`의 갤러리는 올린 사진을 세 칸씩 보여주고, 분석이 끝나지 않은 사진에는 `분석 중`, 실패한 사진에는 `분석 실패`를 붙인다. 사진을 누르면 그 아래에 AI가 만든 설명(`ProfilePhoto.description`)이 `AI가 만든 설명`이라는 이름표와 함께 펼쳐지고, 보호자가 고쳐 저장하면 이름표가 `사진에 대한 설명`으로 바뀐다. 분석 중인 사진은 설명 대신 상태만 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 설명을 적어 저장할 수 있으며, 저장하면 `분석 실패` 표시를 뗀다. 보호자가 설명을 확인하는 방식과 저장 위치(API 3-3)가 미정이라, 저장은 [photo_description_store.dart](lib/features/profile/photo_description_store.dart)의 목이 앱 안에서만 한다. 목 사진의 `imageUrl`은 계약 예시 주소라 `MockRepository`가 읽을 때 앱에 든 합성 그림으로 바꾼다. 사진은 어르신마다의 `photos[]`이며, 업로드 API(3-1)가 연결되기 전까지 `profileProvider`가 목 사진을 고른 어르신의 것으로 붙인다. 고친 설명은 계정, 어르신, 사진마다 따로 두어 다른 계정이나 다른 어르신에게 보이지 않고, 저장 응답은 저장한 사진에만 반영한다. 로그아웃과 탈퇴로 어르신 정보를 지울 때 함께 지운다.
+
+`/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
 
 ## 현재 사용자 흐름
 
@@ -104,7 +112,7 @@
 
 어르신마다 나뉘는 것은 기본 정보, 홈 리포트 알림, 대화 카드 선택이다. 세부 정보, 사진, 대화 카드와 리포트는 아직 목 데이터 한 벌을 함께 쓴다. 어르신별 데이터는 서버를 붙이면 `profileId` 기준 API(`api-spec.md` 2절, 4-2, 5-4, 7-1)가 내려준다.
 
-입력한 기본 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 등록을 마친 분의 세부 정보와 사진은 목 데이터를 쓰고, 입력 화면의 사진 소재 후보와 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
+입력한 기본 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 등록을 마친 분의 세부 정보와 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
 
 홈 리포트 알림은 계정과 어르신마다 따로 둔다. 로그아웃해도 지우지 않으며, 다른 계정으로 들어오면 보이지 않고 원래 계정으로 다시 들어오면 다시 보인다. 로그아웃한 사이 도착한 리포트도 기다리던 계정에 남는다. 탈퇴하면 그 계정의 알림만 지운다. 이 알림도 앱이 켜져 있는 동안만 기억한다. 다만 지금은 로그아웃하면 어르신 목록이 비므로, 같은 계정으로 다시 들어와도 알림을 띄울 어르신이 없다. 서버의 프로필 목록을 받으면 같은 어르신이 돌아와 알림도 다시 보인다.
 
@@ -151,6 +159,7 @@
         → status=authenticated   → 새 세션을 보관하고 /home
         → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 /login
 
+로그인 화면에는 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
 구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
@@ -190,7 +199,7 @@
 
 탈퇴는 `SessionNotifier.deleteAccount()`다. 로그아웃과 순서가 반대로, 서버가 `204`로 답한
 뒤에만 단말 세션을 지운다. 실패했는데 로그아웃된 것처럼 보이면 사용자는 탈퇴됐다고 믿게
-된다. 서버 계정 없이 들어온 경우(아이디와 비밀번호 목 로그인)는 지울 계정을 가리킬 세션이
+된다. 세션 없이 이 화면에 온 경우는 지울 계정을 가리킬 세션이
 없으므로 서버를 부르지 않고 로그인 정보가 없다고 알린다.
 
 "로그인으로 돌아가기"도 로그아웃처럼 단말의 어르신 목록, 고른 분과 입력 중이던 값을
@@ -213,7 +222,7 @@
 | `lib/features/auth/session_store.dart` | 단말 보안 저장소 |
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
-| `lib/features/auth/consent_form.dart` | A-3과 함께 쓰는 동의 항목 UI |
+| `lib/features/auth/consent_form.dart` | 동의 항목 UI |
 | `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
 | `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
 | `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
@@ -347,13 +356,13 @@ PR #71이 머지되면 별도 PR로 붙인다. 흐름은 ADR-008을 따른다.
 | --- | --- | --- |
 | 화면 | 초기 설정, 카드, 면회, 리포트, 평가와 스토리북 | 카드 수와 제공 방식 등 제품 범위는 PM 결정 |
 | 녹음 | 권한 안내, 녹음 상태, 제어와 앱 생명주기, 기기 저장 | 음성 형식은 AI가 확정한다. 업로드와 상태 조회는 BE 계약(PR #71)을 따르며 남았다 |
-| 사진 | 카메라와 갤러리 연동 | 현재는 목 이미지. 권한 거부, 중단과 복구 흐름은 FE가 정함 |
+| 사진 | 카메라와 갤러리 연동 | 프로필 사진은 기기 앨범에서 고름. 업로드와 설명 저장은 목. 면회 사진은 목 이미지. 권한 거부, 중단과 복구 흐름은 FE가 정함 |
 | 데이터 | 합의된 저장 및 서버 인터페이스를 앱에 연결 | BE가 저장 구조, 암호화와 API 담당. 현재는 `MockRepository` |
 | 품질 | 오류 상태, 수동 전환과 접근성 | 실제 모델 결과와 실패 상태는 AI, BE 계약 확인 |
 
 MVP의 STT와 VLM 실행 위치는 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)의 온프레미스 GPU 1대다. 앱의 실제 서버 연동은 후속 작업이다.
 
-동의와 개인정보 조건은 위 법률 문서를 따르며, 녹음 시작과 AI 제안의 프로필 및 스토리 반영에는 사용자 확인이 필요하다. 목 화면에 표시된 카드 수, 태그와 동의 항목은 제품의 최종 결정이나 실제 연동 완료를 뜻하지 않는다. 계약과 PM 문서가 다른 부분은 관련 담당자가 확인한다.
+동의와 개인정보 조건은 위 법률 문서를 따르며, 녹음 시작과 AI 제안의 프로필 및 스토리 반영에는 사용자 확인이 필요하다. 목 화면에 표시된 카드 수, 사진 설명과 동의 항목은 제품의 최종 결정이나 실제 연동 완료를 뜻하지 않는다. 계약과 PM 문서가 다른 부분은 관련 담당자가 확인한다.
 
 ## 목 데이터 관리
 
