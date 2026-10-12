@@ -1,4 +1,4 @@
-// A 화면(로그인과 구글 로그인 뒤 동의)의 규칙을 확인한다.
+// A 화면(스플래시의 로그인과 구글 로그인 뒤 동의)의 규칙을 확인한다.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +7,8 @@ import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/features/auth/consent_terms.dart';
 import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
-import 'package:saerok/features/auth/login_screen.dart';
+import 'package:saerok/features/auth/google_sign_in_panel.dart';
+import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/design/tokens.dart';
 
@@ -64,9 +65,12 @@ void main() {
     });
   });
 
-  testWidgets('로그인 화면에는 구글 로그인만 있다', (tester) async {
-    await tester.pumpWidget(_wrap(const LoginScreen()));
+  testWidgets('로그인이 필요하면 스플래시 로고 아래에 구글 로그인만 있다', (tester) async {
+    await tester.pumpWidget(_wrap(const SplashScreen(signedOut: true)));
+    await tester.pumpAndSettle();
 
+    expect(find.text('새록'), findsOneWidget, reason: '따로 된 로그인 화면이 아니다');
+    expect(find.byType(GoogleSignInPanel), findsOneWidget);
     expect(find.byType(GoogleSignInButton), findsOneWidget);
     // 아이디와 비밀번호는 받지 않는다(ADR-007). 회원가입으로 가는 길도 없다.
     expect(find.byType(TextField), findsNothing);
