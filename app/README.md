@@ -57,8 +57,8 @@
 
 | 경로 | 화면 | 피그마 |
 | --- | --- | --- |
-| `/splash` | 스플래시 | A-1 |
-| `/login` | 로그인 | A-2 |
+| `/splash` | 스플래시와 로그인. 로그인이 필요하면 로고 아래에 구글 버튼을 띄운다. `?signedOut=true`이면 복원 확인 없이 바로 띄운다 | A-1, A-2를 합침 |
+| `/consent` | 구글 로그인 뒤 필수 동의 | 설계 없음 |
 | `/onboarding` | 처음 오셨네요 | B-1 |
 | `/profile/create` | 환자 정보 입력 (6단계). `?adding=<id>`이면 어르신 추가 | B-2 ~ B-7. B-8 사진 태그 고르기는 삭제 |
 | `/home` | 홈 | HOME, HOME-1 |
@@ -144,14 +144,14 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 
 ### 흐름
 
-    A-2 로그인의 구글 버튼
+    A-1 스플래시의 구글 버튼 (로그인이 필요할 때 로고 아래에 뜬다)
     → google_sign_in 으로 ID 토큰을 받는다 (사용자가 취소하면 아무것도 하지 않는다)
     → POST /auth/google
         → status=authenticated   → 세션을 받고 /home
-        → status=consentRequired → /login/consent → POST /auth/consent → /onboarding
+        → status=consentRequired → /consent → POST /auth/consent → /onboarding
 
     앱을 다시 켤 때 (A-1 스플래시)
-    → 보관한 세션 읽기 (없으면 /login)
+    → 보관한 세션 읽기 (없으면 같은 화면에 구글 버튼)
     → 만료 전이면 GET /auth/me 로 확인
         → 200                → /home
         → 401, 403           → 아래 무음 로그인
@@ -159,10 +159,10 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
     → 만료됐거나 서버가 거절하면 google_sign_in 무음 로그인으로 새 ID 토큰
     → POST /auth/google
         → status=authenticated   → 새 세션을 보관하고 /home
-        → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 /login
+        → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 구글 버튼
 
-로그인 화면에는 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
-구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
+따로 있던 로그인 화면(A-2)은 스플래시에 합쳤다. 로그인 버튼과 실패 안내는 `GoogleSignInPanel`이고, 스플래시가 복원 확인을 마친 뒤 로고 아래에 띄운다. 로그아웃, 탈퇴, 세션이 풀린 경우는 `/splash?signedOut=true`(`AppRoutes.signIn`)로 돌아가 2초 로고 없이 바로 버튼을 띄운다. 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
+구글 인증만으로는 계정이 만들어지지 않는다. `/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
 어떤 항목이 필수인지는 서버가 준 `requiredConsents`로 판단한다. 앱 상수로 따로 판단하면
@@ -181,18 +181,18 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 `POST /auth/google`을 다시 부르는 방식이다(`backend/README.md`의 "세션").
 
 서버에 닿지 못했을 때는 만료 전 세션을 버리지 않는다. 확인하지 못했을 뿐 만료된 것은
-아니어서, 여기서 로그인 화면으로 보내면 오프라인에서 앱을 열 수 없다.
+아니어서, 여기서 로그인 버튼으로 보내면 오프라인에서 앱을 열 수 없다.
 
 ### 로그아웃과 탈퇴
 
     MYPAGE 프로필 설정의 로그아웃
-    → 단말 세션 삭제 → POST /auth/logout → 구글 쪽 로그아웃 → /login
+    → 단말 세션 삭제 → POST /auth/logout → 구글 쪽 로그아웃 → /splash?signedOut=true
 
     MYPAGE 프로필 설정의 회원탈퇴 → /profile/delete 의 탈퇴하기
     → DELETE /auth/me
-        → 204                         → 단말 세션 삭제 → 구글 쪽 로그아웃 → /login, "탈퇴가 완료됐어요."
+        → 204                         → 단말 세션 삭제 → 구글 쪽 로그아웃 → /splash?signedOut=true, "탈퇴가 완료됐어요."
         → 401, 404 (세션 풀림, 계정 없음) → 이유를 알리고 "로그인으로 돌아가기"
-                                         → 단말 세션 삭제 → 어르신 목록 비움 → /login
+                                         → 단말 세션 삭제 → 어르신 목록 비움 → /splash?signedOut=true
         → 그 밖의 오류, 연결 실패        → 이 화면에 남아 이유를 알린다. 세션을 지우지 않는다
 
 로그아웃은 `SessionNotifier.signOut()`이다. 단말 세션을 먼저 지우고 서버에 폐기를 알린다.
@@ -225,7 +225,9 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
 | `lib/features/auth/consent_form.dart` | 동의 항목 UI |
-| `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
+| `lib/features/auth/splash_screen.dart` | 스플래시. 복원 확인 뒤 로그인 버튼을 띄운다 |
+| `lib/features/auth/google_sign_in_panel.dart` | 스플래시의 구글 로그인 버튼과 실패 안내 |
+| `lib/features/auth/google_consent_screen.dart` | `/consent` 화면 |
 | `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
 | `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
 
