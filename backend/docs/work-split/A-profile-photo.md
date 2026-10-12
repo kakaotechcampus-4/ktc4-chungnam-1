@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
-| `profiles` | 2-2 생성, 2-4 수정, 2-8 삭제 | B가 2-5에서 세부 정보 네 항목을 쓴다(카드 작업 생성과 같은 트랜잭션이어야 해서). 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
+| `profiles` | 2-2 생성, 2-4 세부 정보 저장과 수정, 2-8 삭제 | B는 4-1 카드 생성 요청에서 저장된 프로필을 읽는다. 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
 
@@ -76,7 +76,7 @@
 
 피보호자의 이름, 성별, 생년월일은 서버의 `profiles`에 저장한다. 내부 API(8절) 요청에는 넣지 않고 BE가 생년월일로 계산한 연령대만 보낸다.
 
-프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 2-5가 세부 정보 저장과 첫 카드 생성 작업을 한 트랜잭션에서 만들므로, 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다.
+프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 온보딩의 `마치기`에서 세부 정보를 2-4로 저장한 뒤 4-1로 첫 카드 생성을 요청한다. 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다. 프로필 저장과 카드 생성 요청은 별도 API이며, 이전 2-5 API는 사용하지 않는다.
 
 ### 3. 프로필 사진
 
@@ -269,6 +269,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
+- `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
 
 응답 `200` — [Profile](#profile)
 
@@ -279,6 +280,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - 보낸 필드만 바꾼다(pydantic `model_fields_set`로 구분). 세부 정보 네 항목은 `null`이면 지운다. 빈 문자열은 422이며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
+- `condition.symptomNote`도 `condition.model_fields_set`로 구분해, 뺐으면 `symptom_note`를 바꾸지 않는다.
 
 <br>
 
@@ -504,7 +506,7 @@ AI 사진 설명은 별도 승인 없이 카드 생성에 사용하고, 사용�
 }
 ```
 
-- `occupation`, `hometown`, `hobby`, `family`: 세부 정보 네 항목. 건너뛰었거나 2-5 전이면 `null`
+- `occupation`, `hometown`, `hobby`, `family`: 세부 정보 네 항목. 건너뛰었거나 2-4로 저장하기 전이면 `null`. 카드 생성 여부와 별개로 2-4에서 저장하거나 수정한다.
 
 ### LifeFact
 
