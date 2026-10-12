@@ -69,7 +69,7 @@ class SessionRestorer {
       return stored;
     } on AuthNetworkFailure {
       // 서버에 닿지 못했다. 확인하지 못했을 뿐 만료된 것은 아니다. 여기서
-      // 로그인 화면으로 보내면 비행기 모드에서 앱을 열 수 없다.
+      // 스플래시의 로그인 버튼으로 보내면 비행기 모드에서 앱을 열 수 없다.
       return stored;
     } on AuthUnexpectedResponseFailure {
       return null;
@@ -80,7 +80,7 @@ class SessionRestorer {
   Future<SessionRestoreOutcome> _reauthenticate() async {
     final idToken = await _ref.read(googleAuthenticatorProvider).silentIdToken();
     if (idToken == null) {
-      // 고른 계정이 없거나 조용히 받을 수 없다. 로그인 화면에서 다시 받는다.
+      // 고른 계정이 없거나 조용히 받을 수 없다. 스플래시의 로그인 버튼에서 다시 받는다.
       await _ref.read(sessionProvider.notifier).discard();
       return SessionRestoreOutcome.expired;
     }
@@ -93,7 +93,7 @@ class SessionRestorer {
           return SessionRestoreOutcome.restored;
         case ConsentRequiredResult():
           // 계정이 사라졌다. 동의 화면으로 바로 보내지 않는다. 가입은
-          // 사용자가 로그인 화면에서 스스로 시작해야 한다(ADR-007).
+          // 사용자가 스플래시의 로그인 버튼에서 스스로 시작해야 한다(ADR-007).
           await _ref.read(sessionProvider.notifier).discard();
           return SessionRestoreOutcome.expired;
       }

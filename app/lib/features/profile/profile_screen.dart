@@ -336,7 +336,7 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
     await ref.read(sessionProvider.notifier).signOut();
     if (!mounted) return;
     forgetCareProfiles(ref);
-    context.go(AppRoutes.login);
+    context.go(AppRoutes.signIn);
   }
 
   @override

@@ -5,23 +5,23 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
 import '../../design/tokens.dart';
-import '../../widgets/app_scaffold.dart';
 import 'auth_messages.dart';
 import 'auth_providers.dart';
 import 'consent_form.dart';
 import 'google_sign_in_button.dart';
 
-/// A-2 로그인.
+/// 구글 로그인 버튼과 실패 안내다. 스플래시(A-1)가 로그인이 필요할 때 보여준다.
 ///
+/// 따로 있던 로그인 화면(A-2)을 스플래시에 합치면서 화면이 아니라 조각으로 뒀다.
 /// 구글 로그인 하나만 둔다. 아이디와 비밀번호는 받지 않는다(ADR-007).
-class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+class GoogleSignInPanel extends ConsumerStatefulWidget {
+  const GoogleSignInPanel({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<GoogleSignInPanel> createState() => _GoogleSignInPanelState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _GoogleSignInPanelState extends ConsumerState<GoogleSignInPanel> {
   /// 구글 로그인을 기다리는 중이다.
   bool _busy = false;
 
@@ -80,41 +80,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final failure = _failure;
     final skipping = ref.watch(skipGoogleLoginProvider);
 
-    return Scaffold(
-      body: ScreenBody(
-        scrollable: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: AppSpacing.xxxl),
-            const Text('로그인', style: AppTypography.screenTitle),
-            const SizedBox(height: AppSpacing.section),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (failure != null) ...[
+          AuthNotice(message: authFailureMessage(failure)),
+          const SizedBox(height: AppSpacing.xl),
+        ],
 
-            if (failure != null) ...[
-              AuthNotice(message: authFailureMessage(failure)),
-              const SizedBox(height: AppSpacing.xl),
-            ],
-
-            Center(
-              child: GoogleSignInButton(
-                onPressed: _busy ? null : _signInWithGoogle,
-                busy: _busy,
-              ),
-            ),
-
-            if (skipping) ...[
-              const SizedBox(height: AppSpacing.lg),
-              const Text(
-                '개발용: 구글 로그인 설정이 없어 누르면 바로 정보 입력으로 넘어가요.',
-                style: AppTypography.caption,
-                textAlign: TextAlign.center,
-              ),
-            ],
-
-            const SizedBox(height: AppSpacing.xxl),
-          ],
+        Center(
+          child: GoogleSignInButton(
+            onPressed: _busy ? null : _signInWithGoogle,
+            busy: _busy,
+          ),
         ),
-      ),
+
+        if (skipping) ...[
+          const SizedBox(height: AppSpacing.lg),
+          const Text(
+            '개발용: 구글 로그인 설정이 없어 누르면 바로 정보 입력으로 넘어가요.',
+            style: AppTypography.caption,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
     );
   }
 }

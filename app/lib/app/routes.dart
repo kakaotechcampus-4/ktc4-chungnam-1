@@ -5,17 +5,19 @@
 library;
 
 abstract final class AppRoutes {
-  /// A-1 스플래시.
+  /// A-1 스플래시. 따로 있던 A-2 로그인을 합쳤다. 로그인이 필요하면 로고
+  /// 아래에 구글 로그인 버튼을 띄운다.
   static const splash = '/splash';
 
-  /// A-2 로그인.
-  static const login = '/login';
+  /// 로그인이 풀린 것을 이미 알고 스플래시로 돌아갈 때 쓴다. 로그아웃, 탈퇴,
+  /// 세션이 풀렸을 때다. 복원을 확인하지 않고 곧바로 로그인 버튼을 띄운다.
+  static const signIn = '/splash?signedOut=true';
 
   /// 구글 로그인 뒤 받는 필수 동의.
   ///
-  /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다. 로그인
-  /// 화면이 `extra` 로 등록 정보를 함께 넘긴다.
-  static const googleConsent = '/login/consent';
+  /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다.
+  /// 스플래시의 로그인 버튼이 `extra` 로 등록 정보를 함께 넘긴다.
+  static const googleConsent = '/consent';
 
   /// B-1 처음 오셨네요.
   static const onboarding = '/onboarding';
