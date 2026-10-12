@@ -240,7 +240,7 @@ def test_deleting_card_set_removes_orphan_topic(engine):
                 "(set_id, profile_id, topic_id, card_title, position, description, "
                 " primary_question, follow_up_questions, evidence_source) "
                 "VALUES (:set_id, :profile_id, :topic_id, '합성 카드', 1, "
-                " '합성 카드 설명', '합성 질문?', ARRAY['합성 꼬리 질문?'], 'none')"
+                " '합성 카드 설명', '합성 질문?', ARRAY['하나?', '둘?', '셋?'], 'none')"
             ),
             {"set_id": set_id, "profile_id": profile_id, "topic_id": topic_id},
         )
@@ -259,6 +259,69 @@ def test_deleting_card_set_removes_orphan_topic(engine):
             {"topic_id": topic_id},
         ).scalar_one()
     assert remaining == 0
+
+
+@pytest.mark.parametrize(
+    "card_title, description, primary_question, follow_up_questions",
+    [
+        ("  ", "합성 설명", "합성 질문?", "{하나?,둘?,셋?}"),
+        ("합성 카드", "\t", "합성 질문?", "{하나?,둘?,셋?}"),
+        ("합성 카드", "합성 설명", " \n", "{하나?,둘?,셋?}"),
+        ("합성 카드", "합성 설명", "합성 질문?", "{하나?,둘?}"),
+        ("합성 카드", "합성 설명", "합성 질문?", '{하나?," ",셋?}'),
+        ("합성 카드", "합성 설명", "합성 질문?", "{하나?,NULL,셋?}"),
+    ],
+    ids=[
+        "blank-title",
+        "blank-description",
+        "blank-question",
+        "two-follow-ups",
+        "blank-follow-up",
+        "null-follow-up",
+    ],
+)
+def test_card_without_text_is_rejected(
+    engine, card_title, description, primary_question, follow_up_questions
+):
+    with engine.begin() as conn:
+        _, profile_id = _insert_profile(conn)
+        topic_id = conn.execute(
+            sa.text(
+                "INSERT INTO profile_topics (profile_id, title, description) "
+                "VALUES (:profile_id, '합성 주제', '합성 주제 설명') RETURNING topic_id"
+            ),
+            {"profile_id": profile_id},
+        ).scalar_one()
+        set_id = conn.execute(
+            sa.text(
+                "INSERT INTO card_sets "
+                "(profile_id, status, model, prompt_version, generation_log) "
+                "VALUES (:profile_id, 'completed', 'synthetic-model', 'card-v1', "
+                " '{\"input\": {}}') RETURNING set_id"
+            ),
+            {"profile_id": profile_id},
+        ).scalar_one()
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO conversation_cards "
+                    "(set_id, profile_id, topic_id, card_title, position, description, "
+                    " primary_question, follow_up_questions, evidence_source) "
+                    "VALUES (:set_id, :profile_id, :topic_id, :card_title, 1, "
+                    " :description, :primary_question, CAST(:follow_ups AS text[]), 'none')"
+                ),
+                {
+                    "set_id": set_id,
+                    "profile_id": profile_id,
+                    "topic_id": topic_id,
+                    "card_title": card_title,
+                    "description": description,
+                    "primary_question": primary_question,
+                    "follow_ups": follow_up_questions,
+                },
+            )
 
 
 def test_downgrade_removes_all_tables_then_upgrade_recreates_them(
