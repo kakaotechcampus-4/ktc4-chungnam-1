@@ -84,7 +84,8 @@ PR에는 다음 내용을 작성한다.
 | 변경 영역 | 기술 검토 |
 | --- | --- |
 | `app/` | FE 담당 |
-| `local_ai/` | AI 담당 |
+| `ai/` | AI 담당 |
+| `stt-server/` | AI 담당 |
 | `backend/` | BE 담당 |
 | `evals/` | QA 담당 |
 | `docs/pm/` | 주 PM 또는 부 PM |
