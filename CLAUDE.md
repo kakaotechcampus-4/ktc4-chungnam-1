@@ -29,7 +29,8 @@
 - 제품 범위와 PM 결정: `docs/pm/README.md`
 - FE와 Flutter 앱: `app/README.md`
 - BE와 데이터 처리: `backend/README.md`
-- AI, STT와 VLM: `local_ai/README.md`
+- AI 생성과 VLM: `ai/README.md`
+- STT 서버: `stt-server/README.md`
 - 평가와 테스트: `evals/README.md`
 - 공통 데이터 계약: `docs/architecture/data-contracts.md`
 - 기술 결정: `docs/architecture/decisions/`

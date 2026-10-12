@@ -194,7 +194,7 @@ Android 우선 Flutter와 앱 식별자는 ADR-002, 상태 관리와 라우팅�
 
 ## 히스토리
 
-문서 탐색은 [문서 안내](README.md), 기술 변경 이유는 [ADR 목록](architecture/decisions/README.md), 실험 근거는 [이미지 실험](../local_ai/docs/image_tagging/README.md)과 [음성 평가](../evals/README.md)를 이용한다.
+문서 탐색은 [문서 안내](README.md), 기술 변경 이유는 [ADR 목록](architecture/decisions/README.md), 실험 근거는 [이미지 실험](../ai/docs/image_tagging/README.md)과 [음성 평가](../evals/README.md)를 이용한다.
 
 초안은 2026-08-24 테크스펙 수업, 아이디어톤 최종 작성 내용, 1차/2차와 8월 20일 팀 결정, 보호자 인터뷰 2건 및 치노사모 조사, 회상 대화와 보호자 부담 검토 자료를 참조해 작성됐다. 당시 작성 근거 기록이며 이번 문서 정리에서 연구 결과를 새로 검증한 것은 아니다. 원자료는 로컬 PM 자료에서 보관한다.
 
