@@ -276,7 +276,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ## 프로필과 생애 정보 API
 
-[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 2-5(프로필 입력 마치기)는 작업 B가 만든다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
+[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |

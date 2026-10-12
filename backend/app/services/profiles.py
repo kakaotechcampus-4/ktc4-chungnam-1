@@ -1,12 +1,12 @@
 """피보호자 프로필(`profiles`).
 
 이름, 성별, 생년월일은 서버에 저장하지만 AI 서버 요청에는 넣지 않는다. 프로필 입력
-상태(`setupStatus`)는 저장하지 않고 계산한다. 2-5가 세부 정보 저장과 첫 카드 생성 작업을
-한 트랜잭션에서 만들므로, 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면
-`inProgress`다.
+상태(`setupStatus`)는 저장하지 않고 계산한다. 온보딩은 2-4로 세부 정보를 저장한 뒤
+4-1로 첫 카드 생성을 요청한다. 카드 생성 작업(`card_sets`)이 하나라도 있으면
+`completed`, 없으면 `inProgress`다.
 
-세부 정보 네 항목(`occupation`, `hometown`, `hobby`, `family`)은 2-5(작업 B)가 처음 쓰고
-2-4가 고친다. 빈 문자열은 받지 않으며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
+세부 정보 네 항목(`occupation`, `hometown`, `hobby`, `family`)은 2-4가 저장하거나 고친다.
+빈 문자열은 받지 않으며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
 
 프로필을 지우면 `ON DELETE CASCADE`로 그 아래 기록이 모두 지워지고, 사진과 음성의 객체
 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. 대기열을 처리해

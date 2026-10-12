@@ -345,7 +345,8 @@ async def seed_profile_records(connection, profile_id: UUID) -> list[str]:
         "(set_id, profile_id, topic_id, card_title, position, description, "
         " primary_question, follow_up_questions, evidence_source) "
         "VALUES (%s, %s, %s, '합성 카드', 1, '합성 설명', '합성 질문', "
-        " ARRAY['합성 후속 질문'], 'none') RETURNING card_id",
+        " ARRAY['합성 후속 질문 1', '합성 후속 질문 2', '합성 후속 질문 3'], "
+        " 'none') RETURNING card_id",
         (set_id, profile_id, topic_id),
     )
     session_id = await insert(
