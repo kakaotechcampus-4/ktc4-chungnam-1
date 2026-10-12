@@ -7,6 +7,8 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
+import '../../widgets/profile_avatar.dart';
+import '../profile/profile_dialogs.dart';
 import 'my_page_menu.dart';
 
 /// 시작 화면.
@@ -16,6 +18,9 @@ import 'my_page_menu.dart';
 ///
 /// 왼쪽 상단 알림 아이콘을 누르면 같은 상태를 다시 보여주는 `notice_screen.dart`
 /// 가 뜬다. 상태를 새로 만들지 않고 `reportNoticeProvider` 를 그대로 본다.
+///
+/// 등록한 어르신이 없으면 이름 없이 묻고, 알림, 일대기와 대화 카드 받기를
+/// 누르면 등록부터 안내한다.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -23,19 +28,32 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notice = ref.watch(reportNoticeProvider);
     final report = ref.watch(visitReportProvider);
+    final hasProfile = ref.watch(
+      careProfilesProvider.select((p) => p.hasSelected),
+    );
+    final name = ref.watch(profileProvider).value?.profile.name;
+
+    // 어르신이 있어야 쓰는 기능이다. 없으면 등록부터 안내한다.
+    void needsProfile(VoidCallback open) =>
+        hasProfile ? open() : showProfileRequiredDialog(context);
 
     return Scaffold(
       body: Column(
         children: [
           // 만드는 중에는 아직 볼 것이 없으므로 점을 찍지 않는다.
-          _TopBar(hasNotice: notice == ReportNotice.ready),
+          _TopBar(
+            hasNotice: notice == ReportNotice.ready,
+            onNotice: () =>
+                needsProfile(() => context.push(AppRoutes.notifications)),
+          ),
           Expanded(
             child: ScreenBody(
               bottom: Column(
                 children: [
                   PrimaryButton(
                     label: '오늘의 대화카드 받기',
-                    onPressed: () => context.push(AppRoutes.cards),
+                    onPressed: () =>
+                        needsProfile(() => context.push(AppRoutes.cards)),
                   ),
                   // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
                   // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
@@ -73,8 +91,12 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xl),
-                    const Text(
-                      '오늘은 무슨 주제로\n대화를 나눠볼까요?',
+                    // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                    // 이름을 읽는 동안에는 이름 없이 묻는다.
+                    Text(
+                      name == null
+                          ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                          : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
                       style: AppTypography.body,
                       textAlign: TextAlign.center,
                     ),
@@ -97,7 +119,7 @@ class HomeScreen extends ConsumerWidget {
         onSelected: (tab) {
           switch (tab) {
             case AppTab.album:
-              context.push(AppRoutes.album);
+              needsProfile(() => context.push(AppRoutes.album));
             case AppTab.home:
               break;
             case AppTab.myPage:
@@ -110,28 +132,38 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.hasNotice});
+  const _TopBar({required this.hasNotice, required this.onNotice});
 
   final bool hasNotice;
+  final VoidCallback onNotice;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: SizedBox(
-        height: AppSizes.topBar,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      // 알약이 상태바에 붙어 보이지 않게 위를 띄운다. 양 끝 아이콘은 버튼 안쪽
+      // 여백이 있어 좌우는 덜 띄운다. 오른쪽 아이콘이 없을 때의 알약 간격은
+      // [_ProfileSwitcher] 가 채운다.
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.sm,
+          0,
+        ),
+        child: ConstrainedBox(
+          // 글자를 키워 알약이 높아지면 함께 늘어나도록 높이를 못 박지 않는다.
+          constraints: const BoxConstraints(minHeight: AppSizes.topBar),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                onPressed: () => context.push(AppRoutes.notifications),
+                onPressed: onNotice,
                 tooltip: '알림',
                 icon: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Icon(Icons.notifications_none, size: 28),
+                    const Icon(Icons.notifications_none, size: 32),
                     if (hasNotice)
                       Positioned(
                         right: 0,
@@ -152,13 +184,141 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
               ),
-              // 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
-              IconButton(
-                onPressed: null,
-                tooltip: '메뉴',
-                icon: Icon(Icons.menu, size: 26, color: AppColors.textDisabled),
-              ),
+              const _ProfileSwitcher(),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 지금 보고 있는 어르신과 어르신을 바꾸는 버튼이다.
+///
+/// 사진만으로는 같은 성별의 어르신을 구분할 수 없어 이름을 함께 둔다. 다른
+/// 어르신의 대화 카드를 받는 실수를 막으려는 자리다.
+///
+/// 원형 화살표는 목록 순서대로 다음 어르신으로 바로 바꾼다. 어르신이 한
+/// 분이면 바꿀 대상이 없어 두지 않는다.
+///
+/// 등록한 어르신이 없으면 같은 자리에 `어르신 등록` 알약을 둔다. 누르면 함께
+/// 하는 소중한 분 화면으로 간다.
+class _ProfileSwitcher extends ConsumerWidget {
+  const _ProfileSwitcher();
+
+  static const _photo = 32.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasProfile = ref.watch(
+      careProfilesProvider.select((p) => p.hasSelected),
+    );
+    final profile = ref.watch(profileProvider).value?.profile;
+    final canSwitch = ref.watch(
+      careProfilesProvider.select((p) => p.ready.length > 1),
+    );
+    if (!hasProfile) return const _RegisterPill();
+    if (profile == null) return const SizedBox.shrink();
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 누르면 어르신을 고르는 화면으로 간다.
+        Material(
+          color: AppColors.surface,
+          shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => context.push(AppRoutes.profileSwitch),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.md,
+                AppSpacing.xs,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ProfileAvatar(gender: profile.gender, size: _photo),
+                  const SizedBox(width: AppSpacing.sm),
+                  ConstrainedBox(
+                    // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: Text(
+                      '${profile.name} 어르신',
+                      style: AppTypography.bodyStrong,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 엄지가 닿기 쉬운 오른쪽 끝에 둔다.
+        if (canSwitch)
+          IconButton(
+            onPressed: () => _switchToNext(context, ref),
+            tooltip: '다음 분 보기',
+            // 알림 아이콘과 같은 크기다.
+            icon: const Icon(Icons.sync, size: 32),
+          )
+        else
+          // 아이콘이 없으면 알약이 벽에 붙지 않게 화면 여백만큼 띄운다.
+          const SizedBox(width: AppSpacing.screen - AppSpacing.sm),
+      ],
+    );
+  }
+
+  /// 다음 어르신으로 바꾸고 누구로 바뀌었는지 알린다.
+  ///
+  /// 한 번 누르면 바로 바뀌므로, 잘못 눌러도 알아챌 수 있게 이름을 말해 준다.
+  Future<void> _switchToNext(BuildContext context, WidgetRef ref) async {
+    ref.read(careProfilesProvider.notifier).selectNext();
+    final next = await ref.read(profileProvider.future);
+    if (next == null || !context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('지금부터 ${next.profile.name} 어르신과 함께해요')),
+      );
+  }
+}
+
+/// 등록한 어르신이 없을 때 알약 자리에 둔다. 어르신 알약과 같은 모양이다.
+class _RegisterPill extends StatelessWidget {
+  const _RegisterPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      // 오른쪽 아이콘이 없을 때의 알약과 같은 간격이다.
+      padding: const EdgeInsets.only(right: AppSpacing.screen - AppSpacing.sm),
+      child: Material(
+        color: AppColors.surface,
+        shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => context.push(AppRoutes.profileSwitch),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: AppSizes.minTouch),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.xs,
+              AppSpacing.md,
+              AppSpacing.xs,
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add, size: 24, color: AppColors.ink),
+                SizedBox(width: AppSpacing.xs),
+                Text('어르신 등록', style: AppTypography.bodyStrong),
+              ],
+            ),
           ),
         ),
       ),

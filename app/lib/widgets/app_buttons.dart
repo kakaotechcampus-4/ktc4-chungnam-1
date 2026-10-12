@@ -104,11 +104,16 @@ class AppTextButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
         ),
-        child: Text(
-          label,
-          style: AppTypography.body.copyWith(
-            fontWeight: FontWeight.w600,
-            decoration: TextDecoration.underline,
+        // 글자 장식 밑줄은 띄어쓰기 자리마다 높이가 달라져 울퉁불퉁해 보였다.
+        // 아래 테두리로 한 줄을 곧게 긋는다.
+        child: Container(
+          padding: const EdgeInsets.only(bottom: 1),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.ink)),
+          ),
+          child: Text(
+            label,
+            style: AppTypography.body.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
       ),

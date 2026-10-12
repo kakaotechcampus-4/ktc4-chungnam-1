@@ -14,21 +14,38 @@ import 'package:saerok/features/profile_setup/speech_input.dart';
 
 /// 정해진 결과만 돌려주는 대역이다. 목 데이터가 아니라 화면 흐름만 본다.
 class _FixedSpeech implements SpeechInput {
-  const _FixedSpeech(this.outcome, this.delay);
+  _FixedSpeech(this.outcome, this.delay);
 
   final SpeechOutcome outcome;
 
-  /// 듣는 중 화면을 보려면 결과가 바로 나오면 안 된다. 기본은 지연 없음이다.
+  /// 옮기는 중 화면을 보려면 결과가 바로 나오면 안 된다. 기본은 지연 없음이다.
   final Duration delay;
 
+  /// 화면이 버린 녹음 수.
+  int cancelled = 0;
+
   @override
-  Future<SpeechOutcome> listen({
+  Future<SpeechRecording> start({
     required String category,
     required int attempt,
-  }) async {
-    if (delay > Duration.zero) await Future<void>.delayed(delay);
-    return outcome;
+  }) async => _FixedRecording(this);
+}
+
+class _FixedRecording implements SpeechRecording {
+  _FixedRecording(this._speech);
+
+  final _FixedSpeech _speech;
+
+  @override
+  Future<SpeechOutcome> finish() async {
+    if (_speech.delay > Duration.zero) {
+      await Future<void>.delayed(_speech.delay);
+    }
+    return _speech.outcome;
   }
+
+  @override
+  Future<void> cancel() async => _speech.cancelled += 1;
 }
 
 final _step = lifeFactSteps.first;
@@ -38,10 +55,12 @@ Widget _wrap({
   Duration delay = Duration.zero,
   ValueChanged<String>? onCaptured,
   VoidCallback? onCleared,
+  _FixedSpeech? speech,
+  String? initialText,
 }) => ProviderScope(
   overrides: [
     speechInputProvider.overrideWith(
-      (ref) async => _FixedSpeech(outcome, delay),
+      (ref) async => speech ?? _FixedSpeech(outcome, delay),
     ),
   ],
   child: MaterialApp(
@@ -51,6 +70,7 @@ Widget _wrap({
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
         child: LifeFactStepView(
           step: _step,
+          initialText: initialText,
           onCaptured: onCaptured ?? (_) {},
           onCleared: onCleared ?? () {},
         ),
@@ -65,6 +85,14 @@ void _useReferenceScreen(WidgetTester tester) {
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// 마이크를 눌러 말하고 다 말했다고 알린 뒤 결과까지 기다린다.
+Future<void> _speak(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.mic));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('다 말했어요'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -225,7 +253,7 @@ void main() {
       expect(textSide.height, greaterThanOrEqualTo(AppSizes.minTouch));
     });
 
-    testWidgets('녹음하는 동안에는 숨긴다', (tester) async {
+    testWidgets('녹음하고 옮기는 동안에는 숨긴다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(
         _wrap(
@@ -246,9 +274,86 @@ void main() {
         reason: '말하는 중에 방법을 바꾸게 하지 않는다',
       );
 
-      // 듣기가 끝나면 다시 나온다.
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(find.text('글로 답할게요'), findsNothing);
+
+      // 옮기기가 끝나면 다시 나온다.
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('글로 답할게요'), findsOneWidget);
+    });
+  });
+
+  group('글로 옮기는 중', () {
+    testWidgets('다 말했다고 알리면 옮기는 중임을 보여준다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechHeard('30년 동안 초등학교 선생님을 하셨어요.'),
+          delay: const Duration(milliseconds: 200),
+        ),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(find.text('잠시만 기다려주세요'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('듣고 있어요'), findsNothing);
+      expect(find.text('다 말했어요'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsNothing);
+      expect(find.text('30년 동안 초등학교 선생님을 하셨어요.'), findsOneWidget);
+    });
+
+    testWidgets('듣는 중에 마이크를 다시 눌러도 녹음을 끝낸다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          delay: const Duration(milliseconds: 200),
+        ),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('듣는 중에 화면을 벗어나면 녹음을 버린다', (tester) async {
+      _useReferenceScreen(tester);
+      final speech = _FixedSpeech(const SpeechNotHeard(), Duration.zero);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      expect(speech.cancelled, 1);
     });
   });
 
@@ -259,8 +364,7 @@ void main() {
 
       await tester.tap(find.text('말로 답하기'));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pumpAndSettle();
+      await _speak(tester);
 
       expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
       expect(find.byIcon(Icons.mic), findsOneWidget, reason: '아직 직접 입력이 아니다');
@@ -273,10 +377,8 @@ void main() {
 
       await tester.tap(find.text('말로 답하기'));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pumpAndSettle();
+      await _speak(tester);
+      await _speak(tester);
 
       expect(find.byType(TextField), findsOneWidget);
       expect(
@@ -305,12 +407,65 @@ void main() {
 
       await tester.tap(find.text('말로 답하기'));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pumpAndSettle();
+      await _speak(tester);
 
       expect(captured, '30년 동안 초등학교 선생님을 하셨어요.');
       expect(find.text('30년 동안 초등학교 선생님을 하셨어요.'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+  });
+
+  group('적어 둔 답', () {
+    // 합성 문장이다. 실제 어르신의 생애 정보가 아니다.
+    const saved = '합성 예시 답입니다';
+
+    testWidgets('있으면 입력칸에 채워 보여주고 다시 알리지 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      var captured = 0;
+      var cleared = 0;
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          initialText: saved,
+          onCaptured: (_) => captured++,
+          onCleared: () => cleared++,
+        ),
+      );
+
+      expect(find.widgetWithText(TextField, saved), findsOneWidget);
+      expect(
+        find.text('목소리를 잘 듣지 못했어요.'),
+        findsNothing,
+        reason: '실패해서 온 것이 아니다',
+      );
+      expect(captured, 0, reason: '이미 저장본에 있는 값이다');
+      expect(cleared, 0);
+    });
+
+    testWidgets('채운 답을 고치면 고친 문장을 넘긴다', (tester) async {
+      _useReferenceScreen(tester);
+      String? captured;
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          initialText: saved,
+          onCaptured: (text) => captured = text,
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '$saved 고침');
+
+      expect(captured, '$saved 고침');
+    });
+
+    testWidgets('공백뿐이면 방법 고르기부터 연다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), initialText: '  '),
+      );
+
+      expect(find.text('말로 답하기'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
     });
   });
 }

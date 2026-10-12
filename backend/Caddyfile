@@ -1,0 +1,5 @@
+# 개발 서버의 HTTPS 앞단. .env의 SAEROK_PUBLIC_HOST 이름으로 인증서를 받고 api로 넘긴다.
+# 주소는 저장소에 적지 않는다. 값이 비어 있으면 설정 오류로 Caddy가 시작하지 않는다.
+{$SAEROK_PUBLIC_HOST} {
+	reverse_proxy api:8000
+}

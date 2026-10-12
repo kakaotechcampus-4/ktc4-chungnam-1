@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/auth_providers.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 
@@ -19,9 +20,259 @@ final accountProvider = FutureProvider<Account>(
   (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
 );
 
-final profileProvider = FutureProvider<ProfileBundle>(
+/// 환자 정보 입력에서 받은 기본 정보다.
+class EnteredBasicInfo {
+  const EnteredBasicInfo({
+    required this.name,
+    required this.gender,
+    required this.birthDate,
+    required this.stage,
+  });
+
+  final String name;
+
+  /// `male` 또는 `female`.
+  final String gender;
+
+  /// `YYYY-MM-DD`.
+  final String birthDate;
+  final ConditionStage stage;
+}
+
+/// 보호자가 돌보는 어르신 한 분이다.
+///
+/// [pending] 이면 [basicInfo] 가 비어 있다. 등록을 마친 분은 늘 기본 정보가 있다.
+class CareProfileEntry {
+  const CareProfileEntry({
+    required this.id,
+    this.basicInfo,
+    this.pending = false,
+  });
+
+  final String id;
+  final EnteredBasicInfo? basicInfo;
+
+  /// 등록하다 마치지 않고 나간 분이다. 슬롯 하나를 차지하고 `입력 중` 으로
+  /// 보이며, 고를 수는 없다. 입력한 값은 입력 흐름이 들고 있다.
+  final bool pending;
+}
+
+/// 등록한 어르신 목록과 지금 보고 있는 어르신이다.
+class CareProfiles {
+  const CareProfiles({required this.entries, required this.selectedId});
+
+  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다.
+  static const max = 3;
+
+  /// 전환 화면의 슬롯 순서 그대로다.
+  final List<CareProfileEntry> entries;
+
+  /// 고른 분이 없으면 `null` 이다.
+  final String? selectedId;
+
+  /// 고를 수 있는 분들이다. 입력 중인 분은 빠진다.
+  List<CareProfileEntry> get ready => entries.where((e) => !e.pending).toList();
+
+  /// 지금 보고 있는 분이다. 등록을 마친 분이 없으면 `null` 이다.
+  ///
+  /// 이때는 대화 카드, 면회, 리포트를 쓸 수 없고 등록부터 안내한다.
+  CareProfileEntry? get selected {
+    final ready = this.ready;
+    return ready.where((e) => e.id == selectedId).firstOrNull ??
+        ready.firstOrNull;
+  }
+
+  bool get hasSelected => selected != null;
+
+  bool get isFull => entries.length >= max;
+}
+
+/// 어르신 목록을 다룬다.
+///
+/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
+/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
+/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
+/// 로그아웃하면 빈 목록으로 돌아간다.
+///
+/// 서버를 쓰면 회원가입에서 첫 분을 반드시 등록하므로, 빈 목록은 마지막 분을
+/// 지운 경우다. 지금은 로그인만 하고 들어와도 빈 목록이며 같은 화면을 보여준다.
+///
+/// 계약상 계정당 프로필은 1개다(`api-spec.md` 2-2). 최대 3분은 BE 와 합의 전인
+/// 화면 설계이며, 서버를 붙일 때 이 제한을 함께 맞춘다.
+class CareProfilesNotifier extends Notifier<CareProfiles> {
+  int _nextId = 0;
+
+  @override
+  CareProfiles build() => const CareProfiles(entries: [], selectedId: null);
+
+  /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
+  void startWith(EnteredBasicInfo info) {
+    final entry = CareProfileEntry(id: _newId(), basicInfo: info);
+    state = CareProfiles(entries: [entry], selectedId: entry.id);
+  }
+
+  /// 어르신을 더 등록하기 시작했다. 빈자리가 없으면 `null` 이다.
+  ///
+  /// 마치기 전까지는 `입력 중` 으로 자리만 차지한다.
+  String? beginAdding() {
+    if (state.isFull) return null;
+    final entry = CareProfileEntry(id: _newId(), pending: true);
+    state = CareProfiles(
+      entries: [...state.entries, entry],
+      selectedId: state.selectedId,
+    );
+    return entry.id;
+  }
+
+  /// 입력 중이던 분의 등록을 마치고 그 분으로 바꾼다. 자리는 그대로다.
+  void completeAdding(String id, EnteredBasicInfo info) {
+    if (state.entries.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id ? CareProfileEntry(id: id, basicInfo: info) : e,
+      ],
+      selectedId: id,
+    );
+  }
+
+  void select(String id) {
+    if (state.ready.every((e) => e.id != id)) return;
+    state = CareProfiles(entries: state.entries, selectedId: id);
+  }
+
+  /// 목록 순서대로 다음 어르신으로 바꾼다. 마지막이면 처음으로 돌아간다.
+  /// 입력 중인 분은 건너뛴다.
+  void selectNext() {
+    final ready = state.ready;
+    if (ready.isEmpty) return;
+    final index = ready.indexWhere((e) => e.id == state.selected?.id);
+    select(ready[(index + 1) % ready.length].id);
+  }
+
+  /// 슬롯 순서를 바꾼다. [newIndex] 는 옮긴 뒤의 자리다
+  /// (`ReorderableListView.onReorderItem` 과 같다).
+  void reorder(int oldIndex, int newIndex) {
+    final entries = [...state.entries];
+    entries.insert(newIndex, entries.removeAt(oldIndex));
+    state = CareProfiles(entries: entries, selectedId: state.selectedId);
+  }
+
+  /// 슬롯 하나를 비운다. 보고 있던 분을 지우면 남은 첫 분으로 바꾼다.
+  ///
+  /// 마지막 분도 지울 수 있다. 프로필 삭제는 계정 탈퇴가 아니므로 계정은
+  /// 그대로 두고 빈 목록이 된다.
+  ///
+  /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
+  void remove(String id) {
+    if (state.entries.every((e) => e.id != id)) return;
+    final entries = state.entries.where((e) => e.id != id).toList();
+    final selectedId = state.selectedId == id
+        ? entries.where((e) => !e.pending).firstOrNull?.id
+        : state.selectedId;
+    state = CareProfiles(entries: entries, selectedId: selectedId);
+    ref.read(_reportNoticesProvider.notifier).dismiss((
+      accountId: ref.read(sessionProvider)?.account.accountId,
+      profileId: id,
+    ));
+  }
+
+  String _newId() => 'local-${_nextId++}';
+}
+
+final careProfilesProvider =
+    NotifierProvider<CareProfilesNotifier, CareProfiles>(
+      CareProfilesNotifier.new,
+    );
+
+/// 전환 화면의 슬롯 하나에 보여줄 어르신이다.
+class CareProfileSummary {
+  const CareProfileSummary({
+    required this.id,
+    required this.name,
+    required this.gender,
+    required this.selected,
+    required this.pending,
+  });
+
+  final String id;
+
+  /// 입력 중인 분은 비어 있다. 이름은 입력 흐름이 들고 있다.
+  final String name;
+  final String gender;
+
+  /// 지금 보고 있는 어르신인지.
+  final bool selected;
+
+  /// 등록하다 마치지 않은 분인지.
+  final bool pending;
+}
+
+/// 등록한 어르신들을 슬롯 순서대로 요약한다.
+final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
+  ref,
+) async {
+  final profiles = ref.watch(careProfilesProvider);
+  return [
+    for (final entry in profiles.entries)
+      CareProfileSummary(
+        id: entry.id,
+        name: entry.basicInfo?.name ?? '',
+        gender: entry.basicInfo?.gender ?? '',
+        selected: entry.id == profiles.selected?.id,
+        pending: entry.pending,
+      ),
+  ];
+});
+
+/// 입력 흐름이 쓰는 목 데이터 묶음이다. 음성 입력 예시와 목 사진을 여기서
+/// 읽는다.
+///
+/// 첫 분을 입력하는 동안에는 고른 어르신이 없으므로 [profileProvider] 를 쓰지
+/// 않는다.
+final profileSampleProvider = FutureProvider<ProfileBundle>(
   (ref) => ref.watch(mockRepositoryProvider).loadProfile(),
 );
+
+/// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
+///
+/// 기본 정보는 입력한 값이다. 세부 정보는 아직 목 데이터 그대로다. 사진은 목
+/// 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
+/// 올린 사진으로 바뀐다.
+final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
+  final bundle = await ref.watch(profileSampleProvider.future);
+  final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
+  final entered = selected?.basicInfo;
+  if (selected == null || entered == null) return null;
+
+  final mock = bundle.profile;
+  return ProfileBundle(
+    profile: Profile(
+      profileId: selected.id,
+      name: entered.name,
+      gender: entered.gender,
+      birthDate: entered.birthDate,
+      ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
+      stage: entered.stage,
+      lifeFactIds: mock.lifeFactIds,
+      photoIds: mock.photoIds,
+    ),
+    lifeFacts: bundle.lifeFacts,
+    collectionStates: bundle.collectionStates,
+    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
+  );
+});
+
+/// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
+String ageRangeOf(String birthDate, DateTime today) {
+  final birth = DateTime.parse(birthDate);
+  var age = today.year - birth.year;
+  if (today.month < birth.month ||
+      (today.month == birth.month && today.day < birth.day)) {
+    age--;
+  }
+  return '${age ~/ 10 * 10}s';
+}
 
 final conversationCardsProvider = FutureProvider<List<ConversationCard>>(
   (ref) => ref.watch(mockRepositoryProvider).loadConversationCards(),
@@ -61,29 +312,117 @@ enum ReportNotice {
   ready,
 }
 
-class ReportNoticeNotifier extends Notifier<ReportNotice?> {
-  /// 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난 기다림의 결과는
-  /// 버린다.
-  int _round = 0;
+/// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
+///
+/// [accountId] 가 `null` 이면 서버 세션 없이 들어온 경우다(구글 설정이 없는
+/// 디버그 빌드의 임시 건너뛰기).
+typedef _NoticeKey = ({String? accountId, String profileId});
+
+/// 계정과 어르신마다의 리포트 알림이다.
+///
+/// 리포트를 기다리는 동안 다른 어르신으로 바꿔도, 도착은 기다리던 어르신에게
+/// 남는다. 계정도 마찬가지다. 로그아웃해도 지우지 않고, 다른 계정에는 보이지
+/// 않다가 그 계정으로 다시 들어오면 다시 보인다. 화면은 이것을 직접 보지 않고
+/// [reportNoticeProvider] 를 본다.
+///
+/// 앱이 켜져 있는 동안만 기억한다. 계정이 없어지면(탈퇴) 그 계정 몫을 지운다.
+class _ReportNoticesNotifier extends Notifier<Map<_NoticeKey, ReportNotice>> {
+  /// 자리마다 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난
+  /// 기다림의 결과는 버린다.
+  final _rounds = <_NoticeKey, int>{};
 
   bool _gone = false;
 
   @override
-  ReportNotice? build() {
+  Map<_NoticeKey, ReportNotice> build() {
     ref.onDispose(() => _gone = true);
-    return null;
+    return const {};
   }
+
+  int _nextRound(_NoticeKey key) => _rounds[key] = (_rounds[key] ?? 0) + 1;
+
+  void _set(_NoticeKey key, ReportNotice? notice) {
+    final next = Map<_NoticeKey, ReportNotice>.from(state);
+    notice == null ? next.remove(key) : next[key] = notice;
+    state = next;
+  }
+
+  void dismiss(_NoticeKey key) {
+    _nextRound(key);
+    _set(key, null);
+  }
+
+  void arrive(_NoticeKey key) {
+    _nextRound(key);
+    _set(key, ReportNotice.ready);
+  }
+
+  void startGenerating(_NoticeKey key) {
+    final round = _nextRound(key);
+    _set(key, ReportNotice.generating);
+
+    unawaited(
+      ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
+        // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
+        if (_gone || _rounds[key] != round) return;
+        _set(key, ReportNotice.ready);
+      }),
+    );
+  }
+
+  /// 계정 하나의 알림을 모두 지운다. 기다리던 리포트가 늦게 와도 버린다.
+  void forgetAccount(String accountId) {
+    final keys = {
+      ...state.keys,
+      ..._rounds.keys,
+    }.where((k) => k.accountId == accountId).toList();
+    for (final key in keys) {
+      _nextRound(key);
+    }
+    state = {
+      for (final e in state.entries)
+        if (e.key.accountId != accountId) e.key: e.value,
+    };
+  }
+}
+
+final _reportNoticesProvider =
+    NotifierProvider<_ReportNoticesNotifier, Map<_NoticeKey, ReportNotice>>(
+      _ReportNoticesNotifier.new,
+    );
+
+/// 지금 로그인한 계정과 보고 있는 어르신의 리포트 알림이다.
+///
+/// 다른 어르신의 리포트가 도착해도 이 어르신의 홈에는 띄우지 않는다. 다른
+/// 어르신의 알림을 어떻게 알릴지는 PM 확인 전이다. 다른 계정의 알림은 띄우지
+/// 않는다.
+class ReportNoticeNotifier extends Notifier<ReportNotice?> {
+  @override
+  ReportNotice? build() {
+    final accountId = ref.watch(
+      sessionProvider.select((s) => s?.account.accountId),
+    );
+    final profileId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.id),
+    );
+    if (profileId == null) return null;
+    final key = (accountId: accountId, profileId: profileId);
+    return ref.watch(_reportNoticesProvider.select((m) => m[key]));
+  }
+
+  _ReportNoticesNotifier get _notices =>
+      ref.read(_reportNoticesProvider.notifier);
 
   /// 변경 사항 확인을 마쳤다.
   void dismiss() {
-    _round++;
-    state = null;
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.dismiss(key);
   }
 
   /// 리포트가 만들어졌다.
   void arrive() {
-    _round++;
-    state = ReportNotice.ready;
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.arrive(key);
   }
 
   /// 리포트를 만들기 시작했다. 다 되면 스스로 도착으로 바뀐다.
@@ -92,18 +431,27 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   /// 맡기므로 서버를 붙일 때 `mockRepositoryProvider` 만 갈아 끼우면 된다
   /// (`ADR-005`). 기다림을 화면이 아니라 이 상태가 안고 있어, 사용자가 홈을
   /// 떠나 다른 화면을 보고 있어도 도착은 알려진다.
+  ///
+  /// 고른 어르신이 없으면 아무것도 하지 않는다. 면회는 어르신을 고른 뒤에만
+  /// 할 수 있다.
   void startGenerating() {
-    final round = ++_round;
-    state = ReportNotice.generating;
-
-    unawaited(
-      ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
-        // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
-        if (_gone || _round != round) return;
-        state = ReportNotice.ready;
-      }),
-    );
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.startGenerating(key);
   }
+
+  /// 탈퇴한 계정의 알림을 지운다. 세션이 지워진 뒤에 부르므로 계정을 받는다.
+  void forgetAccount(String accountId) => _notices.forgetAccount(accountId);
+}
+
+/// 부르는 순간의 계정과 어르신이다. 기다리는 동안 어르신이나 계정을 바꿔도
+/// 도착은 이 자리에 남는다. 고른 어르신이 없으면 `null` 이다.
+_NoticeKey? _currentNoticeKey(Ref ref) {
+  final profileId = ref.read(careProfilesProvider).selected?.id;
+  if (profileId == null) return null;
+  return (
+    accountId: ref.read(sessionProvider)?.account.accountId,
+    profileId: profileId,
+  );
 }
 
 final reportNoticeProvider =

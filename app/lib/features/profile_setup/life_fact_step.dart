@@ -2,20 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design/tokens.dart';
+import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
 import 'setup_steps.dart';
 import 'speech_input.dart';
 
 /// 생애 정보 한 항목의 상태.
 enum _Phase {
-  /// 답하는 방법을 고르기 전. 화면에 들어오면 여기서 시작한다.
+  /// 답하는 방법을 고르기 전. 적어 둔 답이 없으면 여기서 시작한다.
   choosing,
 
   /// 마이크를 누르기 전.
   idle,
 
-  /// 듣고 있는 중.
+  /// 듣고 있는 중. 보호자가 다 말했다고 알릴 때까지 이어진다.
   listening,
+
+  /// 녹음을 끝내고 글로 옮긴 결과를 기다리는 중.
+  transcribing,
 
   /// 알아들었다.
   heard,
@@ -37,10 +41,15 @@ class LifeFactStepView extends ConsumerStatefulWidget {
     required this.step,
     required this.onCaptured,
     required this.onCleared,
+    this.initialText,
     super.key,
   });
 
   final LifeFactStep step;
+
+  /// 이 항목에 이미 적어 둔 답. 입력하다 나갔다 돌아오거나 앞 단계로 돌아왔을
+  /// 때 들고 온다. 있으면 빈 화면 대신 이 답을 글 입력칸에 채워 보여준다.
+  final String? initialText;
 
   /// 문장을 얻었을 때. 직접 입력으로 얻은 것도 포함한다.
   final ValueChanged<String> onCaptured;
@@ -58,27 +67,63 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   String? _heardText;
   final _manual = TextEditingController();
 
+  /// 진행 중인 녹음. 녹음이 시작되기 전과 끝낸 뒤에는 없다.
+  SpeechRecording? _recording;
+
   /// 직접 입력에 음성 실패로 온 것인지, 사용자가 처음부터 고른 것인지.
   /// 따로 값을 두지 않고 음성 시도 횟수로 구분한다.
   bool get _cameFromFailure => _attempt >= 2;
 
   @override
+  void initState() {
+    super.initState();
+    // 말로 얻은 답인지 글로 얻은 답인지는 남지 않는다. 어느 쪽이든 고칠 수 있게
+    // 글 입력칸에 채운다. 값은 이미 저장본에 있으므로 다시 알리지 않는다.
+    final saved = widget.initialText?.trim() ?? '';
+    if (saved.isNotEmpty) {
+      _phase = _Phase.manualInput;
+      _manual.text = saved;
+    }
+  }
+
+  @override
   void dispose() {
+    // 듣는 중에 화면을 벗어나면 녹음을 남기지 않는다.
+    _recording?.cancel();
     _manual.dispose();
     super.dispose();
   }
 
-  Future<void> _listen() async {
+  Future<void> _startListening() async {
     setState(() {
       _phase = _Phase.listening;
       _attempt += 1;
     });
 
     final input = await ref.read(speechInputProvider.future);
-    final outcome = await input.listen(
+    final recording = await input.start(
       category: widget.step.category,
       attempt: _attempt,
     );
+    if (!mounted) {
+      await recording.cancel();
+      return;
+    }
+    setState(() => _recording = recording);
+  }
+
+  /// 녹음을 끝내고 글로 옮기는 동안 기다린다.
+  Future<void> _finishListening() async {
+    final recording = _recording;
+    // 녹음이 아직 시작되지 않았다.
+    if (recording == null) return;
+
+    setState(() {
+      _recording = null;
+      _phase = _Phase.transcribing;
+    });
+
+    final outcome = await recording.finish();
     if (!mounted) return;
 
     switch (outcome) {
@@ -181,7 +226,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
           _MicArea(
             phase: _phase,
             heardText: _heardText,
-            onTap: _phase == _Phase.listening ? null : _listen,
+            onStart: _startListening,
+            onFinish: _recording == null ? null : _finishListening,
             onRetry: _retry,
           ),
 
@@ -195,7 +241,9 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
             label: _cameFromFailure ? '다시 녹음하기' : '말로 답할게요',
             onTap: _startVoice,
           )
-        else if (!choosing && _phase != _Phase.listening)
+        else if (!choosing &&
+            _phase != _Phase.listening &&
+            _phase != _Phase.transcribing)
           _SwitchMethodButton(
             icon: Icons.chat_bubble_outline,
             label: '글로 답할게요',
@@ -329,19 +377,33 @@ class _MicArea extends StatelessWidget {
   const _MicArea({
     required this.phase,
     required this.heardText,
-    required this.onTap,
+    required this.onStart,
+    required this.onFinish,
     required this.onRetry,
   });
 
   final _Phase phase;
   final String? heardText;
-  final VoidCallback? onTap;
+  final VoidCallback onStart;
+
+  /// 녹음을 끝낸다. 녹음이 시작되기 전에는 없다.
+  final VoidCallback? onFinish;
+
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final failed = phase == _Phase.notHeardOnce;
     final heard = phase == _Phase.heard;
+    final listening = phase == _Phase.listening;
+    final transcribing = phase == _Phase.transcribing;
+
+    // 듣는 중에는 마이크를 다시 눌러도 녹음을 끝낸다. 옮기는 중에는 누를 수 없다.
+    final VoidCallback? onTap = transcribing
+        ? null
+        : listening
+        ? onFinish
+        : onStart;
 
     return Column(
       children: [
@@ -367,11 +429,15 @@ class _MicArea extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: failed ? AppColors.danger : AppColors.line,
-                        width: 2,
+                        color: failed
+                            ? AppColors.danger
+                            : listening
+                            ? AppColors.ink
+                            : AppColors.line,
+                        width: listening ? 3 : 2,
                       ),
                     ),
-                    child: phase == _Phase.listening
+                    child: transcribing
                         ? const Padding(
                             padding: EdgeInsets.all(36),
                             child: CircularProgressIndicator(strokeWidth: 3),
@@ -386,8 +452,15 @@ class _MicArea extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
 
-        if (phase == _Phase.listening)
-          const Text('듣고 있어요', style: AppTypography.body)
+        if (listening) ...[
+          const Text('듣고 있어요', style: AppTypography.body),
+          const SizedBox(height: AppSpacing.lg),
+          SecondaryButton(label: '다 말했어요', onPressed: onFinish, expand: false),
+        ] else if (transcribing) ...[
+          const Text('말씀을 글로 옮기고 있어요', style: AppTypography.body),
+          const SizedBox(height: AppSpacing.sm),
+          const Text('잠시만 기다려주세요', style: AppTypography.sub),
+        ]
         else if (failed)
           Text(
             '목소리를 잘 듣지 못했어요.',

@@ -15,6 +15,8 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 
+import 'sample_profile.dart';
+
 /// 리포트 도착 시점을 테스트가 직접 정하는 저장소다. `home_notice_test.dart` 와
 /// 같은 방법이다. 그대로 두면 `startGenerating` 이 실제 5초 뒤 도착을 기다려
 /// 테스트가 끝난 뒤에도 타이머가 남는다.
@@ -42,6 +44,7 @@ void main() {
 
     final container = ProviderContainer(
       overrides: [
+        withSampleProfile,
         if (repository != null)
           mockRepositoryProvider.overrideWithValue(repository),
       ],
