@@ -149,6 +149,21 @@ void main() {
       expect(controller.back(), isFalse, reason: '첫 단계에서는 흐름을 벗어난다');
     });
 
+    test('이름이 50자를 넘으면 다 채운 것으로 치지 않는다', () {
+      SetupDraft draftNamed(String name) => SetupDraft(
+        name: name,
+        gender: 'female',
+        birthYear: 1943,
+        birthMonth: 3,
+        birthDay: 12,
+        stage: ConditionStage.mildCognitiveImpairment,
+      );
+
+      expect(draftNamed('가' * 50).basicInfoFilled, isTrue);
+      expect(draftNamed('가' * 51).basicInfoFilled, isFalse);
+      expect(draftNamed('가' * 51).nameTooLong, isTrue);
+    });
+
     test('마치면 세부 정보도 그 어르신에게 남긴다', () {
       final container = makeContainer();
       final controller = container.read(setupControllerProvider.notifier);
