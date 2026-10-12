@@ -187,6 +187,20 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     );
   }
 
+  /// 등록을 마친 분의 기본 정보를 고친다. 세부 정보는 그대로 둔다.
+  void updateBasicInfo(String id, EnteredBasicInfo info) {
+    if (state.ready.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id
+              ? CareProfileEntry(id: id, basicInfo: info, details: e.details)
+              : e,
+      ],
+      selectedId: state.selectedId,
+    );
+  }
+
   void select(String id) {
     if (state.ready.every((e) => e.id != id)) return;
     state = CareProfiles(entries: state.entries, selectedId: id);

@@ -142,6 +142,8 @@ class _BodyState extends State<_Body> {
     );
   }
 
+  void _editBasic() => context.push(AppRoutes.profileEditBasic);
+
   /// 지금 보고 있는 어르신의 사진, 기본 정보, 세부 정보와 갤러리다.
   List<Widget> _elderSections(ProfileBundle bundle) {
     final profile = bundle.profile;
@@ -154,12 +156,21 @@ class _BodyState extends State<_Body> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('${profile.name} 어르신', style: AppTypography.sectionTitle),
-                const SizedBox(width: AppSpacing.sm),
-                const Icon(
-                  Icons.edit_outlined,
-                  size: 18,
-                  color: AppColors.textSub,
+                Flexible(
+                  child: Text(
+                    '${profile.name} 어르신',
+                    style: AppTypography.sectionTitle,
+                  ),
+                ),
+                // 이름도 기본 정보 수정에서 고친다.
+                IconButton(
+                  onPressed: _editBasic,
+                  tooltip: '이름 수정',
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                    color: AppColors.textSub,
+                  ),
                 ),
               ],
             ),
@@ -170,7 +181,7 @@ class _BodyState extends State<_Body> {
 
       _Section(
         title: '기본 정보',
-        onEdit: () {},
+        onEdit: _editBasic,
         child: Column(
           children: [
             _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
