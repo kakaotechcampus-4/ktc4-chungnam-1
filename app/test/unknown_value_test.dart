@@ -24,7 +24,7 @@ void main() {
     final parsers = <String, Object? Function(String)>{
       'ConditionStage': ConditionStage.parse,
       'CollectionStatus': CollectionStatus.parse,
-      'TagReviewStatus': TagReviewStatus.parse,
+      'PhotoAnalysisStatus': PhotoAnalysisStatus.parse,
       'ChangeReviewStatus': ChangeReviewStatus.parse,
       'SessionStatus': SessionStatus.parse,
       'ReportStatus': ReportStatus.parse,
@@ -90,16 +90,12 @@ void main() {
       expect(ChangeReviewStatus.parse('reverted'), ChangeReviewStatus.reverted);
     });
 
-    test('TagReviewStatus 는 reverted 를 읽지 않는다', () {
-      // 이미지 분석 후보에는 되돌릴 대상이 없다. 두 타입을 다시 합치면 깨진다.
-      expect(TagReviewStatus.parse('reverted'), isNull);
-    });
-
-    test('두 타입의 값 목록이 계약과 같다', () {
-      expect(TagReviewStatus.values.map((v) => v.name), [
+    test('값 목록이 계약과 같다', () {
+      expect(PhotoAnalysisStatus.values.map((v) => v.name), [
         'pending',
-        'accepted',
-        'rejected',
+        'processing',
+        'completed',
+        'failed',
       ]);
       expect(ChangeReviewStatus.values.map((v) => v.name), [
         'pending',
@@ -125,53 +121,70 @@ void main() {
   group('누락과 null 은 파싱을 멈춘다', () {
     // 계약이 필수라고 적은 값은 없으면 객체를 만들 수 없다. 빈 문자열이나
     // 기본값으로 채우면 어디서 잘못됐는지 모르는 채로 화면까지 흘러간다.
-    Map<String, dynamic> candidate() => {
-      'candidateId': 'candidate_001',
-      'text': '바다',
-      'reviewStatus': 'accepted',
+    Map<String, dynamic> photo() => {
+      'photoId': 'photo_001',
+      'profileId': 'profile_001',
+      'imageUrl': 'https://example.test/photo.jpg',
+      'imageUrlExpiresAt': '2026-08-21T12:35:00+09:00',
+      'analysisStatus': 'completed',
+      'description': '바닷가에서 찍은 사진이에요.',
+      'error': null,
+      'createdAt': '2026-08-21T12:20:00+09:00',
     };
 
     test('갖춰진 입력은 읽힌다', () {
-      final parsed = ImageTagCandidate.fromJson(candidate());
+      final parsed = ProfilePhoto.fromJson(photo());
 
-      expect(parsed.candidateId, 'candidate_001');
-      expect(parsed.reviewStatus, TagReviewStatus.accepted);
+      expect(parsed.photoId, 'photo_001');
+      expect(parsed.analysisStatus, PhotoAnalysisStatus.completed);
     });
 
     test('필수 문자열이 빠지면 던진다', () {
-      final json = candidate()..remove('candidateId');
+      final json = photo()..remove('photoId');
 
-      expect(() => ImageTagCandidate.fromJson(json), throwsA(isA<TypeError>()));
+      expect(() => ProfilePhoto.fromJson(json), throwsA(isA<TypeError>()));
     });
 
     test('필수 문자열이 null 이면 던진다', () {
-      final json = candidate()..['text'] = null;
+      final json = photo()..['imageUrl'] = null;
 
-      expect(() => ImageTagCandidate.fromJson(json), throwsA(isA<TypeError>()));
+      expect(() => ProfilePhoto.fromJson(json), throwsA(isA<TypeError>()));
     });
 
     test('상태 문자열이 빠지면 null 이 아니라 던진다', () {
       // parse 가 null 을 주는 것은 "값은 왔는데 계약에 없을 때" 뿐이다.
       // 키가 아예 없는 것은 데이터가 깨진 경우라 구분해서 다룬다.
-      final json = candidate()..remove('reviewStatus');
+      final json = photo()..remove('analysisStatus');
 
-      expect(() => ImageTagCandidate.fromJson(json), throwsA(isA<TypeError>()));
+      expect(() => ProfilePhoto.fromJson(json), throwsA(isA<TypeError>()));
     });
 
     test('상태 문자열이 null 이면 던진다', () {
-      final json = candidate()..['reviewStatus'] = null;
+      final json = photo()..['analysisStatus'] = null;
 
-      expect(() => ImageTagCandidate.fromJson(json), throwsA(isA<TypeError>()));
+      expect(() => ProfilePhoto.fromJson(json), throwsA(isA<TypeError>()));
     });
 
     test('지원하지 않는 값은 던지지 않고 null 로 담긴다', () {
       // 앞의 네 경우와 달리 나머지 필드는 쓸 수 있다. 리포트 하나를 통째로
       // 못 여는 대신 그 값만 "확인 필요" 로 보여주기로 한 결정이다.
-      final json = candidate()..['reviewStatus'] = 'reverted';
-      final parsed = ImageTagCandidate.fromJson(json);
+      final json = photo()..['analysisStatus'] = 'analyzing';
+      final parsed = ProfilePhoto.fromJson(json);
 
-      expect(parsed.reviewStatus, isNull);
-      expect(parsed.text, '바다');
+      expect(parsed.analysisStatus, isNull);
+      expect(parsed.imageUrl, 'https://example.test/photo.jpg');
+    });
+
+    test('실패한 사진은 오류 코드를 담고 설명은 없다', () {
+      final json = photo()
+        ..['analysisStatus'] = 'failed'
+        ..['description'] = null
+        ..['error'] = {'errorCode': 'AI_SERVER_ERROR'};
+      final parsed = ProfilePhoto.fromJson(json);
+
+      expect(parsed.analysisStatus, PhotoAnalysisStatus.failed);
+      expect(parsed.description, isNull);
+      expect(parsed.errorCode, 'AI_SERVER_ERROR');
     });
 
     test('없어도 되는 값은 null 로 담긴다', () {
