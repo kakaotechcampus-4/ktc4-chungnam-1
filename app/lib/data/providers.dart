@@ -71,6 +71,15 @@ class EnteredDetails {
   final String? hometown;
   final String? hobby;
   final String? family;
+
+  /// [category] 는 `occupation`, `hometown`, `hobby`, `family` 중 하나다.
+  String? of(String category) => switch (category) {
+    'occupation' => occupation,
+    'hometown' => hometown,
+    'hobby' => hobby,
+    'family' => family,
+    _ => null,
+  };
 }
 
 /// 보호자가 돌보는 어르신 한 분이다.
@@ -195,6 +204,20 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
         for (final e in state.entries)
           e.id == id
               ? CareProfileEntry(id: id, basicInfo: info, details: e.details)
+              : e,
+      ],
+      selectedId: state.selectedId,
+    );
+  }
+
+  /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
+  void updateDetails(String id, EnteredDetails details) {
+    if (state.ready.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id
+              ? CareProfileEntry(id: id, basicInfo: e.basicInfo, details: details)
               : e,
       ],
       selectedId: state.selectedId,

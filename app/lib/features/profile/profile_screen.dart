@@ -200,7 +200,7 @@ class _BodyState extends State<_Body> {
 
       _Section(
         title: '세부 정보',
-        onEdit: () {},
+        onEdit: () => context.push(AppRoutes.profileEditDetails),
         child: _Details(profile: profile),
       ),
       // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
@@ -417,7 +417,7 @@ class _Details extends StatelessWidget {
     final filled = [
       for (final step in lifeFactSteps)
         if (profile.detailOf(step.category) case final text?)
-          (category: step.category, text: text),
+          (label: step.label, text: text),
     ];
     if (filled.isEmpty) {
       return const EmptyStateView(
@@ -430,7 +430,7 @@ class _Details extends StatelessWidget {
         for (final detail in filled)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _DetailRow(category: detail.category, text: detail.text),
+            child: _DetailRow(label: detail.label, text: detail.text),
           ),
       ],
     );
@@ -438,9 +438,9 @@ class _Details extends StatelessWidget {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.category, required this.text});
+  const _DetailRow({required this.label, required this.text});
 
-  final String category;
+  final String label;
   final String text;
 
   @override
@@ -449,7 +449,7 @@ class _DetailRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppChip(detailLabelOf(category), tone: ChipTone.weak),
+          AppChip(label, tone: ChipTone.weak),
           const SizedBox(height: AppSpacing.md),
           Text(text, style: AppTypography.body),
         ],
@@ -457,15 +457,6 @@ class _DetailRow extends StatelessWidget {
     );
   }
 }
-
-/// 세부 정보 항목의 이름. 키는 `Profile` 의 필드 이름과 같다.
-String detailLabelOf(String category) => switch (category) {
-  'occupation' => '하시던 일',
-  'hometown' => '고향',
-  'hobby' => '취미',
-  'family' => '가족',
-  _ => category,
-};
 
 /// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.
 class _ConsentRow extends StatelessWidget {

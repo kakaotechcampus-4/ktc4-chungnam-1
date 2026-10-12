@@ -70,6 +70,10 @@ abstract final class AppRoutes {
   /// 피그마 설계 없음.
   static const profileEditBasic = '/profile/edit/basic';
 
+  /// 지금 보고 있는 어르신의 세부 정보 네 항목 수정. 프로필 설정에서 들어간다.
+  /// 피그마 설계 없음.
+  static const profileEditDetails = '/profile/edit/details';
+
   /// 함께하는 소중한 분. 홈 상단의 어르신 알약을 누르면 들어온다. 피그마 설계 없음.
   static const profileSwitch = '/profiles';
 
