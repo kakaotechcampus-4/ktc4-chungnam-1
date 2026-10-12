@@ -229,7 +229,7 @@ def test_patch_changes_only_the_sent_fields(migrated_database_url):
     assert unchanged.json() == body
 
 
-def test_patch_without_symptom_note_clears_it(migrated_database_url):
+def test_patch_without_symptom_note_keeps_it(migrated_database_url):
     caregiver = DbApi(migrated_database_url).create_account()
     created = caregiver.create_profile(
         condition={"stage": "unknown", "symptomNote": "처음 메모"}
@@ -241,10 +241,27 @@ def test_patch_without_symptom_note_clears_it(migrated_database_url):
         json={"condition": {"stage": "mildDementia"}},
     )
 
+    assert response.status_code == 200
     assert response.json()["condition"] == {
         "stage": "mildDementia",
-        "symptomNote": None,
+        "symptomNote": "처음 메모",
     }
+
+
+def test_patch_with_null_symptom_note_clears_it(migrated_database_url):
+    caregiver = DbApi(migrated_database_url).create_account()
+    created = caregiver.create_profile(
+        condition={"stage": "unknown", "symptomNote": "처음 메모"}
+    )
+
+    response = caregiver.call(
+        "PATCH",
+        f"/api/v1/profiles/{created['profileId']}",
+        json={"condition": {"stage": "unknown", "symptomNote": None}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["condition"] == {"stage": "unknown", "symptomNote": None}
 
 
 def test_patch_rejects_blank_details_and_cleared_basic_fields(migrated_database_url):

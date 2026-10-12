@@ -48,7 +48,8 @@ class ProfileCreateRequest(ApiModel):
 class ProfileUpdateRequest(ApiModel):
     """보낸 필드만 바꾼다. 세부 정보 네 항목은 `null`을 보내면 지운다.
 
-    `condition`은 한 덩어리로 바꾼다. `symptomNote`를 빼고 보내면 `null`로 저장한다.
+    `condition`의 `stage`는 항상 보낸다. `symptomNote`를 빼고 보내면 저장된 메모를 그대로
+    두고, `null`을 보낼 때만 지운다.
     """
 
     name: ProfileName | None = None
@@ -75,7 +76,8 @@ class ProfileUpdateRequest(ApiModel):
             changes["birth_date"] = self.birth_date
         if "condition" in self.model_fields_set and self.condition is not None:
             changes["condition_stage"] = self.condition.stage
-            changes["symptom_note"] = self.condition.symptom_note
+            if "symptom_note" in self.condition.model_fields_set:
+                changes["symptom_note"] = self.condition.symptom_note
         return changes
 
 
