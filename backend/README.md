@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정은 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
-MVP의 STT와 VLM은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)에 따라 온프레미스 GPU 1대에서 처리하고 데이터 관리도 서버 중심으로 전환한다. 현재 RTX 3060 Ti는 개발용이며 시연 장비의 사양과 처리 성능은 추가 실험 후 정한다. 운영 방식과 데이터별 저장 계약은 미정이며, 이 FastAPI 골격을 운영 배포 구조로 확정한 것은 아니다.
+STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. RTX 3060 Ti는 개발용이며 시연 장비 사양은 실험 후 정한다. 실제 사용자 자료의 외부 전송 조건은 별도 확인한다.
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -367,7 +367,7 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 - S3 오류는 `IMAGE_STORAGE_UNAVAILABLE`(503, 재시도 가능)이다. 객체 키와 S3 오류 본문은 응답과 로그에 넣지 않는다.
 - 버킷이 설정되지 않았으면 사진이 필요한 순간에만 `IMAGE_STORAGE_NOT_CONFIGURED`(503)로 거절한다. 사진이 없는 프로필 조회는 그대로 동작한다.
 - AI 서버에 넘기는 8-4의 `downloadUrl`도 같은 `create_download`로 만든다.
-- 사진의 EXIF(촬영 위치 등) 제거 여부는 정하지 않았다. 메타데이터를 AI 보조 입력으로 쓸지와 함께 정한다.
+- 사진 메타데이터는 AI 분석과 주제 추천 입력에서 제외한다. 사진 파일 자체에서 EXIF를 제거하는 처리와 저장 정책은 별도 사항이며, 이 미결 항목을 메타데이터 입력 재허용으로 해석하지 않는다.
 - DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣지만, 대기열을 처리해 S3 객체를 지우는 코드는 아직 없다.
 
 ### 보관 기준과 후속 작업

@@ -24,6 +24,17 @@ final googleAuthenticatorProvider = Provider<GoogleAuthenticator>(
   (ref) => GoogleSignInAuthenticator(),
 );
 
+/// 구글 로그인 설정이 없을 때 로그인 버튼을 누르면 바로 환자 정보 입력으로 넘길지.
+///
+/// **임시 장치다.** 목 로그인을 지운 뒤로, BE 의 구글 클라이언트 ID 와 SHA-1 등록이
+/// 준비되기 전에는 로그인 다음 화면을 확인할 길이 없어 둔다. 디버그 빌드에서
+/// `SAEROK_GOOGLE_SERVER_CLIENT_ID` 가 비어 있을 때만 켜지고 릴리스 빌드에서는
+/// 늘 꺼진다. 서버 세션을 만들지 않으므로 로그아웃과 탈퇴는 동작하지 않는다.
+/// 구글 로그인 설정이 준비되면 지운다.
+final skipGoogleLoginProvider = Provider<bool>(
+  (ref) => kDebugMode && googleServerClientId.isEmpty,
+);
+
 final sessionStoreProvider = Provider<SessionStore>(
   (ref) => SecureSessionStore(),
 );

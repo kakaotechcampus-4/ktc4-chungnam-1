@@ -1,4 +1,4 @@
-/// 회원가입 화면에서 받는 동의 항목이다.
+/// 구글 로그인 뒤 동의 화면과 프로필 설정에서 받는 동의 항목이다.
 ///
 /// 항목의 키는 `docs/architecture/data-contracts.md` 의 `Account.consent` 를,
 /// 문구는 `docs/legal/consent-draft.md` 를 그대로 따른다. **여기서 문구를 새로

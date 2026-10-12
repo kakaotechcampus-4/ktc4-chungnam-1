@@ -6,7 +6,6 @@ import '../data/auth_api.dart';
 import '../data/providers.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/login_screen.dart';
-import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
@@ -41,10 +40,6 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.signup,
-        builder: (context, state) => const SignupScreen(),
       ),
       GoRoute(
         path: AppRoutes.googleConsent,
