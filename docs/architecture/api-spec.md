@@ -330,6 +330,7 @@
 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
+- `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
 
 응답 `200` — [Profile](#profile)
 

@@ -269,6 +269,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
+- `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
 
 응답 `200` — [Profile](#profile)
 
@@ -279,6 +280,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - 보낸 필드만 바꾼다(pydantic `model_fields_set`로 구분). 세부 정보 네 항목은 `null`이면 지운다. 빈 문자열은 422이며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
+- `condition.symptomNote`도 `condition.model_fields_set`로 구분해, 뺐으면 `symptom_note`를 바꾸지 않는다.
 
 <br>
 
