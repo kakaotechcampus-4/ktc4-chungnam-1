@@ -9,6 +9,7 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/profile/profile_basic_edit_screen.dart';
+import 'package:saerok/features/profile/profile_details_edit_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
 
 import 'sample_profile.dart';
@@ -61,6 +62,10 @@ Future<ProviderContainer> _open(
       GoRoute(
         path: AppRoutes.profileEditBasic,
         builder: (context, state) => const ProfileBasicEditScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileEditDetails,
+        builder: (context, state) => const ProfileDetailsEditScreen(),
       ),
     ],
   );
@@ -194,6 +199,76 @@ void main() {
       await tester.pump();
       expect(find.text('이름은 50자까지 적을 수 있어요.'), findsNothing);
       expect(enabled(tester), isTrue);
+    });
+  });
+
+  group('세부 정보 수정', () {
+    Finder saveButton() => find.widgetWithText(FilledButton, '저장하기');
+
+    bool enabled(WidgetTester tester) =>
+        tester.widget<FilledButton>(saveButton()).onPressed != null;
+
+    /// 항목 이름으로 그 칸을 찾는다.
+    Finder field(String label) => find.descendant(
+      of: find.ancestor(of: find.text(label), matching: find.byType(Column)).first,
+      matching: find.byType(TextField),
+    );
+
+    Future<void> openEdit(WidgetTester tester) async {
+      // 기본 정보, 세부 정보, 갤러리 순서다.
+      await tester.tap(find.text('수정하기').at(1));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('지금 값이 채워진 채로 열리고 고치기 전에는 저장할 수 없다', (tester) async {
+      await _open(tester, withDetails: true);
+      await openEdit(tester);
+
+      expect(find.text('세부 정보 수정'), findsOneWidget);
+      expect(find.text('비워 두면 그 항목을 지워요.'), findsOneWidget);
+      String textOf(String label) =>
+          tester.widget<TextField>(field(label)).controller!.text;
+      expect(textOf('하시던 일'), '재봉 일을 오래 하셨어요.');
+      expect(textOf('가족'), '자녀는 2남 1녀를 두셨어요.');
+      expect(textOf('고향'), isEmpty, reason: '적지 않은 항목은 빈칸이다');
+      expect(enabled(tester), isFalse);
+
+      // 앞뒤 공백만 더한 것은 바뀐 것이 아니다.
+      await tester.enterText(field('하시던 일'), '  재봉 일을 오래 하셨어요.  ');
+      await tester.pump();
+      expect(enabled(tester), isFalse);
+    });
+
+    testWidgets('고치고 비운 대로 저장하고 기본 정보는 그대로다', (tester) async {
+      final container = await _open(tester, withDetails: true);
+      await openEdit(tester);
+
+      await tester.enterText(field('하시던 일'), '동인천에서 수선집을 하셨어요.');
+      await tester.pump();
+      await tester.enterText(field('취미'), '노래 부르기를 좋아하셨어요.');
+      await tester.pump();
+      await tester.enterText(field('가족'), '');
+      await tester.pump();
+      expect(enabled(tester), isTrue);
+
+      await tester.tap(saveButton());
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+      }
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('세부 정보를 저장했어요.'), findsOneWidget);
+      expect(find.text('동인천에서 수선집을 하셨어요.'), findsOneWidget);
+      expect(find.text('노래 부르기를 좋아하셨어요.'), findsOneWidget);
+      expect(find.text('가족'), findsNothing, reason: '비운 항목은 지운다');
+
+      final entry = container.read(careProfilesProvider).selected!;
+      expect(entry.details.family, isNull, reason: '빈 문자열이 아니라 null 이다');
+      expect(entry.details.hometown, isNull);
+      expect(entry.basicInfo!.name, sampleBasicInfo.name);
     });
   });
 }
