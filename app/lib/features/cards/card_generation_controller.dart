@@ -12,8 +12,10 @@ final cardPollIntervalProvider = Provider<Duration>(
 
 /// 카드 화면에 들어와서 쓸 묶음이 생길 때까지의 흐름(API 4절).
 ///
-/// 홈의 `오늘의 대화카드 받기` 를 눌러야 생성을 시작한다(BE 리더 확인,
-/// 2026-10-13). 그래서 화면에 들어올 때 상태가
+/// 첫 카드는 온보딩 `마치기` 에서 생성을 요청한다(API 4-1, 2026-10-14 결정).
+/// 서버가 카드 생성 요청이 있어야 등록을 마친 것(`completed`)으로 보기 때문이다.
+/// 카드 화면은 그 요청이 실패했거나 지난 묶음을 다 쓴 경우를 위해, 들어올 때
+/// 상태가
 /// - `none`, `failed` 면 4-1 로 생성을 요청하고,
 /// - `running` 이면 [cardPollIntervalProvider] 마다 4-2 로 다시 묻고,
 /// - `ready`, `inVisit` 이면 그 상태로 끝낸다.
@@ -26,9 +28,7 @@ final cardPollIntervalProvider = Provider<Duration>(
 class CardGenerationController extends AsyncNotifier<CardGenerationStatus> {
   @override
   Future<CardGenerationStatus> build() async {
-    final profileId = ref.watch(
-      careProfilesProvider.select((p) => p.selected?.id),
-    );
+    final profileId = await ref.watch(serverProfileIdProvider.future);
     if (profileId == null) throw StateError('고른 어르신이 없다');
     final api = ref.watch(cardApiProvider);
 

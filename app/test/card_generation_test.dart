@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/card_api.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
@@ -152,6 +153,43 @@ void main() {
 
     expect(askedWhileOpen, greaterThan(1));
     expect(api.calls, hasLength(askedWhileOpen));
+  });
+  test('서버에는 앱 안의 ID 가 아니라 프로필의 profileId 를 보낸다', () async {
+    // 이번 실행에서 새로 등록한 분은 앱 안의 ID 와 서버가 준 ID 가 다르다.
+    final api = FakeCardApi(statuses: [_ready]);
+    final container = ProviderContainer(
+      overrides: [
+        withSampleProfile,
+        cardApiProvider.overrideWithValue(api),
+        profileProvider.overrideWith((ref) async {
+          final bundle = await const MockRepository().loadProfile();
+          final p = bundle.profile;
+          return ProfileBundle(
+            profile: Profile(
+              profileId: 'server-profile-1',
+              name: p.name,
+              gender: p.gender,
+              birthDate: p.birthDate,
+              ageRange: p.ageRange,
+              stage: p.stage,
+              lifeFactIds: p.lifeFactIds,
+              photoIds: p.photoIds,
+            ),
+            lifeFacts: bundle.lifeFacts,
+            collectionStates: bundle.collectionStates,
+            photos: bundle.photos,
+          );
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(cardGenerationProvider, (_, _) {});
+
+    await container.read(cardGenerationProvider.future);
+    await container.read(currentCardSetProvider.future);
+
+    expect(api.profileIds, everyElement('server-profile-1'));
+    expect(api.profileIds, isNot(contains(sampleProfileId)));
   });
 }
 

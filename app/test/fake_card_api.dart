@@ -29,21 +29,27 @@ class FakeCardApi implements CardApi {
 
   final calls = <String>[];
 
+  /// 요청에 쓴 프로필 ID.
+  final profileIds = <String>[];
+
   @override
   Future<CardGenerationStatus> requestGeneration(String profileId) async {
     calls.add('request');
+    profileIds.add(profileId);
     return onRequest;
   }
 
   @override
   Future<CardGenerationStatus> status(String profileId) async {
     calls.add('status');
+    profileIds.add(profileId);
     return _statuses.length > 1 ? _statuses.removeAt(0) : _statuses.single;
   }
 
   @override
   Future<CardSet> current(String profileId) async {
     calls.add('current');
+    profileIds.add(profileId);
     return const MockRepository().loadCardSet();
   }
 }
