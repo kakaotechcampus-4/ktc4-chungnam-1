@@ -363,6 +363,12 @@ PR #71이 머지되면 별도 PR로 붙인다. 흐름은 ADR-008을 따른다.
 | `ApiUnexpectedResponseFailure` | 성공 응답이 객체가 아니다. 성공으로 넘기지 않는다 |
 | `ApiSignedOutFailure` | 로그인 세션이 없다. 요청을 보내지 않는다 |
 
+API별 요청은 이 틀 위에 따로 둔다.
+
+| 파일 | API |
+| --- | --- |
+| [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다 |
+
 세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 쓰는 도중 세션이 만료되면 서버의 `401`을 그대로 돌려주며, 자동 재인증은 아직 붙이지 않았다(위 "사용 중 세션 만료"). 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
 
 ## 담당과 남은 연동
