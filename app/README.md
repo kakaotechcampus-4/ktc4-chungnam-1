@@ -356,6 +356,19 @@ PR #71이 머지되면 별도 PR로 붙인다. 흐름은 ADR-008을 따른다.
   PM 확인이 필요하다.
 - 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스.
 
+## 서버 요청 공통 틀
+
+로그인한 뒤 부르는 공개 API는 [api_client.dart](lib/data/api_client.dart)의 `ApiClient`로 보낸다. 서버 주소(`SAEROK_API_BASE_URL`)와 `Authorization` 헤더를 붙이고, 응답을 JSON 객체로 읽는다. 각 API는 경로와 본문만 넘긴다. `get`, `post`, `patch`, 파일 업로드용 `postMultipart`와 `delete`가 있으며, `delete`만 빈 `204` 응답을 성공으로 본다(2-8). 로그인 전 API는 `AuthApi`가 따로 맡는다.
+
+| 실패 | 언제 |
+| --- | --- |
+| `ApiServerFailure` | 서버가 공통 `ErrorResponse`로 거절했다. `errorCode`를 읽지 못하면 `null`로 두고 지어내지 않는다 |
+| `ApiNetworkFailure` | 연결 실패나 시간 초과. JSON 요청은 15초, 파일 업로드는 5분 |
+| `ApiUnexpectedResponseFailure` | 성공 응답이 객체가 아니다. 성공으로 넘기지 않는다 |
+| `ApiSignedOutFailure` | 로그인 세션이 없다. 요청을 보내지 않는다 |
+
+세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 쓰는 도중 세션이 만료되면 서버의 `401`을 그대로 돌려주며, 자동 재인증은 아직 붙이지 않았다(위 "사용 중 세션 만료"). 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
+
 ## 담당과 남은 연동
 
 | 영역 | FE 작업 | 함께 정할 경계 |
