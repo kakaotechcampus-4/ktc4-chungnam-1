@@ -217,10 +217,11 @@ class _CardTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(card.topic.title, style: AppTypography.bodyStrong),
+                    Text(card.cardTitle, style: AppTypography.bodyStrong),
                     const SizedBox(height: AppSpacing.sm),
-                    // 이 카드가 어떤 주제인지 알려주는 설명이다.
-                    Text(card.topic.description, style: AppTypography.sub),
+                    // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는
+                    // 여러 면회에 걸친 묶음이라 고르는 화면에는 두지 않는다.
+                    Text(card.description, style: AppTypography.sub),
                   ],
                 ),
               ),

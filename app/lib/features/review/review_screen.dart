@@ -105,7 +105,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                         children: [
                           for (final card in list) ...[
                             _CardReactionRow(
-                              title: card.topic.title,
+                              title: card.cardTitle,
                               answered: draft.cardAnswers.containsKey(
                                 card.cardId,
                               ),

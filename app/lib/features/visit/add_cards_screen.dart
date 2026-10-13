@@ -160,9 +160,9 @@ class _AddCardTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(card.topic.title, style: AppTypography.bodyStrong),
+                    Text(card.cardTitle, style: AppTypography.bodyStrong),
                     const SizedBox(height: AppSpacing.sm),
-                    Text(card.topic.description, style: AppTypography.sub),
+                    Text(card.description, style: AppTypography.sub),
                   ],
                 ),
               ),
