@@ -97,7 +97,9 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.visitReview,
-        builder: (context, state) => const _NeedsProfile(child: ReviewScreen()),
+        builder: (context, state) => _NeedsProfile(
+          child: ReviewScreen(sessionId: state.uri.queryParameters['session']),
+        ),
       ),
       GoRoute(
         path: AppRoutes.visitUpload,

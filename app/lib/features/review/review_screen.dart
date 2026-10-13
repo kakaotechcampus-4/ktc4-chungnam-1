@@ -17,8 +17,13 @@ import 'submission_controller.dart';
 ///
 /// 피그마의 네 물음을 계약의 `CaregiverEvaluation` 필드에 그대로 맞춘다.
 /// Q1 대화 만족도, Q2 어르신 반응, Q3 카드별 평가, Q4 남기고 싶은 말.
+///
+/// [sessionId] 가 있으면 앱을 다시 켠 뒤 홈 배너의 `평가 이어서 하기` 로 들어온
+/// 경우다(`/visit/review?session=<회차 ID>`). 없으면 지금 막 마친 면회다.
 class ReviewScreen extends ConsumerStatefulWidget {
-  const ReviewScreen({super.key});
+  const ReviewScreen({this.sessionId, super.key});
+
+  final String? sessionId;
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -35,7 +40,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   /// 서버에 남긴 뒤에만 넘어간다. 실패하면 이 화면에 남아 다시 누르게 한다.
   Future<void> _submit() async {
-    final sent = await ref.read(submissionProvider.notifier).submit();
+    final sent = await ref
+        .read(submissionProvider.notifier)
+        .submit(resumeSessionId: widget.sessionId);
     if (!sent || !mounted) return;
 
     // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
@@ -65,9 +72,35 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   Widget build(BuildContext context) {
     final draft = ref.watch(reviewControllerProvider);
     final controller = ref.read(reviewControllerProvider.notifier);
-    final cards = ref.watch(reviewCardsProvider);
+    final target = ref.watch(reviewTargetProvider(widget.sessionId));
+    final cards = target.whenData(
+      (t) => t?.cards ?? const <ConversationCard>[],
+    );
     final submission = ref.watch(submissionProvider);
     final failure = submission.failure;
+
+    // 이어서 하는 회차를 찾는 동안은 물음을 보여주지 않는다. 찾지 못하면 답을
+    // 받아 놓고 버리게 된다.
+    if (widget.sessionId != null && !target.hasValue && !target.hasError) {
+      return const Scaffold(
+        appBar: AppTopBar(),
+        body: LoadingView(message: '면회 기록을 불러오고 있어요'),
+      );
+    }
+
+    // 이어서 하려던 회차가 지금 묶음의 것이 아니다. 평가를 이미 마쳤거나 다른
+    // 회차로 넘어간 경우라 소감을 받지 않는다.
+    if (target case AsyncData(value: null) when widget.sessionId != null) {
+      return Scaffold(
+        appBar: const AppTopBar(),
+        body: EmptyStateView(
+          message: '이어서 할 면회를 찾을 수 없어요.\n홈에서 다시 확인해 주세요.',
+          icon: Icons.event_busy_outlined,
+          actionLabel: '홈으로',
+          onAction: () => context.go(AppRoutes.home),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: const AppTopBar(),

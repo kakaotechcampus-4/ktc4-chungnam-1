@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
+import '../../data/models.dart';
 import '../../data/visit_api.dart';
 import '../visit/pending_uploads.dart';
 import '../visit/visit_controller.dart';
@@ -63,34 +64,55 @@ class SubmissionState {
 /// 다시 누를 때 녹음만 보낸다. 서버가 녹음을 받으면 기기의 파일을 지운다.
 /// 회차가 바뀌면 처음부터 다시 시작한다.
 class SubmissionController extends Notifier<SubmissionState> {
+  /// 지금 상태가 가리키는 회차. 다른 회차를 보내면 처음부터 시작한다.
+  String? _sessionId;
+
   @override
   SubmissionState build() {
     ref.watch(visitControllerProvider.select((v) => v.value?.sessionId));
+    _sessionId = null;
     return const SubmissionState();
   }
 
   /// 보낼 것을 모두 보냈으면 `true` 다. 실패하면 [SubmissionState.failure] 를
   /// 남기고 `false` 다.
-  Future<bool> submit() async {
+  ///
+  /// [resumeSessionId] 는 앱을 다시 켠 뒤 이어서 하는 회차다. 없으면 지금 막
+  /// 마친 면회다([reviewTargetProvider]).
+  Future<bool> submit({String? resumeSessionId}) async {
     if (state.sending) return false;
 
-    final visit = ref.read(visitControllerProvider).value;
-    final sessionId = visit?.sessionId;
-    if (visit == null || sessionId == null) {
+    final ReviewTarget? target;
+    try {
+      target = await ref.read(reviewTargetProvider(resumeSessionId).future);
+    } on ApiNetworkFailure {
+      _fail(SubmissionFailure.network);
+      return false;
+    } on ApiFailure {
+      _fail(SubmissionFailure.server);
+      return false;
+    }
+    if (!ref.mounted) return false;
+    final sessionId = target?.sessionId;
+    if (target == null || sessionId == null) {
       _fail(SubmissionFailure.noSession);
       return false;
+    }
+    if (_sessionId != sessionId) {
+      _sessionId = sessionId;
+      state = const SubmissionState();
     }
 
     state = state.copyWith(sending: true);
     try {
       if (!state.evaluationSaved) {
-        await _saveEvaluation(sessionId);
+        await _saveEvaluation(sessionId, target.cards);
         if (!ref.mounted) return false;
         state = state.copyWith(evaluationSaved: true);
       }
 
-      final audioPath = visit.recordingPath;
-      final participantCount = visit.participantCount;
+      final audioPath = target.audioPath;
+      final participantCount = target.participantCount;
       if (audioPath == null || participantCount == null) {
         _fail(SubmissionFailure.noRecording);
         return false;
@@ -127,8 +149,10 @@ class SubmissionController extends Notifier<SubmissionState> {
     }
   }
 
-  Future<void> _saveEvaluation(String sessionId) async {
-    final cards = await ref.read(reviewCardsProvider.future);
+  Future<void> _saveEvaluation(
+    String sessionId,
+    List<ConversationCard> cards,
+  ) async {
     final evaluation = ref
         .read(reviewControllerProvider.notifier)
         .toSubmission(cards: cards);
