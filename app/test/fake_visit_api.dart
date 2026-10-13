@@ -5,13 +5,23 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/visit_api.dart';
 
 class FakeVisitApi implements VisitApi {
-  FakeVisitApi({this.failCreate = false, this.failAdd = false});
+  FakeVisitApi({
+    this.failCreate = false,
+    this.failAdd = false,
+    this.failEvaluation = false,
+  });
 
   /// 5-1 이 연결 실패로 끝나게 한다.
   bool failCreate;
 
   /// 5-3 이 연결 실패로 끝나게 한다.
   bool failAdd;
+
+  /// 6-1 이 연결 실패로 끝나게 한다.
+  bool failEvaluation;
+
+  /// 6-1 로 저장한 평가.
+  ({String sessionId, EvaluationSubmission evaluation})? evaluated;
 
   final calls = <String>[];
 
@@ -43,6 +53,16 @@ class FakeVisitApi implements VisitApi {
       ...?created?.selectedCardIds,
       ...added,
     ]);
+  }
+
+  @override
+  Future<void> submitEvaluation(
+    String sessionId,
+    EvaluationSubmission evaluation,
+  ) async {
+    calls.add('evaluation');
+    if (failEvaluation) throw const ApiNetworkFailure();
+    evaluated = (sessionId: sessionId, evaluation: evaluation);
   }
 
   static VisitSession _session(String setId, List<String> cardIds) =>

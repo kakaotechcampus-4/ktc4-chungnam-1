@@ -86,11 +86,7 @@ void main() {
       );
       controller.setCardNotUsed(three[1].cardId);
 
-      final evaluation = controller.toEvaluation(
-        reviewId: 'review_demo_001',
-        sessionId: 'session_demo_001',
-        cards: three,
-      )!;
+      final evaluation = controller.toSubmission(cards: three)!;
 
       expect(
         evaluation.cardReviews.map((r) => r.cardId),
@@ -122,11 +118,7 @@ void main() {
       controller.setCardNotUsed(one.first.cardId);
       controller.setCardReaction(one.first.cardId, CaregiverReaction.negative);
 
-      final evaluation = controller.toEvaluation(
-        reviewId: 'review_demo_001',
-        sessionId: 'session_demo_001',
-        cards: one,
-      )!;
+      final evaluation = controller.toSubmission(cards: one)!;
 
       expect(evaluation.cardReviews.single.wasUsed, isTrue);
       expect(
@@ -143,11 +135,7 @@ void main() {
       controller.setReaction(CareRecipientReaction.calm);
       controller.setFreeNote('   ');
 
-      final evaluation = controller.toEvaluation(
-        reviewId: 'r',
-        sessionId: 's',
-        cards: const [],
-      )!;
+      final evaluation = controller.toSubmission(cards: const [])!;
 
       expect(evaluation.freeNote, isNull);
     });
@@ -176,7 +164,7 @@ void main() {
       final controller = container.read(reviewControllerProvider.notifier);
 
       expect(
-        controller.toEvaluation(reviewId: 'r', sessionId: 's', cards: const []),
+        controller.toSubmission(cards: const []),
         isNull,
       );
     });

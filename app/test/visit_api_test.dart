@@ -133,4 +133,71 @@ void main() {
       );
     });
   });
+
+  group('6-1 보호자 평가 저장', () {
+    const evaluation = EvaluationSubmission(
+      conversationSatisfaction: 4,
+      careRecipientReaction: CareRecipientReaction.pleased,
+      cardReviews: [
+        CardReview(
+          cardId: 'card-1',
+          wasUsed: true,
+          caregiverReaction: CaregiverReaction.positive,
+        ),
+        CardReview(cardId: 'card-2', wasUsed: false),
+      ],
+    );
+
+    test('회차 주소로 평가를 보낸다', () async {
+      late http.Request sent;
+      final api = _api((request) async {
+        sent = request;
+        return _json({'schemaVersion': 1, 'sessionId': 'session-1'}, 201);
+      });
+
+      await api.submitEvaluation('session-1', evaluation);
+
+      expect(sent.method, 'POST');
+      expect(
+        sent.url.toString(),
+        'http://api.test/api/v1/visit-sessions/session-1/evaluation',
+      );
+      expect(jsonDecode(sent.body), {
+        'conversationSatisfaction': 4,
+        'careRecipientReaction': 'pleased',
+        'cardReviews': [
+          {
+            'cardId': 'card-1',
+            'wasUsed': true,
+            'caregiverReaction': 'positive',
+          },
+          {'cardId': 'card-2', 'wasUsed': false, 'caregiverReaction': null},
+        ],
+        'freeNote': null,
+      });
+    });
+
+    test('이미 저장했다는 거절은 성공으로 본다', () async {
+      final api = _api(
+        (_) async => _error(409, 'EVALUATION_ALREADY_SUBMITTED'),
+      );
+
+      await api.submitEvaluation('session-1', evaluation);
+    });
+
+    test('그 밖의 거절은 그대로 넘긴다', () async {
+      final api = _api((_) async => _error(422, 'INVALID_CARD_REVIEW'));
+
+      await expectLater(
+        api.submitEvaluation('session-1', evaluation),
+        throwsA(
+          isA<ApiServerFailure>().having(
+            (f) => f.errorCode,
+            'errorCode',
+            'INVALID_CARD_REVIEW',
+          ),
+        ),
+      );
+    });
+  });
 }

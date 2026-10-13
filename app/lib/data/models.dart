@@ -649,6 +649,40 @@ class CardReview {
 
   /// 쓰지 않은 카드에는 없다.
   final CaregiverReaction? caregiverReaction;
+
+  Map<String, Object?> toJson() => {
+    'cardId': cardId,
+    'wasUsed': wasUsed,
+    'caregiverReaction': caregiverReaction?.name,
+  };
+}
+
+/// 보호자 평가를 저장하는 요청. API 6-1 의 본문이다.
+class EvaluationSubmission {
+  const EvaluationSubmission({
+    required this.conversationSatisfaction,
+    required this.careRecipientReaction,
+    required this.cardReviews,
+    this.freeNote,
+  });
+
+  /// 1 이상 5 이하의 정수다.
+  final int conversationSatisfaction;
+
+  final CareRecipientReaction careRecipientReaction;
+
+  /// 답한 카드만 담는다. 담지 않은 카드가 미응답이다.
+  final List<CardReview> cardReviews;
+
+  /// 비었으면 `null` 이다.
+  final String? freeNote;
+
+  Map<String, Object?> toJson() => {
+    'conversationSatisfaction': conversationSatisfaction,
+    'careRecipientReaction': careRecipientReaction.name,
+    'cardReviews': [for (final review in cardReviews) review.toJson()],
+    'freeNote': freeNote,
+  };
 }
 
 class CaregiverEvaluation {

@@ -75,25 +75,15 @@ class ReviewController extends Notifier<ReviewDraft> {
     state = state.copyWith(cardAnswers: next);
   }
 
-  /// 화면에서 모은 값을 계약 객체로 바꾼다.
+  /// 화면에서 모은 값을 API 6-1 요청으로 바꾼다. 필수 답이 없으면 `null` 이다.
   ///
   /// 답하지 않은 카드는 `cardReviews` 에 담지 않는다. 담지 않는 것이 미응답이고,
   /// `wasUsed` 가 `false` 인 것이 미사용이다. 둘을 뭉개면 보호자가 하지 않은
   /// 판단을 대신 만들게 된다.
-  ///
-  /// **아직 화면에서 부르지 않는다.** 지금은 테스트가 계약 형태를 확인하는 데만
-  /// 쓰고, 소감 화면의 제출 버튼은 처리 중 화면으로 이동만 한다. 저장 인터페이스가
-  /// 정해지면 그 버튼에서 이 메서드를 부른다.
-  CaregiverEvaluation? toEvaluation({
-    required String reviewId,
-    required String sessionId,
-    required List<ConversationCard> cards,
-  }) {
+  EvaluationSubmission? toSubmission({required List<ConversationCard> cards}) {
     if (!state.canSubmit) return null;
 
-    return CaregiverEvaluation(
-      reviewId: reviewId,
-      sessionId: sessionId,
+    return EvaluationSubmission(
       conversationSatisfaction: state.satisfaction!,
       careRecipientReaction: state.reaction!,
       cardReviews: [
