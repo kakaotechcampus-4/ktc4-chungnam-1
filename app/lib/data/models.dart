@@ -99,6 +99,10 @@ class Profile {
     required this.lifeFactIds,
     required this.photoIds,
     this.symptomNote,
+    this.occupation,
+    this.hometown,
+    this.hobby,
+    this.family,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
@@ -114,6 +118,10 @@ class Profile {
       symptomNote: condition['symptomNote'] as String?,
       lifeFactIds: (json['lifeFactIds'] as List).cast<String>(),
       photoIds: (json['photoIds'] as List).cast<String>(),
+      occupation: json['occupation'] as String?,
+      hometown: json['hometown'] as String?,
+      hobby: json['hobby'] as String?,
+      family: json['family'] as String?,
     );
   }
 
@@ -129,6 +137,22 @@ class Profile {
   final String? symptomNote;
   final List<String> lifeFactIds;
   final List<String> photoIds;
+
+  /// 세부 정보 네 항목(`docs/architecture/api-spec.md` 의 Profile). 건너뛰었으면
+  /// `null` 이고 빈 문자열은 두지 않는다.
+  final String? occupation;
+  final String? hometown;
+  final String? hobby;
+  final String? family;
+
+  /// [category] 는 `occupation`, `hometown`, `hobby`, `family` 중 하나다.
+  String? detailOf(String category) => switch (category) {
+    'occupation' => occupation,
+    'hometown' => hometown,
+    'hobby' => hobby,
+    'family' => family,
+    _ => null,
+  };
 }
 
 class LifeFact {
