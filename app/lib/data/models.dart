@@ -289,6 +289,7 @@ class ProfileBundle {
   final Profile profile;
   final List<LifeFact> lifeFacts;
   final List<CategoryCollectionState> collectionStates;
+
   /// 올린 순서대로다. 최대 5장이다.
   final List<ProfilePhoto> photos;
 
@@ -301,48 +302,110 @@ class ProfileBundle {
 
 // ── 대화 카드 ───────────────────────────────────────
 
+/// 지금 쓸 카드 묶음이다. 계약의 `CardSet` 이며 API 4-3 의 응답이다.
+class CardSet {
+  const CardSet({
+    required this.setId,
+    required this.usedBySessionId,
+    required this.cards,
+  });
+
+  factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
+    setId: json['setId'] as String,
+    usedBySessionId: json['usedBySessionId'] as String?,
+    cards:
+        (json['cards'] as List)
+            .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
+            .toList()
+          // `position` 1~9 가 선택 화면, 10~12 가 보충용이다. 배열 순서에
+          // 기대지 않고 순서 값으로 줄 세운다.
+          ..sort((a, b) => a.position.compareTo(b.position)),
+  );
+
+  /// 녹음을 시작할 때 API 5-1 에 보낸다.
+  final String setId;
+
+  /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
+  final String? usedBySessionId;
+
+  /// 12장. [ConversationCard.position] 순서다.
+  final List<ConversationCard> cards;
+}
+
+/// 카드가 다루는 주제. 회차가 바뀌어도 `topicId` 로 같은 주제를 잇는다.
+class CardTopic {
+  const CardTopic({
+    required this.topicId,
+    required this.title,
+    required this.description,
+  });
+
+  factory CardTopic.fromJson(Map<String, dynamic> json) => CardTopic(
+    topicId: json['topicId'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String,
+  );
+
+  final String topicId;
+  final String title;
+
+  /// 이 주제가 무엇인지 보호자에게 알려주는 설명이다.
+  final String description;
+}
+
 class ConversationCard {
   const ConversationCard({
     required this.cardId,
-    required this.topicKey,
-    required this.topicTitle,
-    required this.topicDescription,
+    required this.position,
+    required this.topic,
+    required this.cardTitle,
+    required this.description,
     required this.primaryQuestion,
     required this.followUpQuestions,
+    required this.evidenceSource,
+    required this.evidence,
     required this.selected,
   });
 
   factory ConversationCard.fromJson(Map<String, dynamic> json) =>
       ConversationCard(
         cardId: json['cardId'] as String,
-        topicKey: json['topicKey'] as String,
-        topicTitle: json['topicTitle'] as String,
-        topicDescription: json['topicDescription'] as String,
+        position: json['position'] as int,
+        topic: CardTopic.fromJson(json['topic'] as Map<String, dynamic>),
+        cardTitle: json['cardTitle'] as String,
+        description: json['description'] as String,
         primaryQuestion: json['primaryQuestion'] as String,
         followUpQuestions: (json['followUpQuestions'] as List).cast<String>(),
-        selected: json['selectionStatus'] == 'selected',
+        evidenceSource: json['evidenceSource'] as String,
+        evidence: (json['evidence'] as List)
+            .cast<Map<String, dynamic>>()
+            .toList(),
+        selected: json['selected'] as bool,
       );
 
   final String cardId;
-  final String topicKey;
-  final String topicTitle;
 
-  /// 이 카드가 어떤 주제인지 보호자에게 알려주는 설명이다.
+  /// 1~12. 1~9 가 선택 화면 대상이고 10~12 가 면회 중 보충용이다.
+  final int position;
+
+  final CardTopic topic;
+  final String cardTitle;
+
+  /// 이 카드가 무엇을 나누는지 보호자에게 알려주는 설명이다.
   /// 어르신에게 그대로 여쭙는 문장은 [primaryQuestion] 이다.
-  final String topicDescription;
+  final String description;
   final String primaryQuestion;
   final List<String> followUpQuestions;
-  final bool selected;
 
-  ConversationCard copyWith({bool? selected}) => ConversationCard(
-    cardId: cardId,
-    topicKey: topicKey,
-    topicTitle: topicTitle,
-    topicDescription: topicDescription,
-    primaryQuestion: primaryQuestion,
-    followUpQuestions: followUpQuestions,
-    selected: selected ?? this.selected,
-  );
+  /// `lifeFact`, `photo`, `profile`, `none`.
+  final String evidenceSource;
+
+  /// `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나의 목록이다.
+  /// [evidenceSource] 가 `none` 이면 비어 있다.
+  final List<Map<String, dynamic>> evidence;
+
+  /// 회차를 만들 때 고른 카드와 면회 중 보충한 카드가 `true` 다.
+  final bool selected;
 }
 
 // ── 면회 회차 ───────────────────────────────────────

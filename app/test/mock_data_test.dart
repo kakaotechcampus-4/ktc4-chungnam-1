@@ -67,16 +67,63 @@ void main() {
     );
   });
 
-  test('대화 카드 12장을 읽는다', () async {
-    final cards = await repository.loadConversationCards();
+  test('대화 카드 묶음 12장을 순서대로 읽는다', () async {
+    final set = await repository.loadCardSet();
+    final cards = set.cards;
 
     expect(cards, hasLength(12));
-    // 앞 9장이 선택 화면, 뒤 3장이 면회 중 보충용이다.
-    expect(cards.take(9), hasLength(9));
+    // 1~9 가 선택 화면, 10~12 가 면회 중 보충용이다.
+    expect(cards.map((c) => c.position), List.generate(12, (i) => i + 1));
+    expect(
+      cards.map((c) => c.topic.topicId).toSet(),
+      hasLength(12),
+      reason: '한 묶음 안에서 같은 주제는 두 번 나오지 않는다',
+    );
     for (final card in cards) {
       expect(card.followUpQuestions, hasLength(3));
-      expect(card.topicDescription, isNotEmpty);
+      expect(card.topic.description, isNotEmpty);
+      expect(card.description, isNotEmpty);
+      expect(
+        card.evidence,
+        card.evidenceSource == 'none' ? isEmpty : isNotEmpty,
+        reason: 'none 이면 근거가 비고, 나머지는 하나 이상이다',
+      );
     }
+  });
+
+  test('카드 묶음은 position 으로 줄 세운다', () {
+    Map<String, dynamic> card(String id, int position) => {
+      'cardId': id,
+      'position': position,
+      'topic': {'topicId': 't$id', 'title': '주제', 'description': '설명'},
+      'cardTitle': '카드',
+      'description': '설명',
+      'primaryQuestion': '질문',
+      'followUpQuestions': ['하나', '둘', '셋'],
+      'evidenceSource': 'none',
+      'evidence': <Object>[],
+      'selected': false,
+    };
+
+    final set = CardSet.fromJson({
+      'setId': 's1',
+      'usedBySessionId': null,
+      'cards': [card('b', 2), card('c', 3), card('a', 1)],
+    });
+
+    expect(set.cards.map((c) => c.cardId), ['a', 'b', 'c']);
+    expect(set.usedBySessionId, isNull);
+  });
+
+  test('목 묶음의 고른 카드는 회차의 선택과 같다', () async {
+    final set = await repository.loadCardSet();
+    final session = await repository.loadVisitSession();
+
+    expect(
+      set.cards.where((c) => c.selected).map((c) => c.cardId),
+      session.selectedCardIds,
+    );
+    expect(set.usedBySessionId, session.sessionId);
   });
 
   test('면회 회차와 리포트를 읽는다', () async {
@@ -133,5 +180,6 @@ class _EmptyRepository extends MockRepository {
   const _EmptyRepository();
 
   @override
-  Future<List<ConversationCard>> loadConversationCards() async => const [];
+  Future<CardSet> loadCardSet() async =>
+      const CardSet(setId: 'empty', usedBySessionId: null, cards: []);
 }

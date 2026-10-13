@@ -275,7 +275,7 @@ String ageRangeOf(String birthDate, DateTime today) {
 }
 
 final conversationCardsProvider = FutureProvider<List<ConversationCard>>(
-  (ref) => ref.watch(mockRepositoryProvider).loadConversationCards(),
+  (ref) async => (await ref.watch(mockRepositoryProvider).loadCardSet()).cards,
 );
 
 final visitSessionProvider = FutureProvider<VisitSession>(

@@ -72,7 +72,7 @@ void main() {
     test('미사용과 미응답을 갈라 기록한다', () async {
       final container = makeContainer();
       final controller = container.read(reviewControllerProvider.notifier);
-      final cards = await const MockRepository().loadConversationCards();
+      final cards = (await const MockRepository().loadCardSet()).cards;
       final three = cards.take(3).toList();
 
       controller.setSatisfaction(4);
@@ -114,7 +114,7 @@ void main() {
     test('쓰지 않았다고 답한 뒤 다시 평가할 수 있다', () async {
       final container = makeContainer();
       final controller = container.read(reviewControllerProvider.notifier);
-      final cards = await const MockRepository().loadConversationCards();
+      final cards = (await const MockRepository().loadCardSet()).cards;
       final one = cards.take(1).toList();
 
       controller.setSatisfaction(4);

@@ -82,7 +82,7 @@ class _Cards extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: _MainQuestion(
-                      topicTitle: card.topicTitle,
+                      topicTitle: card.topic.title,
                       question: card.primaryQuestion,
                     ),
                   ),

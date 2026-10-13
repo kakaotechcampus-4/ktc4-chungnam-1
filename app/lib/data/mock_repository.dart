@@ -46,12 +46,9 @@ class MockRepository {
     return ProfileBundle.fromJson(json);
   }
 
-  Future<List<ConversationCard>> loadConversationCards() async {
+  Future<CardSet> loadCardSet() async {
     final json = await _read('conversation-cards.json');
-    final cards = json['conversationCards'] as Map<String, dynamic>;
-    return (cards['cards'] as List)
-        .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return CardSet.fromJson(json['cardSet'] as Map<String, dynamic>);
   }
 
   Future<VisitSession> loadVisitSession() async {
