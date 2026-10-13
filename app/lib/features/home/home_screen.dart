@@ -27,7 +27,14 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notice = ref.watch(reportNoticeProvider);
-    final report = ref.watch(visitReportProvider);
+    final info = ref.watch(reportNoticeInfoProvider);
+    // 서버의 알림은 리포트와 날짜를 함께 안다. 목 데이터의 알림은 목 리포트를
+    // 가리킨다.
+    final mockReport = info?.reportId == null
+        ? ref.watch(visitReportProvider).value
+        : null;
+    final date = info?.visitDate ?? mockReport?.visitDate;
+    final reportId = info?.reportId ?? mockReport?.reportId;
     final hasProfile = ref.watch(
       careProfilesProvider.select((p) => p.hasSelected),
     );
@@ -59,19 +66,19 @@ class HomeScreen extends ConsumerWidget {
                   // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
                   if (notice != null) ...[
                     const SizedBox(height: AppSpacing.lg),
-                    if (notice == ReportNotice.generating)
+                    switch (notice) {
                       // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
-                      _GeneratingNotice(date: report.value?.visitDate)
-                    else
-                      _ReportNotice(
-                        date: report.value?.visitDate,
+                      ReportNotice.generating => _GeneratingNotice(date: date),
+                      ReportNotice.ready => _ReportNotice(
+                        date: date,
                         // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
                         onTap: () {
-                          final id = report.value?.reportId;
-                          if (id == null) return;
-                          context.push(AppRoutes.reportOf(id));
+                          if (reportId == null) return;
+                          context.push(AppRoutes.reportOf(reportId));
                         },
                       ),
+                      ReportNotice.failed => _FailedNotice(date: date),
+                    },
                   ],
                 ],
               ),
@@ -340,7 +347,9 @@ class _NoticeText extends StatelessWidget {
 
   final String? date;
   final String title;
-  final String hint;
+
+  /// 할 일이 없으면 `null` 이다.
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
@@ -352,8 +361,10 @@ class _NoticeText extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
         ],
         Text(title, style: AppTypography.bodyStrong),
-        const SizedBox(height: AppSpacing.xs),
-        Text(hint, style: AppTypography.sub),
+        if (hint != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(hint!, style: AppTypography.sub),
+        ],
       ],
     );
   }
@@ -448,6 +459,36 @@ class _ReportNotice extends StatelessWidget {
             const Icon(Icons.chevron_right, color: AppColors.textSub),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 리포트를 만들지 못했음을 알리는 배너다(`api-spec.md` 5-4 의 `failed`).
+///
+/// 다시 만드는 방법은 아직 정하지 않아 누를 곳도, 할 일 안내도 두지 않는다.
+/// 다음 면회를 시작하면 그 회차의 상태로 바뀐다.
+class _FailedNotice extends StatelessWidget {
+  const _FailedNotice({required this.date});
+
+  final String? date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 32, color: AppColors.ink),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: _NoticeText(date: date, title: '리포트를 만들지 못했어요', hint: null),
+          ),
+        ],
       ),
     );
   }

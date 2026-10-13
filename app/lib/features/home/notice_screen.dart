@@ -21,7 +21,11 @@ class NoticeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notice = ref.watch(reportNoticeProvider);
-    final report = ref.watch(visitReportProvider);
+    final info = ref.watch(reportNoticeInfoProvider);
+    // 목 데이터의 알림은 목 리포트를 가리킨다. 알림이 뜨기 전부터 읽어 둔다.
+    final mockReport = info?.reportId == null
+        ? ref.watch(visitReportProvider)
+        : null;
 
     return Scaffold(
       appBar: AppTopBar(
@@ -47,7 +51,15 @@ class NoticeScreen extends ConsumerWidget {
                       message: '아직 새 알림이 없어요.',
                       icon: Icons.notifications_none,
                     )
-                  : report.when(
+                  // 서버의 알림은 리포트와 날짜를 함께 안다.
+                  : mockReport == null
+                  ? _NoticeRow(
+                      date: info!.visitDate,
+                      notice: notice,
+                      onOpen: () =>
+                          context.push(AppRoutes.reportOf(info.reportId!)),
+                    )
+                  : mockReport.when(
                       loading: () => const LoadingView(),
                       error: (error, _) => ErrorStateView(
                         message: '알림을 불러오지 못했어요.',
@@ -55,11 +67,9 @@ class NoticeScreen extends ConsumerWidget {
                       ),
                       data: (data) => _NoticeRow(
                         date: data.visitDate,
-                        generating: notice == ReportNotice.generating,
-                        onTap: notice == ReportNotice.ready
-                            ? () =>
-                                  context.push(AppRoutes.reportOf(data.reportId))
-                            : null,
+                        notice: notice,
+                        onOpen: () =>
+                            context.push(AppRoutes.reportOf(data.reportId)),
                       ),
                     ),
             ),
@@ -88,19 +98,24 @@ class NoticeScreen extends ConsumerWidget {
 class _NoticeRow extends StatelessWidget {
   const _NoticeRow({
     required this.date,
-    required this.generating,
-    required this.onTap,
+    required this.notice,
+    required this.onOpen,
   });
 
   final String? date;
-  final bool generating;
-  final VoidCallback? onTap;
+  final ReportNotice notice;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     // 문구는 홈 배너(home_screen.dart)와 같은 것을 그대로 쓴다. 새로 짓지 않는다.
-    final title = generating ? '리포트를 만들고 있어요' : '리포트가 도착했어요';
-    final hint = generating ? '조금만 기다려 주세요' : '눌러서 확인하기';
+    final (title, hint) = switch (notice) {
+      ReportNotice.generating => ('리포트를 만들고 있어요', '조금만 기다려 주세요'),
+      ReportNotice.ready => ('리포트가 도착했어요', '눌러서 확인하기'),
+      ReportNotice.failed => ('리포트를 만들지 못했어요', null),
+    };
+    // 도착한 리포트만 열 수 있다.
+    final onTap = notice == ReportNotice.ready ? onOpen : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,8 +132,10 @@ class _NoticeRow extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                 ],
                 Text(title, style: AppTypography.body),
-                const SizedBox(height: AppSpacing.xs),
-                Text(hint, style: AppTypography.sub),
+                if (hint != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(hint, style: AppTypography.sub),
+                ],
               ],
             ),
           ),
