@@ -283,6 +283,8 @@ E-2 녹음 화면에서 실제로 마이크를 열고 기기에 파일을 남긴
 모여 있고, 화면과 [`VisitController`](lib/features/visit/visit_controller.dart)는
 `VisitRecorder` 인터페이스만 본다. 테스트는 `visitRecorderProvider`를 override 한다.
 
+E-1 녹음 안내에서는 회차마다 피보호자 동의를 확인하지 않는다. `[필수] 어르신께 녹음한다는 것을 알려드렸고 동의를 확인했어요` 체크는 팀 회의 결정으로 뺐고(2026-10-13 확인), 녹음과 음성 처리 동의는 가입 때 보호자의 필수 동의로 받는다(`docs/architecture/data-contracts.md`). `docs/legal/consent-mapping.md`와 `docs/tech-spec.md` FR-003은 아직 녹음 시작 때 피보호자 동의 확인을 적고 있어 PM 확인이 필요하다.
+
 ### 저장 위치
 
 `path_provider`의 `getApplicationDocumentsDirectory()` 아래 `visit_recordings/`다.

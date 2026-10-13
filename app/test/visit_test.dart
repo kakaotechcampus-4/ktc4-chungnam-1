@@ -129,22 +129,6 @@ void main() {
   });
 
   group('녹음', () {
-    test('피보호자 동의를 확인해야 시작할 수 있다', () async {
-      final container = await withSelection(1);
-      final initial = await container.read(visitControllerProvider.future);
-
-      // 계약의 VisitSession.consent.careRecipientConfirmation 에 해당한다.
-      expect(initial.careRecipientConfirmed, isFalse);
-
-      container
-          .read(visitControllerProvider.notifier)
-          .confirmCareRecipient(confirmed: true);
-      expect(
-        container.read(visitControllerProvider).value!.careRecipientConfirmed,
-        isTrue,
-      );
-    });
-
     test('잠시 멈춰도 시작 전으로 돌아가지 않는다', () async {
       final container = await withSelection(1);
       await container.read(visitControllerProvider.future);
@@ -181,7 +165,6 @@ void main() {
       expect(fresh.recording, isFalse);
       expect(fresh.elapsed, Duration.zero);
       expect(fresh.followUpIndex, 0);
-      expect(fresh.careRecipientConfirmed, isFalse);
       expect(fresh.recordingPath, isNull, reason: '지난 회차의 녹음 파일을 물려받지 않는다');
       expect(fresh.problem, isNull);
     });

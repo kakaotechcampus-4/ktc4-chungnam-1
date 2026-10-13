@@ -71,11 +71,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   }
 }
 
-/// E-1. 녹음 전 안내와 피보호자 동의 확인.
+/// E-1. 녹음 전 안내.
 ///
-/// 계약의 `VisitSession.consent.careRecipientConfirmation` 과
-/// `docs/legal/consent-draft.md` 의 필수 동의 항목에 해당한다. 가입 화면이 아니라
-/// 면회를 시작하는 이 자리에서 받는다.
+/// 회차마다 피보호자 동의를 확인하지 않는다. 녹음과 음성 처리 동의는 가입 때
+/// 보호자의 필수 동의로 받는다(`docs/architecture/data-contracts.md`). 녹음 전
+/// 동의 확인 체크는 팀 회의에서 빼기로 했다(2026-10-13 확인).
 class _Intro extends ConsumerWidget {
   const _Intro();
 
@@ -83,14 +83,13 @@ class _Intro extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(visitControllerProvider).value;
     final controller = ref.read(visitControllerProvider.notifier);
-    final confirmed = state?.careRecipientConfirmed ?? false;
     final problem = state?.problem;
 
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
         label: '네, 좋아요',
-        onPressed: confirmed ? controller.startRecording : null,
+        onPressed: controller.startRecording,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,52 +121,6 @@ class _Intro extends ConsumerWidget {
           ),
 
           const Spacer(flex: 2),
-
-          // 필수 확인이다. 체크해야 녹음을 시작할 수 있다.
-          InkWell(
-            onTap: () => controller.confirmCareRecipient(confirmed: !confirmed),
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    value: confirmed,
-                    onChanged: (value) => controller.confirmCareRecipient(
-                      confirmed: value ?? false,
-                    ),
-                    activeColor: AppColors.ink,
-                    side: const BorderSide(color: AppColors.line, width: 2),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '[필수] ',
-                            style: AppTypography.body.copyWith(
-                              color: AppColors.danger,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: '어르신께 녹음한다는 것을 알려드렸고 동의를 확인했어요.',
-                            style: AppTypography.body,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
 
           if (problem != null) ...[
             const SizedBox(height: AppSpacing.lg),

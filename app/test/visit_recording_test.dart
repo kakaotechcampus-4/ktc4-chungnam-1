@@ -136,7 +136,6 @@ void main() {
 
         await container.read(visitControllerProvider.future);
         final visit = container.read(visitControllerProvider.notifier);
-        visit.confirmCareRecipient(confirmed: true);
         await visit.startRecording();
 
         await tester.pumpWidget(

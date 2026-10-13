@@ -34,7 +34,6 @@ class VisitState {
     required this.started,
     required this.recording,
     required this.elapsed,
-    required this.careRecipientConfirmed,
     this.recordingPath,
     this.problem,
     this.participantCount,
@@ -53,10 +52,6 @@ class VisitState {
 
   final bool recording;
   final Duration elapsed;
-
-  /// 피보호자에게 안내하고 동의를 확인했는지.
-  /// 계약의 `VisitSession.consent.careRecipientConfirmation` 에 해당한다.
-  final bool careRecipientConfirmed;
 
   /// 이 회차의 녹음이 쌓이는 기기 안의 파일이다.
   ///
@@ -104,7 +99,6 @@ class VisitState {
     bool? started,
     bool? recording,
     Duration? elapsed,
-    bool? careRecipientConfirmed,
     String? recordingPath,
     VisitRecordingProblem? problem,
     int? participantCount,
@@ -118,8 +112,6 @@ class VisitState {
     started: started ?? this.started,
     recording: recording ?? this.recording,
     elapsed: elapsed ?? this.elapsed,
-    careRecipientConfirmed:
-        careRecipientConfirmed ?? this.careRecipientConfirmed,
     recordingPath: recordingPath ?? this.recordingPath,
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
@@ -157,14 +149,7 @@ class VisitController extends AsyncNotifier<VisitState> {
       started: false,
       recording: false,
       elapsed: Duration.zero,
-      careRecipientConfirmed: false,
     );
-  }
-
-  void confirmCareRecipient({required bool confirmed}) {
-    final current = state.value;
-    if (current == null) return;
-    state = AsyncData(current.copyWith(careRecipientConfirmed: confirmed));
   }
 
   /// 녹음을 시작하거나, 잠시 멈춘 녹음을 이어 간다.
