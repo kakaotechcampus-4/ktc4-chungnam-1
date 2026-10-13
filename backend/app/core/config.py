@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # 구글이 ID 토큰의 `iss` 에 넣는 두 가지 값. 둘 다 같은 발급자를 뜻한다.
@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     max_audio_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     speech_analysis_lease_seconds: int = Field(default=900, ge=60)
     speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
+
+    # 카드 생성(API 4-1). 모델과 promptVersion은 작업을 만들 때 저장하고 생성 함수에 넘김.
+    # ML API 키가 비어 있으면 4-1은 503.
+    card_generation_model: str = "gpt-5.6-luna"
+    card_generation_prompt_version: int = Field(default=1, ge=1)
+    ml_api_key: SecretStr = SecretStr("")
+    # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
+    card_generation_lease_seconds: int = Field(default=300, ge=60)
+    card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른
     # 비공개 버킷에 저장한다. 비어 있으면 사진 업로드와 조회 URL 생성을 거절한다.

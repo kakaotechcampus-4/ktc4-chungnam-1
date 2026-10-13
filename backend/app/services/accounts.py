@@ -7,7 +7,7 @@ ADR-007 에 따라 구글 인증에 성공한 것만으로는 계정을 만들�
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
@@ -43,6 +43,14 @@ class Account:
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class Withdrawal:
+    """탈퇴 이유. 계정과 연결하지 않고 저장한다(API 1-5)."""
+
+    reasons: tuple[str, ...]
+    other_text: str | None
+
+
 class AccountRepository(Protocol):
     async def find_by_social_identity(
         self, *, provider: str, social_id: str
@@ -58,8 +66,22 @@ class AccountRepository(Protocol):
         """
         ...
 
-    async def delete(self, account_id: str) -> bool:
-        """계정과 동의 이력을 함께 지운다. 지울 계정이 없었으면 `False` 다."""
+    async def change_optional_consents(
+        self, account_id: str, changes: Mapping[str, bool]
+    ) -> Account | None:
+        """가장 최근 동의 이력을 복사해 `changes` 의 선택 동의만 바꾼 이력을 더한다.
+
+        약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다.
+        """
+        ...
+
+    async def delete(
+        self, account_id: str, *, withdrawal: Withdrawal | None = None
+    ) -> bool:
+        """계정과 동의 이력을 함께 지운다. 지울 계정이 없었으면 `False` 다.
+
+        `withdrawal` 이 있으면 계정 삭제와 함께 계정과 연결하지 않고 저장한다.
+        """
         ...
 
 
@@ -73,6 +95,8 @@ class InMemoryAccountRepository:
     def __init__(self) -> None:
         self._by_id: dict[str, Account] = {}
         self._by_social: dict[tuple[str, str], str] = {}
+        # 계정과 연결하지 않은 탈퇴 이유.
+        self.withdrawals: list[Withdrawal] = []
         self._lock = asyncio.Lock()
 
     async def find_by_social_identity(
@@ -94,13 +118,35 @@ class InMemoryAccountRepository:
             self._by_social[key] = account.account_id
             return account
 
-    async def delete(self, account_id: str) -> bool:
+    async def change_optional_consents(
+        self, account_id: str, changes: Mapping[str, bool]
+    ) -> Account | None:
+        async with self._lock:
+            account = self._by_id.get(account_id)
+            if account is None:
+                return None
+            now = datetime.now(UTC)
+            consents = dict(account.consents)
+            for name, granted in changes.items():
+                if not granted:
+                    consents[name] = ConsentRecord(granted=False, granted_at=None)
+                elif not consents[name].granted:
+                    consents[name] = ConsentRecord(granted=True, granted_at=now)
+            updated = replace(account, consents=consents)
+            self._by_id[account_id] = updated
+            return updated
+
+    async def delete(
+        self, account_id: str, *, withdrawal: Withdrawal | None = None
+    ) -> bool:
         async with self._lock:
             # 동의 이력은 `Account` 안에 있으므로 계정과 함께 사라진다.
             account = self._by_id.pop(account_id, None)
             if account is None:
                 return False
             self._by_social.pop((account.provider, account.social_id), None)
+            if withdrawal is not None:
+                self.withdrawals.append(withdrawal)
             return True
 
 
@@ -191,14 +237,63 @@ class PostgresAccountRepository:
             raise RuntimeError("만든 계정을 다시 읽지 못했다")
         return stored
 
-    async def delete(self, account_id: str) -> bool:
+    async def change_optional_consents(
+        self, account_id: str, changes: Mapping[str, bool]
+    ) -> Account | None:
+        user_id = _parse_uuid(account_id)
+        if user_id is None:
+            return None
+        unknown = set(changes) - set(OPTIONAL_CONSENTS)
+        if unknown:
+            raise ValueError(f"선택 동의가 아닌 항목: {sorted(unknown)}")
+        async with self._connection.transaction():
+            # 같은 계정의 동시 변경이 같은 직전 이력을 복사해 서로의 변경을 덮지 않도록
+            # 계정 행을 잠근다. 잠근 뒤의 문장은 먼저 끝난 변경의 이력을 본다.
+            cursor = await self._connection.execute(
+                "SELECT 1 FROM users WHERE user_id = %s FOR UPDATE", (user_id,)
+            )
+            if await cursor.fetchone() is None:
+                return None
+            # 가입 이력의 시각은 앱 서버 시계로 정하므로 DB 시계가 그보다 늦을 수 있다.
+            # 새 이력이 가장 최근 이력이 되도록 직전 이력보다 이른 시각으로 남기지 않는다
+            # (시각이 같으면 `record_id` 가 큰 쪽이 최근이다).
+            await self._connection.execute(
+                "INSERT INTO consent_records "
+                "(user_id, terms_version, service_data, sensitive_data, "
+                " service_improvement, push_notification, recorded_at) "
+                "SELECT user_id, terms_version, service_data, sensitive_data, "
+                "       COALESCE(%s, service_improvement), "
+                "       COALESCE(%s, push_notification), "
+                "       GREATEST(clock_timestamp(), recorded_at) "
+                "FROM current_consents WHERE user_id = %s",
+                (
+                    changes.get("serviceImprovement"),
+                    changes.get("pushNotification"),
+                    user_id,
+                ),
+            )
+        return await self.get(account_id)
+
+    async def delete(
+        self, account_id: str, *, withdrawal: Withdrawal | None = None
+    ) -> bool:
         user_id = _parse_uuid(account_id)
         if user_id is None:
             return False
-        cursor = await self._connection.execute(
-            "DELETE FROM users WHERE user_id = %s", (user_id,)
-        )
-        return cursor.rowcount > 0
+        async with self._connection.transaction():
+            cursor = await self._connection.execute(
+                "DELETE FROM users WHERE user_id = %s", (user_id,)
+            )
+            if cursor.rowcount == 0:
+                return False
+            if withdrawal is not None:
+                # 계정 ID는 넣지 않는다. 날짜(`submitted_on`)만 DB 기본값으로 남는다.
+                await self._connection.execute(
+                    "INSERT INTO withdrawal_feedback (reasons, other_text) "
+                    "VALUES (%s, %s)",
+                    (list(withdrawal.reasons), withdrawal.other_text),
+                )
+        return True
 
     async def _to_account(self, user: dict[str, Any] | None) -> Account | None:
         if user is None:
@@ -285,13 +380,51 @@ class AccountService:
             )
         return account
 
-    async def delete(self, account_id: str) -> None:
+    async def change_optional_consents(
+        self, account_id: str, submitted: Mapping[str, bool | None]
+    ) -> Account:
+        """보낸 선택 동의만 바꾼 동의 이력을 더한다(API 1-6).
+
+        `submitted` 는 요청에 담긴 항목만 동의 이름(`serviceImprovement` 등)으로 담는다.
+        """
+        if any(name in submitted for name in REQUIRED_CONSENTS):
+            raise AppError(
+                status_code=422,
+                error_code="REQUIRED_CONSENT_NOT_CHANGEABLE",
+                message="필수 동의는 변경할 수 없습니다.",
+            )
+        changes = {
+            name: granted
+            for name, granted in submitted.items()
+            if name in OPTIONAL_CONSENTS and granted is not None
+        }
+        if not changes:
+            raise AppError(
+                status_code=422,
+                error_code="INVALID_REQUEST",
+                message="요청 형식이 올바르지 않습니다.",
+            )
+        account = await self._repository.change_optional_consents(
+            account_id, changes
+        )
+        if account is None:
+            raise AppError(
+                status_code=404,
+                error_code="ACCOUNT_NOT_FOUND",
+                message="계정을 찾을 수 없습니다.",
+            )
+        return account
+
+    async def delete(
+        self, account_id: str, *, withdrawal: Withdrawal | None = None
+    ) -> None:
         """회원 탈퇴. 계정과 동의 이력, 프로필과 그 아래의 모든 기록을 지운다.
 
         DB 저장소에서는 CASCADE 로 함께 지워지고 사진과 음성 원본은 S3 삭제 대기열에
-        들어간다(API 1-5). 탈퇴 이유 저장은 아직 구현하지 않았다.
+        들어간다(API 1-5). 탈퇴 이유가 있으면 같은 트랜잭션에서 계정과 연결하지 않고
+        저장한다.
         """
-        if not await self._repository.delete(account_id):
+        if not await self._repository.delete(account_id, withdrawal=withdrawal):
             raise AppError(
                 status_code=404,
                 error_code="ACCOUNT_NOT_FOUND",
