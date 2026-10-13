@@ -78,6 +78,26 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       ReportNotice.failed => _FailedNotice(date: date),
+                      // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
+                      // 서버의 알림이라 회차 ID 가 있다.
+                      ReportNotice.evaluationPending => _ResumeNotice(
+                        date: date,
+                        title: '평가 이어서 하기',
+                        hint: '평가를 마치면 리포트를 만들어요',
+                        onTap: () {
+                          if (reportId == null) return;
+                          context.push(AppRoutes.visitReviewOf(reportId));
+                        },
+                      ),
+                      ReportNotice.audioPending => _ResumeNotice(
+                        date: date,
+                        title: '음성 다시 보내기',
+                        hint: '녹음을 보내면 리포트를 만들어요',
+                        onTap: () {
+                          if (reportId == null) return;
+                          context.push(AppRoutes.visitUploadOf(reportId));
+                        },
+                      ),
                     },
                   ],
                 ],
@@ -489,6 +509,47 @@ class _FailedNotice extends StatelessWidget {
             child: _NoticeText(date: date, title: '리포트를 만들지 못했어요', hint: null),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 앱을 떠난 사이 멈춘 면회 흐름을 이어가게 하는 배너다(`api-spec.md` 5-4 의
+/// `evaluationPending`, `audioPending`). 눌러서 그 회차의 화면으로 간다.
+class _ResumeNotice extends StatelessWidget {
+  const _ResumeNotice({
+    required this.date,
+    required this.title,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final String? date;
+  final String title;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.card),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.history, size: 32, color: AppColors.ink),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: _NoticeText(date: date, title: title, hint: hint),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textSub),
+          ],
+        ),
       ),
     );
   }

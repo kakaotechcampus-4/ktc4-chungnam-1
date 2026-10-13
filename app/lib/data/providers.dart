@@ -589,9 +589,15 @@ final reportPollIntervalProvider = Provider<Duration>(
 /// 사용자에게는 보이지 않는다. 리포트를 읽는 것만으로는 사라지지 않고, 변경
 /// 사항까지 확인해야 사라진다.
 ///
-/// 서버의 회차 상태(5-4) 중 홈에서 보여줄 셋만 쓴다. 평가 이어서 하기와 음성
-/// 다시 보내기는 면회 흐름이 맡는다.
+/// 서버의 회차 상태(5-4)를 홈 표시로 옮긴 것이다. 평가 전과 음성 접수 전은
+/// 앱을 다시 켠 뒤 면회 흐름을 이어가게 한다. 이어가는 화면은 면회 흐름이 맡는다.
 enum ReportNotice {
+  /// 평가 전에 앱을 떠났다(`evaluationPending`). 눌러서 평가를 이어서 한다.
+  evaluationPending,
+
+  /// 평가 뒤 음성을 보내지 못했다(`audioPending`). 눌러서 음성을 다시 보낸다.
+  audioPending,
+
   /// 만드는 중. 음성을 보낸 뒤부터 도착까지다(`processing`).
   generating,
 
@@ -819,14 +825,17 @@ class _ReportNoticesNotifier
       failure is ApiNetworkFailure ||
       (failure is ApiServerFailure && failure.retryable);
 
-  /// 회차 상태를 홈 알림으로 옮긴다. 홈에서 보여주지 않는 상태는 `null` 이다.
+  /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
+  /// `null` 이다.
   ReportNoticeInfo? _noticeOf(VisitProgress session, VisitStatus? status) {
     final notice = switch (status) {
+      VisitStatus.evaluationPending => ReportNotice.evaluationPending,
+      VisitStatus.audioPending => ReportNotice.audioPending,
       VisitStatus.processing => ReportNotice.generating,
       VisitStatus.completed =>
         _acknowledged.contains(session.sessionId) ? null : ReportNotice.ready,
       VisitStatus.failed => ReportNotice.failed,
-      _ => null,
+      null => null,
     };
     if (notice == null) return null;
     return ReportNoticeInfo(

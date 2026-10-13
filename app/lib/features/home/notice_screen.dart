@@ -56,8 +56,15 @@ class NoticeScreen extends ConsumerWidget {
                   ? _NoticeRow(
                       date: info!.visitDate,
                       notice: notice,
-                      onOpen: () =>
-                          context.push(AppRoutes.reportOf(info.reportId!)),
+                      onOpen: () => context.push(switch (notice) {
+                        // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
+                        ReportNotice.evaluationPending =>
+                          AppRoutes.visitReviewOf(info.reportId!),
+                        ReportNotice.audioPending => AppRoutes.visitUploadOf(
+                          info.reportId!,
+                        ),
+                        _ => AppRoutes.reportOf(info.reportId!),
+                      }),
                     )
                   : mockReport.when(
                       loading: () => const LoadingView(),
@@ -113,9 +120,14 @@ class _NoticeRow extends StatelessWidget {
       ReportNotice.generating => ('리포트를 만들고 있어요', '조금만 기다려 주세요'),
       ReportNotice.ready => ('리포트가 도착했어요', '눌러서 확인하기'),
       ReportNotice.failed => ('리포트를 만들지 못했어요', null),
+      ReportNotice.evaluationPending => ('평가 이어서 하기', '평가를 마치면 리포트를 만들어요'),
+      ReportNotice.audioPending => ('음성 다시 보내기', '녹음을 보내면 리포트를 만들어요'),
     };
-    // 도착한 리포트만 열 수 있다.
-    final onTap = notice == ReportNotice.ready ? onOpen : null;
+    // 만드는 중과 실패는 들어갈 곳이 없다.
+    final onTap = switch (notice) {
+      ReportNotice.generating || ReportNotice.failed => null,
+      _ => onOpen,
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
