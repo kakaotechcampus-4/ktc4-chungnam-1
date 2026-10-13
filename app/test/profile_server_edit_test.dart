@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
@@ -31,12 +32,18 @@ AuthSession _session() => AuthSession(
 );
 
 /// 실제 비동기 처리(가짜 서버, asset 읽기)를 기다리고 화면을 맞춘다.
+///
+/// 로딩이 도는 동안에는 `pumpAndSettle` 이 끝나지 않으므로, 로딩이 사라질
+/// 때까지 실제 시간을 조금씩 흘려보낸다.
 Future<void> _settle(WidgetTester tester) async {
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 40; i++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 30)),
     );
     await tester.pump(const Duration(milliseconds: 100));
+    if (i >= 2 && find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+      break;
+    }
   }
   await tester.pumpAndSettle();
 }
@@ -56,7 +63,21 @@ Future<ProviderContainer> _open(
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 
-  final container = ProviderContainer(overrides: [server.override]);
+  // 목 데이터(asset)는 실제 시간에서 먼저 읽어 넣는다. 화면 안에서 읽으면 가짜
+  // 시간에서는 끝나지 않을 수 있다.
+  final sample = (await tester.runAsync(
+    () => const MockRepository().loadProfile(),
+  ))!;
+  final account = (await tester.runAsync(
+    () => const MockRepository().loadAccount(),
+  ))!;
+  final container = ProviderContainer(
+    overrides: [
+      server.override,
+      profileSampleProvider.overrideWith((ref) async => sample),
+      accountProvider.overrideWith((ref) async => account),
+    ],
+  );
   addTearDown(container.dispose);
   container.read(sessionProvider.notifier).restore(_session());
 
@@ -76,6 +97,14 @@ Future<ProviderContainer> _open(
     );
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
+  // 어르신 목록을 서버에서 다 불러올 때까지 기다린다. 그 전에는 로딩이 돈다.
+  for (var i = 0; i < 50; i++) {
+    if (!container.read(careProfilesProvider).isLoading) break;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump();
+  }
   await _settle(tester);
   return container;
 }
@@ -190,6 +219,25 @@ void main() {
         findsOneWidget,
       );
       expect(container.read(careProfilesProvider).entries, hasLength(1));
+    });
+  });
+
+  group('어르신 목록을 불러오지 못하면', () {
+    testWidgets('홈은 등록 안내 대신 다시 시도를 보여준다', (tester) async {
+      final server = _server()..offline = true;
+      final container = await _open(tester, server, AppRoutes.home);
+
+      expect(
+        find.text('어르신 정보를 불러오지 못했어요.\n인터넷 연결을 확인하고 다시 시도해주세요.'),
+        findsOneWidget,
+      );
+      expect(find.text('어르신을 먼저 등록해주세요'), findsNothing);
+
+      server.offline = false;
+      await _tap(tester, find.text('다시 시도'));
+
+      expect(container.read(careProfilesProvider).hasSelected, isTrue);
+      expect(find.text('오늘의 대화카드 받기'), findsOneWidget);
     });
   });
 }
