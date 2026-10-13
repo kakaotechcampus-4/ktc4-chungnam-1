@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
 import '../../data/visit_api.dart';
+import '../visit/pending_uploads.dart';
 import '../visit/visit_controller.dart';
-import 'recording_files.dart';
 import 'review_controller.dart';
 
 /// 소감 화면의 `리포트 만들기` 가 실패한 까닭. 화면은 이 값으로 문구를 고른다.
@@ -102,16 +102,20 @@ class SubmissionController extends Notifier<SubmissionState> {
       );
       if (!ref.mounted) return false;
 
-      // 서버가 받았으니 기기에 둘 까닭이 없다. 지우다 실패해도 제출은 끝났다.
+      // 서버가 받았으니 기기에 둘 까닭이 없다. 파일과 기록을 함께 지운다.
+      // 지우다 실패해도 제출은 끝났다.
       try {
-        await ref.read(recordingFilesProvider).delete(audioPath);
-      } on FileSystemException {
+        await ref
+            .read(pendingUploadsProvider)
+            .remove(sessionId, audioPath: audioPath);
+      } on Exception {
         // 다음에 다시 지울 길은 아직 없다. 남은 파일은 앱 전용 공간에 있다.
       }
       if (!ref.mounted) return false;
       state = SubmissionState(evaluationSaved: true, analysisId: analysisId);
       return true;
     } on FileSystemException {
+      // 녹음 파일이 사라졌거나 읽지 못했다.
       _fail(SubmissionFailure.noRecording);
       return false;
     } on ApiNetworkFailure {

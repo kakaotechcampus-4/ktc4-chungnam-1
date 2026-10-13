@@ -8,13 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/data/api_client.dart';
-import 'package:saerok/features/review/recording_files.dart';
 import 'package:saerok/features/review/review_controller.dart';
 import 'package:saerok/features/review/submission_controller.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
 
 import 'fake_card_api.dart';
+import 'fake_pending_uploads.dart';
 import 'fake_visit_api.dart';
 import 'fake_visit_recorder.dart';
 
@@ -26,15 +26,12 @@ void main() {
     FakeVisitApi api, {
     bool startRecording = true,
     int? participantCount = 2,
-    _FakeRecordingFiles? files,
+    FakePendingUploads? files,
   }) async {
     final container = ProviderContainer(
       overrides: [
         visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
-        ...mockCardsWith(visitApi: api),
-        recordingFilesProvider.overrideWithValue(
-          files ?? _FakeRecordingFiles(),
-        ),
+        ...mockCardsWith(visitApi: api, pendingUploads: files),
       ],
     );
     addTearDown(container.dispose);
@@ -153,7 +150,7 @@ void main() {
   group('녹음 제출', () {
     test('평가를 저장한 뒤 녹음과 참여자 수를 보내고 파일을 지운다', () async {
       final api = FakeVisitApi();
-      final files = _FakeRecordingFiles();
+      final files = FakePendingUploads();
       final container = await afterVisit(api, files: files);
       final path = container.read(visitControllerProvider).value!.recordingPath;
 
@@ -164,7 +161,7 @@ void main() {
       expect(api.audio?.sessionId, FakeVisitApi.sessionId);
       expect(api.audio?.audioPath, path);
       expect(api.audio?.participantCount, 2);
-      expect(files.deleted, [path]);
+      expect(files.removedPaths, [path]);
       expect(
         container.read(submissionProvider).analysisId,
         FakeVisitApi.analysisId,
@@ -173,7 +170,7 @@ void main() {
 
     test('녹음만 실패하면 다시 누를 때 녹음만 보낸다', () async {
       final api = FakeVisitApi(audioFailure: const ApiNetworkFailure());
-      final files = _FakeRecordingFiles();
+      final files = FakePendingUploads();
       final container = await afterVisit(api, files: files);
       final controller = container.read(submissionProvider.notifier);
 
@@ -181,13 +178,13 @@ void main() {
       var state = container.read(submissionProvider);
       expect(state.evaluationSaved, isTrue);
       expect(state.failure, SubmissionFailure.network);
-      expect(files.deleted, isEmpty, reason: '다시 보낼 파일은 남긴다');
+      expect(files.removedPaths, isEmpty, reason: '다시 보낼 파일은 남긴다');
 
       api.audioFailure = null;
       expect(await controller.submit(), isTrue);
       expect(api.calls.where((c) => c == 'evaluation'), hasLength(1));
       expect(api.calls.where((c) => c == 'audio'), hasLength(2));
-      expect(files.deleted, hasLength(1));
+      expect(files.removedPaths, hasLength(1));
     });
 
     test('이미 끝난 회차라고 거절되면 분석 작업 없이 마치고 파일을 지운다', () async {
@@ -197,7 +194,7 @@ void main() {
           errorCode: 'ANALYSIS_ALREADY_COMPLETED',
         ),
       );
-      final files = _FakeRecordingFiles();
+      final files = FakePendingUploads();
       final container = await afterVisit(api, files: files);
 
       expect(
@@ -205,7 +202,7 @@ void main() {
         isTrue,
       );
       expect(container.read(submissionProvider).analysisId, isNull);
-      expect(files.deleted, hasLength(1));
+      expect(files.removedPaths, hasLength(1));
     });
 
     test('참여자 수를 확인받지 않았으면 녹음을 보내지 않는다', () async {
@@ -222,11 +219,39 @@ void main() {
       expect(state.evaluationSaved, isTrue, reason: '평가는 먼저 저장한다');
     });
   });
-}
 
-class _FakeRecordingFiles implements RecordingFiles {
-  final deleted = <String>[];
+  group('기기에 남기는 녹음 기록', () {
+    test('녹음을 끝내면 회차 ID 로 적고, 서버가 받으면 지운다', () async {
+      final api = FakeVisitApi();
+      final files = FakePendingUploads();
+      final container = await afterVisit(api, files: files);
+      final visit = container.read(visitControllerProvider).value!;
 
-  @override
-  Future<void> delete(String path) async => deleted.add(path);
+      final saved = files.saved[FakeVisitApi.sessionId];
+      expect(saved?.audioPath, visit.recordingPath);
+      expect(saved?.participantCount, 2);
+
+      await container.read(submissionProvider.notifier).submit();
+
+      expect(files.saved, isEmpty);
+      expect(files.removedPaths, [visit.recordingPath]);
+    });
+
+    test('녹음을 보내지 못하면 기록을 남긴다', () async {
+      final api = FakeVisitApi(audioFailure: const ApiNetworkFailure());
+      final files = FakePendingUploads();
+      final container = await afterVisit(api, files: files);
+
+      await container.read(submissionProvider.notifier).submit();
+
+      expect(files.saved, contains(FakeVisitApi.sessionId));
+    });
+
+    test('참여자 수를 확인받지 않았으면 적지 않는다', () async {
+      final files = FakePendingUploads();
+      await afterVisit(FakeVisitApi(), files: files, participantCount: null);
+
+      expect(files.saved, isEmpty);
+    });
+  });
 }

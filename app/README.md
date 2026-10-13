@@ -305,6 +305,16 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 - 확인은 `adb exec-out run-as com.saelog.app ls app_flutter/visit_recordings`로 한다.
   `run-as`는 디버그 빌드에서만 된다.
 
+같은 폴더에 아직 서버에 보내지 못한 녹음의 기록 `pending-uploads.json`을 둔다
+([pending_uploads.dart](lib/features/visit/pending_uploads.dart)). 앱을 다시 켠 뒤
+`음성 다시 보내기`가 녹음 파일과 참여자 수를 회차 ID로 다시 찾기 위한 것이다.
+
+- 담는 값은 회차 ID, 파일 이름, 참여자 수뿐이다. 어르신 이름이나 대화 내용은 담지 않는다.
+- 녹음을 끝내기 확인 창에서 마칠 때 적는다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+- 서버가 녹음을 받았거나(6-2 `202`) 이미 끝난 회차라고 거절하면 녹음 파일과 함께 지운다.
+- 끝내 보내지 못한 기록과 파일을 언제 지울지, 로그아웃과 탈퇴 때 지울지는 녹음 파일과
+  마찬가지로 정해지지 않았다(아래 "아직 없는 것").
+
 ### 음성 형식
 
 WAV / PCM 16비트 / 16kHz / 모노다. BE [PR #71](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/71)과
@@ -361,8 +371,8 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 
 - 상태 조회(채원 담당). `202`로 받은 `analysisId`로 `GET /api/v1/speech-analyses/{analysisId}`를
   조회해 홈 타일에 반영한다.
-- 보내지 못한 파일을 기기에 얼마나 둘지. ADR-008은 FE 문서에서 정하게 했으나 **미정**이며
-  PM 확인이 필요하다.
+- 보내지 못한 파일과 그 기록(`pending-uploads.json`)을 기기에 얼마나 둘지, 로그아웃과
+  탈퇴 때 지울지. ADR-008은 FE 문서에서 정하게 했으나 **미정**이며 PM 확인이 필요하다.
 - 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스.
 
 ## 서버 요청 공통 틀

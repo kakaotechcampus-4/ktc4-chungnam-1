@@ -7,6 +7,7 @@ import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
 import '../cards/cards_controller.dart';
+import 'pending_uploads.dart';
 import 'visit_recorder.dart';
 
 /// 녹음이 뜻대로 되지 않은 경우다. 화면은 이 값으로 안내 문구를 고른다.
@@ -308,6 +309,7 @@ class VisitController extends AsyncNotifier<VisitState> {
           participantCount: participantCount,
         ),
       );
+      await _rememberUpload();
       return;
     }
     _fileOpen = false;
@@ -330,6 +332,34 @@ class VisitController extends AsyncNotifier<VisitState> {
         clearProblem: problem == null,
       ),
     );
+    await _rememberUpload();
+  }
+
+  /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수
+  /// 있게 하려는 것이다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+  ///
+  /// 적지 못해도 면회는 막지 않는다. 앱이 켜져 있는 동안은 이 상태가 파일과
+  /// 참여자 수를 들고 있다.
+  Future<void> _rememberUpload() async {
+    final now = state.value;
+    final sessionId = now?.sessionId;
+    final path = now?.recordingPath;
+    final count = now?.participantCount;
+    if (sessionId == null || path == null || count == null) return;
+
+    try {
+      await ref
+          .read(pendingUploadsProvider)
+          .save(
+            PendingUpload(
+              sessionId: sessionId,
+              audioPath: path,
+              participantCount: count,
+            ),
+          );
+    } on Exception {
+      // 기록이 없으면 앱을 다시 켠 뒤 다시 보내기만 못 한다.
+    }
   }
 
   void _startTicker() {
