@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -12,8 +14,8 @@ import '../profile_setup/setup_controller.dart';
 /// 지금 보고 있는 어르신의 이름과 기본 정보를 고친다. 피그마 설계 없음.
 ///
 /// 처음 입력할 때의 기본 정보 폼(B-2)을 그대로 쓴다. 고친 값은 그 어르신에게만
-/// 남고 세부 정보는 그대로다. 프로필 수정 API(`api-spec.md` 2-4)가 연결되기
-/// 전이라 앱이 켜져 있는 동안만 기억한다.
+/// 남고 세부 정보는 그대로다. 서버에 저장한 분이면 프로필 수정 API
+/// (`api-spec.md` 2-4)로 저장한 뒤 반영한다.
 class ProfileBasicEditScreen extends ConsumerStatefulWidget {
   const ProfileBasicEditScreen({super.key});
 
@@ -43,12 +45,36 @@ class _ProfileBasicEditScreenState
         now.stage != before.stage;
   }
 
-  bool get _canSave => _draft.basicInfoFilled && _changed;
+  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
+  bool _saving = false;
 
-  void _save() {
+  bool get _canSave => _draft.basicInfoFilled && _changed && !_saving;
+
+  Future<void> _save() async {
     final entry = _entry;
-    final info = _draft.toBasicInfo();
+    var info = _draft.toBasicInfo();
     if (entry == null || info == null) return;
+
+    final remoteId = entry.remoteId;
+    if (remoteId != null) {
+      setState(() => _saving = true);
+      try {
+        final saved = await ref
+            .read(profileApiProvider)
+            .updateBasicInfo(remoteId, info);
+        info = saved.basicInfo;
+      } on ApiFailure catch (failure) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(profileFailureMessage(failure))),
+          );
+        return;
+      }
+      if (!mounted) return;
+    }
 
     ref.read(careProfilesProvider.notifier).updateBasicInfo(entry.id, info);
     final messenger = ScaffoldMessenger.of(context);
@@ -77,7 +103,7 @@ class _ProfileBasicEditScreenState
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
-                label: '저장하기',
+                label: _saving ? '저장하는 중이에요' : '저장하기',
                 onPressed: _canSave ? _save : null,
               ),
               const SizedBox(height: AppSpacing.xxl),

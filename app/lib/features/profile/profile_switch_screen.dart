@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -177,6 +179,26 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
       pending: profile.pending,
     );
     if (!confirmed || !mounted) return;
+
+    // 서버에 저장한 분이면 서버에서 먼저 지운다(2-8). 실패하면 그대로 둔다.
+    // 입력 중인 분은 기본 정보를 마칠 때 서버에 만들어졌을 수 있다.
+    final remoteId =
+        ref.read(careProfilesProvider).byId(profile.id)?.remoteId ??
+        ref.read(pendingSetupsProvider)[profile.id]?.remoteId;
+    if (remoteId != null) {
+      try {
+        await ref.read(profileApiProvider).delete(remoteId);
+      } on ApiFailure catch (failure) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(profileFailureMessage(failure))),
+          );
+        return;
+      }
+      if (!mounted) return;
+    }
 
     profiles.remove(profile.id);
     ref.read(pendingSetupsProvider.notifier).remove(profile.id);

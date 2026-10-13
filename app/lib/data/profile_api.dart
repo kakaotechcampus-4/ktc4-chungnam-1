@@ -187,7 +187,7 @@ String profileFailureMessage(ApiFailure failure) => switch (failure) {
     '로그인이 풀렸어요. 다시 로그인해주세요.',
   ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
   ApiUnexpectedResponseFailure() => '서버 응답을 읽지 못했어요. 잠시 뒤 다시 시도해주세요.',
-  ApiServerFailure() => '저장하지 못했어요. 잠시 뒤 다시 시도해주세요.',
+  ApiServerFailure() => '처리하지 못했어요. 잠시 뒤 다시 시도해주세요.',
 };
 
 final profileApiProvider = Provider<ProfileApi>(
