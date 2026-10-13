@@ -9,8 +9,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'api_client.dart';
 import 'mock_repository.dart';
 import 'models.dart';
+import 'profile_api.dart';
 
 final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
@@ -84,16 +86,21 @@ class EnteredDetails {
 
 /// 보호자가 돌보는 어르신 한 분이다.
 ///
-/// [pending] 이면 [basicInfo] 가 비어 있다. 등록을 마친 분은 늘 기본 정보가 있다.
+/// 앱 안에서 등록을 시작한 [pending] 인 분은 [basicInfo] 가 비어 있다. 서버에서
+/// 불러온 입력 중인 분은 기본 정보를 함께 들고 온다. 등록을 마친 분은 늘 기본
+/// 정보가 있다.
 class CareProfileEntry {
   const CareProfileEntry({
     required this.id,
     this.basicInfo,
     this.details = const EnteredDetails(),
     this.pending = false,
+    this.remoteId,
   });
 
+  /// 앱 안에서 이 분을 가리키는 값. 서버에서 불러온 분은 [remoteId] 와 같다.
   final String id;
+
   final EnteredBasicInfo? basicInfo;
 
   /// 세부 정보 네 항목. 입력하지 않았으면 모두 `null` 이다.
@@ -102,13 +109,45 @@ class CareProfileEntry {
   /// 등록하다 마치지 않고 나간 분이다. 슬롯 하나를 차지하고 `입력 중` 으로
   /// 보이며, 고를 수는 없다. 입력한 값은 입력 흐름이 들고 있다.
   final bool pending;
+
+  /// 서버의 `profileId`(`api-spec.md` 2절). 서버에 저장하지 않은 분은 `null`
+  /// 이다. 로그인 없이 들어왔거나, 기본 정보를 마치기 전인 경우다.
+  final String? remoteId;
+
+  CareProfileEntry copyWith({
+    EnteredBasicInfo? basicInfo,
+    EnteredDetails? details,
+    bool? pending,
+    String? remoteId,
+  }) => CareProfileEntry(
+    id: id,
+    basicInfo: basicInfo ?? this.basicInfo,
+    details: details ?? this.details,
+    pending: pending ?? this.pending,
+    remoteId: remoteId ?? this.remoteId,
+  );
+}
+
+/// 어르신 목록을 서버에서 불러온 상태다.
+enum CareProfilesLoad {
+  /// 서버를 쓰지 않는다. 로그인 세션 없이 들어온 경우다.
+  local,
+
+  loading,
+  loaded,
+  failed,
 }
 
 /// 등록한 어르신 목록과 지금 보고 있는 어르신이다.
 class CareProfiles {
-  const CareProfiles({required this.entries, required this.selectedId});
+  const CareProfiles({
+    required this.entries,
+    required this.selectedId,
+    this.load = CareProfilesLoad.local,
+  });
 
-  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다.
+  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다
+  /// (`api-spec.md` 2-2).
   static const max = 3;
 
   /// 전환 화면의 슬롯 순서 그대로다.
@@ -116,6 +155,13 @@ class CareProfiles {
 
   /// 고른 분이 없으면 `null` 이다.
   final String? selectedId;
+
+  /// 불러오는 중이거나 실패했으면 [entries] 가 비어 있어도 등록한 분이 없다는
+  /// 뜻이 아니다. 화면은 이때 등록 안내 대신 기다림이나 다시 시도를 보여준다.
+  final CareProfilesLoad load;
+
+  bool get isLoading => load == CareProfilesLoad.loading;
+  bool get loadFailed => load == CareProfilesLoad.failed;
 
   /// 고를 수 있는 분들이다. 입력 중인 분은 빠진다.
   List<CareProfileEntry> get ready => entries.where((e) => !e.pending).toList();
@@ -132,37 +178,118 @@ class CareProfiles {
   bool get hasSelected => selected != null;
 
   bool get isFull => entries.length >= max;
+
+  CareProfileEntry? byId(String id) =>
+      entries.where((e) => e.id == id).firstOrNull;
+
+  CareProfiles copyWith({
+    List<CareProfileEntry>? entries,
+    String? selectedId,
+    CareProfilesLoad? load,
+  }) => CareProfiles(
+    entries: entries ?? this.entries,
+    selectedId: selectedId ?? this.selectedId,
+    load: load ?? this.load,
+  );
 }
 
 /// 어르신 목록을 다룬다.
 ///
-/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
-/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
-/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
-/// 로그아웃하면 빈 목록으로 돌아간다.
+/// 로그인 세션이 있으면 서버(`api-spec.md` 2절)가 기준이다. 세션이 생기면
+/// 목록을 불러오고, 등록과 수정은 화면이 서버에 저장한 뒤 이 상태에 반영한다.
+/// 슬롯 순서는 서버에 저장하지 않으므로 다시 불러오면 만든 순서로 돌아간다.
 ///
-/// 서버를 쓰면 회원가입에서 첫 분을 반드시 등록하므로, 빈 목록은 마지막 분을
-/// 지운 경우다. 지금은 로그인만 하고 들어와도 빈 목록이며 같은 화면을 보여준다.
-///
-/// 계약상 계정당 프로필은 1개다(`api-spec.md` 2-2). 최대 3분은 BE 와 합의 전인
-/// 화면 설계이며, 서버를 붙일 때 이 제한을 함께 맞춘다.
+/// 로그인 세션 없이 들어오면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기)
+/// 서버를 부르지 않고 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지
+/// 않았으므로(`data-contracts.md`, 이슈 18) 단말 저장소에는 쓰지 않는다.
 class CareProfilesNotifier extends Notifier<CareProfiles> {
   int _nextId = 0;
 
+  /// 늦게 도착한 이전 불러오기가 새 결과를 덮지 않게 차례를 센다.
+  int _loadRound = 0;
+
   @override
-  CareProfiles build() => const CareProfiles(entries: [], selectedId: null);
+  CareProfiles build() {
+    final accountId = ref.watch(
+      sessionProvider.select((s) => s?.account.accountId),
+    );
+    if (accountId == null) {
+      return const CareProfiles(entries: [], selectedId: null);
+    }
+    // build 안에서는 상태를 바꿀 수 없어 다음 차례에 불러온다.
+    Future.microtask(reload);
+    return const CareProfiles(
+      entries: [],
+      selectedId: null,
+      load: CareProfilesLoad.loading,
+    );
+  }
+
+  /// 서버에서 목록을 다시 불러온다(2-1, 2-3). 고른 분은 남아 있으면 그대로 둔다.
+  ///
+  /// 서버의 `inProgress` 는 첫 카드 생성 전이라는 뜻이라 `입력 중` 으로 둔다.
+  Future<void> reload() async {
+    final round = ++_loadRound;
+    final previous = state.selectedId;
+    state = state.copyWith(load: CareProfilesLoad.loading);
+    final api = ref.read(profileApiProvider);
+    try {
+      final summaries = await api.list();
+      final profiles = await Future.wait([
+        for (final summary in summaries) api.get(summary.profileId),
+      ]);
+      if (!ref.mounted || round != _loadRound) return;
+      final entries = [
+        for (final profile in profiles)
+          CareProfileEntry(
+            id: profile.profileId,
+            remoteId: profile.profileId,
+            basicInfo: profile.basicInfo,
+            details: profile.details,
+            pending: profile.setupStatus != SetupStatus.completed,
+          ),
+      ];
+      state = CareProfiles(
+        entries: entries,
+        selectedId: entries.any((e) => e.id == previous && !e.pending)
+            ? previous
+            : null,
+        load: CareProfilesLoad.loaded,
+      );
+    } on ApiFailure {
+      if (!ref.mounted || round != _loadRound) return;
+      state = CareProfiles(
+        entries: const [],
+        selectedId: null,
+        load: CareProfilesLoad.failed,
+      );
+    }
+  }
 
   /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
+  ///
+  /// 서버에 저장했으면 [remoteId] 를 넘긴다. 서버에서 불러온 목록에 이미 있는
+  /// 분이면 새로 만들지 않고 그 자리를 채운다.
   void startWith(
     EnteredBasicInfo info, {
     EnteredDetails details = const EnteredDetails(),
+    String? remoteId,
   }) {
+    final existing = remoteId == null ? null : state.byId(remoteId);
+    if (existing != null) {
+      _replace(
+        existing.copyWith(basicInfo: info, details: details, pending: false),
+        select: true,
+      );
+      return;
+    }
     final entry = CareProfileEntry(
-      id: _newId(),
+      id: remoteId ?? _newId(),
+      remoteId: remoteId,
       basicInfo: info,
       details: details,
     );
-    state = CareProfiles(entries: [entry], selectedId: entry.id);
+    state = state.copyWith(entries: [entry], selectedId: entry.id);
   }
 
   /// 어르신을 더 등록하기 시작했다. 빈자리가 없으면 `null` 이다.
@@ -171,11 +298,15 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   String? beginAdding() {
     if (state.isFull) return null;
     final entry = CareProfileEntry(id: _newId(), pending: true);
-    state = CareProfiles(
-      entries: [...state.entries, entry],
-      selectedId: state.selectedId,
-    );
+    state = state.copyWith(entries: [...state.entries, entry]);
     return entry.id;
+  }
+
+  /// 입력 중이던 분이 서버에 저장됐다(2-2). 마치기 전이라 `입력 중` 그대로다.
+  void attachRemote(String id, String remoteId) {
+    final entry = state.byId(id);
+    if (entry == null) return;
+    _replace(entry.copyWith(remoteId: remoteId));
   }
 
   /// 입력 중이던 분의 등록을 마치고 그 분으로 바꾼다. 자리는 그대로다.
@@ -183,50 +314,38 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     String id,
     EnteredBasicInfo info, {
     EnteredDetails details = const EnteredDetails(),
+    String? remoteId,
   }) {
-    if (state.entries.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: info, details: details)
-              : e,
-      ],
-      selectedId: id,
+    final entry = state.byId(id);
+    if (entry == null) return;
+    _replace(
+      entry.copyWith(
+        basicInfo: info,
+        details: details,
+        pending: false,
+        remoteId: remoteId,
+      ),
+      select: true,
     );
   }
 
   /// 등록을 마친 분의 기본 정보를 고친다. 세부 정보는 그대로 둔다.
   void updateBasicInfo(String id, EnteredBasicInfo info) {
-    if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: info, details: e.details)
-              : e,
-      ],
-      selectedId: state.selectedId,
-    );
+    final entry = state.byId(id);
+    if (entry == null || entry.pending) return;
+    _replace(entry.copyWith(basicInfo: info));
   }
 
   /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
   void updateDetails(String id, EnteredDetails details) {
-    if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: e.basicInfo, details: details)
-              : e,
-      ],
-      selectedId: state.selectedId,
-    );
+    final entry = state.byId(id);
+    if (entry == null || entry.pending) return;
+    _replace(entry.copyWith(details: details));
   }
 
   void select(String id) {
     if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(entries: state.entries, selectedId: id);
+    state = state.copyWith(selectedId: id);
   }
 
   /// 목록 순서대로 다음 어르신으로 바꾼다. 마지막이면 처음으로 돌아간다.
@@ -243,13 +362,13 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   void reorder(int oldIndex, int newIndex) {
     final entries = [...state.entries];
     entries.insert(newIndex, entries.removeAt(oldIndex));
-    state = CareProfiles(entries: entries, selectedId: state.selectedId);
+    state = state.copyWith(entries: entries);
   }
 
   /// 슬롯 하나를 비운다. 보고 있던 분을 지우면 남은 첫 분으로 바꾼다.
   ///
   /// 마지막 분도 지울 수 있다. 프로필 삭제는 계정 탈퇴가 아니므로 계정은
-  /// 그대로 두고 빈 목록이 된다.
+  /// 그대로 두고 빈 목록이 된다. 서버에서 지우는 일(2-8)은 화면이 먼저 한다.
   ///
   /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
   void remove(String id) {
@@ -258,11 +377,24 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final selectedId = state.selectedId == id
         ? entries.where((e) => !e.pending).firstOrNull?.id
         : state.selectedId;
-    state = CareProfiles(entries: entries, selectedId: selectedId);
+    state = CareProfiles(
+      entries: entries,
+      selectedId: selectedId,
+      load: state.load,
+    );
     ref.read(_reportNoticesProvider.notifier).dismiss((
       accountId: ref.read(sessionProvider)?.account.accountId,
       profileId: id,
     ));
+  }
+
+  void _replace(CareProfileEntry entry, {bool select = false}) {
+    state = state.copyWith(
+      entries: [
+        for (final e in state.entries) e.id == entry.id ? entry : e,
+      ],
+      selectedId: select ? entry.id : null,
+    );
   }
 
   String _newId() => 'local-${_nextId++}';
@@ -337,7 +469,8 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final details = selected.details;
   return ProfileBundle(
     profile: Profile(
-      profileId: selected.id,
+      // 서버에 저장한 분은 서버의 profileId 를 쓴다. 카드 생성(4-1)이 이 값을 쓴다.
+      profileId: selected.remoteId ?? selected.id,
       name: entered.name,
       gender: entered.gender,
       birthDate: entered.birthDate,
