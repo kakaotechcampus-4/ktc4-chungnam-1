@@ -455,9 +455,13 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   /// (`ADR-005`). 기다림을 화면이 아니라 이 상태가 안고 있어, 사용자가 홈을
   /// 떠나 다른 화면을 보고 있어도 도착은 알려진다.
   ///
+  /// [analysisId] 는 녹음을 보낸 뒤(API 6-2) 받은 음성 분석 작업이다. 지금은
+  /// 목 시간을 세느라 쓰지 않는다. 분석 상태 조회(6-3)를 붙이는 작업(#115)이 이
+  /// 값을 쓴다. 그 작업과 같은 모양으로 맞춰 둔다.
+  ///
   /// 고른 어르신이 없으면 아무것도 하지 않는다. 면회는 어르신을 고른 뒤에만
   /// 할 수 있다.
-  void startGenerating() {
+  void startGenerating({String? analysisId}) {
     final key = _currentNoticeKey(ref);
     if (key != null) _notices.startGenerating(key);
   }

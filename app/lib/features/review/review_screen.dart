@@ -49,8 +49,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
     // 그 전에 위로 화면을 한 번 거친다. 서버가 녹음을 새로 받았을 때만 만드는
     // 중을 띄운다. 이미 끝난 회차라고 거절됐으면 홈의 회차 상태가 알린다.
-    if (ref.read(submissionProvider).analysisId != null) {
-      ref.read(reportNoticeProvider.notifier).startGenerating();
+    final analysisId = ref.read(submissionProvider).analysisId;
+    if (analysisId != null) {
+      ref
+          .read(reportNoticeProvider.notifier)
+          .startGenerating(analysisId: analysisId);
     }
     context.go(AppRoutes.visitReviewDone);
   }

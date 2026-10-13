@@ -41,8 +41,9 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
     final pending = await uploads.find(sessionId);
     if (pending == null) return UploadRetryOutcome.notFound;
 
+    final String analysisId;
     try {
-      await ref
+      analysisId = await ref
           .read(visitApiProvider)
           .submitAudio(
             sessionId,
@@ -58,7 +59,11 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
     }
 
     await _forget(uploads, sessionId);
-    if (ref.mounted) ref.read(reportNoticeProvider.notifier).startGenerating();
+    if (ref.mounted) {
+      ref
+          .read(reportNoticeProvider.notifier)
+          .startGenerating(analysisId: analysisId);
+    }
     return UploadRetryOutcome.sent;
   }
 

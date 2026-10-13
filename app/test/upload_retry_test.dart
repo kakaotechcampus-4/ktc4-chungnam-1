@@ -123,4 +123,32 @@ void main() {
     expect(await container.read(provider.future), UploadRetryOutcome.sent);
     expect(api.calls, ['audio', 'audio']);
   });
+
+  test('리포트 알림에 받은 분석 작업 ID 를 넘긴다', () async {
+    final notice = _RecordingNotice();
+    final container = ProviderContainer(
+      overrides: [
+        withSampleProfile,
+        ...mockCardsWith(
+          visitApi: FakeVisitApi(),
+          pendingUploads: withPending(),
+        ),
+        reportNoticeProvider.overrideWith(() => notice),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(uploadRetryProvider(_sessionId), (_, _) {});
+
+    await container.read(uploadRetryProvider(_sessionId).future);
+
+    expect(_RecordingNotice.analysisIds, [FakeVisitApi.analysisId]);
+  });
+}
+
+/// 리포트 알림에 넘긴 분석 작업 ID 를 모은다.
+class _RecordingNotice extends ReportNoticeNotifier {
+  static final analysisIds = <String?>[];
+
+  @override
+  void startGenerating({String? analysisId}) => analysisIds.add(analysisId);
 }
