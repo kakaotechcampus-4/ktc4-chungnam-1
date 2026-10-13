@@ -174,6 +174,22 @@ class ProfileApi {
   }
 }
 
+/// 프로필 저장과 불러오기 실패를 보호자에게 보여줄 문구로 옮긴다.
+///
+/// 서버의 `errorCode` 는 명세 2절의 값만 구분한다. 모르는 실패는 다시 시도하게
+/// 안내하고 원인을 지어내지 않는다.
+String profileFailureMessage(ApiFailure failure) => switch (failure) {
+  ApiServerFailure(errorCode: 'PROFILE_LIMIT_EXCEEDED') =>
+    '어르신은 세 분까지 등록할 수 있어요.',
+  ApiServerFailure(errorCode: 'PROFILE_NOT_FOUND') =>
+    '어르신 정보를 찾지 못했어요. 목록을 다시 불러와 주세요.',
+  ApiServerFailure(statusCode: 401) || ApiSignedOutFailure() =>
+    '로그인이 풀렸어요. 다시 로그인해주세요.',
+  ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
+  ApiUnexpectedResponseFailure() => '서버 응답을 읽지 못했어요. 잠시 뒤 다시 시도해주세요.',
+  ApiServerFailure() => '저장하지 못했어요. 잠시 뒤 다시 시도해주세요.',
+};
+
 final profileApiProvider = Provider<ProfileApi>(
   (ref) => ProfileApi(ref.watch(apiClientProvider)),
 );
