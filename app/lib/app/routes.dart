@@ -47,6 +47,11 @@ abstract final class AppRoutes {
   /// F 보호자 소감 작성.
   static const visitReview = '/visit/review';
 
+  /// 보내지 못한 면회 녹음 다시 보내기. 피그마 설계 없음.
+  ///
+  /// 앱을 다시 켠 뒤 홈 배너가 `?session=<회차 ID>` 를 붙여 연다.
+  static const visitUpload = '/visit/upload';
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
 

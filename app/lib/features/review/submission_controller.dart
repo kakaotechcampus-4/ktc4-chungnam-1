@@ -157,11 +157,7 @@ class SubmissionController extends Notifier<SubmissionState> {
             participantCount: participantCount,
           );
     } on ApiServerFailure catch (failure) {
-      if (failure.statusCode == 409 &&
-          (failure.errorCode == 'ANALYSIS_ALREADY_COMPLETED' ||
-              failure.errorCode == 'ANALYSIS_ALREADY_FAILED')) {
-        return null;
-      }
+      if (isClosedAnalysis(failure)) return null;
       rethrow;
     }
   }

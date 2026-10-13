@@ -73,6 +73,13 @@ void main() {
       });
     }
 
+    testWidgets('음성 다시 보내기는 회차 ID 를 받는다', (tester) async {
+      await openAt(tester, '${AppRoutes.visitUpload}?session=session_test_001');
+      expect(tester.takeException(), isNull);
+      // 대역 기록에 이 회차가 없으므로 찾을 수 없다고 안내한다.
+      expect(find.text('이 휴대전화에서 녹음 파일을 찾을 수 없어요.'), findsOneWidget);
+    });
+
     testWidgets('리포트는 reportId 를 받는다', (tester) async {
       await openAt(tester, AppRoutes.reportOf('report_demo_001'));
       expect(tester.takeException(), isNull);

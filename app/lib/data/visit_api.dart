@@ -117,6 +117,13 @@ class ServerVisitApi implements VisitApi {
   }
 }
 
+/// 6-2 가 이미 끝났거나 실패로 끝난 회차라고 거절했는지. 다시 보내도 받지
+/// 않으므로 기기의 녹음을 지우고 마친다.
+bool isClosedAnalysis(ApiServerFailure failure) =>
+    failure.statusCode == 409 &&
+    (failure.errorCode == 'ANALYSIS_ALREADY_COMPLETED' ||
+        failure.errorCode == 'ANALYSIS_ALREADY_FAILED');
+
 /// 테스트는 이 provider 를 override 해 가짜 [VisitApi] 를 넣는다(`ADR-005`).
 final visitApiProvider = Provider<VisitApi>(
   (ref) => ServerVisitApi(ref.watch(apiClientProvider)),

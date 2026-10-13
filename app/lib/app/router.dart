@@ -20,6 +20,7 @@ import '../features/report/report_list_screen.dart';
 import '../features/report/report_screen.dart';
 import '../features/review/comfort_screen.dart';
 import '../features/review/review_screen.dart';
+import '../features/review/upload_retry_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
 import '../features/visit/record_screen.dart';
@@ -97,6 +98,14 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.visitReview,
         builder: (context, state) => const _NeedsProfile(child: ReviewScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.visitUpload,
+        builder: (context, state) => _NeedsProfile(
+          child: UploadRetryScreen(
+            sessionId: state.uri.queryParameters['session'],
+          ),
+        ),
       ),
       GoRoute(
         path: AppRoutes.visitReviewDone,
