@@ -20,12 +20,12 @@ def render(data: dict) -> str:
     data = {**data, "recommender": recommender_of(data)}
     # </script>가 데이터 안에 있어도 태그가 닫히지 않게 한다
     payload = json.dumps(data, ensure_ascii=False, default=str).replace("</", "<\\/")
-    return TEMPLATE.read_text().replace("/*__DBVIEW_JS__*/", DBVIEW.read_text()).replace("__RUN_JSON__", payload)
+    return TEMPLATE.read_text(encoding="utf-8").replace("/*__DBVIEW_JS__*/", DBVIEW.read_text(encoding="utf-8")).replace("__RUN_JSON__", payload)
 
 
 def build(run_path: Path) -> Path:
     out = run_path.with_suffix(".html")
-    out.write_text(render(json.loads(run_path.read_text())))
+    out.write_text(render(json.loads(run_path.read_text())), encoding="utf-8")
     return out
 
 

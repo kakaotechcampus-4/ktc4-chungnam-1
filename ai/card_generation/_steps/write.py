@@ -1,6 +1,6 @@
 """문안 작성(④). 고른 12장에 설명, 첫 질문, 꼬리 질문 3개를 씀(판의 writing_topics.md).
 
-코드가 꼬리 질문 개수, 물음표, 금지 표현(기억 시험, 최근 일, 의료 표현)을 검사함.
+코드가 빈 설명, 꼬리 질문 개수, 물음표, 금지 표현(기억 시험, 최근 일, 의료 표현)을 검사함.
 꼬리 질문 3개는 API 명세 4절(#87). 금지 표현은 PM이 저장소 규칙(CLAUDE.md)에 정해 둔 "최근 기억을 시험하는 질문, 의료 진단 금지" 기준.
 걸리면 걸린 곳을 알려 주고 한 번 다시 쓰게 함. 또 걸리면 실패.
 """
@@ -62,13 +62,15 @@ def write_cards(model: BaseChatModel, profile: dict[str, Any], cards: list[dict[
 
 
 def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
-    """문안 검사. 카드 위치가 입력과 같은지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 금지 표현(_BANNED)이 없는지.
+    """문안 검사. 카드 위치가 입력과 같은지, 설명이 비지 않았는지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 금지 표현(_BANNED)이 없는지.
     걸린 것을 문장 목록으로 돌려주고, 이 문장을 그대로 모델에게 보내 고치게 함.
     """
     out = []
     if sorted(c.position for c in result.cards) != sorted(positions):
         out.append(f"카드 위치가 입력과 다르다. 입력은 {positions}다.")
     for c in result.cards:
+        if not c.description.strip():
+            out.append(f"{c.position}번: 설명이 비어 있다.")
         if len(c.follow_up_questions) != 3:
             out.append(f"{c.position}번: 꼬리 질문이 {len(c.follow_up_questions)}개다. 3개여야 한다.")
         for q in [c.primary_question, *c.follow_up_questions]:

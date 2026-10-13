@@ -172,13 +172,13 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
     """시뮬레이션 한 번. sink를 주면 진행 이벤트(단계, LLM 요청, 도구 호출, 대화 턴, 중간 산출물)를 받는다."""
     backend = get_backend(recommender)
     tag = backend.name
-    persona = json.loads(persona_path.read_text())
+    persona = json.loads(persona_path.read_text(encoding="utf-8"))
     visits = visits or persona["visits"]["count"]
     out_path = HERE / "runs" / f"persona-{tag}-{persona['id']}-{seed}-{datetime.now():%Y%m%d-%H%M%S}.json"
     events_path = out_path.with_suffix(".events.jsonl")
 
     def write_event(event: dict[str, Any]) -> None:
-        with events_path.open("a") as f:
+        with events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
         if sink:
             sink(event)
@@ -190,7 +190,7 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
         model = chat_model(config)
         run: dict[str, Any] = {"recommender": backend.name, "persona": persona, "seed": seed, "llm": config.name,
                                "started_at": datetime.now().isoformat(), "visits": [], "failure": None,
-                               "prompts": {name: path.read_text() for name, path in prompt_files(backend).items()}}
+                               "prompts": {name: path.read_text(encoding="utf-8") for name, path in prompt_files(backend).items()}}
         tracing.emit("run_start", run=out_path.stem, persona=persona["id"], recommender=backend.name, visits=visits, seed=seed)
         try:
             with psycopg.connect(url) as conn:
@@ -201,7 +201,7 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
             run["profile_id"] = pid
             run["initial_state"] = backend.state(url, pid)
             take_snapshot(run, backend, url, pid, "onboarding", "프로필 입력 직후", 0)
-            out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str))
+            out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
             first = datetime.fromisoformat(persona["visits"]["first_at"])
             run_visits(run, backend, persona, visits, first, rng, url, pid, config, model, out_path, should_stop)
             if run["visits"]:
@@ -212,7 +212,7 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
             run["failure"] = f"{len(run['visits']) + 1}회차 중단: {type(error).__name__}: {str(error)[:300]}"
             print(run["failure"])
             tracing.emit("run_error", error=run["failure"])
-        out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str))
+        out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
         tracing.emit("run_end", run=out_path.stem, failure=run["failure"], visits=len(run["visits"]))
         print(f"결과: {out_path}")
         return out_path
@@ -398,7 +398,7 @@ def run_visits(run, backend: Backend, persona, visits, first, rng, url, pid, con
         visit["llm_retries"] = list(roles.RETRIES)
         roles.RETRIES.clear()
         run["visits"].append(visit)
-        out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str))
+        out_path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
         tracing.emit("visit_end", visit=n, seconds=visit["timings"]["total"], applied=visit["applied"])
         print(f"[{n}회차] 끝: 고른 카드 {len(chosen)}장(+추가 {len(added)}), 대화 {len(turns)}턴, 이야기 후보 {len(facts)}개 중 "
               f"{len(applied_facts)}개 저장(+직접 {len(manual)}), 조정 {len(applied_feedback)}건, {visit['timings']['total']}초", flush=True)
@@ -416,7 +416,7 @@ def main() -> int:
         print(f"{DB_ENV}가 없습니다", file=sys.stderr)
         return 2
     out = simulate(Path(args.persona), args.recommender, args.visits, args.seed, url)
-    return 0 if json.loads(out.read_text())["failure"] is None else 1
+    return 0 if json.loads(out.read_text(encoding="utf-8"))["failure"] is None else 1
 
 
 if __name__ == "__main__":

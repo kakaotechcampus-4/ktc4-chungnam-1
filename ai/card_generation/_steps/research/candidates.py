@@ -40,7 +40,7 @@ class CardCandidateSubmission(BaseModel):
 
 
 def submission_problems(sub: CardCandidateSubmission, version: Version) -> list[str]:
-    """제출 검사. 후보 수, 주제 수, 한 주제의 후보 수, 새 주제 수, 근거 형식과 종류, 제목 길이를 판(version) 값으로 봄.
+    """제출 검사. 후보 수, 주제 수, 한 주제의 후보 수, 새 주제 수, 근거 형식과 종류, 빈 제목과 제목 길이를 판(version) 값으로 봄.
     걸린 것을 문장 목록으로 돌려주고, 이 문장을 그대로 모델에게 보내 다시 내게 함.
     """
     problems: list[str] = []
@@ -49,7 +49,9 @@ def submission_problems(sub: CardCandidateSubmission, version: Version) -> list[
         problems.append(f"후보가 {n}개다. {version.min_candidates}~{version.max_candidates}개여야 한다.")
     counts: dict[str, int] = {}
     for i, c in enumerate(sub.candidates, 1):
-        if not c.linked_topic_id and not (c.new_topic_title and c.new_topic_description):
+        if not c.card_title.strip():
+            problems.append(f"{i}번: 카드 제목이 비어 있다.")
+        if not c.linked_topic_id and not ((c.new_topic_title or "").strip() and (c.new_topic_description or "").strip()):
             problems.append(f"{i}번: 기존 주제에 연결하거나 새 주제 제목과 설명을 써야 한다.")
         if c.linked_topic_id and (c.new_topic_title or c.new_topic_description):
             problems.append(f"{i}번: 기존 주제에 연결했으면 새 주제 제목과 설명은 null이어야 한다.")

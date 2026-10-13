@@ -59,3 +59,18 @@ def test_agent_link_kept_for_comparison():
                       _MatchResult(assignments=[_a(1, new_key="n1")],
                                   new_topics=[_NewTopic(new_key="n1", title="새", description="d")]))
     assert out.kept[0].agent_topic_id == "t-ok" and out.kept[0].topic_id is None
+
+
+def test_new_topic_with_blank_or_long_title_dropped():
+    """판정이 지은 새 주제 제목·설명도 backend 저장 기준(빈 값 금지, 제목 100자 이하)으로 거름."""
+    cands = [_cand("a"), _cand("b"), _cand("c")]
+    result = _MatchResult(assignments=[_a(1, new_key="n1"), _a(2, new_key="n2"), _a(3, new_key="n3")],
+                         new_topics=[_NewTopic(new_key="n1", title=" ", description="d"),
+                                     _NewTopic(new_key="n2", title="가" * 101, description="d"),
+                                     _NewTopic(new_key="n3", title="장터", description="")])
+    out = _apply_match(cands, TOPICS, result)
+    assert out.kept == []
+    reasons = [d["reason"] for d in out.dropped]
+    assert "비어 있음" in reasons[0]
+    assert "100자" in reasons[1]
+    assert "비어 있음" in reasons[2]

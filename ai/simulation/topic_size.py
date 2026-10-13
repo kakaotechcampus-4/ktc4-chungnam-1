@@ -67,12 +67,12 @@ def aggregate(run: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]
 
 def main(path: Path) -> None:
     from .viewer import build
-    run = json.loads(path.read_text())
+    run = json.loads(path.read_text(encoding="utf-8"))
     if "--again" in sys.argv or "topic_eval" not in run:  # 판정은 LLM이라 이미 있으면 묶음만 다시 계산한다
         run["topic_eval"] = evaluate(run, chat_model(config_from_env()))
     else:
         run["topic_eval"] = aggregate(run, run["topic_eval"]["topics"])
-    path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str))
+    path.write_text(json.dumps(run, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(json.dumps(run["topic_eval"]["summary"], ensure_ascii=False))
     print(build(path))
 

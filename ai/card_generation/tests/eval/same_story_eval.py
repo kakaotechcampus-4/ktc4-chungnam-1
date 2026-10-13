@@ -83,7 +83,7 @@ def main() -> int:
     ap.add_argument("--match", type=Path)
     ap.add_argument("--repeat", type=int, default=2)
     args = ap.parse_args()
-    data = json.loads(DATA.read_text())
+    data = json.loads(DATA.read_text(encoding="utf-8"))
     prompt = match_prompt(LATEST, args.match, args.same_story)
     model = chat_model(config_from_env())
     jobs = [(case, group) for _ in range(args.repeat) for group in ("excluded", "revisit") for case in data["cases"]]
@@ -93,7 +93,7 @@ def main() -> int:
     summary = {g: score([r for r in rows if r["group"] == g]) for g in ("excluded", "revisit")}
     out = HERE / "runs" / f"same-story-{args.label}-{datetime.now():%Y%m%d-%H%M%S}.json"
     out.write_text(json.dumps({"label": args.label, "repeat": args.repeat, "summary": summary, "rows": rows},
-                              ensure_ascii=False, indent=1))
+                              ensure_ascii=False, indent=1), encoding="utf-8")
     for g, s in summary.items():
         tags = ", ".join(f"{t} {s['by_tag'][t][0]}/{s['by_tag'][t][1]}" for t in (*SAME, *DIFF, "ambiguous")
                          if t in s["by_tag"])
