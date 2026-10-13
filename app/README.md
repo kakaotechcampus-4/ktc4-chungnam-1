@@ -384,7 +384,7 @@ API별 요청은 이 틀 위에 따로 둔다.
 | 파일 | API |
 | --- | --- |
 | [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다 |
-| [visit_api.dart](lib/data/visit_api.dart) | 5-1 회차 만들기, 5-3 보충 카드 더하기, 6-1 보호자 평가 저장. 6-1이 `EVALUATION_ALREADY_SUBMITTED`로 거절되면 이미 저장한 것으로 본다 |
+| [visit_api.dart](lib/data/visit_api.dart) | 5-1 회차 만들기, 5-3 보충 카드 더하기, 6-1 보호자 평가 저장, 6-2 녹음 제출(multipart). 6-1이 `EVALUATION_ALREADY_SUBMITTED`로 거절되면 이미 저장한 것으로 본다 |
 
 세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 쓰는 도중 세션이 만료되면 서버의 `401`을 그대로 돌려주며, 자동 재인증은 아직 붙이지 않았다(위 "사용 중 세션 만료"). 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
 

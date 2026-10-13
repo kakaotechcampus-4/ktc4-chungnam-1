@@ -3,6 +3,7 @@
 // 서버 대신 `MockClient` 를 쓴다. 값은 모두 합성 데이터다.
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -197,6 +198,71 @@ void main() {
             'INVALID_CARD_REVIEW',
           ),
         ),
+      );
+    });
+  });
+
+  group('6-2 녹음 제출', () {
+    late String audioPath;
+
+    setUp(() async {
+      final dir = await Directory.systemTemp.createTemp('saerok_audio_test');
+      addTearDown(() => dir.delete(recursive: true));
+      // 내용은 상관없다. 합성 바이트만 담는다.
+      audioPath = '${dir.path}/visit.wav';
+      await File(audioPath).writeAsBytes([1, 2, 3, 4]);
+    });
+
+    test('녹음과 참여자 수를 multipart 로 보내고 분석 작업 ID 를 받는다', () async {
+      late http.Request sent;
+      final api = _api((request) async {
+        sent = request;
+        return _json({
+          'schemaVersion': 1,
+          'analysisId': 'analysis-1',
+          'sessionId': 'session-1',
+          'status': 'queued',
+        }, 202);
+      });
+
+      final analysisId = await api.submitAudio(
+        'session-1',
+        audioPath: audioPath,
+        participantCount: 2,
+      );
+
+      expect(analysisId, 'analysis-1');
+      expect(sent.method, 'POST');
+      expect(
+        sent.url.toString(),
+        'http://api.test/api/v1/visit-sessions/session-1/speech-analyses',
+      );
+      expect(sent.headers['content-type'], startsWith('multipart/form-data'));
+      expect(sent.body, contains('name="participantCount"'));
+      expect(sent.body, contains('name="audio"; filename="visit.wav"'));
+    });
+
+    test('평가 전이라는 거절은 그대로 넘긴다', () async {
+      final api = _api((_) async => _error(409, 'EVALUATION_REQUIRED'));
+
+      await expectLater(
+        api.submitAudio('session-1', audioPath: audioPath, participantCount: 2),
+        throwsA(
+          isA<ApiServerFailure>().having(
+            (f) => f.errorCode,
+            'errorCode',
+            'EVALUATION_REQUIRED',
+          ),
+        ),
+      );
+    });
+
+    test('분석 작업 ID 가 없으면 성공으로 넘기지 않는다', () async {
+      final api = _api((_) async => _json({'schemaVersion': 1}, 202));
+
+      await expectLater(
+        api.submitAudio('session-1', audioPath: audioPath, participantCount: 2),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
       );
     });
   });

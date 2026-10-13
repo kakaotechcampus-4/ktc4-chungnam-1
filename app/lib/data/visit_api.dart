@@ -2,10 +2,11 @@
 ///
 /// 회차는 녹음을 시작할 때 고른 카드로 만든다(5-1). 녹음 일시정지와 종료는
 /// 단말에서 처리하고 서버에 알리지 않는다. 면회 중 보충 카드는 5-3 으로 더한다.
-/// 면회를 마치면 보호자 평가를 6-1 로 저장한다.
+/// 면회를 마치면 보호자 평가를 6-1 로 저장하고 녹음을 6-2 로 보낸다.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
 import 'models.dart';
@@ -33,6 +34,16 @@ abstract interface class VisitApi {
     String sessionId,
     EvaluationSubmission evaluation,
   );
+
+  /// 6-2. 녹음 파일과 참여자 수를 보내고 음성 분석 작업 ID 를 받는다.
+  ///
+  /// 평가(6-1)를 저장한 회차만 받는다. [participantCount] 는 녹음을 끝낼 때
+  /// 보호자가 확인한 1~8 이다.
+  Future<String> submitAudio(
+    String sessionId, {
+    required String audioPath,
+    required int participantCount,
+  });
 }
 
 class ServerVisitApi implements VisitApi {
@@ -77,6 +88,24 @@ class ServerVisitApi implements VisitApi {
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<String> submitAudio(
+    String sessionId, {
+    required String audioPath,
+    required int participantCount,
+  }) async {
+    final body = await _client.postMultipart(
+      '/api/v1/visit-sessions/${Uri.encodeComponent(sessionId)}/speech-analyses',
+      fields: {'participantCount': '$participantCount'},
+      files: [await http.MultipartFile.fromPath('audio', audioPath)],
+    );
+    final analysisId = body['analysisId'];
+    if (analysisId is! String || analysisId.isEmpty) {
+      throw const ApiUnexpectedResponseFailure('analysisId 가 없다');
+    }
+    return analysisId;
   }
 
   static VisitSession _session(Map<String, dynamic> body) {
