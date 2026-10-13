@@ -39,16 +39,27 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (!sent || !mounted) return;
 
     // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
-    // 그 전에 위로 화면을 한 번 거친다.
-    ref.read(reportNoticeProvider.notifier).startGenerating();
+    // 그 전에 위로 화면을 한 번 거친다. 서버가 녹음을 새로 받았을 때만 만드는
+    // 중을 띄운다. 이미 끝난 회차라고 거절됐으면 홈의 회차 상태가 알린다.
+    if (ref.read(submissionProvider).analysisId != null) {
+      ref.read(reportNoticeProvider.notifier).startGenerating();
+    }
     context.go(AppRoutes.visitReviewDone);
   }
 
-  static String _failureMessage(SubmissionFailure failure) => switch (failure) {
-    SubmissionFailure.network => '소감을 보내지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
-    SubmissionFailure.server => '소감을 보내지 못했어요. 잠시 후 다시 눌러주세요.',
-    SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
-  };
+  /// 평가를 저장했으면 녹음만 남았다고 알린다. 다시 누르면 녹음만 보낸다.
+  static String _failureMessage(
+    SubmissionFailure failure, {
+    required bool evaluationSaved,
+  }) {
+    final what = evaluationSaved ? '소감은 저장했지만 녹음을' : '소감을';
+    return switch (failure) {
+      SubmissionFailure.network => '$what 보내지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+      SubmissionFailure.server => '$what 보내지 못했어요. 잠시 후 다시 눌러주세요.',
+      SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
+      SubmissionFailure.noRecording => '녹음 파일이 없어 리포트를 만들 수 없어요.',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,14 +79,21 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           children: [
             if (failure != null) ...[
               Text(
-                _failureMessage(failure),
+                _failureMessage(
+                  failure,
+                  evaluationSaved: submission.evaluationSaved,
+                ),
                 style: AppTypography.sub.copyWith(color: AppColors.danger),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.md),
             ],
             PrimaryButton(
-              label: submission.sending ? '소감을 보내고 있어요' : '리포트 만들기',
+              label: !submission.sending
+                  ? '리포트 만들기'
+                  : submission.evaluationSaved
+                  ? '녹음을 보내고 있어요'
+                  : '소감을 보내고 있어요',
               onPressed: draft.canSubmit && !submission.sending
                   ? _submit
                   : null,
