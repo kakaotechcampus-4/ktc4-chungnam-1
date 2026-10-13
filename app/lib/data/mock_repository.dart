@@ -59,9 +59,26 @@ class MockRepository {
     return VisitSession.fromJson(json['visitSession'] as Map<String, dynamic>);
   }
 
+  /// 목 면회 사진도 열리는 주소가 없어 앱에 든 합성 그림을 붙인다.
   Future<VisitReport> loadVisitReport() async {
     final json = await _read('visit-report.json');
-    return VisitReport.fromJson(json['visitReport'] as Map<String, dynamic>);
+    final report = VisitReport.fromJson(
+      json['visitReport'] as Map<String, dynamic>,
+    );
+    return VisitReport(
+      reportId: report.reportId,
+      sessionId: report.sessionId,
+      reportStatus: report.reportStatus,
+      title: report.title,
+      visitDate: report.visitDate,
+      mood: report.mood,
+      photoId: report.photoId,
+      photoUrl: report.photoId == null
+          ? null
+          : 'asset:assets/images/visitation.webp',
+      summaryText: report.summaryText,
+      cardSummaries: report.cardSummaries,
+    );
   }
 
   Future<CaregiverEvaluation> loadCaregiverEvaluation() async {
