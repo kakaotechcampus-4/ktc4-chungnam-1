@@ -138,20 +138,32 @@ void main() {
     expect(_info(container)!.notice, ReportNotice.failed);
   });
 
-  test('회차가 없거나 평가 전이면 알림을 띄우지 않는다', () async {
-    for (final sessions in [
-      <Map<String, Object?>>[],
-      [FakeReportServer.session(id: 's1', status: 'evaluationPending')],
-      [FakeReportServer.session(id: 's1', status: 'audioPending')],
+  test('회차가 없으면 알림을 띄우지 않는다', () async {
+    final server = FakeReportServer();
+    final container = await _signedIn(server);
+
+    await _until(() => server.count('/api/v1/profiles/p1/visit-sessions') > 0);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(_info(container), isNull);
+  });
+
+  test('평가 전이나 음성을 보내기 전에 떠났으면 이어갈 회차를 띄운다', () async {
+    for (final (status, notice) in [
+      ('evaluationPending', ReportNotice.evaluationPending),
+      ('audioPending', ReportNotice.audioPending),
     ]) {
-      final server = FakeReportServer(sessions: {'p1': sessions});
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [FakeReportServer.session(id: 's1', status: status)],
+        },
+      );
       final container = await _signedIn(server);
 
-      await _until(
-        () => server.count('/api/v1/profiles/p1/visit-sessions') > 0,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(_info(container), isNull);
+      await _until(() => _info(container) != null);
+      expect(_info(container)!.notice, notice);
+      expect(_info(container)!.reportId, 's1');
+      // 이어갈 일이 있을 뿐 리포트는 아직 없다. 분석 작업을 묻지 않는다.
+      expect(server.requests.where((r) => r.path.contains('speech')), isEmpty);
     }
   });
 

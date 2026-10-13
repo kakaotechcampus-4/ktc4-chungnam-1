@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
@@ -54,6 +55,9 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
   await _settle(tester);
 }
 
+/// 마지막으로 연 화면의 라우터. 이동한 주소를 확인할 때 쓴다.
+late GoRouter _router;
+
 /// 로그인한 상태로 [location] 을 연다. 서버에는 등록을 마친 분이 한 분 있다.
 Future<ProviderContainer> _open(
   WidgetTester tester,
@@ -86,7 +90,7 @@ Future<ProviderContainer> _open(
   addTearDown(container.dispose);
   container.read(sessionProvider.notifier).restore(_session());
 
-  final router = buildRouter();
+  final router = _router = buildRouter();
   addTearDown(router.dispose);
   router.go(location);
 
@@ -144,6 +148,28 @@ void main() {
       expect(find.text('리포트가 도착했어요'), findsNothing);
       expect(find.text('눌러서 확인하기'), findsNothing);
     });
+  });
+
+  group('앱을 떠난 사이 멈춘 면회', () {
+    for (final (status, title, location) in [
+      ('evaluationPending', '평가 이어서 하기', '/visit/review?session=s1'),
+      ('audioPending', '음성 다시 보내기', '/visit/upload?session=s1'),
+    ]) {
+      testWidgets('$status 이면 $title 를 눌러 그 회차로 간다', (tester) async {
+        final server = FakeReportServer(
+          sessions: {
+            'p1': [FakeReportServer.session(id: 's1', status: status)],
+          },
+        );
+        await _open(tester, server, AppRoutes.home);
+
+        expect(find.text(title), findsOneWidget);
+        await tester.tap(find.text(title));
+        await _settle(tester);
+
+        expect(_router.state.uri.toString(), location);
+      });
+    }
   });
 
   testWidgets('리포트 기록은 서버의 기록을 보여주고 회차로 연다', (tester) async {
