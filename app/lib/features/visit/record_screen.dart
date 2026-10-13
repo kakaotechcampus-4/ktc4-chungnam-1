@@ -179,6 +179,8 @@ class _ProblemNotice extends StatelessWidget {
     VisitRecordingProblem.startFailed => '녹음을 시작하지 못했어요.\n잠시 후 다시 눌러주세요.',
     VisitRecordingProblem.saveFailed =>
       '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
+    VisitRecordingProblem.sessionFailed =>
+      '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
   };
 
   @override

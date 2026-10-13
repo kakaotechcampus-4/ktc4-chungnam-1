@@ -27,6 +27,30 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
   /// 눌러서 질문을 펼친 카드. 한 번에 하나만 펼친다.
   String? _expandedId;
 
+  /// 서버에 더하는 중인지. 그동안 다시 누르지 못하게 한다.
+  bool _adding = false;
+
+  /// 서버(API 5-3)가 받아들인 뒤에 돌아간다. 실패하면 이 화면에 남아 다시
+  /// 누를 수 있게 한다.
+  Future<void> _add(List<ConversationCard> available) async {
+    setState(() => _adding = true);
+    final added = await ref
+        .read(visitControllerProvider.notifier)
+        .addCards(available.where((c) => _picked.contains(c.cardId)));
+    if (!mounted) return;
+    setState(() => _adding = false);
+
+    if (added) {
+      context.pop();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('카드를 추가하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final supplements = ref.watch(supplementCardsProvider);
@@ -63,12 +87,8 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
             onExpand: (id) => setState(() {
               _expandedId = _expandedId == id ? null : id;
             }),
-            onAdd: () {
-              ref
-                  .read(visitControllerProvider.notifier)
-                  .addCards(available.where((c) => _picked.contains(c.cardId)));
-              context.pop();
-            },
+            adding: _adding,
+            onAdd: () => _add(available),
           );
         },
       ),
@@ -83,6 +103,7 @@ class _Body extends StatelessWidget {
     required this.expandedId,
     required this.onToggle,
     required this.onExpand,
+    required this.adding,
     required this.onAdd,
   });
 
@@ -91,6 +112,7 @@ class _Body extends StatelessWidget {
   final String? expandedId;
   final ValueChanged<String> onToggle;
   final ValueChanged<String> onExpand;
+  final bool adding;
   final VoidCallback onAdd;
 
   @override
@@ -98,8 +120,12 @@ class _Body extends StatelessWidget {
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
-        label: picked.isEmpty ? '카드를 골라주세요' : '${picked.length}장 추가하기',
-        onPressed: picked.isEmpty ? null : onAdd,
+        label: adding
+            ? '카드를 추가하고 있어요'
+            : picked.isEmpty
+            ? '카드를 골라주세요'
+            : '${picked.length}장 추가하기',
+        onPressed: picked.isEmpty || adding ? null : onAdd,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

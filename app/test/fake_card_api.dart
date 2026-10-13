@@ -9,6 +9,9 @@ import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/data/visit_api.dart';
+
+import 'fake_visit_api.dart';
 
 /// 4-2 가 차례로 돌려줄 상태를 정해 둔다. 마지막 값은 그 뒤로 계속 돌려준다.
 class FakeCardApi implements CardApi {
@@ -44,7 +47,13 @@ class FakeCardApi implements CardApi {
 }
 
 /// 목 카드 묶음이 준비된 상태로 시작한다. 고른 어르신이 없어도 묶음을 읽는다.
-final withMockCards = <Override>[
+///
+/// 녹음을 시작하면 그 묶음으로 회차를 만드는 대역([FakeVisitApi])도 함께 넣는다.
+final withMockCards = mockCardsWith();
+
+/// [withMockCards] 와 같다. 회차 요청을 확인하려면 [visitApi] 를 넘긴다.
+List<Override> mockCardsWith({FakeVisitApi? visitApi}) => [
+  visitApiProvider.overrideWith((ref) => visitApi ?? FakeVisitApi()),
   cardApiProvider.overrideWithValue(FakeCardApi()),
   currentCardSetProvider.overrideWith(
     (ref) => const MockRepository().loadCardSet(),
