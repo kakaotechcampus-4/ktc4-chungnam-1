@@ -11,6 +11,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import 'review_controller.dart';
+import 'status_notice.dart';
 import 'submission_controller.dart';
 
 /// F-1 보호자 소감 작성.
@@ -84,7 +85,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (widget.sessionId != null && !target.hasValue && !target.hasError) {
       return const Scaffold(
         appBar: AppTopBar(),
-        body: LoadingView(message: '면회 기록을 불러오고 있어요'),
+        body: StatusNotice(
+          loading: true,
+          title: '면회 기록을 불러오고 있어요',
+          body: '잠시만 기다려 주세요',
+        ),
       );
     }
 
@@ -93,11 +98,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (target case AsyncData(value: null) when widget.sessionId != null) {
       return Scaffold(
         appBar: const AppTopBar(),
-        body: EmptyStateView(
-          message: '이어서 할 면회를 찾을 수 없어요.\n홈에서 다시 확인해 주세요.',
+        body: StatusNotice(
           icon: Icons.event_busy_outlined,
-          actionLabel: '홈으로',
-          onAction: () => context.go(AppRoutes.home),
+          title: '이어서 할 면회를 찾을 수 없어요.',
+          body: '홈에서 다시 확인해 주세요.',
+          onHome: () => context.go(AppRoutes.home),
         ),
       );
     }
