@@ -16,6 +16,8 @@ import 'report_text.dart';
 ///
 /// 일기 형식의 본문과 카드별 반응을 보여준다. 계약대로 의료적 해석과 대화 품질
 /// 점수를 만들지 않는다.
+///
+/// 로그인했으면 서버의 리포트(7-2)와 카드별 평가(6-4)를 [reportId] 회차로 읽는다.
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({
     required this.reportId,
@@ -31,7 +33,7 @@ class ReportScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final report = ref.watch(visitReportProvider);
+    final report = ref.watch(reportProvider(reportId));
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -39,7 +41,7 @@ class ReportScreen extends ConsumerWidget {
         loading: () => const LoadingView(message: '리포트를 여는 중이에요'),
         error: (error, _) => ErrorStateView(
           message: '리포트를 불러오지 못했어요.',
-          onRetry: () => ref.invalidate(visitReportProvider),
+          onRetry: () => ref.invalidate(reportProvider(reportId)),
         ),
         data: (data) => _Body(report: data, fromHistory: fromHistory),
       ),
@@ -141,12 +143,10 @@ class _BodyState extends ConsumerState<_Body> {
   ///
   /// 평가를 아직 읽지 못했으면 AI 요약을 그대로 둔다. 읽지 못했다는 이유로
   /// `확인하지 못했어요` 를 띄우면 보호자가 답을 했는데도 안 했다고 말하게 된다.
-  _CardOutcome _outcomeOf(String cardId, CaregiverEvaluation? evaluation) {
-    if (evaluation == null) return _CardOutcome.summarized;
+  _CardOutcome _outcomeOf(String cardId, List<CardReview>? reviews) {
+    if (reviews == null) return _CardOutcome.summarized;
 
-    final review = evaluation.cardReviews
-        .where((r) => r.cardId == cardId)
-        .firstOrNull;
+    final review = reviews.where((r) => r.cardId == cardId).firstOrNull;
 
     if (review == null) return _CardOutcome.unanswered;
     return review.wasUsed ? _CardOutcome.summarized : _CardOutcome.notUsed;
@@ -157,7 +157,7 @@ class _BodyState extends ConsumerState<_Body> {
     final report = widget.report;
     final set = _easy ? _TypeSet.easy : _TypeSet.normal;
     // 보호자가 무엇이라 답했는지에 따라 카드별 반응의 표시가 갈린다.
-    final evaluation = ref.watch(caregiverEvaluationProvider).value;
+    final reviews = ref.watch(reportCardReviewsProvider(report.reportId)).value;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     // ScreenBody 의 bottom 슬롯이 차지하는 높이다. 그 위에 버튼을 띄운다.
@@ -194,16 +194,11 @@ class _BodyState extends ConsumerState<_Body> {
               ),
               const SizedBox(height: AppSpacing.xl),
 
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.image),
-                child: Image.asset(
-                  'assets/images/visitation.webp',
-                  height: 240,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.section),
+              // 면회 사진 없이 시작한 회차에는 사진 자리를 두지 않는다.
+              if (report.photoUrl case final url?) ...[
+                _VisitPhoto(url: url),
+                const SizedBox(height: AppSpacing.section),
+              ],
 
               Text('오늘의 만남', style: set.section),
               const SizedBox(height: AppSpacing.lg),
@@ -225,7 +220,7 @@ class _BodyState extends ConsumerState<_Body> {
                 for (final summary in report.cardSummaries) ...[
                   _CardSummaryTile(
                     summary: summary,
-                    outcome: _outcomeOf(summary.cardId, evaluation),
+                    outcome: _outcomeOf(summary.cardId, reviews),
                     set: set,
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -429,6 +424,49 @@ class _EasyModeButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 면회 때 찍은 사진이다.
+///
+/// 서버 주소는 수명이 짧아(`imageUrlExpiresAt`) 열지 못할 수 있다. 그때는 다른
+/// 그림으로 채우지 않고 열지 못했다고 적는다. 목 데이터는 `asset:` 으로 앱 안의
+/// 그림을 가리킨다.
+class _VisitPhoto extends StatelessWidget {
+  const _VisitPhoto({required this.url});
+
+  final String url;
+
+  static const _assetScheme = 'asset:';
+  static const _height = 240.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = url.startsWith(_assetScheme)
+        ? Image.asset(
+            url.substring(_assetScheme.length),
+            height: _height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          )
+        : Image.network(
+            url,
+            height: _height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            semanticLabel: '면회 사진',
+            errorBuilder: (context, error, stackTrace) => Container(
+              height: _height,
+              color: AppColors.surface,
+              alignment: Alignment.center,
+              child: const Text('사진을 열지 못했어요', style: AppTypography.sub),
+            ),
+          );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.image),
+      child: image,
     );
   }
 }
