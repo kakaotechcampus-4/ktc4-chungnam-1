@@ -16,6 +16,7 @@ import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 
 import 'fake_profile_server.dart';
+import 'fake_report_server.dart';
 
 AuthSession _session() => AuthSession(
   accessToken: 'token',
@@ -74,6 +75,7 @@ Future<ProviderContainer> _open(
   final container = ProviderContainer(
     overrides: [
       server.override,
+      FakeReportServer().override,
       profileSampleProvider.overrideWith((ref) async => sample),
       accountProvider.overrideWith((ref) async => account),
     ],
