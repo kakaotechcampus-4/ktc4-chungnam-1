@@ -10,7 +10,8 @@
 | 진행 중인 작업과 주간 운영 | [GitHub 이슈](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues) | [주간 운영](pm/weekly-operations.md), [12주 학습 목표](pm/12-week-team-goals.md) |
 | Flutter 구현과 실행 | [FE README](../app/README.md) | [환경 설정](../app/SETUP.md), [디자인 기준](../app/DESIGN.md) |
 | FastAPI 구현과 실행 | [BE README](../backend/README.md) | 코드와 테스트 |
-| STT와 이미지 분석 | [AI README](../local_ai/README.md) | [이미지 분석 실험](../local_ai/docs/image_tagging/README.md) |
+| 카드·리포트 생성과 이미지 분석 | [AI README](../ai/README.md) | [이미지 분석 실험](../ai/docs/image_tagging/README.md) |
+| STT와 화자 분리 서버 | [STT 서버 README](../stt-server/README.md) | [STT 파이프라인 설계](../stt-server/docs/stt-pipeline.md) |
 | 평가 자료와 실행 상태 | [평가 README](../evals/README.md) | `evals/cases/`, `evals/expected/` |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
 | 주제 카드의 첫 생성과 다음 면회 반영 | [주제 카드 전체 설계 검토안](architecture/card-generation-flow.md) | 입력, 사진 설명 사용, 피드백, AI 프롬프트와 남은 선택 |
