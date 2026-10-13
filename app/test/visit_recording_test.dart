@@ -12,6 +12,7 @@ import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
 
+import 'fake_card_api.dart';
 import 'fake_visit_recorder.dart';
 
 void main() {
@@ -22,7 +23,10 @@ void main() {
     FakeVisitRecorder recorder,
   ) async {
     final container = ProviderContainer(
-      overrides: [visitRecorderProvider.overrideWithValue(recorder)],
+      overrides: [
+        visitRecorderProvider.overrideWithValue(recorder),
+        ...withMockCards,
+      ],
     );
     addTearDown(container.dispose);
 
@@ -117,7 +121,10 @@ void main() {
       // 닫지 않으면 WAV 헤더가 쓰이지 않아 재생할 수 없는 파일이 남는다.
       final recorder = FakeVisitRecorder();
       final container = ProviderContainer(
-        overrides: [visitRecorderProvider.overrideWithValue(recorder)],
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...withMockCards,
+        ],
       );
       addTearDown(container.dispose);
 

@@ -12,6 +12,7 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/report/story_edit_screen.dart';
 
+import 'fake_card_api.dart';
 import 'sample_profile.dart';
 
 void main() {
@@ -34,7 +35,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [withSampleProfile, ...overrides],
+          overrides: [withSampleProfile, ...withMockCards, ...overrides],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,

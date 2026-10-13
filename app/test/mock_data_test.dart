@@ -8,9 +8,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
+
+import 'fake_card_api.dart';
+import 'sample_profile.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -164,22 +168,23 @@ void main() {
 
   test('provider 를 갈아끼우면 화면이 보는 값이 바뀐다', () async {
     final container = ProviderContainer(
-      overrides: [mockRepositoryProvider.overrideWithValue(_EmptyRepository())],
+      overrides: [
+        withSampleProfile,
+        cardApiProvider.overrideWithValue(_EmptyCardApi()),
+      ],
     );
     addTearDown(container.dispose);
 
     final cards = await container.read(conversationCardsProvider.future);
 
-    expect(cards, isEmpty);
+    expect(cards, isEmpty, reason: '카드는 목 데이터가 아니라 카드 API 에서 온다');
   });
 }
 
-/// 데이터 출처를 바꿀 수 있는지 보기 위한 대역이다. 나중에 서버 구현이 같은
-/// 자리에 들어간다.
-class _EmptyRepository extends MockRepository {
-  const _EmptyRepository();
-
+/// 데이터 출처를 바꿀 수 있는지 보기 위한 대역이다. 카드는 서버 API 자리를
+/// 갈아끼운다.
+class _EmptyCardApi extends FakeCardApi {
   @override
-  Future<CardSet> loadCardSet() async =>
+  Future<CardSet> current(String profileId) async =>
       const CardSet(setId: 'empty', usedBySessionId: null, cards: []);
 }

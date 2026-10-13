@@ -5,13 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 
+import 'fake_card_api.dart';
 import 'sample_profile.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   ProviderContainer makeContainer() {
-    final container = ProviderContainer(overrides: [withSampleProfile]);
+    final container = ProviderContainer(
+      overrides: [withSampleProfile, ...withMockCards],
+    );
     addTearDown(container.dispose);
     return container;
   }
