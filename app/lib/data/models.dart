@@ -410,57 +410,82 @@ class ConversationCard {
 
 // ── 면회 회차 ───────────────────────────────────────
 
-/// `sessionStatus` 값. 계약에 정의된 일곱이다.
+/// `sessionStatus` 값. 서버가 평가, 음성 분석 작업과 리포트로 계산한다.
+///
+/// 녹음 일시정지와 종료는 단말에서 처리하고 서버에 알리지 않으므로 녹음 중
+/// 상태는 없다.
 enum SessionStatus {
-  ready,
-  recording,
-  paused,
-  ended,
+  /// 보호자 평가 전.
+  evaluationPending,
+
+  /// 평가 후 음성 접수 전. 업로드 단계에서 실패한 작업만 있어도 여기다.
+  audioPending,
+
+  /// 음성 분석 작업이 진행 중이다.
   processing,
+
+  /// 리포트를 저장했다.
   completed,
+
+  /// 접수된 음성 분석 작업이 실패했다.
   failed;
 
   static SessionStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 면회 한 회차. 계약의 `VisitSession` 이며 API 5-1, 5-3 의 응답이다.
 class VisitSession {
   const VisitSession({
     required this.sessionId,
     required this.profileId,
+    required this.setId,
     required this.selectedCardIds,
     required this.sessionStatus,
     required this.startedAt,
     this.photoId,
-    this.endedAt,
     this.participantCount,
+    this.analysisId,
   });
 
   factory VisitSession.fromJson(Map<String, dynamic> json) => VisitSession(
     sessionId: json['sessionId'] as String,
     profileId: json['profileId'] as String,
+    setId: json['setId'] as String,
     selectedCardIds: (json['selectedCardIds'] as List).cast<String>(),
     sessionStatus: SessionStatus.parse(json['sessionStatus'] as String),
     photoId: json['photoId'] as String?,
     startedAt: json['startedAt'] as String,
-    endedAt: json['endedAt'] as String?,
     participantCount: json['participantCount'] as int?,
+    analysisId: json['analysisId'] as String?,
   );
 
   final String sessionId;
   final String profileId;
+
+  /// 이 회차가 쓰는 카드 묶음.
+  final String setId;
+
+  /// 회차를 만들 때 고른 카드와 면회 중 더한 보충 카드.
   final List<String> selectedCardIds;
+
+  /// 읽지 못한 값이면 `null` 이다. 다른 상태로 짐작하지 않는다.
   final SessionStatus? sessionStatus;
+
+  /// 면회 사진을 올리지 않았으면 `null` 이다.
   final String? photoId;
+
+  /// 서버가 회차 생성 요청을 받은 시각.
   final String startedAt;
-  final String? endedAt;
 
   /// 대화에 함께한 사람 수. 어르신과 보호자를 포함한다.
   ///
   /// 녹음을 끝낼 때 보호자에게 확인받는다. 앱이 목소리를 세어 짐작하지 않는다.
-  /// STT 화자 분리 요청의 `speakerCount` 로 그대로 넘어간다. 녹음을 끝내기
-  /// 전에는 `null` 이다.
+  /// 음성을 제출할 때 함께 보내며, 그 전에는 `null` 이다.
   final int? participantCount;
+
+  /// 가장 최근 음성 분석 작업. 음성을 제출하기 전에는 `null` 이다.
+  final String? analysisId;
 }
 
 // ── 리포트 ──────────────────────────────────────────

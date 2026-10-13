@@ -128,6 +128,7 @@ void main() {
       session.selectedCardIds,
     );
     expect(set.usedBySessionId, session.sessionId);
+    expect(session.setId, set.setId, reason: '회차는 그 묶음으로 만들었다');
   });
 
   test('면회 회차와 리포트를 읽는다', () async {
@@ -135,6 +136,9 @@ void main() {
     final report = await repository.loadVisitReport();
 
     expect(session.selectedCardIds, hasLength(4));
+    // 리포트까지 저장한 회차라 음성 분석 작업도 있다.
+    expect(session.sessionStatus, SessionStatus.completed);
+    expect(session.analysisId, isNotNull);
     expect(report.sessionId, session.sessionId);
     expect(report.cardSummaries, hasLength(4));
   });
