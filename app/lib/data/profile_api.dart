@@ -1,0 +1,179 @@
+/// 프로필 API(`docs/architecture/api-spec.md` 2절)를 부른다.
+///
+/// 요청은 [ApiClient] 가 보내고, 이 파일은 경로, 본문과 응답 모양만 맡는다.
+/// 생애 정보(`lifeFacts`)와 사진(`photos`)은 일대기와 갤러리 작업에서 다루므로
+/// 여기서 읽지 않는다.
+library;
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'api_client.dart';
+import 'models.dart';
+import 'providers.dart' show EnteredBasicInfo, EnteredDetails;
+
+/// 프로필 입력 상태. 서버가 저장하지 않고 계산한다(2절 머리말).
+enum SetupStatus {
+  /// 기본 정보만 저장했고 첫 카드 생성 전이다.
+  inProgress,
+
+  /// 첫 카드 생성 작업이 있다.
+  completed;
+
+  static SetupStatus? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
+/// 2-1 목록의 한 줄이다.
+class ProfileSummary {
+  const ProfileSummary({
+    required this.profileId,
+    required this.name,
+    required this.gender,
+    required this.setupStatus,
+  });
+
+  factory ProfileSummary.fromJson(Map<String, dynamic> json) => ProfileSummary(
+    profileId: json['profileId'] as String,
+    name: json['name'] as String,
+    gender: json['gender'] as String,
+    setupStatus: SetupStatus.parse(json['setupStatus'] as String),
+  );
+
+  final String profileId;
+  final String name;
+  final String gender;
+
+  /// 모르는 값이면 `null` 이다.
+  final SetupStatus? setupStatus;
+}
+
+/// 2-2, 2-3, 2-4 가 돌려주는 프로필이다(api-spec 의 Profile).
+class RemoteProfile {
+  const RemoteProfile({
+    required this.profileId,
+    required this.setupStatus,
+    required this.basicInfo,
+    required this.details,
+    this.symptomNote,
+  });
+
+  factory RemoteProfile.fromJson(Map<String, dynamic> json) {
+    final condition = json['condition'] as Map<String, dynamic>;
+    final stage = ConditionStage.parse(condition['stage'] as String);
+    if (stage == null) {
+      throw FormatException('모르는 condition.stage: ${condition['stage']}');
+    }
+    return RemoteProfile(
+      profileId: json['profileId'] as String,
+      setupStatus: SetupStatus.parse(json['setupStatus'] as String),
+      basicInfo: EnteredBasicInfo(
+        name: json['name'] as String,
+        gender: json['gender'] as String,
+        birthDate: json['birthDate'] as String,
+        stage: stage,
+      ),
+      symptomNote: condition['symptomNote'] as String?,
+      details: EnteredDetails(
+        occupation: json['occupation'] as String?,
+        hometown: json['hometown'] as String?,
+        hobby: json['hobby'] as String?,
+        family: json['family'] as String?,
+      ),
+    );
+  }
+
+  final String profileId;
+
+  /// 모르는 값이면 `null` 이다.
+  final SetupStatus? setupStatus;
+
+  final EnteredBasicInfo basicInfo;
+  final EnteredDetails details;
+  final String? symptomNote;
+}
+
+/// 프로필 API 를 부른다. 실패는 [ApiFailure] 로 던진다.
+class ProfileApi {
+  const ProfileApi(this._client);
+
+  final ApiClient _client;
+
+  static const _base = '/api/v1/profiles';
+
+  /// 2-1 현재 계정의 프로필 목록. 만든 순서대로다.
+  Future<List<ProfileSummary>> list() async {
+    final body = await _client.get(_base);
+    return _read(
+      () => [
+        for (final item in body['profiles'] as List)
+          ProfileSummary.fromJson(item as Map<String, dynamic>),
+      ],
+    );
+  }
+
+  /// 2-2 기본 정보 입력을 마칠 때 프로필을 만든다.
+  Future<RemoteProfile> create(EnteredBasicInfo info) async {
+    final body = await _client.post(_base, {
+      ..._basicBody(info),
+      // 메모는 아직 입력받지 않는다.
+      'condition': {'stage': info.stage.name, 'symptomNote': null},
+    });
+    return _read(() => RemoteProfile.fromJson(body));
+  }
+
+  /// 2-3 한 분의 프로필.
+  Future<RemoteProfile> get(String profileId) async {
+    final body = await _client.get('$_base/$profileId');
+    return _read(() => RemoteProfile.fromJson(body));
+  }
+
+  /// 2-4 기본 정보를 고친다. 메모(`symptomNote`)는 보내지 않아 그대로 둔다.
+  Future<RemoteProfile> updateBasicInfo(
+    String profileId,
+    EnteredBasicInfo info,
+  ) async {
+    final body = await _client.patch('$_base/$profileId', {
+      ..._basicBody(info),
+      'condition': {'stage': info.stage.name},
+    });
+    return _read(() => RemoteProfile.fromJson(body));
+  }
+
+  /// 2-4 세부 정보 네 항목을 고친다. 비운 항목은 `null` 로 보내 지운다.
+  Future<RemoteProfile> updateDetails(
+    String profileId,
+    EnteredDetails details,
+  ) async {
+    final body = await _client.patch('$_base/$profileId', {
+      'occupation': details.occupation,
+      'hometown': details.hometown,
+      'hobby': details.hobby,
+      'family': details.family,
+    });
+    return _read(() => RemoteProfile.fromJson(body));
+  }
+
+  /// 2-8 프로필 하나를 지운다.
+  Future<void> delete(String profileId) => _client.delete('$_base/$profileId');
+
+  static Map<String, Object?> _basicBody(EnteredBasicInfo info) => {
+    'name': info.name,
+    'gender': info.gender,
+    'birthDate': info.birthDate,
+  };
+
+  /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
+  static T _read<T>(T Function() parse) {
+    try {
+      return parse();
+    } on TypeError catch (error) {
+      throw ApiUnexpectedResponseFailure('프로필 응답 모양이 다르다: $error');
+    } on FormatException catch (error) {
+      throw ApiUnexpectedResponseFailure(error.message);
+    }
+  }
+}
+
+final profileApiProvider = Provider<ProfileApi>(
+  (ref) => ProfileApi(ref.watch(apiClientProvider)),
+);
