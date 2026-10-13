@@ -11,6 +11,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import 'review_controller.dart';
+import 'submission_controller.dart';
 
 /// F-1 보호자 소감 작성.
 ///
@@ -32,26 +33,54 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     super.dispose();
   }
 
+  /// 서버에 남긴 뒤에만 넘어간다. 실패하면 이 화면에 남아 다시 누르게 한다.
+  Future<void> _submit() async {
+    final sent = await ref.read(submissionProvider.notifier).submit();
+    if (!sent || !mounted) return;
+
+    // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
+    // 그 전에 위로 화면을 한 번 거친다.
+    ref.read(reportNoticeProvider.notifier).startGenerating();
+    context.go(AppRoutes.visitReviewDone);
+  }
+
+  static String _failureMessage(SubmissionFailure failure) => switch (failure) {
+    SubmissionFailure.network => '소감을 보내지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+    SubmissionFailure.server => '소감을 보내지 못했어요. 잠시 후 다시 눌러주세요.',
+    SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
+  };
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(reviewControllerProvider);
     final controller = ref.read(reviewControllerProvider.notifier);
     final cards = ref.watch(reviewCardsProvider);
+    final submission = ref.watch(submissionProvider);
+    final failure = submission.failure;
 
     return Scaffold(
       appBar: const AppTopBar(),
       body: ScreenBody(
         scrollable: true,
-        bottom: PrimaryButton(
-          label: '리포트 만들기',
-          onPressed: draft.canSubmit
-              ? () {
-                  // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은
-                  // 홈에서 알리고, 그 전에 위로 화면을 한 번 거친다.
-                  ref.read(reportNoticeProvider.notifier).startGenerating();
-                  context.go(AppRoutes.visitReviewDone);
-                }
-              : null,
+        bottom: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (failure != null) ...[
+              Text(
+                _failureMessage(failure),
+                style: AppTypography.sub.copyWith(color: AppColors.danger),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            PrimaryButton(
+              label: submission.sending ? '소감을 보내고 있어요' : '리포트 만들기',
+              onPressed: draft.canSubmit && !submission.sending
+                  ? _submit
+                  : null,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
