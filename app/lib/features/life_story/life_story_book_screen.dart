@@ -3,13 +3,15 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../design/tokens.dart';
+import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
 
-/// 책을 펼친 첫 장. 어르신 사진, 이름과 생년월일, 분류, 최근 담은 이야기다.
+/// 책을 펼친 첫 장. 어르신 사진, 이름과 생년월일, 분류, 최근 담은 이야기와
+/// 맨 아래의 `이야기 추가하기` 다.
 class LifeStoryBookScreen extends StatelessWidget {
   const LifeStoryBookScreen({super.key});
 
@@ -60,6 +62,11 @@ class LifeStoryBookScreen extends StatelessWidget {
                     const Text('최근 추가된 이야기', style: AppTypography.sectionTitle),
                     const SizedBox(height: AppSpacing.sm),
                     _RecentList(book: book),
+                    const SizedBox(height: AppSpacing.xxxl),
+                    PrimaryButton(
+                      label: '이야기 추가하기',
+                      onPressed: () => context.push(AppRoutes.albumStoryNew),
+                    ),
                   ],
                 ),
               ),

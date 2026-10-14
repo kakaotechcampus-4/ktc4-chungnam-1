@@ -118,4 +118,12 @@ abstract final class AppRoutes {
 
   static String albumStoryOf(String category, String storyId) =>
       '/album/category/$category/story/$storyId';
+
+  /// 일대기 첫 장의 `이야기 추가하기`.
+  static const albumStoryNew = '/album/new';
+
+  /// 이야기 화면의 연필. 고친 이야기를 돌려준다.
+  static const albumStoryEdit = '/album/edit/:storyId';
+
+  static String albumStoryEditOf(String storyId) => '/album/edit/$storyId';
 }

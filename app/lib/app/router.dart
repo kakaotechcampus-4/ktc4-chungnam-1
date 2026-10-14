@@ -13,6 +13,7 @@ import '../features/life_story/life_story.dart';
 import '../features/life_story/life_story_book_screen.dart';
 import '../features/life_story/life_story_category_screen.dart';
 import '../features/life_story/life_story_cover_screen.dart';
+import '../features/life_story/life_story_edit_screen.dart';
 import '../features/life_story/life_story_story_screen.dart';
 import '../features/profile/profile_basic_edit_screen.dart';
 import '../features/profile/profile_delete_screen.dart';
@@ -182,6 +183,17 @@ GoRouter buildRouter() {
             state,
             (category) => LifeStoryCategoryScreen(category: category),
           ),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.albumStoryNew,
+        builder: (context, state) =>
+            const _NeedsProfile(child: LifeStoryEditScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.albumStoryEdit,
+        builder: (context, state) => _NeedsProfile(
+          child: LifeStoryEditScreen(storyId: state.pathParameters['storyId']!),
         ),
       ),
       GoRoute(

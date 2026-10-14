@@ -46,7 +46,9 @@ class _Placeholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return ColoredBox(
       color: AppColors.surface,
-      child: Center(
+      // 입력 화면의 작은 그림 고르기 칸에서도 넘치지 않게 줄인다.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
