@@ -323,6 +323,9 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
   (`pendingUploadsProvider`가 로그인한 계정의 기록만 본다).
 - 탈퇴하면 그 계정의 녹음과 기록을 지운다. 기록이 없는 녹음 파일도 함께 지운다. 녹음을 끝내지
   못했거나 기록을 남기지 못한 파일이라 어느 계정 것인지 알 수 없고 다시 보낼 수도 없다.
+- 녹음 폴더는 자동 백업과 기기 간 이전에서 뺐다. 지운 녹음이 다시 설치할 때 되살아나지 않게
+  하려는 것이다. Android 12 이상은 `res/xml/data_extraction_rules.xml`, 11 이하는
+  `res/xml/backup_rules.xml`을 쓴다. 두 파일을 함께 고친다.
 
 ### 음성 형식
 

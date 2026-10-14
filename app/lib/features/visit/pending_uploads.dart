@@ -11,7 +11,8 @@
 /// 기록마다 녹음한 계정을 적는다. 로그아웃해도 녹음은 남기되, 다른 계정으로
 /// 들어오면 찾지도 보내지도 못한다. 탈퇴하면 그 계정의 녹음과 기록을 지운다
 /// ([PendingUploads.forgetAccount]). 시간이 지났다고 지우지는 않는다. 앱을 지우면
-/// Android 가 앱 전용 공간과 함께 지운다.
+/// Android 가 앱 전용 공간과 함께 지운다. 녹음 폴더는 자동 백업에서 뺐다
+/// (`android/app/src/main/res/xml/`).
 library;
 
 import 'dart:convert';
