@@ -73,6 +73,26 @@ class LifeStory {
   bool get isProfileDetail => detailField != null;
 }
 
+/// 이야기 입력 화면에서 받는 값. 추가(API 2-6)와 수정(2-7)에 같이 쓴다.
+class LifeStoryDraft {
+  const LifeStoryDraft({
+    required this.category,
+    required this.title,
+    required this.content,
+    required this.imageNumber,
+  });
+
+  final LifeStoryCategory category;
+
+  /// [titleMaxLength] 자 이하. 계약상 제목과 내용은 비울 수 없다.
+  final String title;
+  final String content;
+  final int imageNumber;
+
+  /// `life_facts.title` 의 상한.
+  static const titleMaxLength = 100;
+}
+
 /// 세부 정보 항목이 들어갈 분류.
 const _detailCategories = {
   'occupation': LifeStoryCategory.work,
@@ -116,6 +136,8 @@ class LifeStoryBook {
   final List<LifeStory> stories;
 
   int get total => stories.length;
+
+  LifeStory? find(String id) => stories.where((s) => s.id == id).firstOrNull;
 
   /// 목차 순서. 세부 정보 이야기를 먼저 두고, 나머지는 먼저 담은 것부터다.
   ///

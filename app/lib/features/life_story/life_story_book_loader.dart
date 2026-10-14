@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/providers.dart';
 import '../../widgets/app_states.dart';
 import 'life_story.dart';
 import 'life_story_providers.dart';
@@ -21,7 +22,7 @@ class LifeStoryBookLoader extends ConsumerWidget {
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
         message: '일대기를 불러오지 못했어요.',
-        onRetry: () => ref.invalidate(lifeStoryBookProvider),
+        onRetry: () => ref.invalidate(profileProvider),
       ),
       data: (book) => book == null
           ? const EmptyStateView(message: '함께하는 소중한 분을 먼저 등록해주세요.')
