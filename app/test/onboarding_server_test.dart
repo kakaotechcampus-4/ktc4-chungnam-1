@@ -1,11 +1,14 @@
-// 로그인한 상태의 프로필 입력이 서버(`api-spec.md` 2-2, 2-4)에 저장되는지 확인한다.
+// 로그인한 상태의 프로필 입력이 서버(`api-spec.md` 2-2, 2-4)에 저장되고, 마치면
+// 첫 카드 생성(4-1)을 요청하는지 확인한다.
 //
 // 서버는 `FakeProfileServer` 다. 값은 모두 합성이다.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
@@ -14,6 +17,7 @@ import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 
+import 'fake_card_api.dart';
 import 'fake_profile_server.dart';
 
 AuthSession _session() => AuthSession(
@@ -40,8 +44,16 @@ const _filled = SetupDraft(
 );
 
 /// 로그인한 상태의 컨테이너다. 어르신 목록은 서버에서 빈 목록으로 온다.
-Future<ProviderContainer> _signedIn(FakeProfileServer server) async {
-  final container = ProviderContainer(overrides: [server.override]);
+Future<ProviderContainer> _signedIn(
+  FakeProfileServer server, {
+  CardApi? cards,
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      server.override,
+      cardApiProvider.overrideWithValue(cards ?? FakeCardApi()),
+    ],
+  );
   addTearDown(container.dispose);
   container.listen(careProfilesProvider, (_, _) {});
   container.read(sessionProvider.notifier).restore(_session());
@@ -130,6 +142,36 @@ void main() {
       expect(selected.details.occupation, '재봉 일을 오래 하셨어요.');
     });
 
+    test('세부 정보를 저장한 뒤 그 분의 첫 카드를 요청한다', () async {
+      final cards = FakeCardApi();
+      final container = await _signedIn(FakeProfileServer(), cards: cards);
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(_filled);
+      await controller.submitBasicInfo();
+      await controller.finish();
+
+      expect(cards.calls, ['request']);
+      expect(cards.profileIds, ['server-1']);
+    });
+
+    test('첫 카드를 요청하지 못해도 목록에 넣는다', () async {
+      final container = await _signedIn(
+        FakeProfileServer(),
+        cards: _FailingCardApi(),
+      );
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(_filled);
+      await controller.submitBasicInfo();
+      await controller.finish();
+
+      expect(
+        container.read(careProfilesProvider).selected?.remoteId,
+        'server-1',
+      );
+    });
+
     test('저장하지 못하면 목록에 넣지 않는다', () async {
       final server = FakeProfileServer();
       final container = await _signedIn(server);
@@ -147,7 +189,10 @@ void main() {
   group('로그인하지 않았으면', () {
     test('서버를 부르지 않고 그대로 넘어간다', () async {
       final server = FakeProfileServer();
-      final container = ProviderContainer(overrides: [server.override]);
+      final cards = FakeCardApi();
+      final container = ProviderContainer(
+        overrides: [server.override, cardApiProvider.overrideWithValue(cards)],
+      );
       addTearDown(container.dispose);
       final controller = container.read(setupControllerProvider.notifier);
 
@@ -156,6 +201,7 @@ void main() {
       await controller.finish();
 
       expect(server.requests, isEmpty);
+      expect(cards.calls, isEmpty);
       expect(container.read(careProfilesProvider).selected?.remoteId, isNull);
     });
   });
@@ -196,4 +242,10 @@ void main() {
     expect(find.text('기본 정보 입력'), findsOneWidget, reason: '다음 단계로 가지 않는다');
     expect(container.read(setupControllerProvider).remoteId, isNull);
   });
+}
+
+class _FailingCardApi extends FakeCardApi {
+  @override
+  Future<CardGenerationStatus> requestGeneration(String profileId) async =>
+      throw const ApiNetworkFailure();
 }

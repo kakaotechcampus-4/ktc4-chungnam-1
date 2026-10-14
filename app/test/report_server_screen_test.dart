@@ -10,12 +10,14 @@ import 'package:go_router/go_router.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 
+import 'fake_card_api.dart';
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
 
@@ -80,6 +82,8 @@ Future<ProviderContainer> _open(
         ],
       ).override,
       reports.override,
+      // 평가 이어서 하기 화면이 쓸 카드 묶음을 묻는다(4-3).
+      cardApiProvider.overrideWithValue(FakeCardApi()),
       profileSampleProvider.overrideWith((ref) async => sample),
       // 홈을 띄운 채로 테스트가 끝나므로 폴링이 길게 남지 않게 한다.
       reportPollIntervalProvider.overrideWithValue(
