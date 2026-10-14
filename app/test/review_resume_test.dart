@@ -4,12 +4,15 @@
 // 목 묶음(`conversation-cards.json`)은 `session_demo_001` 이 쓰는 중이고 네 장을
 // 골랐다.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/features/review/review_controller.dart';
+import 'package:saerok/features/review/review_screen.dart';
+import 'package:saerok/features/review/status_notice.dart';
 import 'package:saerok/features/review/submission_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
 
@@ -104,6 +107,31 @@ void main() {
       container.read(submissionProvider).failure,
       SubmissionFailure.noRecording,
     );
+  });
+
+  testWidgets('녹음이 없으면 다시 누르게 하지 않고 리포트를 만들 수 없다고 한다', (tester) async {
+    final container = makeContainer(
+      api: FakeVisitApi(),
+      uploads: FakePendingUploads(),
+    );
+    answerRequired(container);
+    await tester.runAsync(
+      () => container
+          .read(submissionProvider.notifier)
+          .submit(resumeSessionId: _sessionId),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: ReviewScreen(sessionId: _sessionId)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text(noRecordingTitle), findsOneWidget);
+    expect(find.text(noRecordingBody), findsOneWidget);
+    expect(find.text('리포트 만들기'), findsNothing);
   });
 
   test('묶음을 다른 회차가 쓰면 이어서 할 수 없다', () async {

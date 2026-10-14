@@ -110,6 +110,21 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       );
     }
 
+    // 소감은 저장했지만 보낼 녹음이 기기에 없다. 녹음을 받지 못한 회차라 서버에도
+    // 없다. 다시 누르게 하지 않고, 리포트를 만들 수 없다고만 알린다(PR #117 리뷰).
+    if (failure == SubmissionFailure.noRecording &&
+        submission.evaluationSaved) {
+      return Scaffold(
+        appBar: const AppTopBar(),
+        body: StatusNotice(
+          icon: Icons.mic_off_outlined,
+          title: noRecordingTitle,
+          body: noRecordingBody,
+          onHome: () => context.go(AppRoutes.home),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: const AppTopBar(),
       body: ScreenBody(

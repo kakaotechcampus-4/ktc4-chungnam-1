@@ -51,9 +51,12 @@ class UploadRetryScreen extends ConsumerWidget {
             body: '리포트가 만들어지면 홈에서 알려드릴게요',
             onHome: goHome,
           ),
+          // 서버도 녹음을 받지 못한 회차(`audioPending`)다. 다시 보내라고
+          // 반복하지 않는다(PR #117 리뷰).
           UploadRetryOutcome.notFound => StatusNotice(
-            title: '이 휴대전화에서 녹음 파일을 찾을 수 없어요.',
-            body: '녹음한 휴대전화에서 다시 보내주세요.',
+            icon: Icons.mic_off_outlined,
+            title: noRecordingTitle,
+            body: noRecordingBody,
             onHome: goHome,
           ),
           UploadRetryOutcome.alreadyClosed => StatusNotice(

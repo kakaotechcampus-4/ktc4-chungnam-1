@@ -12,6 +12,7 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/report/story_edit_screen.dart';
 import 'package:saerok/features/review/review_screen.dart';
+import 'package:saerok/features/review/status_notice.dart';
 
 import 'fake_card_api.dart';
 import 'sample_profile.dart';
@@ -77,8 +78,9 @@ void main() {
     testWidgets('음성 다시 보내기는 회차 ID 를 받는다', (tester) async {
       await openAt(tester, '${AppRoutes.visitUpload}?session=session_test_001');
       expect(tester.takeException(), isNull);
-      // 대역 기록에 이 회차가 없으므로 찾을 수 없다고 안내한다.
-      expect(find.text('이 휴대전화에서 녹음 파일을 찾을 수 없어요.'), findsOneWidget);
+      // 대역 기록에 이 회차가 없으므로 리포트를 만들 수 없다고 안내한다.
+      expect(find.text(noRecordingTitle), findsOneWidget);
+      expect(find.text('다시 보내기'), findsNothing, reason: '다시 보내라고 반복하지 않는다');
     });
 
     testWidgets('평가 이어서 하기는 회차 ID 를 받는다', (tester) async {

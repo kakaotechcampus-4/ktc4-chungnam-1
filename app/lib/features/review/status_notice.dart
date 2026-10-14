@@ -121,3 +121,8 @@ class StatusNotice extends StatelessWidget {
     );
   }
 }
+
+/// 기기에도 서버에도 녹음이 없는 회차의 안내. 소감 화면과 음성 다시 보내기가
+/// 함께 쓴다. 면회 기록과 소감은 지우지 않는다.
+const noRecordingTitle = '녹음이 없어 이 면회의 리포트는 만들 수 없어요.';
+const noRecordingBody = '면회 기록과 남겨주신 소감은 그대로 남아 있어요.';
