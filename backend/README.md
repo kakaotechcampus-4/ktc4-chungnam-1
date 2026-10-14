@@ -6,6 +6,10 @@ STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
+## 개발과 개인정보 검토 순서
+
+2026-10-14 PM 결정에 따라 합성 데이터로 기능 구현과 연동 테스트를 먼저 진행한다. 동의 문구나 법률 검토가 남았다는 이유로 사진 업로드, 분석 worker 등 기능 전체를 보류하지 않는다. 미정 정책에 필요한 테스트 가정은 표시하고, 실제 사용자 자료를 사용하기 전에는 [동의와 처리 조건](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인) 및 관련 구현을 검증한다. 기존 인증, 접근 권한과 삭제 처리를 해제하는 결정은 아니다.
+
 ## 실행과 테스트
 
 저장소 루트에서 최초 설정:
@@ -108,7 +112,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
-- **`PhotoAnalysisQueue`는 사진 동의 설계 전에는 worker에 연결하지 않는다.** 지금은 `pending`인 프로필 사진을 모두 가져오지만, [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지 못하게 한다. 분석 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지면 그 조건을 가져오기 조건에 더한다.
+- **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정
@@ -134,7 +138,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
     → 보호자 검토
     → 승인된 사실 반영, 서버 중심 관리
 
-이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. 해당 개정안은 PR #92 검토 중이며 실제 사용자 자료 수집을 승인한 것이 아니다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
+이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. PR #92는 병합됐고 사진 보관과 AI 분석을 가입 시 선택 동의로 받아 계정별로 저장하는 방향은 2026-10-14 PM이 확정했지만, 동의 및 삭제 연결과 실제 사용자 자료 처리 검증은 남아 있다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
 
 직접 식별정보와 허용 목록 밖의 원본은 외부 AI로 보내지 않는다. 데이터 경로 변경 전 [법률 문서](../docs/legal/README.md), [동의 및 임시 처리 ADR](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md)과 데이터 흐름을 갱신한다. 외부 업체의 이름, 국가, 목적, 항목, 보유기간과 자체 학습 여부가 정해지기 전에는 실제 사용자 자료로 호출하지 않는다.
 
@@ -174,6 +178,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
+
+사진 보관과 AI 분석을 가입 화면에서 선택 동의로 받는 2026-10-14 PM 결정은 [보관 기준과 후속 작업](#보관-기준과-후속-작업)에 기록했다. 아래 네 항목의 API 예시는 현재 구현이며 새 두 항목은 아직 포함하지 않는다.
 
 아래 동의 목록은 현재 BE 구현의 예시다. [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 알림 수신을 선택 동의로 옮겨 공통 계약과 FE의 기준에 맞췄다. 알림을 거부해도 필수 동의를 완료하면 계정이 생성된다.
 
@@ -294,7 +300,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - 빈 문자열과 공백만 있는 값은 이름, 세부 정보와 생애 정보의 제목과 내용에서 `INVALID_REQUEST`(422)다. DB CHECK도 막지만 요청 검증이 먼저 거절한다.
 - 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
-- 응답의 `photos`는 3-1 전까지 항상 빈 배열이다. 사진 보관과 분석 동의 설계(미정 3) 후 3-1, 3-2와 함께 `ProfilePhoto`와 `imageUrl`을 붙인다.
+- 응답의 `photos`는 3-1 전까지 항상 빈 배열이다. 합성 사진으로 3-1, 3-2와 함께 `ProfilePhoto`와 `imageUrl`을 구현하고 검증한다. 실제 사용자 사진을 받기 전에는 계정별 동의 확인과 철회 처리를 검증한다(후속 3).
 - `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
 
 ## AI 음성 분석 연동
@@ -403,8 +409,10 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 ### 보관 기준과 후속 작업
 
-2026-10-05 PM 수정안은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에 있으며 PR #92에서 검토한다.
+PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장 방식은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
 
+- 사진 서버 보관과 AI 분석을 가입 화면의 별도 선택 동의로 받는다. 기존 `consent_records`에 두 항목을 추가하고 `current_consents`에서 최신 상태를 조회하도록 확장한다. 유효한 동의는 반복 요청하지 않으며 미동의, 철회 또는 기록 없는 계정이 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 이용할 수 있다.
+- BE는 업로드 전에 보관 동의를, AI 작업 생성 전에 분석 동의를 각각 검사한다. 보관만 동의한 사진은 분석하지 않는다. 두 동의의 계정별 저장 방향은 확정됐지만 필드명, migration, 가입 및 동의 변경 API와 FE 연결, 철회 후 중단 및 삭제는 후속 구현이다.
 - 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
 - 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
