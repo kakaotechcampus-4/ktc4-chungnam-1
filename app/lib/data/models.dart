@@ -466,6 +466,7 @@ class VisitReport {
     required this.summaryText,
     required this.cardSummaries,
     this.photoId,
+    this.photoUrl,
   });
 
   factory VisitReport.fromJson(Map<String, dynamic> json) => VisitReport(
@@ -489,6 +490,11 @@ class VisitReport {
   final String visitDate;
   final VisitMood? mood;
   final String? photoId;
+
+  /// 면회 사진을 여는 주소. 서버(7-2)의 `photo.imageUrl` 이며 수명이 짧다.
+  /// 목 데이터는 `asset:` 으로 앱 안의 그림을 가리킨다. 사진이 없으면 `null` 이다.
+  final String? photoUrl;
+
   final String summaryText;
   final List<CardSummary> cardSummaries;
 }

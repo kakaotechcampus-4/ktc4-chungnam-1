@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
-import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
@@ -15,23 +15,24 @@ import '../../widgets/app_surfaces.dart';
 /// 피그마에 설계가 없어 새로 만든 화면이다. 홈의 도착 알림은 리포트를 확인하면
 /// 사라지므로, 지난 리포트를 다시 보려면 이곳으로 들어온다.
 ///
-/// 목 데이터에는 회차가 하나뿐이라 목록에도 한 건만 나온다.
+/// 로그인했으면 서버의 리포트 기록(7-1)을 최근 면회부터 보여준다. 목 데이터에는
+/// 회차가 하나뿐이라 목록에도 한 건만 나온다.
 class ReportListScreen extends ConsumerWidget {
   const ReportListScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final report = ref.watch(visitReportProvider);
+    final reports = ref.watch(reportHistoryProvider);
 
     return Scaffold(
       appBar: const AppTopBar(title: '리포트 기록'),
-      body: report.when(
+      body: reports.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
           message: '리포트 기록을 불러오지 못했어요.',
-          onRetry: () => ref.invalidate(visitReportProvider),
+          onRetry: () => ref.invalidate(reportHistoryProvider),
         ),
-        data: (data) => _Body(reports: [data]),
+        data: (data) => _Body(reports: data),
       ),
     );
   }
@@ -40,7 +41,7 @@ class ReportListScreen extends ConsumerWidget {
 class _Body extends StatelessWidget {
   const _Body({required this.reports});
 
-  final List<VisitReport> reports;
+  final List<ReportListItem> reports;
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +76,7 @@ class _Body extends StatelessWidget {
 class _ReportRow extends StatelessWidget {
   const _ReportRow({required this.report});
 
-  final VisitReport report;
+  final ReportListItem report;
 
   @override
   Widget build(BuildContext context) {
