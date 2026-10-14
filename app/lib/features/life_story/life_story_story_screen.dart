@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../profile/profile_dialogs.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
 import 'life_story_image.dart';
+import 'life_story_providers.dart';
 
 /// 이야기 한 편. 아래의 이전, 다음 이야기는 같은 분류의 목차 순서를 따른다.
 ///
 /// 이전, 다음으로 넘겨도 화면을 새로 쌓지 않는다. 뒤로 가면 바로 목차다.
-class LifeStoryStoryScreen extends StatefulWidget {
+/// 오른쪽 위의 연필로 고치고 휴지통으로 지운다. 세부 정보 이야기는 프로필
+/// 수정에서 고치므로 연필이 그 화면을 열고 휴지통은 없다.
+class LifeStoryStoryScreen extends ConsumerStatefulWidget {
   const LifeStoryStoryScreen({
     required this.category,
     required this.storyId,
@@ -23,27 +30,88 @@ class LifeStoryStoryScreen extends StatefulWidget {
   final String storyId;
 
   @override
-  State<LifeStoryStoryScreen> createState() => _LifeStoryStoryScreenState();
+  ConsumerState<LifeStoryStoryScreen> createState() =>
+      _LifeStoryStoryScreenState();
 }
 
-class _LifeStoryStoryScreenState extends State<LifeStoryStoryScreen> {
+class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   late String _storyId = widget.storyId;
+
+  Future<void> _edit(LifeStory story) async {
+    if (story.isProfileDetail) {
+      context.push(AppRoutes.profileEditDetails);
+      return;
+    }
+    final router = GoRouter.of(context);
+    final saved = await context.push<LifeStory>(
+      AppRoutes.albumStoryEditOf(story.id),
+    );
+    if (saved == null || saved.category == story.category || !mounted) return;
+    // 분류를 바꿨으면 새 분류의 목차 위에서 이 이야기를 다시 연다.
+    router
+      ..pop()
+      ..pushReplacement(AppRoutes.albumCategoryOf(saved.category.name))
+      ..push(AppRoutes.albumStoryOf(saved.category.name, saved.id));
+  }
+
+  Future<void> _delete(String profileId, LifeStory story) async {
+    final confirmed = await showChoiceDialog(
+      context,
+      title: '이 이야기를 지울까요?',
+      detail: '지운 이야기는 되돌릴 수 없어요.',
+      primaryLabel: '지우기',
+      secondaryLabel: '취소',
+    );
+    if (!confirmed || !mounted) return;
+    final edits = ref.read(lifeStoryEditsProvider.notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    // 지운 이야기가 잠깐이라도 '찾을 수 없어요' 로 보이지 않게 먼저 목차로 간다.
+    context.pop();
+    edits.delete(profileId, story);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('이야기를 지웠어요.')));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final book = ref.watch(lifeStoryBookProvider).value;
+    final story = book?.find(_storyId);
+
     return Scaffold(
-      appBar: const AppTopBar(title: '목차로'),
+      appBar: AppTopBar(
+        title: '목차로',
+        actions: [
+          if (book != null && story != null) ...[
+            IconButton(
+              onPressed: () => _edit(story),
+              tooltip: '이야기 수정',
+              icon: const Icon(Icons.edit_outlined, size: 22),
+            ),
+            if (!story.isProfileDetail)
+              IconButton(
+                onPressed: () => _delete(book.profile.profileId, story),
+                tooltip: '이야기 지우기',
+                icon: const Icon(Icons.delete_outline, size: 22),
+              ),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+        ],
+      ),
       body: LifeStoryBookLoader(
         builder: (context, book) {
-          final stories = book.storiesIn(widget.category);
-          final index = stories.indexWhere((s) => s.id == _storyId);
-          if (index < 0) {
+          final story = book.find(_storyId);
+          if (story == null) {
             return const EmptyStateView(message: '이야기를 찾을 수 없어요.');
           }
+          // 경로의 분류가 아니라 이야기의 분류를 따른다. 고치며 분류를 바꿔도
+          // 그 분류의 몇 장인지 맞게 보인다.
+          final stories = book.storiesIn(story.category);
+          final index = stories.indexOf(story);
           return _StoryPage(
             // 넘길 때 맨 위부터 다시 읽게 스크롤을 새로 만든다.
             key: ValueKey(_storyId),
-            story: stories[index],
+            story: story,
             chapter: index + 1,
             onPrevious: index > 0
                 ? () => setState(() => _storyId = stories[index - 1].id)
