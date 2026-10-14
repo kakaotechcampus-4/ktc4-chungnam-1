@@ -30,6 +30,12 @@ abstract final class AppColors {
 
   /// 오류 영역 배경. 그 위에는 [danger] 글자를 올린다.
   static const dangerSurface = Color(0xFFF7E9E7);
+
+  /// 일대기 책 표지. 그 위에는 [ink] 글자를 올린다.
+  static const bookCover = Color(0xFFD9D9D9);
+
+  /// 일대기 책 표지의 책등.
+  static const bookSpine = Color(0xFFC6C6C6);
 }
 
 /// 간격은 4의 배수만 쓴다.
