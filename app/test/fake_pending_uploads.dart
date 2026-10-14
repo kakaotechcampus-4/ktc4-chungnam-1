@@ -21,4 +21,16 @@ class FakePendingUploads implements PendingUploads {
     final path = audioPath ?? upload?.audioPath;
     if (path != null) removedPaths.add(path);
   }
+
+  /// 탈퇴로 지운 계정.
+  final forgottenAccounts = <String>[];
+
+  @override
+  Future<void> forgetAccount(String accountId) async {
+    forgottenAccounts.add(accountId);
+    for (final upload in saved.values) {
+      removedPaths.add(upload.audioPath);
+    }
+    saved.clear();
+  }
 }

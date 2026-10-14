@@ -28,7 +28,9 @@ import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
+import 'package:saerok/features/visit/pending_uploads.dart';
 
+import 'fake_pending_uploads.dart';
 import 'sample_profile.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
@@ -193,6 +195,7 @@ Widget _app({
   String? initialLocation,
   AuthSession? session,
   bool skipGoogleLogin = false,
+  PendingUploads? uploads,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -248,6 +251,8 @@ Widget _app({
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
+      // 기기의 녹음 폴더를 건드리지 않는다.
+      pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
     ],
@@ -994,6 +999,7 @@ void main() {
 
     testWidgets('탈퇴하기를 누르면 계정을 지우고 로그인 화면으로 간다', (tester) async {
       final store = _FakeSessionStore(_signedIn());
+      final uploads = FakePendingUploads();
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1009,6 +1015,7 @@ void main() {
           store: store,
           session: _signedIn(),
           initialLocation: AppRoutes.profileDelete,
+          uploads: uploads,
         ),
       );
 
@@ -1016,6 +1023,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(paths, ['DELETE /auth/me']);
+      expect(uploads.forgottenAccounts, [
+        _signedIn().account.accountId,
+      ], reason: '탈퇴한 계정의 녹음과 재전송 기록을 지운다');
       expect(store.stored, isNull);
       expect(find.byType(LoginScreen), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);
@@ -1023,6 +1033,7 @@ void main() {
 
     testWidgets('서버가 실패하면 화면에 남아 탈퇴되지 않았음을 알린다', (tester) async {
       final store = _FakeSessionStore(_signedIn());
+      final uploads = FakePendingUploads();
 
       await _pumpWithProfile(
         tester,
@@ -1036,6 +1047,7 @@ void main() {
           store: store,
           session: _signedIn(),
           initialLocation: AppRoutes.profileDelete,
+          uploads: uploads,
         ),
       );
 
@@ -1044,6 +1056,11 @@ void main() {
 
       expect(find.byType(ProfileDeleteScreen), findsOneWidget);
       expect(find.text('탈퇴하지 못했어요. 잠시 후 다시 시도해주세요.'), findsOneWidget);
+      expect(
+        uploads.forgottenAccounts,
+        isEmpty,
+        reason: '탈퇴하지 않았으면 녹음을 지우지 않는다',
+      );
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
       expect(store.stored, isNotNull);
       expect(
@@ -1156,7 +1173,8 @@ void main() {
           tokenType: 'Bearer',
           expiresAt: DateTime.now().add(remaining),
           account: AuthAccount.fromJson(
-            (jsonDecode(_authenticatedBody()) as Map<String, dynamic>)['account']
+            (jsonDecode(_authenticatedBody())
+                    as Map<String, dynamic>)['account']
                 as Map<String, dynamic>,
           ),
         );
@@ -1295,9 +1313,7 @@ void main() {
       await tester.pumpWidget(
         _app(
           api: _api(
-            MockClient(
-              (request) async => throw const SocketException('오프라인'),
-            ),
+            MockClient((request) async => throw const SocketException('오프라인')),
           ),
           google: _FakeGoogleAuthenticator(),
           store: store,

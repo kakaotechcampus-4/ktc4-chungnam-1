@@ -140,5 +140,31 @@ void main() {
 
       expect(await storeOf('account-a').find('s1'), isNotNull);
     });
+
+    test('탈퇴한 계정의 녹음과 기록만 지운다', () async {
+      final mine = await wav('visit-a.wav');
+      final others = await wav('visit-b.wav');
+      await storeOf('account-a').save(
+        PendingUpload(sessionId: 's1', audioPath: mine, participantCount: 2),
+      );
+      await storeOf('account-b').save(
+        PendingUpload(sessionId: 's2', audioPath: others, participantCount: 3),
+      );
+
+      await storeOf(null).forgetAccount('account-a');
+
+      expect(await File(mine).exists(), isFalse);
+      expect(await storeOf('account-a').find('s1'), isNull);
+      expect(await File(others).exists(), isTrue);
+      expect(await storeOf('account-b').find('s2'), isNotNull);
+    });
+
+    test('탈퇴하면 기록이 없는 녹음도 지운다', () async {
+      final orphan = await wav('visit-orphan.wav');
+
+      await storeOf('account-a').forgetAccount('account-a');
+
+      expect(await File(orphan).exists(), isFalse);
+    });
   });
 }

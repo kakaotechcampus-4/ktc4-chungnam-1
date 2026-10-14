@@ -9,8 +9,9 @@
 /// 저장할 때까지 둘지는 아직 정하지 않았다(PR #117 리뷰).
 ///
 /// 기록마다 녹음한 계정을 적는다. 로그아웃해도 녹음은 남기되, 다른 계정으로
-/// 들어오면 찾지도 보내지도 못한다. 탈퇴 때 지우는 일은 아직 없다. 시간이
-/// 지났다고 지우지는 않는다. 앱을 지우면 Android 가 앱 전용 공간과 함께 지운다.
+/// 들어오면 찾지도 보내지도 못한다. 탈퇴하면 그 계정의 녹음과 기록을 지운다
+/// ([PendingUploads.forgetAccount]). 시간이 지났다고 지우지는 않는다. 앱을 지우면
+/// Android 가 앱 전용 공간과 함께 지운다.
 library;
 
 import 'dart:convert';
@@ -49,6 +50,12 @@ abstract interface class PendingUploads {
   /// 녹음 파일과 기록을 함께 지운다. [audioPath] 는 기록이 없을 때도 지울
   /// 파일이다.
   Future<void> remove(String sessionId, {String? audioPath});
+
+  /// 탈퇴한 계정의 녹음과 기록을 모두 지운다.
+  ///
+  /// 기록이 없는 녹음 파일도 함께 지운다. 녹음을 끝내지 못했거나 기록을 남기지
+  /// 못한 파일이라 어느 계정 것인지 알 수 없고 다시 보낼 수도 없다.
+  Future<void> forgetAccount(String accountId);
 }
 
 /// 앱 전용 공간의 `visit_recordings/` 에 둔다. 녹음 파일과 같은 폴더다.
@@ -127,6 +134,30 @@ class DevicePendingUploads implements PendingUploads {
 
     entries.removeWhere((e) => e['sessionId'] == sessionId && _mine(e));
     await _write(directory, entries);
+  }
+
+  @override
+  Future<void> forgetAccount(String accountId) async {
+    final directory = await _directory();
+    if (!await directory.exists()) return;
+
+    final entries = await _read(directory)
+      ..removeWhere((e) => e['accountId'] == accountId);
+    await _write(directory, entries);
+
+    // 남은 기록이 가리키지 않는 녹음은 모두 지운다. 탈퇴한 계정의 녹음과 어느
+    // 계정 것인지 모르는 녹음이다.
+    final kept = {
+      for (final e in entries)
+        if (e['fileName'] is String) e['fileName'] as String,
+    };
+    await for (final item in directory.list()) {
+      if (item is! File) continue;
+      final name = item.uri.pathSegments.last;
+      if (!name.endsWith('.${VisitRecording.fileExtension}')) continue;
+      if (kept.contains(name)) continue;
+      await item.delete();
+    }
   }
 
   /// 읽지 못하는 기록은 빈 것으로 본다. 기록 때문에 면회를 막지 않는다.
