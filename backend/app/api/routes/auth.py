@@ -107,6 +107,7 @@ def _authenticated(account: Account, issuer: TokenIssuer) -> AuthenticatedRespon
 
 @router.post(
     "/google",
+    summary="구글 로그인",
     response_model=LoginResponse,
     responses=_errors(401, 422, 503),
 )
@@ -117,6 +118,11 @@ async def google_login(
     issuer: TokenIssuerDep,
     settings: SettingsDep,
 ) -> AuthenticatedResponse | ConsentRequiredResponse:
+    """구글 ID 토큰 검증. 계정이 있으면 세션(`authenticated`)을, 없으면 계정을 만들지 않고 동의 요청(`consentRequired`)을 줌.
+
+    API 명세 1-1
+    """
+
     identity = await verifier.verify(payload.id_token)
 
     account = await accounts.find(provider="google", social_id=identity.subject)
@@ -143,6 +149,7 @@ async def google_login(
 
 @router.post(
     "/consent",
+    summary="가입 동의 제출",
     response_model=AuthenticatedResponse,
     responses=_errors(401, 409, 422, 503),
 )
@@ -151,6 +158,11 @@ async def submit_consent(
     accounts: AccountServiceDep,
     issuer: TokenIssuerDep,
 ) -> AuthenticatedResponse:
+    """필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션 발급. 같은 등록 토큰으로 다시 보내면 계정을 덧만들지 않고 세션만 줌.
+
+    API 명세 1-2
+    """
+
     claims = issuer.read_registration(payload.registration_token)
 
     existing = await accounts.find(
@@ -175,15 +187,22 @@ async def submit_consent(
 
 @router.get(
     "/me",
+    summary="내 계정 조회",
     response_model=AccountResponse,
     responses=_errors(401, 404, 503),
 )
 async def read_current_account(account: CurrentAccountDep) -> AccountResponse:
+    """앱을 다시 실행할 때 저장한 세션으로 현재 계정과 동의 상태 조회.
+
+    API 명세 1-3
+    """
+
     return _to_account_response(account)
 
 
 @router.patch(
     "/me/consents",
+    summary="선택 동의 변경",
     response_model=AccountResponse,
     responses=_errors(401, 404, 422, 503),
 )
@@ -192,6 +211,11 @@ async def change_optional_consents(
     account: CurrentAccountDep,
     accounts: AccountServiceDep,
 ) -> AccountResponse:
+    """선택 동의 중 보낸 항목만 변경. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 거절함.
+
+    API 명세 1-6
+    """
+
     # 직전 동의 이력을 복사해 보낸 선택 동의만 바꾼 이력을 더한다. 필수 동의는 바꿀 수 없다.
     updated = await accounts.change_optional_consents(
         account.account_id, payload.submitted()
@@ -202,12 +226,18 @@ async def change_optional_consents(
 
 @router.post(
     "/logout",
+    summary="로그아웃",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_errors(401, 503),
 )
 async def logout(
     session: CurrentSessionDep, revocations: SessionRevocationsDep
 ) -> None:
+    """요청에 쓴 세션 폐기. 본문 없음.
+
+    API 명세 1-4
+    """
+
     # 계정이 이미 없어도 세션은 폐기한다. 로그아웃은 이 세션을 끝내는 일이다.
     await revocations.revoke(session)
     logger.info("session_revoked", extra={"reason": "logout"})
@@ -215,6 +245,7 @@ async def logout(
 
 @router.delete(
     "/me",
+    summary="회원 탈퇴",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_errors(401, 404, 422, 503),
 )
@@ -226,6 +257,11 @@ async def delete_current_account(
     # 탈퇴 이유를 고르지 않았으면 본문 없이 보낸다.
     payload: WithdrawalRequest | None = None,
 ) -> None:
+    """계정과 그 아래 기록을 지우고 요청에 쓴 세션 폐기. 탈퇴 이유는 계정과 연결하지 않고 저장함.
+
+    API 명세 1-5
+    """
+
     withdrawal = (
         Withdrawal(reasons=tuple(payload.reasons), other_text=payload.other_text)
         if payload is not None
