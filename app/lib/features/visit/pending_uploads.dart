@@ -1,12 +1,16 @@
 /// 서버에 아직 보내지 못한 면회 녹음을 회차별로 기억한다.
 ///
 /// 앱을 다시 켜도 `음성 다시 보내기` 가 녹음 파일과 참여자 수를 찾을 수 있게,
-/// 녹음 파일 옆에 작은 기록(`pending-uploads.json`)을 둔다. 담는 것은 회차 ID,
-/// 파일 이름, 참여자 수뿐이다. 어르신 이름이나 대화 내용은 담지 않는다.
+/// 녹음 파일 옆에 작은 기록(`pending-uploads.json`)을 둔다. 담는 것은 계정 ID,
+/// 회차 ID, 파일 이름, 참여자 수뿐이다. 어르신 이름이나 대화 내용은 담지 않는다.
 ///
 /// 기록은 녹음 파일과 함께 생기고 함께 지운다. 서버가 녹음을 받았거나(API 6-2
-/// `202`) 다시 받지 않는 회차면 둘 다 지운다. 끝내 보내지 못한 파일을 언제
-/// 지울지와 탈퇴 때 지울지는 정해지지 않았다(app/README.md "아직 없는 것").
+/// `202`) 다시 받지 않는 회차면 둘 다 지운다. 서버가 받은 직후 지울지, 전사문을
+/// 저장할 때까지 둘지는 아직 정하지 않았다(PR #117 리뷰).
+///
+/// 기록마다 녹음한 계정을 적는다. 로그아웃해도 녹음은 남기되, 다른 계정으로
+/// 들어오면 찾지도 보내지도 못한다. 탈퇴 때 지우는 일은 아직 없다. 시간이
+/// 지났다고 지우지는 않는다. 앱을 지우면 Android 가 앱 전용 공간과 함께 지운다.
 library;
 
 import 'dart:convert';
@@ -15,6 +19,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../auth/auth_providers.dart';
 import 'visit_recorder.dart';
 
 /// 보내지 못한 녹음 하나.
@@ -47,11 +52,21 @@ abstract interface class PendingUploads {
 }
 
 /// 앱 전용 공간의 `visit_recordings/` 에 둔다. 녹음 파일과 같은 폴더다.
+///
+/// [accountId] 는 지금 로그인한 계정이다. 그 계정이 남긴 기록만 찾고 지운다.
+/// `null` 이면 서버 세션 없이 들어온 경우다(디버그 빌드의 로그인 건너뛰기).
 class DevicePendingUploads implements PendingUploads {
-  DevicePendingUploads({Future<Directory> Function()? directory})
-    : _directory = directory ?? _recordingsDirectory;
+  DevicePendingUploads({
+    this.accountId,
+    Future<Directory> Function()? directory,
+  }) : _directory = directory ?? _recordingsDirectory;
+
+  final String? accountId;
 
   final Future<Directory> Function() _directory;
+
+  /// 지금 계정이 남긴 기록인지. 계정을 적기 전의 기록은 세션 없이 남긴 것으로 본다.
+  bool _mine(Map<String, dynamic> entry) => entry['accountId'] == accountId;
 
   static const fileName = 'pending-uploads.json';
 
@@ -64,8 +79,9 @@ class DevicePendingUploads implements PendingUploads {
   Future<void> save(PendingUpload upload) async {
     final directory = await _directory();
     final entries = await _read(directory)
-      ..removeWhere((e) => e['sessionId'] == upload.sessionId);
+      ..removeWhere((e) => e['sessionId'] == upload.sessionId && _mine(e));
     entries.add({
+      'accountId': accountId,
       'sessionId': upload.sessionId,
       // 폴더는 앱이 다시 정하므로 이름만 둔다.
       'fileName': upload.audioPath.split(RegExp(r'[/\\]')).last,
@@ -78,7 +94,7 @@ class DevicePendingUploads implements PendingUploads {
   Future<PendingUpload?> find(String sessionId) async {
     final directory = await _directory();
     for (final entry in await _read(directory)) {
-      if (entry['sessionId'] != sessionId) continue;
+      if (entry['sessionId'] != sessionId || !_mine(entry)) continue;
       final name = entry['fileName'];
       final count = entry['participantCount'];
       if (name is! String || count is! int) return null;
@@ -101,7 +117,7 @@ class DevicePendingUploads implements PendingUploads {
     final paths = {
       ?audioPath,
       for (final e in entries)
-        if (e['sessionId'] == sessionId && e['fileName'] is String)
+        if (e['sessionId'] == sessionId && _mine(e) && e['fileName'] is String)
           '${directory.path}/${e['fileName']}',
     };
     for (final path in paths) {
@@ -109,7 +125,7 @@ class DevicePendingUploads implements PendingUploads {
       if (await file.exists()) await file.delete();
     }
 
-    entries.removeWhere((e) => e['sessionId'] == sessionId);
+    entries.removeWhere((e) => e['sessionId'] == sessionId && _mine(e));
     await _write(directory, entries);
   }
 
@@ -143,7 +159,11 @@ class DevicePendingUploads implements PendingUploads {
   }
 }
 
+/// 지금 로그인한 계정의 기록이다. 계정이 바뀌면 새로 만든다.
+///
 /// 테스트는 이 provider 를 override 해 실제 파일을 건드리지 않는다.
 final pendingUploadsProvider = Provider<PendingUploads>(
-  (ref) => DevicePendingUploads(),
+  (ref) => DevicePendingUploads(
+    accountId: ref.watch(sessionProvider.select((s) => s?.account.accountId)),
+  ),
 );

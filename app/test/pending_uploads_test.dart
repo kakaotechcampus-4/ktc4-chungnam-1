@@ -39,14 +39,22 @@ void main() {
     expect(await store.find('other'), isNull);
   });
 
-  test('기록에는 회차 ID, 파일 이름, 참여자 수만 둔다', () async {
+  test('기록에는 계정 ID, 회차 ID, 파일 이름, 참여자 수만 둔다', () async {
     final path = await wav('visit-a.wav');
-    await store.save(
+    await DevicePendingUploads(
+      accountId: 'account-a',
+      directory: () async => dir,
+    ).save(
       PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
     );
 
     expect(jsonDecode(await record().readAsString()), [
-      {'sessionId': 's1', 'fileName': 'visit-a.wav', 'participantCount': 2},
+      {
+        'accountId': 'account-a',
+        'sessionId': 's1',
+        'fileName': 'visit-a.wav',
+        'participantCount': 2,
+      },
     ]);
   });
 
@@ -113,5 +121,24 @@ void main() {
       PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
     );
     expect(await store.find('s1'), isNotNull);
+  });
+
+  group('계정', () {
+    DevicePendingUploads storeOf(String? accountId) =>
+        DevicePendingUploads(accountId: accountId, directory: () async => dir);
+
+    test('로그아웃해도 녹음은 남고 다른 계정은 찾거나 지우지 못한다', () async {
+      final path = await wav('visit-a.wav');
+      await storeOf('account-a').save(
+        PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
+      );
+
+      final other = storeOf('account-b');
+      expect(await other.find('s1'), isNull);
+      await other.remove('s1');
+      expect(await File(path).exists(), isTrue);
+
+      expect(await storeOf('account-a').find('s1'), isNotNull);
+    });
   });
 }
