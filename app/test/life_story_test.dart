@@ -1,5 +1,6 @@
 // 일대기(H) 화면을 확인한다. 이야기는 목 데이터이고 값은 모두 합성이다.
 
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/life_story/life_story.dart';
+import 'package:saerok/features/life_story/life_story_image.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 import 'package:saerok/widgets/app_surfaces.dart';
 
@@ -60,6 +62,15 @@ Profile _profile({String id = 'p1', String? occupation, String? family}) =>
       family: family,
     );
 
+/// 화면에 [asset] 그림이 놓였는지 본다.
+bool showsAsset(WidgetTester tester, String asset) => tester
+    .widgetList<Image>(find.byType(Image))
+    .any(
+      (image) =>
+          image.image is AssetImage &&
+          (image.image as AssetImage).assetName == asset,
+    );
+
 LifeStory _story(String id, LifeStoryCategory category, String date) =>
     LifeStory(
       id: id,
@@ -74,6 +85,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('일대기 묶음', () {
+    test('분류마다 기본 그림 다섯 장이 앱에 들어 있다', () {
+      for (final category in LifeStoryCategory.values) {
+        for (var n = 1; n <= lifeStoryImageCount; n++) {
+          final path = lifeStoryImageAsset(category, n);
+          expect(File(path).existsSync(), isTrue, reason: path);
+        }
+      }
+    });
+
     test('세부 정보는 적은 항목만 이야기가 되고 날짜가 없다', () {
       final stories = detailStoriesOf(
         _profile(occupation: '수선집', family: '딸 둘'),
@@ -317,15 +337,28 @@ void main() {
       expect(find.text('김새록님의 가족에 대한\n이야기입니다.'), findsOneWidget);
     });
 
-    testWidgets('이미지 파일이 없으면 분류와 번호로 자리를 채운다', (tester) async {
+    testWidgets('이야기 위에 그 분류와 번호의 그림을 놓는다', (tester) async {
       await openAt(tester, AppRoutes.albumStoryOf('family', 'story_demo_001'));
+
+      expect(
+        showsAsset(tester, 'assets/images/life-story-family-2.webp'),
+        isTrue,
+      );
+    });
+
+    testWidgets('그림 파일이 없는 번호는 분류와 번호로 자리를 채운다', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: LifeStoryImage(category: LifeStoryCategory.family, number: 9),
+        ),
+      );
       // asset 을 읽다 실패하는 것도 실제 비동기 처리다.
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 80)),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('가족 2'), findsOneWidget);
+      expect(find.text('가족 9'), findsOneWidget);
     });
 
     testWidgets('글자를 두 배로 키워도 깨지지 않는다', (tester) async {
@@ -409,7 +442,10 @@ void main() {
         await waitForImages(tester);
 
         expect(find.text('여행 · 2장'), findsOneWidget, reason: '목차 맨 뒤');
-        expect(find.text('여행 3'), findsOneWidget);
+        expect(
+          showsAsset(tester, 'assets/images/life-story-travel-3.webp'),
+          isTrue,
+        );
       });
 
       testWidgets('그림을 바꿔 고를 수 있다', (tester) async {
@@ -421,7 +457,10 @@ void main() {
         await tapAndSettle(tester, find.text('새 이야기'));
         await waitForImages(tester);
 
-        expect(find.text('가족 5'), findsOneWidget);
+        expect(
+          showsAsset(tester, 'assets/images/life-story-family-5.webp'),
+          isTrue,
+        );
       });
 
       testWidgets('쓰던 내용이 있으면 뒤로 갈 때 한 번 묻는다', (tester) async {
