@@ -37,3 +37,15 @@ class VisitSession(CamelModel):
     participant_count: int | None
     started_at: datetime
     analysis_id: UUID | None
+
+
+class VisitPhoto(CamelModel):
+    """5-2 응답. `imageUrl`은 수명이 짧은 S3 Presigned GET URL이며 `imageUrlExpiresAt`이
+    지나면 다시 받는다."""
+
+    schema_version: Literal[1] = 1
+    photo_id: UUID
+    session_id: UUID
+    image_url: str
+    image_url_expires_at: datetime
+    created_at: datetime
