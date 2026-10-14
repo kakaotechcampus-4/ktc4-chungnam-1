@@ -1,5 +1,7 @@
 // 일대기(H) 화면을 확인한다. 이야기는 목 데이터이고 값은 모두 합성이다.
 
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,7 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/life_story/life_story.dart';
+import 'package:saerok/features/life_story/life_story_providers.dart';
 import 'package:saerok/widgets/app_surfaces.dart';
 
 import 'sample_profile.dart';
@@ -29,6 +32,18 @@ class _ProfileWithDetails extends CareProfilesNotifier {
     ],
     selectedId: sampleProfileId,
   );
+}
+
+/// 새 이야기의 그림을 늘 3번으로 미리 고른다.
+class _FixedRandom implements Random {
+  @override
+  int nextInt(int max) => 2;
+
+  @override
+  bool nextBool() => false;
+
+  @override
+  double nextDouble() => 0;
 }
 
 Profile _profile({String id = 'p1', String? occupation, String? family}) =>
@@ -139,6 +154,7 @@ void main() {
           ProviderScope(
             overrides: [
               careProfilesProvider.overrideWith(_ProfileWithDetails.new),
+              lifeStoryRandomProvider.overrideWithValue(_FixedRandom()),
             ],
             child: MaterialApp.router(
               theme: buildAppTheme(),
@@ -160,6 +176,7 @@ void main() {
 
     Future<void> tapAndSettle(WidgetTester tester, Finder finder) async {
       await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
       await tester.tap(finder);
       await tester.pumpAndSettle();
     }
@@ -321,6 +338,236 @@ void main() {
         await openAt(tester, location, textScale: 2);
         expect(tester.takeException(), isNull, reason: location);
       }
+    });
+
+    group('이야기 추가, 수정, 삭제', () {
+      Future<void> openAdd(WidgetTester tester) async {
+        await openAt(tester, AppRoutes.albumBook);
+        await tapAndSettle(tester, find.text('이야기 추가하기'));
+      }
+
+      FilledButton saveButton(WidgetTester tester, String label) =>
+          tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
+
+      Future<void> fill(
+        WidgetTester tester,
+        String title,
+        String content,
+      ) async {
+        await tester.enterText(find.byType(TextField).at(0), title);
+        await tester.enterText(find.byType(TextField).at(1), content);
+        await tester.pump();
+      }
+
+      Future<void> waitForImages(WidgetTester tester) async {
+        // asset 을 읽다 실패하는 것도 실제 비동기 처리다.
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 80)),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('분류, 제목, 내용을 모두 채워야 담을 수 있다', (tester) async {
+        await openAdd(tester);
+
+        expect(find.text('분류를 고르면 그림을 고를 수 있어요.'), findsOneWidget);
+        expect(saveButton(tester, '이야기 담기').onPressed, isNull);
+
+        await fill(tester, '첫 기차 여행', '부산까지 기차를 타고 가셨대요.');
+        expect(
+          saveButton(tester, '이야기 담기').onPressed,
+          isNull,
+          reason: '분류가 없다',
+        );
+
+        await tapAndSettle(tester, find.text('여행'));
+        expect(saveButton(tester, '이야기 담기').onPressed, isNotNull);
+
+        await fill(tester, '   ', '부산까지 기차를 타고 가셨대요.');
+        expect(
+          saveButton(tester, '이야기 담기').onPressed,
+          isNull,
+          reason: '빈칸뿐인 제목',
+        );
+      });
+
+      testWidgets('담은 이야기는 최근 이야기에 바로 보이고 미리 고른 그림이 붙는다', (tester) async {
+        await openAdd(tester);
+        await tapAndSettle(tester, find.text('여행'));
+        await fill(tester, '첫 기차 여행', '부산까지 기차를 타고 가셨대요.');
+        await tapAndSettle(tester, find.text('이야기 담기'));
+
+        expect(find.text('이야기를 담았어요.'), findsOneWidget);
+        expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
+        expect(
+          topOf(tester, '첫 기차 여행'),
+          lessThan(topOf(tester, '손주를 처음 안아 본 날')),
+          reason: '가장 최근에 담았다',
+        );
+
+        await tapAndSettle(tester, find.text('첫 기차 여행'));
+        await waitForImages(tester);
+
+        expect(find.text('여행 · 2장'), findsOneWidget, reason: '목차 맨 뒤');
+        expect(find.text('여행 3'), findsOneWidget);
+      });
+
+      testWidgets('그림을 바꿔 고를 수 있다', (tester) async {
+        await openAdd(tester);
+        await tapAndSettle(tester, find.text('가족'));
+        await tapAndSettle(tester, find.bySemanticsLabel('그림 5번'));
+        await fill(tester, '새 이야기', '내용');
+        await tapAndSettle(tester, find.text('이야기 담기'));
+        await tapAndSettle(tester, find.text('새 이야기'));
+        await waitForImages(tester);
+
+        expect(find.text('가족 5'), findsOneWidget);
+      });
+
+      testWidgets('쓰던 내용이 있으면 뒤로 갈 때 한 번 묻는다', (tester) async {
+        await openAdd(tester);
+        await tester.tap(find.byTooltip('뒤로'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('어떤 이야기를 볼까요?'),
+          findsOneWidget,
+          reason: '쓴 것이 없으면 묻지 않는다',
+        );
+
+        await tapAndSettle(tester, find.text('이야기 추가하기'));
+        await fill(tester, '쓰다 만 이야기', '');
+        await tester.tap(find.byTooltip('뒤로'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('작성 중인 내용이 사라져요'), findsOneWidget);
+        await tapAndSettle(tester, find.text('계속 쓰기'));
+        expect(find.text('쓰다 만 이야기'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('뒤로'));
+        await tester.pumpAndSettle();
+        await tapAndSettle(tester, find.text('나가기'));
+
+        expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
+        expect(find.text('쓰다 만 이야기'), findsNothing);
+      });
+
+      testWidgets('연필로 고치면 고친 내용이 바로 보인다', (tester) async {
+        await openAt(tester, AppRoutes.albumCategoryOf('family'));
+        await tapAndSettle(tester, find.text('남편을 처음 만난 날'));
+        await tapAndSettle(tester, find.byTooltip('이야기 수정'));
+
+        expect(find.text('이야기 수정하기'), findsOneWidget);
+        expect(find.text('남편을 처음 만난 날'), findsOneWidget, reason: '원래 값');
+
+        await tester.enterText(find.byType(TextField).at(0), '국숫집에서 만난 날');
+        await tester.pump();
+        await tapAndSettle(tester, find.text('수정 완료'));
+
+        expect(find.text('이야기를 고쳤어요.'), findsOneWidget);
+        expect(find.text('국숫집에서 만난 날'), findsOneWidget);
+        expect(find.text('가족 · 2장'), findsOneWidget, reason: '담은 날짜는 그대로다');
+      });
+
+      testWidgets('분류를 바꾸면 새 분류의 목차 위에서 다시 연다', (tester) async {
+        await openAt(tester, AppRoutes.albumCategoryOf('family'));
+        await tapAndSettle(tester, find.text('남편을 처음 만난 날'));
+        await tapAndSettle(tester, find.byTooltip('이야기 수정'));
+        await tapAndSettle(tester, find.text('여행'));
+        await tapAndSettle(tester, find.text('수정 완료'));
+
+        // 8월 22일에 담아 신혼여행(9월 25일)보다 앞이다.
+        expect(find.text('여행 · 1장'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('뒤로'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('김새록님의 여행에 대한\n이야기입니다.'), findsOneWidget);
+        expect(find.text('남편을 처음 만난 날'), findsOneWidget);
+      });
+
+      testWidgets('휴지통은 한 번 묻고 지운 뒤 목차로 돌아간다', (tester) async {
+        await openAt(tester, AppRoutes.albumCategoryOf('family'));
+        await tapAndSettle(tester, find.text('남편을 처음 만난 날'));
+        await tapAndSettle(tester, find.byTooltip('이야기 지우기'));
+
+        expect(find.text('이 이야기를 지울까요?'), findsOneWidget);
+        await tapAndSettle(tester, find.text('취소'));
+        expect(find.text('가족 · 2장'), findsOneWidget);
+
+        await tapAndSettle(tester, find.byTooltip('이야기 지우기'));
+        await tapAndSettle(tester, find.text('지우기'));
+
+        expect(find.text('이야기를 지웠어요.'), findsOneWidget);
+        expect(find.text('김새록님의 가족에 대한\n이야기입니다.'), findsOneWidget);
+        expect(find.text('남편을 처음 만난 날'), findsNothing);
+      });
+
+      testWidgets('세부 정보 이야기는 지울 수 없고 연필은 세부 정보 수정을 연다', (tester) async {
+        await openAt(tester, AppRoutes.albumCategoryOf('family'));
+        await tapAndSettle(tester, find.text('가족'));
+
+        expect(find.byTooltip('이야기 지우기'), findsNothing);
+
+        await tapAndSettle(tester, find.byTooltip('이야기 수정'));
+
+        expect(find.text('세부 정보 수정'), findsOneWidget);
+      });
+
+      testWidgets('입력 화면도 글자를 두 배로 키워도 깨지지 않는다', (tester) async {
+        await openAt(tester, AppRoutes.albumStoryNew, textScale: 2);
+        await tapAndSettle(tester, find.text('가족'));
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
+  group('바꾼 이야기 기억', () {
+    const draft = LifeStoryDraft(
+      category: LifeStoryCategory.other,
+      title: '고친 제목',
+      content: '내용',
+      imageNumber: 1,
+    );
+    const base = [
+      LifeStory(
+        id: 'm1',
+        category: LifeStoryCategory.family,
+        title: '원래',
+        content: '내용',
+        imageNumber: 1,
+      ),
+      LifeStory(
+        id: 'm2',
+        category: LifeStoryCategory.family,
+        title: '지울 것',
+        content: '내용',
+        imageNumber: 1,
+      ),
+    ];
+
+    test('어르신마다 따로 기억하고 목 이야기도 고치거나 지울 수 있다', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final edits = container.read(lifeStoryEditsProvider.notifier);
+      List<String> idsOf(String profileId) => container
+          .read(lifeStoryEditsProvider)[profileId]!
+          .applyTo(base)
+          .map((s) => s.id)
+          .toList();
+
+      final added = edits.add('a', draft);
+      edits.update('a', base[0], draft);
+      edits.delete('a', base[1]);
+
+      expect(idsOf('a'), ['m1', added.id]);
+      expect(
+        container.read(lifeStoryEditsProvider)['a']!.applyTo(base).first.title,
+        '고친 제목',
+      );
+      expect(container.read(lifeStoryEditsProvider)['b'], isNull);
+
+      edits.delete('a', added);
+      expect(idsOf('a'), ['m1']);
     });
   });
 }
