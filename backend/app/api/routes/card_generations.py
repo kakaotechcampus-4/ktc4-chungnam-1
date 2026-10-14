@@ -19,6 +19,7 @@ router = APIRouter(tags=["card-generations"])
 
 @router.post(
     "/api/v1/profiles/{profile_id}/card-generations",
+    summary="카드 생성 시작",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
@@ -29,10 +30,12 @@ async def create_card_generation(
     settings: SettingsDep,
     profile_id: Annotated[UUID, Path()],
 ) -> CardGenerationStatus:
-    """4-1. 카드 생성 작업 생성. 이미 만드는 중이면 새로 만들지 않음.
+    """카드 생성 작업 생성. 이미 만드는 중이면 새로 만들지 않음.
 
     평가 전 회차가 묶음을 쓰는 중(`inVisit`)이면 거절함. 새 묶음이 생기면 4-3이 면회 중인 카드를 못 줌.
     아직 안 쓴 묶음이 있어도(`ready`) 거절함.
+
+    API 명세 4-1
     """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
@@ -54,6 +57,7 @@ async def create_card_generation(
 
 @router.get(
     "/api/v1/profiles/{profile_id}/card-generations/status",
+    summary="카드 생성 상태 조회",
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
 )
@@ -62,7 +66,10 @@ async def get_card_generation_status(
     connection: DbConnectionDep,
     profile_id: Annotated[UUID, Path()],
 ) -> CardGenerationStatus:
-    """4-2. 홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`."""
+    """홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`.
+
+    API 명세 4-2
+    """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
     return CardGenerationStatus(status=await generation_status(connection, profile_id))
@@ -70,6 +77,7 @@ async def get_card_generation_status(
 
 @router.get(
     "/api/v1/profiles/{profile_id}/card-generations/current",
+    summary="현재 카드 묶음 조회",
     response_model=CardSet,
     response_model_by_alias=True,
 )
@@ -78,7 +86,10 @@ async def get_current_card_set(
     connection: DbConnectionDep,
     profile_id: Annotated[UUID, Path()],
 ) -> CardSet:
-    """4-3. 지금 쓸 카드 묶음. 고르기 전과 평가 전 회차에 쓰는 중에 같은 묶음."""
+    """지금 쓸 카드 묶음. 고르기 전과 평가 전 회차에 쓰는 중에 같은 묶음.
+
+    API 명세 4-3
+    """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
     return await current_card_set(connection, profile_id)
