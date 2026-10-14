@@ -11,13 +11,20 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import 'review_controller.dart';
+import 'status_notice.dart';
+import 'submission_controller.dart';
 
 /// F-1 보호자 소감 작성.
 ///
 /// 피그마의 네 물음을 계약의 `CaregiverEvaluation` 필드에 그대로 맞춘다.
 /// Q1 대화 만족도, Q2 어르신 반응, Q3 카드별 평가, Q4 남기고 싶은 말.
+///
+/// [sessionId] 가 있으면 앱을 다시 켠 뒤 홈 배너의 `평가 이어서 하기` 로 들어온
+/// 경우다(`/visit/review?session=<회차 ID>`). 없으면 지금 막 마친 면회다.
 class ReviewScreen extends ConsumerStatefulWidget {
-  const ReviewScreen({super.key});
+  const ReviewScreen({this.sessionId, super.key});
+
+  final String? sessionId;
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -32,26 +39,107 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     super.dispose();
   }
 
+  /// 서버에 남긴 뒤에만 넘어간다. 실패하면 이 화면에 남아 다시 누르게 한다.
+  Future<void> _submit() async {
+    final sent = await ref
+        .read(submissionProvider.notifier)
+        .submit(resumeSessionId: widget.sessionId);
+    if (!sent || !mounted) return;
+
+    // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
+    // 그 전에 위로 화면을 한 번 거친다. 서버가 녹음을 새로 받았을 때만 만드는
+    // 중을 띄운다. 이미 끝난 회차라고 거절됐으면 홈의 회차 상태가 알린다.
+    final analysisId = ref.read(submissionProvider).analysisId;
+    if (analysisId != null) {
+      ref
+          .read(reportNoticeProvider.notifier)
+          .startGenerating(analysisId: analysisId);
+    }
+    context.go(AppRoutes.visitReviewDone);
+  }
+
+  /// 평가를 저장했으면 녹음만 남았다고 알린다. 다시 누르면 녹음만 보낸다.
+  static String _failureMessage(
+    SubmissionFailure failure, {
+    required bool evaluationSaved,
+  }) {
+    final what = evaluationSaved ? '소감은 저장했지만 녹음을' : '소감을';
+    return switch (failure) {
+      SubmissionFailure.network => '$what 보내지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+      SubmissionFailure.server => '$what 보내지 못했어요. 잠시 후 다시 눌러주세요.',
+      SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
+      SubmissionFailure.noRecording => '녹음 파일이 없어 리포트를 만들 수 없어요.',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(reviewControllerProvider);
     final controller = ref.read(reviewControllerProvider.notifier);
-    final cards = ref.watch(reviewCardsProvider);
+    final target = ref.watch(reviewTargetProvider(widget.sessionId));
+    final cards = target.whenData(
+      (t) => t?.cards ?? const <ConversationCard>[],
+    );
+    final submission = ref.watch(submissionProvider);
+    final failure = submission.failure;
+
+    // 이어서 하는 회차를 찾는 동안은 물음을 보여주지 않는다. 찾지 못하면 답을
+    // 받아 놓고 버리게 된다.
+    if (widget.sessionId != null && !target.hasValue && !target.hasError) {
+      return const Scaffold(
+        appBar: AppTopBar(),
+        body: StatusNotice(
+          loading: true,
+          title: '면회 기록을 불러오고 있어요',
+          body: '잠시만 기다려 주세요',
+        ),
+      );
+    }
+
+    // 이어서 하려던 회차가 지금 묶음의 것이 아니다. 평가를 이미 마쳤거나 다른
+    // 회차로 넘어간 경우라 소감을 받지 않는다.
+    if (target case AsyncData(value: null) when widget.sessionId != null) {
+      return Scaffold(
+        appBar: const AppTopBar(),
+        body: StatusNotice(
+          icon: Icons.event_busy_outlined,
+          title: '이어서 할 면회를 찾을 수 없어요.',
+          body: '홈에서 다시 확인해 주세요.',
+          onHome: () => context.go(AppRoutes.home),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: const AppTopBar(),
       body: ScreenBody(
         scrollable: true,
-        bottom: PrimaryButton(
-          label: '리포트 만들기',
-          onPressed: draft.canSubmit
-              ? () {
-                  // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은
-                  // 홈에서 알리고, 그 전에 위로 화면을 한 번 거친다.
-                  ref.read(reportNoticeProvider.notifier).startGenerating();
-                  context.go(AppRoutes.visitReviewDone);
-                }
-              : null,
+        bottom: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (failure != null) ...[
+              Text(
+                _failureMessage(
+                  failure,
+                  evaluationSaved: submission.evaluationSaved,
+                ),
+                style: AppTypography.sub.copyWith(color: AppColors.danger),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            PrimaryButton(
+              label: !submission.sending
+                  ? '리포트 만들기'
+                  : submission.evaluationSaved
+                  ? '녹음을 보내고 있어요'
+                  : '소감을 보내고 있어요',
+              onPressed: draft.canSubmit && !submission.sending
+                  ? _submit
+                  : null,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,7 +193,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                         children: [
                           for (final card in list) ...[
                             _CardReactionRow(
-                              title: card.topicTitle,
+                              title: card.cardTitle,
                               answered: draft.cardAnswers.containsKey(
                                 card.cardId,
                               ),

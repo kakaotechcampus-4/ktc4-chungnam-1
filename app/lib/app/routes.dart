@@ -55,7 +55,10 @@ abstract final class AppRoutes {
       '$visitReview?session=$sessionId';
 
   /// 평가 뒤 음성을 보내지 못한(`audioPending`) 회차의 음성을 다시 보낸다.
-  /// 홈의 `음성 다시 보내기` 배너가 연다. 화면은 면회 흐름이 만든다.
+  /// 피그마 설계 없음.
+  ///
+  /// 앱을 다시 켠 뒤 홈의 `음성 다시 보내기` 배너가 `?session=<회차 ID>` 를
+  /// 붙여 연다.
   static const visitUpload = '/visit/upload';
 
   static String visitUploadOf(String sessionId) =>

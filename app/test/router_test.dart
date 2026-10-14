@@ -11,7 +11,9 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/report/story_edit_screen.dart';
+import 'package:saerok/features/review/review_screen.dart';
 
+import 'fake_card_api.dart';
 import 'sample_profile.dart';
 
 void main() {
@@ -34,7 +36,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [withSampleProfile, ...overrides],
+          overrides: [withSampleProfile, ...withMockCards, ...overrides],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,
@@ -71,6 +73,23 @@ void main() {
         expect(find.byType(Scaffold), findsWidgets);
       });
     }
+
+    testWidgets('음성 다시 보내기는 회차 ID 를 받는다', (tester) async {
+      await openAt(tester, '${AppRoutes.visitUpload}?session=session_test_001');
+      expect(tester.takeException(), isNull);
+      // 대역 기록에 이 회차가 없으므로 찾을 수 없다고 안내한다.
+      expect(find.text('이 휴대전화에서 녹음 파일을 찾을 수 없어요.'), findsOneWidget);
+    });
+
+    testWidgets('평가 이어서 하기는 회차 ID 를 받는다', (tester) async {
+      await openAt(tester, '${AppRoutes.visitReview}?session=session_other');
+      expect(tester.takeException(), isNull);
+      // 회차를 찾지 못했을 때의 안내는 `review_resume_test.dart` 에서 본다.
+      expect(
+        tester.widget<ReviewScreen>(find.byType(ReviewScreen)).sessionId,
+        'session_other',
+      );
+    });
 
     testWidgets('리포트는 reportId 를 받는다', (tester) async {
       await openAt(tester, AppRoutes.reportOf('report_demo_001'));
