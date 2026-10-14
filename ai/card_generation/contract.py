@@ -108,7 +108,7 @@ class PastCardIn(_Camel):
 
 class CardContext(_Camel):
     """backend가 DB에서 모아 넘기는 프로필 하나의 정보 전부. 카드 생성은 이것만 봄."""
-    age_range: str = Field(pattern=r"^\d0s$")   # 예: "80s"
+    age_range: str = Field(pattern=r"^\d+0s$")   # 예: "80s", "100s"
     profile_facts: ProfileFacts
     life_facts: list[LifeFactIn] = Field(default_factory=list)
     photos: list[PhotoIn] = Field(default_factory=list)

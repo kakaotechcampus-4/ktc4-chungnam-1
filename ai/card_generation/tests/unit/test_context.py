@@ -67,3 +67,5 @@ def test_contract_checks_age_range():
     ok = CardContext.model_validate({"ageRange": "80s", "profileFacts": {"hobby": "노래"},
                                      "topics": [{"topicId": "t", "title": "a", "description": "b", "evidence": [{"profileField": "hobby"}]}]})
     assert ok.profile_facts.hobby == "노래"
+    # 100살 이상이면 backend가 "100s"를 보냄
+    assert CardContext.model_validate({"ageRange": "100s", "profileFacts": {}}).age_range == "100s"

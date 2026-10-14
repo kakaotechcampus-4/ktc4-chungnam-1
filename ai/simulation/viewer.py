@@ -25,7 +25,7 @@ def render(data: dict) -> str:
 
 def build(run_path: Path) -> Path:
     out = run_path.with_suffix(".html")
-    out.write_text(render(json.loads(run_path.read_text())), encoding="utf-8")
+    out.write_text(render(json.loads(run_path.read_text(encoding="utf-8"))), encoding="utf-8")
     return out
 
 
