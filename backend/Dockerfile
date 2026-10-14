@@ -14,7 +14,15 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # 의존성 층을 소스와 분리해 코드만 바뀐 빌드는 설치를 다시 하지 않는다.
+# 카드 생성 패키지(saerok-local-ai)는 pyproject가 ../ai를 가리켜 /ai에 둔다. ai/는 compose의 additional_contexts로 받는다.
 COPY pyproject.toml uv.lock ./
+COPY --from=ai pyproject.toml /ai/
+RUN uv sync --frozen --no-dev --no-install-package saerok-local-ai
+
+COPY --from=ai common /ai/common
+COPY --from=ai card_generation /ai/card_generation
+COPY --from=ai report_generation /ai/report_generation
+COPY --from=ai proposal_generation /ai/proposal_generation
 RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./
