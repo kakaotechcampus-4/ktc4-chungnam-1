@@ -35,7 +35,7 @@ def generate_report(request: VisitReportRequest, *, model: str, api_key: str, at
     refs = card_refs(request)
     try:
         out = invoke_structured(chat_model(ChatConfig(model=model, api_key=api_key)), _Report,
-                                [("system", PROMPT.read_text()), ("user", llm_payload(request, refs, with_facts=False))],
+                                [("system", PROMPT.read_text(encoding="utf-8")), ("user", llm_payload(request, refs, with_facts=False))],
                                 "면회 리포트", attempts, on_retry)
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"

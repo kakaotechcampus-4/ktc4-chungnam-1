@@ -7,7 +7,11 @@ name: saerok
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      # 카드 생성 패키지. Dockerfile이 COPY --from=ai로 씀
+      additional_contexts:
+        ai: ../ai
     image: saerok-backend
     env_file: .env
     init: true
@@ -26,7 +30,11 @@ services:
       retries: 3
 
   speech-worker:
-    build: .
+    build:
+      context: .
+      # 카드 생성 패키지. Dockerfile이 COPY --from=ai로 씀
+      additional_contexts:
+        ai: ../ai
     image: saerok-backend
     profiles: ["workers"]
     command: ["python", "-m", "app.workers.speech_analysis"]

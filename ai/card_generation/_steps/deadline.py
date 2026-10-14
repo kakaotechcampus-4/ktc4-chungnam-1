@@ -1,20 +1,27 @@
 """카드 생성 전체 제한 시간(time_limit).
 
-모델을 부르기 직전마다 남은 시간을 확인하고, 남은 시간을 그 호출의 timeout으로 줌. 스트리밍으로 받는 중에도 토큰마다 확인해서
-넘으면 끊음. 제한 시간이 지나면 진행 중인 호출을 끊고 다음 호출도 시작하지 않음(PM 리뷰, #110 2026-10-12).
+생성 전체는 따로 띄운 스레드에서 돌리고 부른 쪽은 마감 시각까지만 기다림. 모델이 응답 없이 연결만 붙잡고 있어도 제한 시간에
+실패를 돌려줌(PM 리뷰, #110 2026-10-13). 남은 스레드도 멈추도록, 모델을 부르기 직전마다 남은 시간을 확인해 그 호출의 timeout으로
+주고 스트리밍으로 받는 중에는 토큰마다 확인함(PM 리뷰, #110 2026-10-12).
 """
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import math
+import threading
 import time
-from typing import Any
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
+from typing import Any, Callable, TypeVar
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 
 from common.llm import ChatConfig, chat_model
+
+T = TypeVar("T")
 
 
 class TimeLimitExceeded(RuntimeError):
@@ -29,6 +36,25 @@ class Deadline:
         self.config = config
         self.seconds = seconds
         self.end = time.monotonic() + seconds
+
+    def run(self, work: Callable[[], T]) -> T:
+        """work를 따로 띄운 스레드에서 돌리고 마감 시각까지만 기다림. 넘기면 TimeLimitExceeded.
+        남은 스레드는 다음 토큰이나 다음 모델 호출에서 TimeLimitExceeded로 멈춤. DB를 쓰지 않아 남아도 결과가 저장되지 않음."""
+        done: Future[T] = Future()
+
+        def target() -> None:
+            try:
+                done.set_result(work())
+            except BaseException as error:
+                done.set_exception(error)
+
+        # 부른 쪽의 contextvars(LangChain 콜백, 시뮬레이터 기록)를 스레드에서도 그대로 씀
+        context = contextvars.copy_context()
+        threading.Thread(target=context.run, args=(target,), name="card-generation", daemon=True).start()
+        try:
+            return done.result(timeout=max(0.0, self.end - time.monotonic()))
+        except FutureTimeout:
+            raise TimeLimitExceeded(f"모델 응답을 기다리다 {self.seconds:.0f}초를 넘김") from None
 
     def model(self, stage: str) -> BaseChatModel:
         """남은 시간을 timeout으로 준 모델. 남은 시간이 없으면 TimeLimitExceeded. stage는 실패 문장에 남길 단계 이름."""

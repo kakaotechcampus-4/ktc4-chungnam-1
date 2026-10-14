@@ -99,7 +99,7 @@ def main() -> int:
     ap.add_argument("--match", type=Path)
     ap.add_argument("--repeat", type=int, default=3)
     args = ap.parse_args()
-    data = json.loads(DATA.read_text())
+    data = json.loads(DATA.read_text(encoding="utf-8"))
     prompt = match_prompt(LATEST, args.match, args.same_story)
     model = chat_model(config_from_env())
     jobs = [case for _ in range(args.repeat) for case in data["cases"]]
@@ -110,7 +110,7 @@ def main() -> int:
                 for res in results for r in res["rows"] if r["tag"]]
     out = HERE / "runs" / f"granularity-{args.label}-{datetime.now():%Y%m%d-%H%M%S}.json"
     out.write_text(json.dumps({"label": args.label, "repeat": args.repeat, "score": s, "unscored": unscored,
-                               "results": results}, ensure_ascii=False, indent=1))
+                               "results": results}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"[{args.label}] 기존 주제 연결 {s['link'][0]}/{s['link'][1]} 맞음, "
           f"과하게 묶음 {s['over_merge'][0]}/{s['over_merge'][1]}쌍, 쪼갬 {s['split'][0]}/{s['split'][1]}쌍")
     for w in sorted(set(s["wrong"])):

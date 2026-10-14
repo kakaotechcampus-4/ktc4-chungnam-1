@@ -34,7 +34,7 @@ class Version:
 
     def _read(self, name: str) -> str:
         """이 판의 prompts 폴더에서 파일 하나를 읽음."""
-        return (self.prompts / name).read_text()
+        return (self.prompts / name).read_text(encoding="utf-8")
 
     def agent_prompt(self) -> str:
         """① 조사 에이전트의 시스템 프롬프트. same_story.md와 새 주제 최소 수를 끼워 넣음."""

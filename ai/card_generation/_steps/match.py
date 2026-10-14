@@ -14,7 +14,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
-from card_generation._steps.research.candidates import CardCandidate, evidence_refs
+from card_generation._steps.research.candidates import _TITLE_MAX, CardCandidate, evidence_refs
 from card_generation._steps.research.store import ProfileStore
 from card_generation._steps.research.tools import TopicView
 from card_generation._versions.base import Version
@@ -83,8 +83,8 @@ def match_prompt(v: Version, match_path: Path | None = None, same_story_path: Pa
     """판의 판정 프롬프트. 평가에서는 다른 판의 경로를 넣어 비교함."""
     if not match_path and not same_story_path:
         return v.match_prompt()
-    match_text = (match_path or v.prompts / "match.md").read_text()
-    return match_text.replace("{same_story}", (same_story_path or v.prompts / "same_story.md").read_text().strip())
+    match_text = (match_path or v.prompts / "match.md").read_text(encoding="utf-8")
+    return match_text.replace("{same_story}", (same_story_path or v.prompts / "same_story.md").read_text(encoding="utf-8").strip())
 
 
 def _match_input(store: ProfileStore, topics: list[TopicView], candidates: list[CardCandidate]) -> dict[str, Any]:
@@ -136,6 +136,12 @@ def _apply_match(candidates: list[CardCandidate], topics: list[TopicView], resul
                 continue
         elif a.new_key not in new_topics:
             drop(f"판정의 새 주제 {a.new_key}에 제목과 설명이 없음")
+            continue
+        elif not new_topics[a.new_key].title.strip() or not new_topics[a.new_key].description.strip():
+            drop(f"판정의 새 주제 {a.new_key}의 제목이나 설명이 비어 있음")
+            continue
+        elif len(new_topics[a.new_key].title) > _TITLE_MAX:
+            drop(f"판정의 새 주제 {a.new_key}의 제목이 {_TITLE_MAX}자를 넘음")
             continue
         else:
             out.new_topics[a.new_key] = new_topics[a.new_key]

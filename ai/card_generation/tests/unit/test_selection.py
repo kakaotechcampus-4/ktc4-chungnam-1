@@ -121,6 +121,14 @@ def test_submission_rejects_mixed_evidence_and_long_title():
     assert any(p.startswith("2번: 카드 제목과 새 주제 제목은 100자") for p in problems)
 
 
+def test_submission_rejects_blank_titles():
+    blank = _cand(" ", new="주제x")
+    no_topic_title = _cand("국밥", new=" ")
+    problems = submission_problems(_sub([blank, no_topic_title]), LATEST)
+    assert "1번: 카드 제목이 비어 있다." in problems
+    assert any(p.startswith("2번: 기존 주제에 연결하거나") for p in problems)
+
+
 def test_submission_needs_new_stories():
     cands = [_cand(f"c{i}", link=f"t{i}") for i in range(12)] + [_cand(f"n{i}", new=f"새{i}") for i in range(4)]
     assert any("새 주제(기존 주제에 연결하지 않은 이야기)가 4개" in p for p in submission_problems(_sub(cands), LATEST))

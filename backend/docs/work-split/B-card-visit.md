@@ -150,7 +150,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 #### 4-1 카드 생성 처리
 
-BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연결은 후속 작업이다.
+BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_generation`의 `generate_cards`이고, `app/workers/card_generation.py`의 `card_generator`가 BE 요청·결과 형식으로 감싼다. AI 쪽 실패 코드는 그대로 남기고, AI 쪽 입력 형식에 맞지 않는 context는 `INVALID_CONTEXT`로 실패시킨다.
 
     context 조립(DB 읽기) → 생성 함수 호출(LLM, 트랜잭션 밖, 별도 스레드) → 결과 검증 → 저장(한 트랜잭션)
 

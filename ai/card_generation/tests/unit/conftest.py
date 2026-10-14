@@ -26,7 +26,7 @@ def db_url() -> str:
 @pytest.fixture(scope="session")
 def seeded(db_url: str) -> Seeded:
     with psycopg.connect(db_url, autocommit=True) as conn:
-        conn.execute(INIT_SQL.read_text())
+        conn.execute(INIT_SQL.read_text(encoding="utf-8"))
     with psycopg.connect(db_url) as conn:
         data = seed(conn)
         conn.commit()

@@ -39,7 +39,7 @@ def on_retry(info: dict[str, str]) -> None:
 def _call(model: BaseChatModel, schema: type[BaseModel], prompt: str, payload: dict[str, Any]) -> BaseModel:
     """시뮬레이션 역할 호출. 프롬프트 파일과 JSON 입력을 보낸다. 형식이 깨지면 MAX_ATTEMPTS번까지 다시 보내고 RETRIES에 남긴다."""
     path = PROMPTS / prompt
-    return invoke_structured(model, schema, [("system", path.read_text()), ("user", json.dumps(payload, ensure_ascii=False))],
+    return invoke_structured(model, schema, [("system", path.read_text(encoding="utf-8")), ("user", json.dumps(payload, ensure_ascii=False))],
                              path.name, MAX_ATTEMPTS, on_retry)
 
 
@@ -202,7 +202,7 @@ def dialogue(model, persona, visit_no: int, mood: str, cards: list[dict[str, Any
     새 이야기도 카드도 없이 STALL_TURNS가 지나면 보호자에게 이야기가 끊겼다고 알린다("옆에 있을게요"만 오가는 일이 있었다).
     (턴 목록, 어르신이 꺼낸 생애 id, 면회 중 추가한 카드 번호)."""
     p = persona["patient"]
-    patient_system = ((PROMPTS / "patient_turn.md").read_text()
+    patient_system = ((PROMPTS / "patient_turn.md").read_text(encoding="utf-8")
                       .replace("{persona}", patient_persona_text(persona))
                       .replace("{life_story}", "\n".join(f"- [{s['id']}] ({s['period']}, {EMOTION.get(s['emotion'], s['emotion'])}) {s['text']}"
                                                           for s in p["life_story"]))
@@ -236,7 +236,7 @@ def dialogue(model, persona, visit_no: int, mood: str, cards: list[dict[str, Any
         i = len(turns)
         if i % 2 == 0:  # 보호자
             remaining = max(0, (max_turns - i) // 2 - 1)
-            system = ((PROMPTS / "caregiver_turn.md").read_text()
+            system = ((PROMPTS / "caregiver_turn.md").read_text(encoding="utf-8")
                       .replace("{persona}", caregiver_persona_text(persona, learned))
                       .replace("{setting}", _setting_text(persona)).replace("{cards}", _cards_text(in_hand))
                       .replace("{reserve}", _cards_text(left))

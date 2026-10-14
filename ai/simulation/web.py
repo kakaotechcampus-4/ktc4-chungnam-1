@@ -94,7 +94,7 @@ def get_persona(name: str) -> dict[str, Any]:
     path = PERSONAS / f"{Path(name).name}.json"
     if not path.exists():
         raise HTTPException(404, "페르소나 파일이 없습니다")
-    return {"name": path.stem, "text": path.read_text()}
+    return {"name": path.stem, "text": path.read_text(encoding="utf-8")}
 
 
 class Text(BaseModel):
@@ -112,7 +112,7 @@ def put_persona(name: str, body: Text) -> dict[str, str]:
         raise HTTPException(400, f"필요한 항목이 없습니다: {', '.join(missing)}")
     path = PERSONAS / f"{Path(name).name}.json"
     _backup(path)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {"saved": path.name}
 
 
@@ -122,8 +122,8 @@ def prompts() -> list[dict[str, Any]]:
     out = []
     for key, (label, path) in PROMPT_KEYS.items():
         backup = _backup_path(path)
-        out.append({"key": key, "label": label, "path": str(path.relative_to(ROOT)), "text": path.read_text(),
-                    "edited": backup.exists() and backup.read_text() != path.read_text()})
+        out.append({"key": key, "label": label, "path": str(path.relative_to(ROOT)), "text": path.read_text(encoding="utf-8"),
+                    "edited": backup.exists() and backup.read_text(encoding="utf-8") != path.read_text(encoding="utf-8")})
     return out
 
 
@@ -133,7 +133,7 @@ def put_prompt(key: str, body: Text) -> dict[str, str]:
         raise HTTPException(404, "없는 프롬프트입니다")
     _, path = PROMPT_KEYS[key]
     _backup(path)
-    path.write_text(body.text)
+    path.write_text(body.text, encoding="utf-8")
     return {"saved": str(path.relative_to(ROOT))}
 
 
@@ -234,7 +234,7 @@ def runs() -> list[dict[str, Any]]:
     out = []
     for path in _run_files():
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         out.append({"name": path.stem, "persona": data.get("persona", {}).get("id"), "seed": data.get("seed"),
@@ -249,7 +249,7 @@ def view(name: str) -> str:
     path = RUNS / f"{Path(name).name}.json"
     if not path.exists():
         raise HTTPException(404, "기록이 없습니다")
-    return render(json.loads(path.read_text()))
+    return render(json.loads(path.read_text(encoding="utf-8")))
 
 
 @app.get("/api/runs/{name}")
@@ -257,7 +257,7 @@ def run_json(name: str) -> dict[str, Any]:
     path = RUNS / f"{Path(name).name}.json"
     if not path.exists():
         raise HTTPException(404, "기록이 없습니다")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @app.get("/api/runs/{name}/events")
@@ -265,7 +265,7 @@ def past_events(name: str) -> list[dict[str, Any]]:
     path = RUNS / f"{Path(name).name}.events.jsonl"
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 @app.get("/static/dbview.js")
@@ -275,7 +275,7 @@ def dbview_js() -> FileResponse:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return (HERE / "web/index.html").read_text()
+    return (HERE / "web/index.html").read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":

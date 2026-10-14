@@ -10,7 +10,7 @@
 모델은 요청의 model(backend 설정 card_generation_model)을 씀. 주소는 common/llm.py의 ENDPOINTS에서 찾음.
 
 1~2분 걸리는 동기 함수라 비동기 worker에서는 별도 스레드로 부름. context를 읽는 트랜잭션과 결과를 저장하는 트랜잭션 사이에 부름.
-전체가 time_limit(기본 240초)을 넘으면 진행 중인 모델 호출을 끊고 실패. worker 임대는 이보다 길게 잡음(#99 설정 300초).
+전체가 time_limit(기본 240초)을 넘으면 모델 응답을 기다리던 중이어도 바로 실패. worker 임대는 이보다 길게 잡음(#99 설정 300초).
 실패는 CardGenerationError. code를 card_sets.error_code에 그대로 남김.
 """
 
@@ -86,7 +86,7 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
     model = chat_model(config)
     deadline = Deadline(config, time_limit)
 
-    try:
+    def work():
         rec = recommend(store, model, v, rng=random.Random(seed), deadline=deadline)
         drafts, writing = [], []
         for pos, picked in enumerate(rec.picked, 1):
@@ -105,6 +105,10 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
                             "topic": {"title": title, "description": description}})
         texts, first_problems = write_cards(model, {"age_band": store.get_profile().age_band}, writing, v.writing_prompt(),
                                             deadline)
+        return rec, drafts, texts, first_problems
+
+    try:
+        rec, drafts, texts, first_problems = deadline.run(work)
     except CardGenerationError:
         raise
     except WritingFailed as error:
