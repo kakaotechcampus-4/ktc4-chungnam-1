@@ -374,6 +374,8 @@ bash ./scripts/run_speech_worker.sh --once
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
 | `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
+| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름 |
+| `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음 |
 
 S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
@@ -453,9 +455,15 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
   제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
   `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면
   아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
-- 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → AI 서버 호출(트랜잭션 밖) →
+- 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → 생성 함수 호출(트랜잭션 밖) →
   응답 검증 → 리포트, 카드 요약, 변경 제안 저장(한 트랜잭션) 순서다. 검증에 걸리면 아무것도
   저장하지 않고 작업을 `INVALID_AI_RESPONSE`로 실패시킨다.
+- 생성 함수는 AI 서버의 HTTP API가 아니라 `ai/`의 `report_generation.generate_report`와
+  `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로
+  합친다(`app/workers/speech_analysis.py`의 `report_generator`). 요청과 응답 JSON은 8-3과 같다.
+  생성 함수의 실패 코드는 기존 작업 실패 코드로 바꾼다: `LLM_UNAVAILABLE` →
+  `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST` → `AI_SERVER_ERROR`. 함수
+  호출에서는 시간 초과를 따로 구분하지 않으므로 `AI_SERVER_TIMEOUT`은 생기지 않는다.
 - 8-3 응답 검증의 보수적인 임시 정책(AI 담당자와 합의 필요): `reaction`이 `notUsed`이거나
   `null`인 카드에 `less`, `exclude`를 제안하면 응답 전체를 실패로 본다. PM 결정(2026-09-19)은
   그 사실"만으로" 제안하지 않는 것인데, 백엔드는 제안의 근거를 판별할 수 없기 때문이다.

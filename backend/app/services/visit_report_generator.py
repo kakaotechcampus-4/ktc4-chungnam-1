@@ -1,8 +1,10 @@
 """리포트 생성기(API 8-3). 음성 worker가 STT 뒤에 부른다.
 
-순서는 요청 조립(읽기만) → AI 서버 호출(트랜잭션 밖) → 응답 검증 → 저장(한
-트랜잭션)이다. 실패는 `AppError`로 올리고, 대기열이 그 `error_code`로 작업을
-`failed`로 남긴다. 검증에 걸리면 아무것도 저장하지 않는다(부분 저장 없음).
+순서는 요청 조립(읽기만) → 생성 함수 호출(트랜잭션 밖, 별도 스레드) → 응답 검증 →
+저장(한 트랜잭션)이다. 생성 함수는 `ai/`의 리포트·변경 제안 생성 함수를 감싼 것으로
+worker가 넣는다(`app.workers.speech_analysis.report_generator`). 실패는 `AppError`로
+올리고, 대기열이 그 `error_code`로 작업을 `failed`로 남긴다. 검증에 걸리면 아무것도
+저장하지 않는다(부분 저장 없음).
 
 응답 검증 규칙
 - `cardSummaries`는 요청 카드 중 `reaction`이 `positive`, `neutral`, `negative`인
@@ -15,10 +17,14 @@
   `INVALID_AI_RESPONSE`로 실패시킨다.
 """
 
+import asyncio
 from collections import Counter
+from collections.abc import Callable, Mapping
+from typing import Any
 from uuid import UUID
 
-from app.clients.ai_server import AiServerClient
+from pydantic import ValidationError
+
 from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.schemas.speech_analysis import SpeechAnalysisResult
@@ -37,12 +43,22 @@ from app.schemas.visit_report_generation import (
 _SUMMARIZED_REACTIONS = {"positive", "neutral", "negative"}
 _NOT_EVALUATED_REACTIONS = {"notUsed", None}
 
+# 8-3 요청을 받아 응답을 돌려주는 동기 함수. 실패는 `AppError`로 올린다.
+GenerateReport = Callable[[VisitReportRequest], VisitReportResult]
+
+# 생성 함수의 실패 코드를 기존 8-3 작업 실패 코드로 바꾼다(API 계약 유지).
+_GENERATION_FAILURES = {
+    "LLM_UNAVAILABLE": (503, "AI_SERVER_UNAVAILABLE", True),
+    "GENERATION_FAILED": (502, "AI_SERVER_ERROR", False),
+    "INVALID_REQUEST": (502, "AI_SERVER_ERROR", False),
+}
+
 
 class VisitReportGenerator:
     """`speech_analysis_pipeline.ReportGenerator`의 구현."""
 
-    def __init__(self, *, ai_server: AiServerClient) -> None:
-        self._ai_server = ai_server
+    def __init__(self, *, generate: GenerateReport) -> None:
+        self._generate = generate
 
     async def generate(
         self,
@@ -53,7 +69,7 @@ class VisitReportGenerator:
     ) -> None:
         session_uuid = UUID(session_id)
         profile_id, request = await build_request(connection, session_uuid, speech)
-        result = await self._ai_server.generate_visit_report(request)
+        result = await asyncio.to_thread(self._generate, request)
         validate_result(request, result)
         await save_report(connection, session_uuid, profile_id, request, result)
 
@@ -228,11 +244,41 @@ async def save_report(
             )
 
 
+def parse_result(data: Mapping[str, Any], request: VisitReportRequest) -> VisitReportResult:
+    """생성 함수 결과(JSON 형식)를 8-3 응답으로 읽는다.
+
+    형식이 틀리거나 다른 작업의 결과면 `INVALID_AI_RESPONSE`다.
+    """
+    try:
+        result = VisitReportResult.model_validate(data)
+    except ValidationError as error:
+        raise _invalid_response() from error
+    if result.analysis_id != request.analysis_id:
+        raise _invalid_response()
+    return result
+
+
+def generation_failed(code: str) -> AppError:
+    """생성 함수의 실패 코드에 맞는 작업 실패. 모르는 코드는 `AI_SERVER_ERROR`다.
+
+    생성 함수가 남긴 메시지는 담지 않는다.
+    """
+    status_code, error_code, retryable = _GENERATION_FAILURES.get(
+        code, (502, "AI_SERVER_ERROR", False)
+    )
+    return AppError(
+        status_code=status_code,
+        error_code=error_code,
+        message="리포트를 만들지 못했습니다.",
+        retryable=retryable,
+    )
+
+
 def _invalid_response() -> AppError:
     return AppError(
         status_code=502,
         error_code="INVALID_AI_RESPONSE",
-        message="리포트 생성 서버의 응답 형식이 올바르지 않습니다.",
+        message="리포트 생성 결과의 형식이 올바르지 않습니다.",
     )
 
 

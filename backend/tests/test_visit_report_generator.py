@@ -1,6 +1,8 @@
 """리포트 생성기(API 8-3)와 음성 worker 연결 검증.
 
-AI 서버는 `httpx.MockTransport`로 흉내 낸다. 임시 DB에 최신 migration을 적용해
+STT(8-1) AI 서버는 `httpx.MockTransport`로, 리포트 생성 함수는 정해 둔 결과를
+돌려주는 가짜 함수로 흉내 낸다. `ai/` 생성 함수를 감싼 연결은 그 함수들을 바꿔 끼워
+확인하며 실제 모델은 부르지 않는다. 임시 DB에 최신 migration을 적용해
 실행한다(`conftest.py`). 값은 모두 합성 데이터다.
 """
 
@@ -9,16 +11,27 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
+import proposal_generation
 import pytest
+import report_generation
+from common import visit_report as ai_visit_report
+from common.llm import ENDPOINTS
 
 from app.clients.ai_server import AiServerClient
+from app.core.config import Settings
 from app.core.database import connect
 from app.core.errors import AppError
 from app.schemas.speech_analysis import SpeechAnalysisResult
 from app.services.audio_storage import AudioDownload
 from app.services.speech_analysis_jobs import PostgresSpeechAnalysisJobRepository
 from app.services.speech_analysis_pipeline import create_speech_worker
-from app.services.visit_report_generator import VisitReportGenerator, build_request
+from app.schemas.visit_report_generation import VisitReportRequest, VisitReportResult
+from app.services.visit_report_generator import (
+    VisitReportGenerator,
+    build_request,
+    parse_result,
+)
+from app.workers.speech_analysis import report_generator
 from tests.card_fixtures import completed_card_set, with_db
 from tests.support import run
 from tests.visit_records import Records, Visit
@@ -70,21 +83,24 @@ def _report(visit: Visit, analysis_id: str = ANALYSIS_ID, **overrides) -> dict:
 
 
 class FakeAi:
-    """8-3 요청을 기록하고 정해 둔 응답을 돌려준다."""
+    """STT(8-1)에는 합성 전사 결과를, 리포트 생성 함수에는 정해 둔 결과를 돌려준다.
 
-    def __init__(self, response: dict | None = None, *, status_code: int = 200):
+    결과는 실제 연결과 같은 `parse_result`로 읽으므로 형식 검사도 같다.
+    """
+
+    def __init__(self, response: dict | None = None):
         self.response = response
-        self.status_code = status_code
         self.report_requests: list[dict] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/v1/speech-analyses"
         body = json.loads(request.content)
-        if request.url.path == "/internal/v1/speech-analyses":
-            speech = _speech(body["analysisId"]).model_dump(mode="json", by_alias=True)
-            return httpx.Response(200, json=speech)
-        assert request.url.path == "/internal/v1/visit-reports"
-        self.report_requests.append(body)
-        return httpx.Response(self.status_code, json=self.response)
+        speech = _speech(body["analysisId"]).model_dump(mode="json", by_alias=True)
+        return httpx.Response(200, json=speech)
+
+    def generate(self, request: VisitReportRequest) -> VisitReportResult:
+        self.report_requests.append(request.model_dump(mode="json", by_alias=True))
+        return parse_result(self.response, request)
 
     def client(self) -> AiServerClient:
         return AiServerClient(
@@ -107,7 +123,7 @@ def _evaluated(records: Records) -> Visit:
 def _generate(records: Records, visit: Visit, ai: FakeAi) -> None:
     async def scenario():
         async with connect(records.database_url) as connection:
-            await VisitReportGenerator(ai_server=ai.client()).generate(
+            await VisitReportGenerator(generate=ai.generate).generate(
                 connection, session_id=str(visit.session_id), speech=_speech()
             )
 
@@ -405,57 +421,6 @@ def test_less_for_an_unanswered_card_is_rejected(migrated_database_url):
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
 
-@pytest.mark.parametrize(
-    ("status_code", "error_code"),
-    [(500, "AI_SERVER_ERROR"), (422, "AI_SERVER_ERROR")],
-)
-def test_ai_server_failure_saves_nothing(migrated_database_url, status_code, error_code):
-    records = Records(migrated_database_url)
-    visit = _evaluated(records)
-
-    with pytest.raises(AppError) as error:
-        _generate(records, visit, FakeAi({"detail": "synthetic"}, status_code=status_code))
-
-    assert error.value.error_code == error_code
-    assert "synthetic" not in error.value.message
-    assert _saved_rows(records, visit) == NOTHING_SAVED
-
-
-@pytest.mark.parametrize(
-    ("failure", "error_code"),
-    [
-        (httpx.ReadTimeout("synthetic"), "AI_SERVER_TIMEOUT"),
-        (httpx.ConnectError("synthetic"), "AI_SERVER_UNAVAILABLE"),
-    ],
-)
-def test_ai_server_transport_failure_saves_nothing(
-    migrated_database_url, failure, error_code
-):
-    records = Records(migrated_database_url)
-    visit = _evaluated(records)
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise failure
-
-    async def scenario():
-        client = AiServerClient(
-            base_url="http://ai.internal",
-            timeout_seconds=5,
-            transport=httpx.MockTransport(handler),
-        )
-        async with connect(records.database_url) as connection:
-            await VisitReportGenerator(ai_server=client).generate(
-                connection, session_id=str(visit.session_id), speech=_speech()
-            )
-
-    with pytest.raises(AppError) as error:
-        run(scenario())
-
-    assert error.value.error_code == error_code
-    assert error.value.retryable is True
-    assert _saved_rows(records, visit) == NOTHING_SAVED
-
-
 def test_report_is_not_generated_twice(migrated_database_url):
     records = Records(migrated_database_url)
     visit = _evaluated(records)
@@ -495,7 +460,7 @@ def _run_worker(records: Records, ai: FakeAi) -> None:
         ai_server=ai.client(),
         open_connection=lambda: connect(records.database_url),
         lease_seconds=900,
-        report_generator=VisitReportGenerator(ai_server=ai.client()),
+        report_generator=VisitReportGenerator(generate=ai.generate),
     )
     assert run(worker.run_once()) is True
 
@@ -556,3 +521,197 @@ def test_worker_fails_the_job_on_an_invalid_report_without_partial_save(
         user_id, "GET", f"/api/v1/profiles/{visit.profile_id}/visit-sessions"
     ).json()["sessions"]
     assert sessions[0]["sessionStatus"] == "failed"
+
+
+# ── ai 패키지 생성 함수 연결(`report_generator`) ─────────────────
+# `ai/`의 generate_report, generate_proposals를 바꿔 끼워 연결만 확인한다. 실제 모델은
+# 부르지 않는다.
+
+
+def _ai_report(request: ai_visit_report.VisitReportRequest) -> ai_visit_report.ReportResult:
+    first = request.cards[0].card_id
+    return ai_visit_report.ReportResult(
+        model="gpt-5.6-luna",
+        prompt_version="report-1",
+        title="합성 리포트 제목",
+        body="합성 리포트 본문",
+        card_summaries=[ai_visit_report.CardSummaryOut(card_id=first, summary="합성 카드 요약")],
+    )
+
+
+def _ai_proposals(
+    request: ai_visit_report.VisitReportRequest, *, action: str = "more"
+) -> ai_visit_report.ProposalResult:
+    unused = request.cards[1].card_id
+    return ai_visit_report.ProposalResult(
+        model="gpt-5.6-luna",
+        prompt_version="proposals-1",
+        life_fact_proposals=[
+            ai_visit_report.LifeFactProposalOut(
+                title="합성 제안", content="합성 제안 내용", reason="합성 이유"
+            )
+        ],
+        topic_proposals=[
+            ai_visit_report.TopicProposalOut(
+                card_id=unused, suggested_action=action, reason="합성 이유"
+            )
+        ],
+    )
+
+
+def _connected(monkeypatch, *, report=_ai_report, proposals=_ai_proposals) -> list[dict]:
+    """생성 함수를 바꿔 끼운 `report_generator`. 받은 호출을 기록한다."""
+    calls: list[dict] = []
+
+    def fake_report(request, *, model, api_key, **kwargs):
+        calls.append({"kind": "report", "request": request, "model": model, "api_key": api_key})
+        return report(request)
+
+    def fake_proposals(request, *, model, api_key, **kwargs):
+        calls.append({"kind": "proposals", "request": request, "model": model, "api_key": api_key})
+        return proposals(request)
+
+    monkeypatch.setattr(report_generation, "generate_report", fake_report)
+    monkeypatch.setattr(proposal_generation, "generate_proposals", fake_proposals)
+    return calls
+
+
+def _connected_generator() -> VisitReportGenerator:
+    settings = Settings(_env_file=None, ml_api_key="synthetic-key")
+    return VisitReportGenerator(generate=report_generator(settings))
+
+
+def _generate_with(records: Records, visit: Visit, generator: VisitReportGenerator) -> None:
+    async def scenario():
+        async with connect(records.database_url) as connection:
+            await generator.generate(
+                connection, session_id=str(visit.session_id), speech=_speech()
+            )
+
+    run(scenario())
+
+
+def test_default_report_model_is_one_the_ai_package_can_call():
+    assert Settings(_env_file=None).report_generation_model in ENDPOINTS
+
+
+def test_report_generator_requires_the_ml_api_key():
+    with pytest.raises(RuntimeError):
+        report_generator(Settings(_env_file=None, ml_api_key=""))
+
+
+def test_connected_generator_saves_the_combined_ai_result(migrated_database_url, monkeypatch):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    calls = _connected(monkeypatch)
+
+    _generate_with(records, visit, _connected_generator())
+
+    assert [call["kind"] for call in calls] == ["report", "proposals"]
+    for call in calls:
+        assert isinstance(call["request"], ai_visit_report.VisitReportRequest)
+        assert call["model"] == "gpt-5.6-luna"
+        assert call["api_key"] == "synthetic-key"
+    sent = calls[0]["request"]
+    assert sent.analysis_id == ANALYSIS_ID
+    assert [card.card_id for card in sent.cards] == [str(card) for card in visit.selected]
+    raw = sent.model_dump_json()
+    for identity in ("합성 이름", "female", "1943-03-12", "name", "gender", "birth"):
+        assert identity not in raw
+    assert _saved_rows(records, visit) == {
+        "report": {
+            "report_title": "합성 리포트 제목",
+            "report_body": "합성 리포트 본문",
+            "report_model": "gpt-5.6-luna",
+            "report_prompt_version": "report-1+proposals-1",
+            "generated": True,
+        },
+        "summaries": [{"card_id": visit.selected[0], "report_summary": "합성 카드 요약"}],
+        "life_fact_proposals": [
+            {
+                "title": "합성 제안",
+                "content": "합성 제안 내용",
+                "reason": "합성 이유",
+                "status": "pending",
+            }
+        ],
+        "topic_proposals": [
+            {
+                "card_id": visit.selected[1],
+                "topic_id": visit.topic_ids[1],
+                "suggested_action": "more",
+                "status": "pending",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("failing", "ai_code", "error_code", "retryable"),
+    [
+        ("report", "LLM_UNAVAILABLE", "AI_SERVER_UNAVAILABLE", True),
+        ("report", "GENERATION_FAILED", "AI_SERVER_ERROR", False),
+        ("report", "INVALID_REQUEST", "AI_SERVER_ERROR", False),
+        # 리포트는 만들었지만 변경 제안에서 실패해도 아무것도 저장하지 않는다.
+        ("proposals", "LLM_UNAVAILABLE", "AI_SERVER_UNAVAILABLE", True),
+        ("proposals", "GENERATION_FAILED", "AI_SERVER_ERROR", False),
+    ],
+)
+def test_ai_failure_maps_to_contract_codes_without_partial_save(
+    migrated_database_url, monkeypatch, failing, ai_code, error_code, retryable
+):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+
+    def fail(request):
+        raise ai_visit_report.VisitReportError(ai_code, "synthetic failure detail")
+
+    _connected(monkeypatch, **{failing: fail})
+
+    with pytest.raises(AppError) as error:
+        _generate_with(records, visit, _connected_generator())
+
+    assert (error.value.error_code, error.value.retryable) == (error_code, retryable)
+    assert "synthetic" not in error.value.message
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def test_ai_result_breaking_backend_rules_is_rejected_without_partial_save(
+    migrated_database_url, monkeypatch
+):
+    """AI 쪽 거르기를 지나도 BE 검증은 그대로 적용한다(notUsed 카드의 less)."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    _connected(monkeypatch, proposals=lambda request: _ai_proposals(request, action="less"))
+
+    with pytest.raises(AppError) as error:
+        _generate_with(records, visit, _connected_generator())
+
+    assert error.value.error_code == "INVALID_AI_RESPONSE"
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def test_worker_completes_with_the_connected_generator(migrated_database_url, monkeypatch):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = records.job(visit.session_id, "queued")
+    calls = _connected(monkeypatch)
+    worker = create_speech_worker(
+        jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
+            connection, lease_seconds=900
+        ),
+        audio_storage=FakeAudioStorage(),
+        ai_server=FakeAi().client(),
+        open_connection=lambda: connect(records.database_url),
+        lease_seconds=900,
+        report_generator=_connected_generator(),
+    )
+
+    assert run(worker.run_once()) is True
+
+    assert calls[0]["request"].analysis_id == str(analysis_id)
+    assert _job(records, analysis_id) == {
+        "status": "completed",
+        "error_code": None,
+        "transcript_deleted": True,
+    }

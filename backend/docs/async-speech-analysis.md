@@ -76,8 +76,9 @@ uploading → queued → transcribing → sttCompleted
 | `failed` | 정상 결과를 만들지 못함 | 실패 안내 및 후속 동작 |
 
 기본 worker는 STT 뒤 리포트 생성기(8-3)를 부르고, 리포트와 변경 제안을 저장한 뒤에만
-`completed`로 바꾼다. AI 서버가 8-3(`POST /internal/v1/visit-reports`)에 응답하지 못하면
-작업은 `sttCompleted`를 지나 `failed`(`AI_SERVER_ERROR` 등)로 끝난다.
+`completed`로 바꾼다. 리포트 생성기는 `ai/`의 생성 함수를 직접 부르며, 생성에 실패하면
+작업은 `sttCompleted`를 지나 `failed`(`AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`,
+`INVALID_AI_RESPONSE` 등)로 끝난다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
 
@@ -486,7 +487,7 @@ queued → transcribing → sttCompleted
 
 짧은 파일은 `transcribing` 상태를 조회하기 전에 끝날 수 있다. 최종
 `sttCompleted`와 `errorCode: null`을 확인한다. 기본 worker는 리포트 생성기(8-3)까지
-부르므로, Mock AI 서버가 8-3에 응답하지 않으면 그 뒤 `failed`(`AI_SERVER_ERROR`)가 된다.
+부르므로 `SAEROK_ML_API_KEY`가 필요하다. 리포트 생성 함수가 실패하면 그 뒤 `failed`가 된다.
 STT 경로만 확인할 때는 `stt_completed`와 `audio_deleted`로 판단한다.
 
 ### 11.5 DB 확인
