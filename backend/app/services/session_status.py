@@ -13,9 +13,9 @@
 
 `participantCount`와 `analysisId`는 가장 최근 작업(`created_at DESC`)의 값이다.
 
-PR #99에는 상태를 `evaluationPending`으로 고정한 임시 `load_visit_session`이
-`app/services/visit_sessions.py`에 있다. 시그니처를 그 함수와 같게 두었으므로 #99가
-병합되면 그 임시 구현을 지우고 이 함수를 쓰게 한다.
+PR #99의 `app/services/visit_sessions.py`에는 상태를 `evaluationPending`으로 고정한
+임시 `load_visit_session`이 남아 있다. 시그니처가 같으므로 작업 B와 확인한 뒤 그 임시
+구현을 지우고 이 함수를 쓰게 한다.
 """
 
 from typing import LiteralString
@@ -23,7 +23,7 @@ from uuid import UUID
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
-from app.schemas.reports import VisitSession
+from app.schemas.visit_session import VisitSession
 from app.services import ownership
 
 _SELECT: LiteralString = """

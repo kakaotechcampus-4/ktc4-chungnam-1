@@ -146,7 +146,8 @@ class Records:
                 "card_title, position, description, primary_question, "
                 "follow_up_questions, evidence_source, selected) "
                 "VALUES (%s, %s, %s, %s, %s, '합성 설명', '합성 질문', "
-                "ARRAY['합성 꼬리 질문'], 'none', %s) RETURNING card_id",
+                "ARRAY['합성 꼬리 질문 1', '합성 꼬리 질문 2', '합성 꼬리 질문 3'], "
+                "'none', %s) RETURNING card_id",
                 (
                     set_id,
                     profile_id,

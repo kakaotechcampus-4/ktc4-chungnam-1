@@ -10,9 +10,11 @@
 | 진행 중인 작업과 주간 운영 | [GitHub 이슈](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues) | [주간 운영](pm/weekly-operations.md), [12주 학습 목표](pm/12-week-team-goals.md) |
 | Flutter 구현과 실행 | [FE README](../app/README.md) | [환경 설정](../app/SETUP.md), [디자인 기준](../app/DESIGN.md) |
 | FastAPI 구현과 실행 | [BE README](../backend/README.md) | 코드와 테스트 |
-| STT와 이미지 분석 | [AI README](../local_ai/README.md) | [이미지 분석 실험](../local_ai/docs/image_tagging/README.md) |
+| 카드·리포트 생성과 이미지 분석 | [AI README](../ai/README.md) | [이미지 분석 실험](../ai/docs/image_tagging/README.md) |
+| STT와 화자 분리 서버 | [STT 서버 README](../stt-server/README.md) | [STT 파이프라인 설계](../stt-server/docs/stt-pipeline.md) |
 | 평가 자료와 실행 상태 | [평가 README](../evals/README.md) | `evals/cases/`, `evals/expected/` |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
+| 주제 카드의 첫 생성과 다음 면회 반영 | [주제 카드 전체 설계 검토안](architecture/card-generation-flow.md) | 입력, 사진 설명 사용, 피드백, AI 프롬프트와 남은 선택 |
 | 앱과 BE, BE와 AI 서버 사이의 API | [API 명세](architecture/api-spec.md) | [DB 스키마](../backend/database/init.sql) |
 | 기술 결정과 변경 이유 | [ADR 목록](architecture/decisions/README.md) | 개별 ADR |
 | 개인정보와 동의 | [법률 검토](legal/README.md) | [동의안](legal/consent-draft.md), [기능 대응표](legal/consent-mapping.md) |
@@ -37,4 +39,5 @@
 - 문서로 설명을 옮겨도 미완료 작업의 추적 위치는 이슈에 남긴다. 작성과 완료 처리는 [협업 규칙](../CONTRIBUTING.md)을 따른다.
 - 제품 범위가 바뀌면 PM 문서, 구조가 바뀌면 영역 README와 ADR, JSON이 바뀌면 데이터 계약을 갱신한다.
 - 과거 ADR과 실험 결과는 삭제하지 않고 대체 상태 또는 근거 문서로 남긴다.
+- 기존 문서와 이후 회의 결정 또는 담당자 의견이 다르면 날짜와 근거를 대조해 정정한다. 새 제안은 확정으로 바꾸지 않고, 이미 정한 내용을 다시 미결 사항으로 올리지 않는다.
 - 회의 녹화, 전사와 로컬 회의록은 저장소에 올리지 않는다.

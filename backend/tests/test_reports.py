@@ -1,13 +1,14 @@
 """리포트 목록, 리포트, 변경 제안 조회와 확인(API 7-1 ~ 7-4) 검증.
 
-생애 정보 제안을 승인하는 7-4는 작업 A의 `create_life_fact`(PR #105)가 필요해
+생애 정보 제안을 승인하는 7-4는 작업 A의 `create_life_fact`를 함께 확인하므로
 `test_proposal_review_life_facts.py`에 따로 둔다. 임시 DB에 최신 migration을 적용해
 실행한다(`conftest.py`). 값은 모두 합성 데이터다.
 """
 
 from datetime import UTC, datetime, timedelta
 
-from app.services import proposals
+from app.api.deps import get_current_account
+from tests.support import request
 from tests.visit_records import MISSING_ID, Records, Visit
 
 
@@ -133,6 +134,28 @@ def test_other_accounts_report_looks_missing(migrated_database_url):
     assert [r.json()["errorCode"] for r in responses] == ["VISIT_SESSION_NOT_FOUND"] * 4 + [
         "PROFILE_NOT_FOUND"
     ]
+
+
+def test_requests_without_login_are_unauthenticated(migrated_database_url):
+    """6-1, 6-4, 5-4, 7-1 ~ 7-4는 로그인 없이 부르면 DB를 보기 전에 401이다."""
+    records = Records(migrated_database_url)
+    records.app.dependency_overrides.pop(get_current_account)
+    session = f"/api/v1/visit-sessions/{MISSING_ID}"
+    profile = f"/api/v1/profiles/{MISSING_ID}"
+    calls = [
+        ("POST", f"{session}/evaluation", {}),
+        ("GET", f"{session}/evaluation", None),
+        ("GET", f"{profile}/visit-sessions", None),
+        ("GET", f"{profile}/reports", None),
+        ("GET", f"{session}/report", None),
+        ("GET", f"{session}/proposals", None),
+        ("POST", f"{session}/proposals/review", {}),
+    ]
+
+    responses = [request(records.app, method, path, json=body) for method, path, body in calls]
+
+    assert {r.status_code for r in responses} == {401}
+    assert {r.json()["errorCode"] for r in responses} == {"UNAUTHENTICATED"}
 
 
 def test_proposals_contract(migrated_database_url):
@@ -337,41 +360,3 @@ def test_review_final_values_must_match_review_status(migrated_database_url):
     ]
 
     assert codes == ["INVALID_REQUEST"] * len(invalid_bodies)
-
-
-def test_accepting_a_life_fact_without_the_life_fact_module_is_rejected(
-    migrated_database_url, monkeypatch
-):
-    """임시 가드: `app.services.life_facts`가 없으면 DB를 쓰지 않고 503을 낸다.
-
-    PR #105 병합 여부와 관계없이 돌도록 모듈 이름을 없는 이름으로 바꿔 확인한다.
-    #105 병합 뒤 가드를 지울 때 이 테스트도 함께 지운다.
-    """
-    monkeypatch.setattr(proposals, "LIFE_FACTS_MODULE", "app.services._missing_module")
-    records = Records(migrated_database_url)
-    user_id, profile_id = records.account()
-    visit = _reported(records, profile_id)
-    fact = records.life_fact_proposal(visit)
-    topic = records.topic_proposal(visit, 0)
-
-    response = records.call(
-        user_id,
-        "POST",
-        _review_path(visit),
-        json={
-            "lifeFacts": [
-                {"proposalId": str(fact), "reviewStatus": "accepted", "title": "합성", "content": "합성"}
-            ],
-            "topics": [{"proposalId": str(topic), "reviewStatus": "accepted", "action": "more"}],
-        },
-    )
-
-    assert response.status_code == 503
-    assert response.json()["errorCode"] == "LIFE_FACT_STORE_NOT_READY"
-    assert records.scalar(
-        "SELECT count(*) FROM life_fact_proposals WHERE status = 'settled'"
-    ) == 0
-    assert records.scalar(
-        "SELECT count(*) FROM topic_proposals WHERE status = 'settled'"
-    ) == 0
-    assert records.scalar("SELECT count(*) FROM topic_feedback") == 0

@@ -39,6 +39,49 @@ class EnteredBasicInfo {
   final ConditionStage stage;
 }
 
+/// 환자 정보 입력에서 받은 세부 정보 네 항목이다(`api-spec.md` 의 Profile).
+///
+/// 건너뛴 항목은 `null` 이다. 계약이 빈 문자열을 받지 않으므로 비어 있으면
+/// `null` 로 둔다.
+class EnteredDetails {
+  const EnteredDetails({
+    this.occupation,
+    this.hometown,
+    this.hobby,
+    this.family,
+  });
+
+  /// 입력 흐름이 `category` 별로 모은 문장에서 만든다. 앞뒤 공백을 지우고, 남는
+  /// 것이 없으면 `null` 이다.
+  factory EnteredDetails.fromFacts(Map<String, String> facts) {
+    String? read(String category) {
+      final text = facts[category]?.trim();
+      return text == null || text.isEmpty ? null : text;
+    }
+
+    return EnteredDetails(
+      occupation: read('occupation'),
+      hometown: read('hometown'),
+      hobby: read('hobby'),
+      family: read('family'),
+    );
+  }
+
+  final String? occupation;
+  final String? hometown;
+  final String? hobby;
+  final String? family;
+
+  /// [category] 는 `occupation`, `hometown`, `hobby`, `family` 중 하나다.
+  String? of(String category) => switch (category) {
+    'occupation' => occupation,
+    'hometown' => hometown,
+    'hobby' => hobby,
+    'family' => family,
+    _ => null,
+  };
+}
+
 /// 보호자가 돌보는 어르신 한 분이다.
 ///
 /// [pending] 이면 [basicInfo] 가 비어 있다. 등록을 마친 분은 늘 기본 정보가 있다.
@@ -46,11 +89,15 @@ class CareProfileEntry {
   const CareProfileEntry({
     required this.id,
     this.basicInfo,
+    this.details = const EnteredDetails(),
     this.pending = false,
   });
 
   final String id;
   final EnteredBasicInfo? basicInfo;
+
+  /// 세부 정보 네 항목. 입력하지 않았으면 모두 `null` 이다.
+  final EnteredDetails details;
 
   /// 등록하다 마치지 않고 나간 분이다. 슬롯 하나를 차지하고 `입력 중` 으로
   /// 보이며, 고를 수는 없다. 입력한 값은 입력 흐름이 들고 있다.
@@ -106,8 +153,15 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   CareProfiles build() => const CareProfiles(entries: [], selectedId: null);
 
   /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
-  void startWith(EnteredBasicInfo info) {
-    final entry = CareProfileEntry(id: _newId(), basicInfo: info);
+  void startWith(
+    EnteredBasicInfo info, {
+    EnteredDetails details = const EnteredDetails(),
+  }) {
+    final entry = CareProfileEntry(
+      id: _newId(),
+      basicInfo: info,
+      details: details,
+    );
     state = CareProfiles(entries: [entry], selectedId: entry.id);
   }
 
@@ -125,14 +179,48 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   }
 
   /// 입력 중이던 분의 등록을 마치고 그 분으로 바꾼다. 자리는 그대로다.
-  void completeAdding(String id, EnteredBasicInfo info) {
+  void completeAdding(
+    String id,
+    EnteredBasicInfo info, {
+    EnteredDetails details = const EnteredDetails(),
+  }) {
     if (state.entries.every((e) => e.id != id)) return;
     state = CareProfiles(
       entries: [
         for (final e in state.entries)
-          e.id == id ? CareProfileEntry(id: id, basicInfo: info) : e,
+          e.id == id
+              ? CareProfileEntry(id: id, basicInfo: info, details: details)
+              : e,
       ],
       selectedId: id,
+    );
+  }
+
+  /// 등록을 마친 분의 기본 정보를 고친다. 세부 정보는 그대로 둔다.
+  void updateBasicInfo(String id, EnteredBasicInfo info) {
+    if (state.ready.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id
+              ? CareProfileEntry(id: id, basicInfo: info, details: e.details)
+              : e,
+      ],
+      selectedId: state.selectedId,
+    );
+  }
+
+  /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
+  void updateDetails(String id, EnteredDetails details) {
+    if (state.ready.every((e) => e.id != id)) return;
+    state = CareProfiles(
+      entries: [
+        for (final e in state.entries)
+          e.id == id
+              ? CareProfileEntry(id: id, basicInfo: e.basicInfo, details: details)
+              : e,
+      ],
+      selectedId: state.selectedId,
     );
   }
 
@@ -225,8 +313,8 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
   ];
 });
 
-/// 입력 흐름이 쓰는 목 데이터 묶음이다. 사진의 이야기 소재 후보와 음성 입력
-/// 예시를 여기서 읽는다.
+/// 입력 흐름이 쓰는 목 데이터 묶음이다. 음성 입력 예시와 목 사진을 여기서
+/// 읽는다.
 ///
 /// 첫 분을 입력하는 동안에는 고른 어르신이 없으므로 [profileProvider] 를 쓰지
 /// 않는다.
@@ -236,7 +324,9 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
-/// 기본 정보는 입력한 값이다. 세부 정보와 사진은 아직 목 데이터 그대로다.
+/// 기본 정보와 세부 정보 네 항목은 입력한 값이다. 그 밖의 생애 정보는 아직 목
+/// 데이터 그대로다. 사진은 목 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
+/// 올린 사진으로 바뀐다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
@@ -244,6 +334,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   if (selected == null || entered == null) return null;
 
   final mock = bundle.profile;
+  final details = selected.details;
   return ProfileBundle(
     profile: Profile(
       profileId: selected.id,
@@ -254,11 +345,14 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,
       photoIds: mock.photoIds,
+      occupation: details.occupation,
+      hometown: details.hometown,
+      hobby: details.hobby,
+      family: details.family,
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photo: bundle.photo,
-    tagCandidates: bundle.tagCandidates,
+    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
 
@@ -313,8 +407,8 @@ enum ReportNotice {
 
 /// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
 ///
-/// [accountId] 가 `null` 이면 서버 계정 없이 들어온 경우다(아이디와 비밀번호
-/// 목 로그인).
+/// [accountId] 가 `null` 이면 서버 세션 없이 들어온 경우다(구글 설정이 없는
+/// 디버그 빌드의 임시 건너뛰기).
 typedef _NoticeKey = ({String? accountId, String profileId});
 
 /// 계정과 어르신마다의 리포트 알림이다.

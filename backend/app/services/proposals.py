@@ -7,9 +7,6 @@
 제안 값(`title`, `content`, `reason`, `suggested_action`)은 확인 뒤에도 바꾸지 않는다.
 """
 
-import importlib.util
-from collections.abc import Awaitable, Callable
-from typing import Any
 from uuid import UUID
 
 from app.core.database import DbConnection
@@ -22,11 +19,8 @@ from app.schemas.reports import (
     TopicProposal,
 )
 from app.services import ownership
+from app.services.life_facts import create_life_fact
 from app.services.reports import report_not_found
-
-# 작업 A(PR #105)의 생애 정보 모듈. 7-4에서 승인한 생애 정보 제안을 그 모듈의
-# `create_life_fact`로 만든다.
-LIFE_FACTS_MODULE = "app.services.life_facts"
 
 
 async def get_proposals(
@@ -85,7 +79,6 @@ async def review_proposals(
         )
 
         accepted_facts = [r for r in payload.life_facts if r.review_status == "accepted"]
-        create_life_fact = _life_fact_creator() if accepted_facts else None
 
         await connection.execute(
             "UPDATE life_fact_proposals SET status = 'settled' "
@@ -97,15 +90,14 @@ async def review_proposals(
             "WHERE session_id = %s AND status = 'pending'",
             (session_id,),
         )
-        if create_life_fact is not None:
-            for review in accepted_facts:
-                await create_life_fact(
-                    connection,
-                    profile_id=profile_id,
-                    title=review.title,
-                    content=review.content,
-                    source_proposal_id=review.proposal_id,
-                )
+        for review in accepted_facts:
+            await create_life_fact(
+                connection,
+                profile_id=profile_id,
+                title=review.title,
+                content=review.content,
+                source_proposal_id=review.proposal_id,
+            )
         topic_ids = {row["proposal_id"]: row["topic_id"] for row in topic_rows}
         for review in payload.topics:
             if review.review_status != "accepted":
@@ -131,25 +123,6 @@ def _require_all_pending(requested: list[UUID], pending: set[UUID]) -> None:
             error_code="INVALID_PROPOSAL_REVIEW",
             message="이 면회의 확인하지 않은 변경 제안을 모두 담아야 합니다.",
         )
-
-
-def _life_fact_creator() -> Callable[..., Awaitable[Any]]:
-    """작업 A의 `create_life_fact`를 가져온다.
-
-    임시 가드: PR #105가 develop에 병합되기 전에는 `app.services.life_facts`가 없다.
-    모듈 맨 위에서 가져오면 앱 전체가 뜨지 않으므로 여기서 가져오고, 없으면 DB를 쓰기
-    전에 503 `LIFE_FACT_STORE_NOT_READY`로 명시적으로 거절한다. #105가 병합되면 맨 위
-    import로 옮기고 이 함수와 오류 코드를 지운다.
-    """
-    if importlib.util.find_spec(LIFE_FACTS_MODULE) is None:
-        raise AppError(
-            status_code=503,
-            error_code="LIFE_FACT_STORE_NOT_READY",
-            message="생애 정보 저장 기능이 아직 준비되지 않았습니다.",
-        )
-    from app.services.life_facts import create_life_fact  # type: ignore[import-not-found]
-
-    return create_life_fact
 
 
 async def _require_report(

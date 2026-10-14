@@ -1,21 +1,11 @@
 """생애 정보 제안 승인(API 7-4)과 그 뒤의 7-3 검증. PR #105 의존.
 
 승인한 생애 정보 제안은 작업 A의 `app.services.life_facts.create_life_fact`로
-만든다. 그 모듈은 PR #105에서 들어오므로 develop에 병합되기 전에는 이 파일 전체를
-건너뛰고, 병합되면 그대로 실행된다. 임시 DB에 최신 migration을 적용해
-실행한다(`conftest.py`). 값은 모두 합성 데이터다.
+만든다. 임시 DB에 최신 migration을 적용해 실행한다(`conftest.py`). 값은 모두 합성
+데이터다.
 """
 
-import importlib.util
-
-import pytest
-
 from tests.visit_records import Records
-
-pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("app.services.life_facts") is None,
-    reason="PR #105(create_life_fact) 병합 전: develop에 app/services/life_facts.py 없음",
-)
 
 
 def _reported(records: Records):

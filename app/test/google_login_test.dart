@@ -22,7 +22,7 @@ import 'package:saerok/features/auth/consent_terms.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
-import 'package:saerok/features/auth/login_screen.dart';
+import 'package:saerok/features/auth/google_sign_in_panel.dart';
 import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
@@ -192,19 +192,19 @@ Widget _app({
   SessionStore? store,
   String? initialLocation,
   AuthSession? session,
+  bool skipGoogleLogin = false,
 }) {
   final router = GoRouter(
     initialLocation:
         initialLocation ??
-        (home == null ? AppRoutes.login : AppRoutes.googleConsent),
+        (home == null ? AppRoutes.signIn : AppRoutes.googleConsent),
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        builder: (context, state) => const SplashScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.login,
-        builder: (context, state) => const LoginScreen(),
+        builder: (context, state) => SplashScreen(
+          key: ValueKey(state.uri.toString()),
+          signedOut: state.uri.queryParameters['signedOut'] == 'true',
+        ),
       ),
       GoRoute(
         path: AppRoutes.googleConsent,
@@ -218,14 +218,14 @@ Widget _app({
             const Scaffold(body: Center(child: Text('홈 화면'))),
       ),
       GoRoute(
+        path: AppRoutes.profileCreate,
+        builder: (context, state) =>
+            const Scaffold(body: Center(child: Text('환자 정보 입력 화면'))),
+      ),
+      GoRoute(
         path: AppRoutes.onboarding,
         builder: (context, state) =>
             const Scaffold(body: Center(child: Text('처음 오셨네요'))),
-      ),
-      GoRoute(
-        path: AppRoutes.signup,
-        builder: (context, state) =>
-            const Scaffold(body: Center(child: Text('회원가입 화면'))),
       ),
       GoRoute(
         path: AppRoutes.profile,
@@ -242,6 +242,8 @@ Widget _app({
     overrides: [
       authApiProvider.overrideWithValue(api),
       googleAuthenticatorProvider.overrideWithValue(google),
+      // 테스트는 설정 없이 디버그로 돈다. 실제 흐름을 보려면 임시 건너뛰기를 끈다.
+      skipGoogleLoginProvider.overrideWithValue(skipGoogleLogin),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
@@ -349,7 +351,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(google.calls, 1);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.textContaining('못했어요'), findsNothing);
     });
 
@@ -370,7 +372,7 @@ void main() {
       await tester.tap(find.image(const AssetImage(GoogleSignInButton.asset)));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget, reason: '실패하면 넘어가지 않는다');
+      expect(find.byType(GoogleSignInPanel), findsOneWidget, reason: '실패하면 넘어가지 않는다');
       expect(find.textContaining('로그인 설정이 아직 준비되지 않았어요'), findsOneWidget);
     });
 
@@ -394,6 +396,47 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('구글 로그인 설정이 아직 준비되지 않았어요'), findsOneWidget);
+    });
+  });
+
+  group('구글 설정이 없을 때의 임시 건너뛰기', () {
+    testWidgets('켜져 있으면 구글을 부르지 않고 정보 입력으로 간다', (tester) async {
+      _tallScreen(tester);
+      final google = _FakeGoogleAuthenticator(
+        failure: const AuthGoogleFailure(misconfigured: true),
+      );
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('서버를 부르지 않는다'))),
+          google: google,
+          skipGoogleLogin: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('개발용'), findsOneWidget, reason: '임시 길임을 알린다');
+
+      await tester.tap(find.image(const AssetImage(GoogleSignInButton.asset)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('환자 정보 입력 화면'), findsOneWidget);
+      expect(find.textContaining('설정이 아직 준비되지 않았어요'), findsNothing);
+      expect(google.calls, 0, reason: '구글 창을 띄우지 않는다');
+    });
+
+    testWidgets('꺼져 있으면 안내 문구도 없다', (tester) async {
+      _tallScreen(tester);
+
+      await tester.pumpWidget(
+        _app(
+          api: _api(MockClient((request) async => fail('서버를 부르지 않는다'))),
+          google: _FakeGoogleAuthenticator(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('개발용'), findsNothing);
     });
   });
 
@@ -873,7 +916,7 @@ void main() {
 
       expect(paths, ['POST /auth/logout']);
       expect(store.stored, isNull);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
     });
   });
 
@@ -973,7 +1016,7 @@ void main() {
 
       expect(paths, ['DELETE /auth/me']);
       expect(store.stored, isNull);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);
     });
 
@@ -1038,7 +1081,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(store.stored, isNull, reason: '풀린 세션은 남기지 않는다');
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
     });
@@ -1077,7 +1120,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(
         container.read(careProfilesProvider).entries,
         isEmpty,
@@ -1088,7 +1131,7 @@ void main() {
     });
 
     testWidgets('서버 계정 없이 들어오면 서버를 부르지 않고 알린다', (tester) async {
-      // 아이디와 비밀번호 목 로그인으로 들어온 경우다. 지울 계정이 없다.
+      // 세션 없이 이 화면에 온 경우다. 지울 계정이 없다.
       await _pumpWithProfile(
         tester,
         _app(

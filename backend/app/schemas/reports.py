@@ -7,33 +7,11 @@ from uuid import UUID
 from pydantic import AfterValidator, Field, model_validator
 
 from app.schemas.common import ApiModel
+from app.schemas.visit_session import VisitSession
 
-SessionStatus = Literal[
-    "evaluationPending", "audioPending", "processing", "completed", "failed"
-]
 Mood = Literal["hard", "normal", "good"]
 TopicAction = Literal["more", "less", "exclude"]
 ReviewStatus = Literal["pending", "accepted", "rejected"]
-
-
-class VisitSession(ApiModel):
-    """회차 응답(5절 VisitSession).
-
-    임시 중복: 작업 B의 PR #99가 `app/schemas/visit_session.py`에 같은 모델을 둔다.
-    그 파일이 develop에 없어 여기 따로 정의하며, 필드 이름, 순서, 타입과 JSON 이름을
-    그 모델과 같게 맞췄다. #99가 병합되면 B의 모델 하나로 합치고 이 클래스는 지운다.
-    """
-
-    schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
-    session_id: UUID = Field(alias="sessionId")
-    profile_id: UUID = Field(alias="profileId")
-    set_id: UUID = Field(alias="setId")
-    selected_card_ids: list[UUID] = Field(alias="selectedCardIds")
-    session_status: SessionStatus = Field(alias="sessionStatus")
-    photo_id: UUID | None = Field(alias="photoId")
-    participant_count: int | None = Field(alias="participantCount")
-    started_at: datetime = Field(alias="startedAt")
-    analysis_id: UUID | None = Field(alias="analysisId")
 
 
 class VisitSessionListResponse(ApiModel):

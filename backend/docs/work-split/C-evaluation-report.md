@@ -344,6 +344,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - `reviewStatus`: `pending`은 그대로다. `settled`는 승인 결과(`life_facts.source_proposal_id` 또는 `topic_feedback.proposal_id`)가 있으면 `accepted`, 없으면 `rejected`로 돌려준다.
+- `topic`의 `title`, `description`은 `profile_topics`에서 `topic_id`로 읽는다. `description`은 NOT NULL이다.
 
 <br>
 
@@ -356,15 +357,27 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 ```json
 {
   "lifeFacts": [
-    { "proposalId": "00000000-0000-4000-8000-000000000801", "reviewStatus": "accepted" }
+    {
+      "proposalId": "00000000-0000-4000-8000-000000000801",
+      "reviewStatus": "accepted",
+      "title": "한복",
+      "content": "한복과 두루마기를 주로 만드셨어요."
+    }
   ],
   "topics": [
-    { "proposalId": "00000000-0000-4000-8000-000000000802", "reviewStatus": "rejected" }
+    {
+      "proposalId": "00000000-0000-4000-8000-000000000802",
+      "reviewStatus": "accepted",
+      "action": "more"
+    }
   ]
 }
 ```
 
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
+- `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
+  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자 이하이고 둘 다 비울 수 없다.
+  - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
 
@@ -373,8 +386,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 서버 처리
 
 - 모든 제안을 `settled`로 바꾼다.
-- `accepted`인 생애 정보 제안은 생애 정보로 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다.
-- `accepted`인 주제 제안은 `topic_feedback`에 `suggestedAction`을 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 보호자가 다른 행동을 고를 수 있는지는 미정([미정 사항](#미정-사항) 4)
+- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
+- `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
 
 | HTTP | `errorCode` | 언제 |
@@ -382,10 +395,12 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
 
 **구현 메모**
 
-- 한 트랜잭션에서 모든 제안을 `settled`로 바꾼 뒤, `accepted`인 생애 정보 제안은 `create_life_fact(..., source_proposal_id=제안 ID)`로, `accepted`인 주제 제안은 `topic_feedback(profile_id, topic_id, proposal_id, action = suggested_action)`으로 넣는다.
+- 한 트랜잭션에서 모든 제안을 `settled`로 바꾼 뒤, `accepted`인 생애 정보 제안은 `create_life_fact(..., title=요청 title, content=요청 content, source_proposal_id=제안 ID)`로, `accepted`인 주제 제안은 `topic_feedback(profile_id, topic_id, proposal_id, action = 요청 action)`으로 넣는다. `life_fact_proposals`와 `topic_proposals.suggested_action`은 고치지 않는다.
+- `reviewStatus`와 최종 값의 짝은 요청 검증에서 확인해 422 `INVALID_REQUEST`로 막는다. `title`, `content` 검증은 2-6과 같다.
 - 다음 카드 생성(4-1)은 앱이 호출한다.
 
 <br>
@@ -640,7 +655,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
       "cardId": "00000000-0000-4000-8000-000000000501",
       "topic": {
         "topicId": "00000000-0000-4000-8000-000000000452",
-        "title": "재봉 일"
+        "title": "재봉 일",
+        "description": "젊은 시절 하시던 일과 그때의 하루를 여쭤보는 주제예요."
       },
       "suggestedAction": "more",
       "reason": "재봉 일 이야기에 반응이 좋으셨어요.",
@@ -650,8 +666,10 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 }
 ```
 
+- `topic.description`: 주제 설명이다. 카드 묶음(CardSet)의 `topic.description`, 8-2의 `topics[].description`과 같은 값이다.
 - `suggestedAction`: `more`, `less`, `exclude`
 - `reviewStatus`: `pending`, `accepted`, `rejected`. DB에는 `pending`과 `settled`만 저장하므로, `settled`인 제안은 승인 결과(생애 정보 또는 주제 피드백)가 있으면 `accepted`, 없으면 `rejected`로 반환한다.
+- `lifeFactProposals`의 `title`, `content`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
 
 ## 미정 사항
 
@@ -660,4 +678,4 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 4 | 주제 제안 승인 시 보호자가 제안과 다른 행동을 고를 수 있는지. `topic_feedback.action`과 `topic_proposals.suggested_action`이 별도 컬럼 | 7-4 | 스키마 작성자 |
+| 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |

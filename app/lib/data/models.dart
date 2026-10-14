@@ -55,6 +55,7 @@ class Account {
   }
 
   final String accountId;
+
   /// `google` 하나뿐이다. 계약에 다른 제공자를 더하는 것은 계약 변경으로 본다.
   final String authProvider;
   final String displayName;
@@ -98,6 +99,10 @@ class Profile {
     required this.lifeFactIds,
     required this.photoIds,
     this.symptomNote,
+    this.occupation,
+    this.hometown,
+    this.hobby,
+    this.family,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
@@ -113,6 +118,10 @@ class Profile {
       symptomNote: condition['symptomNote'] as String?,
       lifeFactIds: (json['lifeFactIds'] as List).cast<String>(),
       photoIds: (json['photoIds'] as List).cast<String>(),
+      occupation: json['occupation'] as String?,
+      hometown: json['hometown'] as String?,
+      hobby: json['hobby'] as String?,
+      family: json['family'] as String?,
     );
   }
 
@@ -128,6 +137,22 @@ class Profile {
   final String? symptomNote;
   final List<String> lifeFactIds;
   final List<String> photoIds;
+
+  /// 세부 정보 네 항목(`docs/architecture/api-spec.md` 의 Profile). 건너뛰었으면
+  /// `null` 이고 빈 문자열은 두지 않는다.
+  final String? occupation;
+  final String? hometown;
+  final String? hobby;
+  final String? family;
+
+  /// [category] 는 `occupation`, `hometown`, `hobby`, `family` 중 하나다.
+  String? detailOf(String category) => switch (category) {
+    'occupation' => occupation,
+    'hometown' => hometown,
+    'hobby' => hobby,
+    'family' => family,
+    _ => null,
+  };
 }
 
 class LifeFact {
@@ -183,54 +208,79 @@ class CategoryCollectionState {
   final int attemptCount;
 }
 
-class ProfilePhoto {
-  const ProfilePhoto({
-    required this.photoId,
-    required this.localUri,
-    required this.acceptedTags,
-  });
-
-  factory ProfilePhoto.fromJson(Map<String, dynamic> json) => ProfilePhoto(
-    photoId: json['photoId'] as String,
-    localUri: json['localUri'] as String,
-    acceptedTags: (json['acceptedTags'] as List? ?? const []).cast<String>(),
-  );
-
-  final String photoId;
-  final String localUri;
-  final List<String> acceptedTags;
-}
-
-/// 이미지 분석 후보 하나의 검토 상태. 계약에 정의된 셋이다.
-///
-/// 변경 제안의 [ChangeReviewStatus] 와 값 이름은 겹치지만 같은 타입이 아니다.
-/// 후보는 되돌릴 대상이 없어 `reverted` 를 갖지 않는다.
-enum TagReviewStatus {
+/// 프로필 사진의 이미지 분석 상태. 계약에 정의된 넷이다.
+enum PhotoAnalysisStatus {
   pending,
-  accepted,
-  rejected;
+  processing,
+  completed,
+  failed;
 
-  static TagReviewStatus? parse(String raw) =>
+  static PhotoAnalysisStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
-class ImageTagCandidate {
-  const ImageTagCandidate({
-    required this.candidateId,
-    required this.text,
-    required this.reviewStatus,
+/// 프로필 사진 한 장이다(`docs/architecture/data-contracts.md` 의 ProfilePhoto).
+///
+/// [description] 은 AI 가 만든 후보이며 확인된 사실이 아니다. 보호자가 확인하는
+/// 방식(API 3-3)은 아직 정해지지 않았다.
+class ProfilePhoto {
+  const ProfilePhoto({
+    required this.photoId,
+    required this.profileId,
+    required this.imageUrl,
+    required this.analysisStatus,
+    required this.createdAt,
+    this.imageUrlExpiresAt,
+    this.description,
+    this.errorCode,
   });
 
-  factory ImageTagCandidate.fromJson(Map<String, dynamic> json) =>
-      ImageTagCandidate(
-        candidateId: json['candidateId'] as String,
-        text: json['text'] as String,
-        reviewStatus: TagReviewStatus.parse(json['reviewStatus'] as String),
-      );
+  factory ProfilePhoto.fromJson(Map<String, dynamic> json) {
+    final error = json['error'] as Map<String, dynamic>?;
+    return ProfilePhoto(
+      photoId: json['photoId'] as String,
+      profileId: json['profileId'] as String,
+      imageUrl: json['imageUrl'] as String,
+      imageUrlExpiresAt: json['imageUrlExpiresAt'] as String?,
+      analysisStatus: PhotoAnalysisStatus.parse(
+        json['analysisStatus'] as String,
+      ),
+      description: json['description'] as String?,
+      errorCode: error?['errorCode'] as String?,
+      createdAt: json['createdAt'] as String,
+    );
+  }
 
-  final String candidateId;
-  final String text;
-  final TagReviewStatus? reviewStatus;
+  final String photoId;
+  final String profileId;
+
+  /// 수명이 짧은 조회용 URL 이다. 목 데이터는 `asset:` 으로 앱 안의 이미지를 가리킨다.
+  final String imageUrl;
+  final String? imageUrlExpiresAt;
+
+  /// 모르는 값이면 `null` 이다. 화면은 분석이 끝나지 않은 것으로 다룬다.
+  final PhotoAnalysisStatus? analysisStatus;
+
+  /// [PhotoAnalysisStatus.completed] 일 때만 있다.
+  final String? description;
+
+  /// [PhotoAnalysisStatus.failed] 일 때의 `error.errorCode` 다.
+  final String? errorCode;
+
+  final String createdAt;
+
+  /// 같은 사진을 다른 어르신의 것으로 붙인다. 목 사진을 어르신마다 나눠 쓸 때만
+  /// 쓴다. 서버가 붙으면 사진은 처음부터 어르신마다 따로 온다.
+  ProfilePhoto forProfile(String profileId) => ProfilePhoto(
+    photoId: photoId,
+    profileId: profileId,
+    imageUrl: imageUrl,
+    imageUrlExpiresAt: imageUrlExpiresAt,
+    analysisStatus: analysisStatus,
+    description: description,
+    errorCode: errorCode,
+    createdAt: createdAt,
+  );
 }
 
 /// 프로필 화면이 한 번에 쓰는 묶음이다. `assets/mock/profile.json` 한 파일에 해당한다.
@@ -239,12 +289,10 @@ class ProfileBundle {
     required this.profile,
     required this.lifeFacts,
     required this.collectionStates,
-    required this.photo,
-    required this.tagCandidates,
+    required this.photos,
   });
 
   factory ProfileBundle.fromJson(Map<String, dynamic> json) {
-    final candidate = json['imageAnalysisCandidate'] as Map<String, dynamic>;
     final collection = json['lifeFactCollectionState'] as Map<String, dynamic>;
     return ProfileBundle(
       profile: Profile.fromJson(json['profile'] as Map<String, dynamic>),
@@ -256,11 +304,8 @@ class ProfileBundle {
             (e) => CategoryCollectionState.fromJson(e as Map<String, dynamic>),
           )
           .toList(),
-      photo: ProfilePhoto.fromJson(
-        json['profilePhoto'] as Map<String, dynamic>,
-      ),
-      tagCandidates: (candidate['candidates'] as List)
-          .map((e) => ImageTagCandidate.fromJson(e as Map<String, dynamic>))
+      photos: (json['photos'] as List? ?? const [])
+          .map((e) => ProfilePhoto.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
@@ -268,8 +313,8 @@ class ProfileBundle {
   final Profile profile;
   final List<LifeFact> lifeFacts;
   final List<CategoryCollectionState> collectionStates;
-  final ProfilePhoto photo;
-  final List<ImageTagCandidate> tagCandidates;
+  /// 올린 순서대로다. 최대 5장이다.
+  final List<ProfilePhoto> photos;
 
   LifeFact? factOf(String category) =>
       lifeFacts.where((f) => f.category == category).firstOrNull;
@@ -577,82 +622,223 @@ class CaregiverEvaluation {
   final String? freeNote;
 }
 
-/// 변경 제안 하나의 검토 상태. 계약에 정의된 넷이다.
+/// 변경 제안 하나의 검토 상태. 계약에 정의된 셋이다.
 ///
-/// [reverted] 는 보호자가 승인해 프로필에 반영한 변경을 나중에 되돌린 정상
-/// 상태이며, 값을 읽지 못한 경우가 아니다. 이미지 분석 후보의
-/// [TagReviewStatus] 에는 이 값이 없다.
+/// 승인한 제안을 되돌리는 기능은 없다. 승인으로 만든 생애 사실은 일대기에서
+/// 직접 고친다.
 enum ChangeReviewStatus {
   pending,
   accepted,
-  rejected,
-  reverted;
+  rejected;
 
   static ChangeReviewStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
-class ProposedChange {
-  const ProposedChange({
-    required this.changeId,
-    required this.changeType,
+/// 주제 제안의 행동. AI 가 제안한 값(`suggestedAction`)과 보호자가 고른 값에
+/// 함께 쓴다.
+enum TopicAction {
+  more,
+  less,
+  exclude;
+
+  static TopicAction? parse(String raw) =>
+      values.where((v) => v.name == raw).firstOrNull;
+}
+
+/// 일대기에 더할 생애 정보 제안. `life_fact_proposals` 에 대응한다.
+///
+/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title] 과
+/// [content] 뿐이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
+/// 그대로 들고 있다.
+class LifeFactProposal {
+  const LifeFactProposal({
+    required this.proposalId,
+    required this.title,
+    required this.content,
     required this.reason,
     required this.reviewStatus,
-    this.topicTitle,
-    this.direction,
-    this.text,
   });
 
-  factory ProposedChange.fromJson(Map<String, dynamic> json) => ProposedChange(
-    changeId: json['changeId'] as String,
-    changeType: json['changeType'] as String,
-    topicTitle: json['topicTitle'] as String?,
-    direction: json['direction'] as String?,
-    text: json['text'] as String?,
+  factory LifeFactProposal.fromJson(Map<String, dynamic> json) =>
+      LifeFactProposal(
+        proposalId: json['proposalId'] as String,
+        title: json['title'] as String,
+        content: json['content'] as String,
+        reason: json['reason'] as String,
+        reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
+      );
+
+  final String proposalId;
+
+  /// 100자 이하.
+  final String title;
+  final String content;
+  final String reason;
+  final ChangeReviewStatus? reviewStatus;
+}
+
+/// 주제 제안이 가리키는 주제. `profile_topics` 에 대응한다.
+class ProposalTopic {
+  const ProposalTopic({
+    required this.topicId,
+    required this.title,
+    this.description,
+  });
+
+  factory ProposalTopic.fromJson(Map<String, dynamic> json) => ProposalTopic(
+    topicId: json['topicId'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String?,
+  );
+
+  final String topicId;
+  final String title;
+
+  /// 제목만으로는 무슨 이야기였는지 떠올리기 어려워 함께 보여준다. 이 화면을
+  /// 위해 계약에 더한 값이다. 아직 서버가 보내지 않을 수 있어 없으면 제목만
+  /// 보여준다.
+  final String? description;
+}
+
+/// 다음 카드 생성에서 주제를 더 다룰지, 덜 다룰지, 제외할지에 대한 제안.
+/// `topic_proposals` 에 대응한다.
+///
+/// [suggestedAction] 과 [reason] 은 AI 의 제안이다. 보호자는 다른 행동을 고를
+/// 수 있고, 고른 값은 승인할 때 따로 보낸다.
+class TopicProposal {
+  const TopicProposal({
+    required this.proposalId,
+    required this.cardId,
+    required this.topic,
+    required this.suggestedAction,
+    required this.reason,
+    required this.reviewStatus,
+  });
+
+  factory TopicProposal.fromJson(Map<String, dynamic> json) => TopicProposal(
+    proposalId: json['proposalId'] as String,
+    cardId: json['cardId'] as String,
+    topic: ProposalTopic.fromJson(json['topic'] as Map<String, dynamic>),
+    suggestedAction: TopicAction.parse(json['suggestedAction'] as String),
     reason: json['reason'] as String,
     reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
   );
 
-  final String changeId;
-
-  /// `topicPriority` 또는 `lifeFactAdd`.
-  final String changeType;
-  final String? topicTitle;
-  final String? direction;
-  final String? text;
+  final String proposalId;
+  final String cardId;
+  final ProposalTopic topic;
+  final TopicAction? suggestedAction;
   final String reason;
-
   final ChangeReviewStatus? reviewStatus;
 }
 
-/// `proposalStatus` 값. 계약에 정의된 둘이다.
-enum ProposalStatus {
-  pendingReview,
-  reviewed;
-
-  static ProposalStatus? parse(String raw) =>
-      values.where((v) => v.name == raw).firstOrNull;
-}
-
+/// 한 회차의 변경 제안. API 7-3 의 응답이다.
 class ChangeProposal {
   const ChangeProposal({
-    required this.proposalId,
-    required this.reportId,
-    required this.proposalStatus,
-    required this.changes,
+    required this.sessionId,
+    required this.lifeFactProposals,
+    required this.topicProposals,
   });
 
   factory ChangeProposal.fromJson(Map<String, dynamic> json) => ChangeProposal(
-    proposalId: json['proposalId'] as String,
-    reportId: json['reportId'] as String,
-    proposalStatus: ProposalStatus.parse(json['proposalStatus'] as String),
-    changes: (json['changes'] as List)
-        .map((e) => ProposedChange.fromJson(e as Map<String, dynamic>))
+    sessionId: json['sessionId'] as String,
+    lifeFactProposals: (json['lifeFactProposals'] as List)
+        .map((e) => LifeFactProposal.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    topicProposals: (json['topicProposals'] as List)
+        .map((e) => TopicProposal.fromJson(e as Map<String, dynamic>))
         .toList(),
   );
 
+  final String sessionId;
+  final List<LifeFactProposal> lifeFactProposals;
+  final List<TopicProposal> topicProposals;
+
+  bool get isEmpty => lifeFactProposals.isEmpty && topicProposals.isEmpty;
+
+  /// 아직 검토하지 않은(`pending`) 생애 정보 제안. 검토는 이것만 보낸다.
+  /// 이미 승인하거나 거절한 제안과 상태를 읽지 못한 제안은 다시 보내지 않는다.
+  List<LifeFactProposal> get pendingLifeFacts => [
+    for (final p in lifeFactProposals)
+      if (p.reviewStatus == ChangeReviewStatus.pending) p,
+  ];
+
+  /// 아직 검토하지 않은(`pending`) 주제 제안. [pendingLifeFacts] 와 같은 규칙이다.
+  List<TopicProposal> get pendingTopics => [
+    for (final p in topicProposals)
+      if (p.reviewStatus == ChangeReviewStatus.pending) p,
+  ];
+
+  /// 검토할 제안이 하나도 없다. 이미 반영한 회차를 다시 열었을 때다.
+  bool get nothingPending => pendingLifeFacts.isEmpty && pendingTopics.isEmpty;
+}
+
+/// 주제 제안 하나의 검토 결과. API 7-4 요청의 `topics[]` 한 항목이다.
+///
+/// [action] 은 보호자가 최종으로 고른 행동이다. AI 제안을 그대로 둔 경우도
+/// 담는다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에 더한 것이다.
+class TopicReview {
+  const TopicReview.accepted({required this.proposalId, required this.action})
+    : reviewStatus = ChangeReviewStatus.accepted;
+
+  const TopicReview.rejected({required this.proposalId})
+    : reviewStatus = ChangeReviewStatus.rejected,
+      action = null;
+
   final String proposalId;
-  final String reportId;
-  final ProposalStatus? proposalStatus;
-  final List<ProposedChange> changes;
+  final ChangeReviewStatus reviewStatus;
+  final TopicAction? action;
+
+  Map<String, dynamic> toJson() => {
+    'proposalId': proposalId,
+    'reviewStatus': reviewStatus.name,
+    if (action != null) 'action': action!.name,
+  };
+}
+
+/// 생애 정보 제안 하나의 검토 결과. API 7-4 요청의 `lifeFacts[]` 한 항목이다.
+///
+/// [title] 과 [content] 는 일대기에 저장할 최종 값이다. 보호자가 고치지 않았으면
+/// 제안 그대로다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에
+/// 더한 것이다.
+class LifeFactReview {
+  const LifeFactReview.accepted({
+    required this.proposalId,
+    required this.title,
+    required this.content,
+  }) : reviewStatus = ChangeReviewStatus.accepted;
+
+  const LifeFactReview.rejected({required this.proposalId})
+    : reviewStatus = ChangeReviewStatus.rejected,
+      title = null,
+      content = null;
+
+  final String proposalId;
+  final ChangeReviewStatus reviewStatus;
+  final String? title;
+  final String? content;
+
+  Map<String, dynamic> toJson() => {
+    'proposalId': proposalId,
+    'reviewStatus': reviewStatus.name,
+    if (title != null) 'title': title,
+    if (content != null) 'content': content,
+  };
+}
+
+/// 한 회차의 변경 제안 검토. API 7-4 요청이다.
+///
+/// 회차의 `pending` 제안만 모두 담는다. 화면에 남긴 항목은 `accepted`, 뺀
+/// 항목은 `rejected` 다.
+class ProposalReview {
+  const ProposalReview({required this.lifeFacts, required this.topics});
+
+  final List<LifeFactReview> lifeFacts;
+  final List<TopicReview> topics;
+
+  Map<String, dynamic> toJson() => {
+    'lifeFacts': [for (final r in lifeFacts) r.toJson()],
+    'topics': [for (final r in topics) r.toJson()],
+  };
 }

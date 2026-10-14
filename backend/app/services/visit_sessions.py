@@ -1,0 +1,129 @@
+"""면회 회차(`visit_sessions`)의 생성(5-1)과 보충 카드 추가(5-3).
+
+5-1, 5-3은 평가 전 회차만 다루므로 `VisitSession`의 `sessionStatus`는 `evaluationPending`,
+`participantCount`와 `analysisId`는 null로 둠. 평가 뒤 상태까지 계산하는 공용
+`load_visit_session`이 들어오면 그 함수로 바꿈.
+"""
+
+from uuid import UUID
+
+from app.core.database import DbConnection
+from app.core.errors import AppError
+from app.schemas.visit_session import VisitSession
+from app.services.card_sets import lock_profile
+
+
+def _invalid_selection(message: str) -> AppError:
+    return AppError(status_code=422, error_code="INVALID_CARD_SELECTION", message=message)
+
+
+def _already_used() -> AppError:
+    return AppError(
+        status_code=409, error_code="CARD_SET_ALREADY_USED", message="이미 면회에 쓴 카드 묶음입니다."
+    )
+
+
+async def load_visit_session(connection: DbConnection, session_id: UUID) -> VisitSession:
+    """`VisitSession`을 만듦. 평가 전 회차만 다루므로 `sessionStatus`는 `evaluationPending`으로 고정."""
+    cursor = await connection.execute(
+        "SELECT v.session_id, v.profile_id, v.started_at, s.set_id,"
+        "       (SELECT photo_id FROM photos p WHERE p.session_id = v.session_id) AS photo_id"
+        "  FROM visit_sessions v JOIN card_sets s ON s.session_id = v.session_id"
+        " WHERE v.session_id = %s",
+        (session_id,),
+    )
+    row = await cursor.fetchone()
+    cursor = await connection.execute(
+        "SELECT card_id FROM conversation_cards WHERE set_id = %s AND selected ORDER BY position",
+        (row["set_id"],),
+    )
+    return VisitSession(
+        session_id=row["session_id"],
+        profile_id=row["profile_id"],
+        set_id=row["set_id"],
+        selected_card_ids=[card["card_id"] for card in await cursor.fetchall()],
+        session_status="evaluationPending",
+        photo_id=row["photo_id"],
+        participant_count=None,
+        started_at=row["started_at"],
+        analysis_id=None,
+    )
+
+
+async def create_visit_session(
+    connection: DbConnection, profile_id: UUID, set_id: UUID, card_ids: list[UUID]
+) -> UUID:
+    """5-1. 한 트랜잭션에서 회차 생성, 묶음 연결, 고른 카드 `selected` 표시.
+
+    묶음 소유 확인은 부르는 쪽에서 `require_owned(CARD_SET)`로 먼저 함. 4-1과 겹치지 않게
+    프로필 행을 먼저 잠금(`lock_profile`).
+    """
+    if len(set(card_ids)) != len(card_ids):
+        raise _invalid_selection("같은 카드를 두 번 고를 수 없습니다.")
+    async with connection.transaction():
+        await lock_profile(connection, profile_id)
+        cursor = await connection.execute(
+            "SELECT profile_id, status, session_id FROM card_sets WHERE set_id = %s FOR UPDATE",
+            (set_id,),
+        )
+        card_set = await cursor.fetchone()
+        if card_set["status"] != "completed":
+            raise AppError(
+                status_code=409,
+                error_code="CARD_GENERATION_NOT_COMPLETED",
+                message="카드가 아직 준비되지 않았습니다.",
+            )
+        if card_set["session_id"] is not None:
+            raise _already_used()
+        cursor = await connection.execute(
+            "SELECT count(*) AS n FROM conversation_cards"
+            " WHERE set_id = %s AND card_id = ANY(%s) AND position BETWEEN 1 AND 9",
+            (set_id, card_ids),
+        )
+        if (await cursor.fetchone())["n"] != len(card_ids):
+            raise _invalid_selection("고를 수 있는 카드는 이 묶음의 1~9번 카드입니다.")
+        cursor = await connection.execute(
+            "INSERT INTO visit_sessions (profile_id) VALUES (%s) RETURNING session_id",
+            (card_set["profile_id"],),
+        )
+        session_id = (await cursor.fetchone())["session_id"]
+        await connection.execute(
+            "UPDATE card_sets SET session_id = %s WHERE set_id = %s", (session_id, set_id)
+        )
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true WHERE set_id = %s AND card_id = ANY(%s)",
+            (set_id, card_ids),
+        )
+    return session_id
+
+
+async def add_session_cards(connection: DbConnection, session_id: UUID, card_ids: list[UUID]) -> None:
+    """5-3. 보충 카드(10~12번)를 고른 카드에 더함. 이미 더한 카드는 넘어감. 평가 전에만 받음."""
+    if len(set(card_ids)) != len(card_ids):
+        raise _invalid_selection("같은 카드를 두 번 더할 수 없습니다.")
+    async with connection.transaction():
+        cursor = await connection.execute(
+            "SELECT v.evaluated_at, s.set_id"
+            "  FROM visit_sessions v JOIN card_sets s ON s.session_id = v.session_id"
+            " WHERE v.session_id = %s FOR UPDATE OF v",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        if row["evaluated_at"] is not None:
+            raise AppError(
+                status_code=409,
+                error_code="INVALID_SESSION_STATE",
+                message="평가를 마친 면회에는 카드를 더할 수 없습니다.",
+            )
+        cursor = await connection.execute(
+            "SELECT count(*) AS n FROM conversation_cards"
+            " WHERE set_id = %s AND card_id = ANY(%s) AND position BETWEEN 10 AND 12",
+            (row["set_id"], card_ids),
+        )
+        if (await cursor.fetchone())["n"] != len(card_ids):
+            raise _invalid_selection("면회 중에 더할 수 있는 카드는 이 묶음의 10~12번 카드입니다.")
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true"
+            " WHERE set_id = %s AND card_id = ANY(%s) AND NOT selected",
+            (row["set_id"], card_ids),
+        )

@@ -18,7 +18,8 @@ from app.schemas.speech_analysis import SpeechAnalysisResult
 from app.services.audio_storage import AudioDownload
 from app.services.speech_analysis_jobs import PostgresSpeechAnalysisJobRepository
 from app.services.speech_analysis_pipeline import create_speech_worker
-from app.services.visit_report_generator import VisitReportGenerator
+from app.services.visit_report_generator import VisitReportGenerator, build_request
+from tests.card_fixtures import completed_card_set, with_db
 from tests.support import run
 from tests.visit_records import Records, Visit
 
@@ -204,6 +205,63 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     raw = json.dumps(sent, ensure_ascii=False)
     for identity in ("합성 이름", "female", "1943-03-12", "name", "gender", "birth"):
         assert identity not in raw
+
+
+def test_request_uses_only_cards_chosen_through_the_session_api(migrated_database_url):
+    """5-1, 5-3으로 고른 카드와 6-1 평가가 같은 회차의 8-3 요청이 된다.
+
+    같은 프로필의 다른 회차 카드와 고르지 않은 카드는 섞이지 않는다.
+    """
+    records = Records(migrated_database_url)
+    user_id, profile_id = records.account()
+    other = records.visit(profile_id, cards=2, selected=2)
+    set_id, cards = with_db(
+        migrated_database_url, lambda connection: completed_card_set(connection, profile_id)
+    )
+    created = records.call(
+        user_id,
+        "POST",
+        "/api/v1/visit-sessions",
+        json={"setId": str(set_id), "selectedCardIds": [str(cards[0]), str(cards[2])]},
+    )
+    session_id = created.json()["sessionId"]
+    added = records.call(
+        user_id,
+        "PATCH",
+        f"/api/v1/visit-sessions/{session_id}/cards",
+        json={"cardIds": [str(cards[9])]},
+    )
+    evaluated = records.call(
+        user_id,
+        "POST",
+        f"/api/v1/visit-sessions/{session_id}/evaluation",
+        json={
+            "conversationSatisfaction": 3,
+            "careRecipientReaction": "calm",
+            "cardReviews": [
+                {"cardId": str(cards[0]), "wasUsed": True, "caregiverReaction": "positive"},
+                {"cardId": str(cards[2]), "wasUsed": False, "caregiverReaction": None},
+            ],
+            "freeNote": "합성 소감",
+        },
+    )
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            return await build_request(connection, UUID(session_id), _speech())
+
+    request_profile_id, request = run(scenario())
+
+    assert (created.status_code, added.status_code, evaluated.status_code) == (201, 200, 201)
+    assert request_profile_id == profile_id
+    assert [(card.card_id, card.reaction) for card in request.cards] == [
+        (cards[0], "positive"),
+        (cards[2], "notUsed"),
+        (cards[9], None),
+    ]
+    assert not {card.card_id for card in request.cards} & set(other.card_ids)
+    assert request.evaluation.conversation_satisfaction == 3
+    assert request.evaluation.free_note == "합성 소감"
 
 
 def test_generated_report_and_proposals_are_saved(migrated_database_url):

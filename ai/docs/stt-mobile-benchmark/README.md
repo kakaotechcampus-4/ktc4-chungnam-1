@@ -96,49 +96,6 @@ RTF 0.7은 1시간 길이의 음성 녹음을 처리하는데 약 43분이 걸�
 | 경로 | 내용 |
 | --- | --- |
 | [data-downloader-kcsc.py](data-downloader-kcsc.py) | KCSC 다운로드와 정답 TXT 형식 파싱 도구 |
-| [build_two_speaker_audio.py](build_two_speaker_audio.py) | 같은 대화의 화자별 WAV와 정답 TXT를 diarization 테스트용 파일 쌍으로 합치는 도구 |
-
-## 두 화자 diarization 테스트 음성 만들기
-
-KCSC의 같은 대화 세션에 속한 화자별 WAV 두 개는 타임라인이 동기화되어 있다. 다음 도구는
-두 트랙의 타임라인과 겹말 구간을 유지하면서 하나의 mono WAV로 믹싱한다. 두 화자의 소리가
-겹칠 때 clipping이 예상되는 경우에만 전체 gain을 낮춘다. 화자별 정답 TXT도 타임스탬프 순으로
-합쳐 같은 이름의 TXT로 만든다. 화자 ID, 성별과 비언어 이벤트 표기는 원본 값을 유지한다.
-
-기본값은 `A0051_S0001_0_G0101.wav`와 `A0051_S0001_0_G0102.wav`이며, 결과 파일은
-`data/kcsc/WAV/generated/A0051_S0001_0_G0101_G0102.wav`와 같은 이름의 `.txt`로 생성된다.
-
-```bash
-cd ai
-uv run python docs/stt-mobile-benchmark/build_two_speaker_audio.py
-```
-
-처음 60초만 빠르게 만들려면 다음과 같이 실행한다.
-
-```bash
-uv run python docs/stt-mobile-benchmark/build_two_speaker_audio.py \
-  --duration-seconds 60 \
-  --output docs/stt-mobile-benchmark/data/kcsc/WAV/generated/two-speakers-60s.wav
-```
-
-길이를 제한하면 해당 시점 이후의 정답 구간은 제외되고, 경계에 걸친 마지막 구간의 종료 시각은
-생성된 음성 길이에 맞춰 잘린다.
-
-다른 대화 쌍을 사용할 때는 같은 세션 접두사(예: `A0068_S0001_0`)를 가진 두 파일을 지정한다.
-
-```bash
-uv run python docs/stt-mobile-benchmark/build_two_speaker_audio.py \
-  --speaker-a docs/stt-mobile-benchmark/data/kcsc/WAV/A0068_S0001_0_G0135.wav \
-  --speaker-b docs/stt-mobile-benchmark/data/kcsc/WAV/A0068_S0001_0_G0136.wav \
-  --output docs/stt-mobile-benchmark/data/kcsc/WAV/generated/A0068_S0001_two-speakers.wav
-```
-
-입력은 같은 sample rate의 16-bit mono PCM WAV여야 한다. 원본 정답은 기본적으로 각 WAV에
-대응하는 `data/kcsc/TXT/<파일명>.txt`에서 찾는다. 다른 위치의 정답은 `--reference-a`,
-`--reference-b`로 지정하고, 합친 정답 경로는 `--reference-output`으로 변경할 수 있다.
-생성된 파일은 KCSC의 연구 목적 이용 조건을 그대로 따르며 generated 폴더는 Git에 포함되지
-않는다. 기존 WAV 또는 TXT는 실수로 덮어쓰지 않으며, 의도적으로 다시 만들 때만 `--force`를
-사용한다.
 
 
 

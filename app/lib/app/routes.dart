@@ -5,25 +5,24 @@
 library;
 
 abstract final class AppRoutes {
-  /// A-1 스플래시.
+  /// A-1 스플래시. 따로 있던 A-2 로그인을 합쳤다. 로그인이 필요하면 로고
+  /// 아래에 구글 로그인 버튼을 띄운다.
   static const splash = '/splash';
 
-  /// A-2 로그인.
-  static const login = '/login';
-
-  /// A-3 회원가입과 동의.
-  static const signup = '/signup';
+  /// 로그인이 풀린 것을 이미 알고 스플래시로 돌아갈 때 쓴다. 로그아웃, 탈퇴,
+  /// 세션이 풀렸을 때다. 복원을 확인하지 않고 곧바로 로그인 버튼을 띄운다.
+  static const signIn = '/splash?signedOut=true';
 
   /// 구글 로그인 뒤 받는 필수 동의.
   ///
-  /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다. 로그인
-  /// 화면이 `extra` 로 등록 정보를 함께 넘긴다.
-  static const googleConsent = '/login/consent';
+  /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다.
+  /// 스플래시의 로그인 버튼이 `extra` 로 등록 정보를 함께 넘긴다.
+  static const googleConsent = '/consent';
 
   /// B-1 처음 오셨네요.
   static const onboarding = '/onboarding';
 
-  /// B-2 ~ B-8 환자 정보 최초 입력.
+  /// B-2 ~ B-7 환자 정보 최초 입력.
   static const profileCreate = '/profile/create';
 
   /// 어르신을 더 등록하는 입력. 최초 입력과 같은 화면이며, 처음 오셨네요를
@@ -66,8 +65,26 @@ abstract final class AppRoutes {
 
   static String reportChangesOf(String reportId) => '/report/$reportId/changes';
 
+  /// G-2 에서 여는 이야기 수정. 변경 사항 확인이 `extra` 로 고칠 이야기를
+  /// 넘기고, `수정 완료` 를 누르면 고친 값을 돌려받는다.
+  ///
+  /// `/report/story-edit` 처럼 두면 `/report/:reportId` 가 먼저 잡아 리포트
+  /// 화면이 열린다. 변경 사항 확인 아래에 둔다.
+  static const storyEdit = '/report/:reportId/changes/story';
+
+  static String storyEditOf(String reportId) =>
+      '/report/$reportId/changes/story';
+
   /// 프로필 설정. 하단 탭의 팝업 메뉴에서 들어간다.
   static const profile = '/profile';
+
+  /// 지금 보고 있는 어르신의 이름과 기본 정보 수정. 프로필 설정에서 들어간다.
+  /// 피그마 설계 없음.
+  static const profileEditBasic = '/profile/edit/basic';
+
+  /// 지금 보고 있는 어르신의 세부 정보 네 항목 수정. 프로필 설정에서 들어간다.
+  /// 피그마 설계 없음.
+  static const profileEditDetails = '/profile/edit/details';
 
   /// 함께하는 소중한 분. 홈 상단의 어르신 알약을 누르면 들어온다. 피그마 설계 없음.
   static const profileSwitch = '/profiles';

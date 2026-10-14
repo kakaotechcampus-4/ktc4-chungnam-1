@@ -5,17 +5,18 @@ import 'package:go_router/go_router.dart';
 import '../data/auth_api.dart';
 import '../data/providers.dart';
 import '../features/auth/google_consent_screen.dart';
-import '../features/auth/login_screen.dart';
-import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/home/notice_screen.dart';
+import '../features/profile/profile_basic_edit_screen.dart';
 import '../features/profile/profile_delete_screen.dart';
+import '../features/profile/profile_details_edit_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/profile_switch_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
 import '../features/report/changes_screen.dart';
+import '../features/report/story_edit_screen.dart';
 import '../features/report/report_list_screen.dart';
 import '../features/report/report_screen.dart';
 import '../features/review/comfort_screen.dart';
@@ -35,28 +36,24 @@ GoRouter buildRouter() {
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        builder: (context, state) => const SplashScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.login,
-        builder: (context, state) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.signup,
-        builder: (context, state) => const SignupScreen(),
+        builder: (context, state) => SplashScreen(
+          // 같은 경로로 다시 오면 화면을 새로 만들어 복원 확인을 다시 한다.
+          key: ValueKey(state.uri.toString()),
+          signedOut: state.uri.queryParameters['signedOut'] == 'true',
+        ),
       ),
       GoRoute(
         path: AppRoutes.googleConsent,
         builder: (context, state) {
           final pending = state.extra;
-          // 등록 정보는 로그인 화면에서만 넘어온다. 주소로 직접 들어오거나 앱을
+          // 등록 정보는 스플래시의 로그인 버튼에서만 넘어온다. 주소로 직접 들어오거나 앱을
           // 다시 띄우면 비어 있으므로, 빈 동의 화면을 보여주지 않고 되돌린다.
           if (pending is! ConsentRequiredResult) {
             return Scaffold(
               appBar: const AppTopBar(title: '약관 동의'),
               body: ErrorStateView(
                 message: '로그인 정보가 없어요.\n로그인부터 다시 해주세요.',
-                onRetry: () => context.go(AppRoutes.login),
+                onRetry: () => context.go(AppRoutes.signIn),
               ),
             );
           }
@@ -125,8 +122,30 @@ GoRouter buildRouter() {
         ),
       ),
       GoRoute(
+        path: AppRoutes.storyEdit,
+        builder: (context, state) {
+          // 고칠 이야기는 변경 사항 확인에서만 넘어온다. 주소로 직접 들어오거나
+          // 앱을 다시 띄우면 비어 있다.
+          final initial = state.extra;
+          if (initial is! StoryDraft) {
+            return const _NeedsProfile(child: StoryEditMissingView());
+          }
+          return _NeedsProfile(child: StoryEditScreen(initial: initial));
+        },
+      ),
+      GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profileEditBasic,
+        builder: (context, state) =>
+            const _NeedsProfile(child: ProfileBasicEditScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.profileEditDetails,
+        builder: (context, state) =>
+            const _NeedsProfile(child: ProfileDetailsEditScreen()),
       ),
       GoRoute(
         path: AppRoutes.profileSwitch,

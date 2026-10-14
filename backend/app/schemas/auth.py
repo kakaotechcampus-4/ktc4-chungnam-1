@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StrictBool, model_validator
 
 from app.schemas.common import ApiModel
 
@@ -26,6 +26,79 @@ class ConsentRequest(ApiModel):
     # 나중에 수정할 수 있어야 한다(data-contracts.md `Account`). 길이는 API 1-2와
     # `users.display_name` 에 맞춘다.
     display_name: str | None = Field(default=None, alias="displayName", max_length=50)
+
+
+class ConsentChangeRequest(ApiModel):
+    """선택 동의 변경 (API 1-6). 보낸 항목만 바꾼다.
+
+    동의는 명시적인 `true`/`false`만 받는다. `"yes"`나 `1`을 동의로 바꿔 읽지 않는다.
+    """
+
+    service_improvement: StrictBool | None = Field(
+        default=None, alias="serviceImprovement"
+    )
+    push_notification: StrictBool | None = Field(
+        default=None, alias="pushNotification"
+    )
+    # 필수 동의는 바꿀 수 없다. 형식 오류(`INVALID_REQUEST`)와 구분해
+    # `REQUIRED_CONSENT_NOT_CHANGEABLE`로 알리려고 받기만 한다.
+    service_data: bool | None = Field(
+        default=None,
+        alias="serviceData",
+        description="바꿀 수 없다. 보내면 422 REQUIRED_CONSENT_NOT_CHANGEABLE",
+    )
+    sensitive_data: bool | None = Field(
+        default=None,
+        alias="sensitiveData",
+        description="바꿀 수 없다. 보내면 422 REQUIRED_CONSENT_NOT_CHANGEABLE",
+    )
+
+    @model_validator(mode="after")
+    def _optional_consents_are_not_null(self) -> "ConsentChangeRequest":
+        for field in ("service_improvement", "push_notification"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field}는 null일 수 없습니다.")
+        return self
+
+    def submitted(self) -> dict[str, bool | None]:
+        """보낸 항목을 동의 이름(`serviceImprovement` 등)으로 돌려준다."""
+        fields = type(self).model_fields
+        return {
+            fields[field].alias or field: getattr(self, field)
+            for field in self.model_fields_set
+        }
+
+
+WithdrawalReason = Literal[
+    "conditionChanged",
+    "cardsNotHelpful",
+    "infrequentVisits",
+    "hardToUse",
+    "recordingBurden",
+    "other",
+]
+
+
+class WithdrawalRequest(ApiModel):
+    """탈퇴 이유 (API 1-5). 고르지 않았으면 본문 없이 탈퇴한다.
+
+    계정과 연결하지 않고 `withdrawal_feedback`에 저장한다. `otherText`는 보호자가 쓴
+    글이므로 로그와 오류 메시지에 넣지 않는다.
+    """
+
+    # 탈퇴 화면의 이유 순서대로 보낸다.
+    reasons: list[WithdrawalReason] = Field(min_length=1)
+    other_text: str | None = Field(default=None, alias="otherText")
+
+    @model_validator(mode="after")
+    def _other_text_matches_reasons(self) -> "WithdrawalRequest":
+        if len(set(self.reasons)) != len(self.reasons):
+            raise ValueError("같은 탈퇴 이유를 두 번 보냈습니다.")
+        if ("other" in self.reasons) != (self.other_text is not None):
+            raise ValueError("otherText는 other를 고른 경우에만 보냅니다.")
+        if self.other_text is not None and not self.other_text.strip():
+            raise ValueError("otherText는 비울 수 없습니다.")
+        return self
 
 
 class ConsentItemResponse(ApiModel):
