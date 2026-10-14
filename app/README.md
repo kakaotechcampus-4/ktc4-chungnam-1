@@ -81,7 +81,9 @@
 | `/album` | 일대기 표지. 책을 누르면 표지가 넘어가며 `/album/book`으로 간다 | H |
 | `/album/book` | 일대기 첫 장. 어르신 사진, 이름, 생년월일, 분류 여섯 칸과 `기타`, 최근 추가된 이야기 세 편 | H |
 | `/album/category/:category` | 한 분류의 목차. 세부 정보 이야기를 먼저 두고 나머지는 먼저 담은 것부터다 | H |
-| `/album/category/:category/story/:storyId` | 이야기 한 편. 이전, 다음 이야기는 목차 순서를 따르고 뒤로 가면 목차다 | H |
+| `/album/category/:category/story/:storyId` | 이야기 한 편. 이전, 다음 이야기는 목차 순서를 따르고 뒤로 가면 목차다. 오른쪽 위 연필로 고치고 휴지통으로 지운다(확인 창). 세부 정보 이야기는 휴지통이 없고 연필이 `/profile/edit/details`를 연다 | H |
+| `/album/new` | 이야기 추가하기. 분류, 제목(100자 이하), 내용, 기본 그림 다섯 장 중 하나. 그림은 하나를 무작위로 미리 고른다. 쓰던 내용이 있으면 뒤로 갈 때 묻는다 | 설계 없음 |
+| `/album/edit/:storyId` | 이야기 수정하기. 추가와 같은 화면이며 분류를 바꾸면 새 분류의 목차 위에서 다시 연다 | 설계 없음 |
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
 
@@ -91,7 +93,7 @@ B-7 사진 올리기는 기기 앨범에서 최대 5장을 고르고, 고른 사
 
 B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했어요` → `말씀을 글로 옮기고 있어요` 순서로 나눠 보여준다. 옮기는 중에는 마이크와 방법 바꾸기를 누를 수 없다. 이를 위해 [speech_input.dart](lib/features/profile_setup/speech_input.dart)의 `SpeechInput`을 녹음 시작(`start`)과 녹음 끝(`SpeechRecording.finish`)으로 나눴다. 이 형태는 FE가 화면 상태에 맞춰 둔 임시 인터페이스이며 AI 확정이 필요하다. 지금은 목이 1.2초 뒤 결과를 돌려준다.
 
-H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `LifeFact`를 직접 보지 않고 표시용 `LifeStory`만 본다. 이야기는 세부 정보 네 항목(하시던 일→일, 고향, 취미, 가족)에서 만든 것과 목 이야기([life_story_mock.dart](lib/features/life_story/life_story_mock.dart))를 합친다. 분류와 기본 이미지 번호는 API 명세에 없는 FE 안이라 목 이야기는 아직 `assets/mock/profile.json`에 넣지 않았다. 정렬은 생애 시기 대신 담은 날짜순이며, 세부 정보 이야기는 날짜가 없어 목차 맨 앞에 두고 날짜를 표시하지 않는다. 기본 이미지는 분류마다 다섯 장(`assets/images/life-story-<분류>-<1~5>.webp`)이고 파일이 없으면 분류 아이콘과 `가족 3` 같은 이름으로 자리를 채운다. 세부 정보 이야기의 이미지 번호는 저장할 곳이 없어 어르신 ID와 항목 이름으로 계산한다(`detailImageNumber`). 서버 조회(2-3)는 아직 붙이지 않았다.
+H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `LifeFact`를 직접 보지 않고 표시용 `LifeStory`만 본다. 이야기는 세부 정보 네 항목(하시던 일→일, 고향, 취미, 가족)에서 만든 것과 목 이야기([life_story_mock.dart](lib/features/life_story/life_story_mock.dart))를 합친다. 분류와 기본 이미지 번호는 API 명세에 없는 FE 안이라 목 이야기는 아직 `assets/mock/profile.json`에 넣지 않았다. 정렬은 생애 시기 대신 담은 날짜순이며, 세부 정보 이야기는 날짜가 없어 목차 맨 앞에 두고 날짜를 표시하지 않는다. 기본 이미지는 분류마다 다섯 장(`assets/images/life-story-<분류>-<1~5>.webp`)이고 파일이 없으면 분류 아이콘과 `가족 3` 같은 이름으로 자리를 채운다. 세부 정보 이야기의 이미지 번호는 저장할 곳이 없어 어르신 ID와 항목 이름으로 계산한다(`detailImageNumber`). 서버 조회(2-3)는 아직 붙이지 않았다. 추가, 수정, 삭제한 이야기는 분류와 삭제 API가 없어 서버에 보내지 않고 어르신 목록처럼 **앱이 켜져 있는 동안만** 어르신별로 기억한다(`lifeStoryEditsProvider`). 로그아웃과 탈퇴 때 `forgetCareProfiles`가 함께 지운다.
 
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
