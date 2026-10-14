@@ -30,8 +30,8 @@
 | 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 | 바로 |
 | 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 | 바로 |
 | 2-8 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
-| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 | 사진 동의 설계 후(미정 3) |
-| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 | 3-1과 함께 |
+| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 완료 | |
+| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 완료 | |
 | 3-3 | | 앨범에서 사진 설명 수정 | 수정 API 미정 | 별도 승인 절차는 두지 않음 |
 | 8-4 | `POST` | (내부) `/internal/v1/image-analyses` | 신규 | 사진 동의 설계 후(미정 3). 대기열 `PhotoAnalysisQueue`는 준비됨 |
 
@@ -61,7 +61,7 @@
 2. 2-2, 2-1, 2-3, 2-4, 2-8로 프로필 흐름을 만든다. 사진은 3-1 전까지 항상 빈 배열이다.
 3. 2-6, 2-7
 4. 1-6, 1-5 탈퇴 이유
-5. 사진 동의 설계 후 3-1, 3-2와 2-3의 사진 URL. 설계 전에는 시작하지 않는다([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분))
+5. 3-1, 3-2와 2-3의 사진 URL (완료)
 6. 사진 동의 설계 후 8-4 처리 함수와 worker 실행 진입점
 
 ## 장별 공통 규칙
@@ -378,8 +378,9 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 프로필 사진(`session_id IS NULL`)이 이미 5장이면 409다. 동시 업로드로 5장을 넘지 않게 프로필 행을 `FOR UPDATE`로 잠그고 센다.
 - 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장. 행을 저장하지 못하면 `storage.delete`로 올린 객체를 지운다.
-- 행을 넣으면 8-4 worker가 다음 주기에 분석한다. 별도 호출은 없다.
-- **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
+- 행을 넣으면 8-4 worker가 다음 주기에 분석한다. 별도 호출은 없다. worker는 아직 연결하지 않았다(8-4 구현 메모).
+- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 구현: [routes/profile_photos.py](../../app/api/routes/profile_photos.py), [services/profile_photos.py](../../app/services/profile_photos.py), 테스트 [test_profile_photos.py](../../tests/test_profile_photos.py)
 
 <br>
 

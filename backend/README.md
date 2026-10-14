@@ -282,7 +282,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 | --- | --- | --- |
 | `GET` | `/api/v1/profiles` | 현재 계정의 프로필 목록. 만든 순서이며 입력 중인 프로필도 담는다 |
 | `POST` | `/api/v1/profiles` | 기본 정보로 프로필 생성. `201`, `setupStatus`는 `inProgress` |
-| `GET` | `/api/v1/profiles/{profileId}` | 프로필과 생애 정보 |
+| `GET` | `/api/v1/profiles/{profileId}` | 프로필, 생애 정보와 프로필 사진 |
 | `PATCH` | `/api/v1/profiles/{profileId}` | 기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정 |
 | `DELETE` | `/api/v1/profiles/{profileId}` | 프로필 하나와 그 아래 기록 삭제. `204` |
 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 일대기에서 생애 정보 추가. `201` |
@@ -294,7 +294,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - 빈 문자열과 공백만 있는 값은 이름, 세부 정보와 생애 정보의 제목과 내용에서 `INVALID_REQUEST`(422)다. DB CHECK도 막지만 요청 검증이 먼저 거절한다.
 - 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
-- 응답의 `photos`는 3-1 전까지 항상 빈 배열이다. 사진 보관과 분석 동의 설계(미정 3) 후 3-1, 3-2와 함께 `ProfilePhoto`와 `imageUrl`을 붙인다.
+- 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
 - `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
 
 ## AI 음성 분석 연동
@@ -382,7 +382,19 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 
 ## 사진 저장 (S3)
 
-PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가한다. 사진 API 라우트 연결은 아직 구현되지 않았다. 아래는 라우트 구현 시 적용할 사용 순서다.
+PR #92가 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가했고, 프로필 사진 API(3-1, 3-2)가 이 어댑터로 S3에 올린다. 라우트는 [profile_photos.py](app/api/routes/profile_photos.py), 저장은 [services/profile_photos.py](app/services/profile_photos.py)에 있다. 면회 사진(5-2)은 아직 연결하지 않았다.
+
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `POST` | `/api/v1/profiles/{profileId}/photos` | `multipart/form-data`의 `image` 한 장을 S3에 올리고 `analysisStatus = pending`인 행을 만든다. `201` |
+| `GET` | `/api/v1/profile-photos/{photoId}` | 프로필 사진 하나와 새 `imageUrl`. 분석이 끝날 때까지 앱이 폴링한다 |
+
+- 프로필당 5장이다(`PHOTO_LIMIT_EXCEEDED`, 409). 면회 사진은 세지 않는다. 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 세고, 행을 넣을 때 프로필 행을 `FOR UPDATE`로 잠근 뒤 다시 센다. S3 업로드 동안에는 잠그지 않는다.
+- 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다. 행이 없어 trigger가 넣어 주지 않기 때문이다.
+- 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져갈 대상이지만, worker는 아직 연결하지 않았다(위 worker 절의 `PhotoAnalysisQueue`).
+- 면회 사진과 다른 계정의 사진은 3-2에서 없는 사진과 같은 `PROFILE_PHOTO_NOT_FOUND`(404)다.
+
+아래는 3-1의 처리 순서이며 5-2도 같은 순서를 따른다.
 
 프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
@@ -405,7 +417,7 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 2026-10-05 PM 수정안은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에 있으며 PR #92에서 검토한다.
 
-- 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
+- 3-1은 사진 보관 동의를 따로 확인하지 않고 받는다(2026-10-14에 보관 동의 확인 조건을 뺐다). ADR-001 개정안의 보관 동의 구분과 다르므로, 실제 사용자 사진을 받기 전에 PM이 ADR-001과 맞춘다. 등록 사진은 해당 사진 삭제, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
 - 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
 - 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.
