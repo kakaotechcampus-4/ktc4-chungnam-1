@@ -146,7 +146,7 @@
 | `patient-male.webp`, `patient-female.webp` | 어르신 기본 프로필 사진. 성별에 맞춰 고른다 |
 | `family.webp` | 세부 정보 입력에서 첨부하는 가족 사진 |
 | `visitation.webp` | 면회 인증샷 |
-| `life-story-<분류>-<1~5>.webp` | 일대기 이야기의 기본 이미지. 분류는 `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`이고 분류마다 다섯 장이다. 가로 800px, 4:3, 그림체 |
+| `life-story-<분류>-<1~5>.webp` | 일대기 이야기의 기본 이미지. 분류는 `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`이고 분류마다 다섯 장이다. 4:3, 가로 550~580px(생성한 원본 크기 그대로, 늘리지 않음). 펠트 질감의 사물과 풍경이며 사람과 글자가 없다 |
 
 - 모두 `app/assets/images/`에 두고 `pubspec.yaml`에 선언한다.
 - 형식은 **WebP**를 쓴다. 파일 이름은 영문 소문자와 하이픈만 쓴다.
