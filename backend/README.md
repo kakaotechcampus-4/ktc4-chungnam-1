@@ -382,7 +382,14 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 
 ## 사진 저장 (S3)
 
-PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가한다. 사진 API 라우트 연결은 아직 구현되지 않았다. 아래는 라우트 구현 시 적용할 사용 순서다.
+PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가한다. 아래는 사진 API 라우트가 따르는 사용 순서다.
+
+면회 사진(5-2) `POST /api/v1/visit-sessions/{sessionId}/photo`는 이 순서로 구현했다. 라우트는 [visit_sessions.py](app/api/routes/visit_sessions.py), 저장은 [services/visit_photos.py](app/services/visit_photos.py)에 있다.
+
+- `multipart/form-data`의 `image` 한 장을 받아 `201`과 `VisitPhoto`를 돌려준다. 회차당 한 장(`uq_photos_session`)이며, 다시 올리면 기존 행을 지우고 새 행을 넣는다. 지운 행의 객체 키는 trigger가 S3 삭제 대기열에 넣는다.
+- 평가 전 회차만 받는다(`INVALID_SESSION_STATE`, 409). 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 확인하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. S3 업로드 동안에는 잠그지 않는다.
+- 행을 넣지 못하면(그 사이 평가 저장이나 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 이미지 분석을 하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만 사진 분석 대기열은 `session_id IS NULL`인 행만 가져간다.
 
 프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
@@ -406,6 +413,7 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 2026-10-05 PM 수정안은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에 있으며 PR #92에서 검토한다.
 
 - 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
+- 5-2는 사진 보관 동의를 따로 확인하지 않고 받는다. 위 보관 동의 확인과 다르므로, 실제 사용자 사진을 받기 전에 PM이 ADR-001과 맞춘다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
 - 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
 - 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.
