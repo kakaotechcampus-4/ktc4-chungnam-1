@@ -51,6 +51,7 @@ async def create_card_generation(
         profile_id,
         model=settings.card_generation_model,
         prompt_version=settings.card_generation_prompt_version,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
     return CardGenerationStatus(status="running")
 
@@ -64,15 +65,24 @@ async def create_card_generation(
 async def get_card_generation_status(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
     profile_id: Annotated[UUID, Path()],
 ) -> CardGenerationStatus:
     """홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`.
+
+    worker가 가져가지 않거나 멈춘 작업은 정해진 시간이 지나면 `failed`로 바뀜. 앱이 다시 요청할 수 있음.
 
     API 명세 4-2
     """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
-    return CardGenerationStatus(status=await generation_status(connection, profile_id))
+    return CardGenerationStatus(
+        status=await generation_status(
+            connection,
+            profile_id,
+            start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+        )
+    )
 
 
 @router.get(
