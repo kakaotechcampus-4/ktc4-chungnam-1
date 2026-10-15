@@ -136,9 +136,9 @@ void main() {
       expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이미 반영을 마친 회차다');
     });
 
-    testWidgets('보류된 일대기는 안내를 보여준다', (tester) async {
+    testWidgets('일대기는 책 표지부터 보여준다', (tester) async {
       await openAt(tester, AppRoutes.album);
-      expect(find.text('화면 설계 중입니다'), findsOneWidget);
+      expect(find.text('쌓아온 이야기'), findsOneWidget);
     });
 
     testWidgets('없는 경로는 오류 안내를 보여준다', (tester) async {
