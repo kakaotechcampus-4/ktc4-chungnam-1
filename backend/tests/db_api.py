@@ -92,12 +92,14 @@ class Caregiver:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> Response:
         return request(
             self.api.app,
             method,
             path,
             json=json,
+            files=files,
             headers={"Authorization": f"Bearer {self.token}"},
         )
 
