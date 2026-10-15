@@ -118,7 +118,7 @@ class ServerVisitApi implements VisitApi {
 }
 
 /// 6-2 가 이미 끝났거나 실패로 끝난 회차라고 거절했는지. 다시 보내도 받지
-/// 않으므로 기기의 녹음을 지우고 마친다.
+/// 않으므로 기기의 녹음을 다시 보낼 목록에서 빼고 마친다. 파일은 남긴다.
 bool isClosedAnalysis(ApiServerFailure failure) =>
     failure.statusCode == 409 &&
     (failure.errorCode == 'ANALYSIS_ALREADY_COMPLETED' ||

@@ -61,7 +61,8 @@ class SubmissionState {
 /// 면회를 마치고 서버에 남기는 일. API 6절의 순서를 따른다.
 ///
 /// 평가(6-1)를 저장한 뒤 녹음(6-2)을 보낸다. 평가를 저장한 뒤 녹음만 실패하면
-/// 다시 누를 때 녹음만 보낸다. 서버가 녹음을 받으면 기기의 파일을 지운다.
+/// 다시 누를 때 녹음만 보낸다. 서버가 녹음을 받아도 기기의 파일은 지우지 않고
+/// 보냈다고만 적는다([PendingUploads.markUploaded]).
 /// 회차가 바뀌면 처음부터 다시 시작한다.
 class SubmissionController extends Notifier<SubmissionState> {
   /// 지금 상태가 가리키는 회차. 다른 회차를 보내면 처음부터 시작한다.
@@ -124,14 +125,22 @@ class SubmissionController extends Notifier<SubmissionState> {
       );
       if (!ref.mounted) return false;
 
-      // 서버가 받았으니 기기에 둘 까닭이 없다. 파일과 기록을 함께 지운다.
-      // 지우다 실패해도 제출은 끝났다.
+      // 서버가 받았으니 다시 보낼 목록에서만 뺀다. 서버 처리에 문제가 생기면
+      // 되살릴 수 있게 파일과 계정, 회차 연결은 남긴다. 적다 실패해도 제출은
+      // 끝났다.
       try {
         await ref
             .read(pendingUploadsProvider)
-            .remove(sessionId, audioPath: audioPath);
+            .markUploaded(
+              PendingUpload(
+                sessionId: sessionId,
+                audioPath: audioPath,
+                participantCount: participantCount,
+              ),
+            );
       } on Exception {
-        // 다음에 다시 지울 길은 아직 없다. 남은 파일은 앱 전용 공간에 있다.
+        // 기록이 남아 있으면 `음성 다시 보내기` 가 다시 보내고, 서버가 이미 받은
+        // 회차라고 거절하면 그때 보냈다고 적는다.
       }
       if (!ref.mounted) return false;
       state = SubmissionState(evaluationSaved: true, analysisId: analysisId);
@@ -165,8 +174,8 @@ class SubmissionController extends Notifier<SubmissionState> {
   /// 녹음을 보내고 분석 작업 ID 를 받는다.
   ///
   /// 이미 끝났거나 실패로 끝난 회차라는 거절은 다시 보내도 받지 않는다. 그때는
-  /// 분석 작업 ID 없이 끝낸 것으로 보고 파일을 지운다. 결과는 홈의 회차 상태가
-  /// 알린다.
+  /// 분석 작업 ID 없이 끝낸 것으로 보고 보냈다고 적는다. 파일은 남긴다. 결과는
+  /// 홈의 회차 상태가 알린다.
   Future<String?> _sendAudio(
     String sessionId, {
     required String audioPath,

@@ -148,7 +148,7 @@ void main() {
   });
 
   group('녹음 제출', () {
-    test('평가를 저장한 뒤 녹음과 참여자 수를 보내고 파일을 지운다', () async {
+    test('평가를 저장한 뒤 녹음과 참여자 수를 보내고 파일은 남긴다', () async {
       final api = FakeVisitApi();
       final files = FakePendingUploads();
       final container = await afterVisit(api, files: files);
@@ -161,7 +161,8 @@ void main() {
       expect(api.audio?.sessionId, FakeVisitApi.sessionId);
       expect(api.audio?.audioPath, path);
       expect(api.audio?.participantCount, 2);
-      expect(files.removedPaths, [path]);
+      expect(files.uploaded[FakeVisitApi.sessionId]?.audioPath, path);
+      expect(files.removedPaths, isEmpty, reason: '서버가 받아도 원본은 남긴다');
       expect(
         container.read(submissionProvider).analysisId,
         FakeVisitApi.analysisId,
@@ -178,16 +179,17 @@ void main() {
       var state = container.read(submissionProvider);
       expect(state.evaluationSaved, isTrue);
       expect(state.failure, SubmissionFailure.network);
-      expect(files.removedPaths, isEmpty, reason: '다시 보낼 파일은 남긴다');
+      expect(files.uploaded, isEmpty, reason: '다시 보낼 목록에 남긴다');
 
       api.audioFailure = null;
       expect(await controller.submit(), isTrue);
       expect(api.calls.where((c) => c == 'evaluation'), hasLength(1));
       expect(api.calls.where((c) => c == 'audio'), hasLength(2));
-      expect(files.removedPaths, hasLength(1));
+      expect(files.uploaded, hasLength(1));
+      expect(files.removedPaths, isEmpty);
     });
 
-    test('이미 끝난 회차라고 거절되면 분석 작업 없이 마치고 파일을 지운다', () async {
+    test('이미 끝난 회차라고 거절되면 분석 작업 없이 마치고 파일은 남긴다', () async {
       final api = FakeVisitApi(
         audioFailure: const ApiServerFailure(
           statusCode: 409,
@@ -202,7 +204,8 @@ void main() {
         isTrue,
       );
       expect(container.read(submissionProvider).analysisId, isNull);
-      expect(files.removedPaths, hasLength(1));
+      expect(files.uploaded, hasLength(1));
+      expect(files.removedPaths, isEmpty);
     });
 
     test('참여자 수를 확인받지 않았으면 녹음을 보내지 않는다', () async {
@@ -221,7 +224,7 @@ void main() {
   });
 
   group('기기에 남기는 녹음 기록', () {
-    test('녹음을 끝내면 회차 ID 로 적고, 서버가 받으면 지운다', () async {
+    test('녹음을 끝내면 회차 ID 로 적고, 서버가 받으면 보냈다고만 적는다', () async {
       final api = FakeVisitApi();
       final files = FakePendingUploads();
       final container = await afterVisit(api, files: files);
@@ -233,8 +236,11 @@ void main() {
 
       await container.read(submissionProvider.notifier).submit();
 
-      expect(files.saved, isEmpty);
-      expect(files.removedPaths, [visit.recordingPath]);
+      expect(files.saved, isEmpty, reason: '다시 보낼 목록에서 뺀다');
+      final uploaded = files.uploaded[FakeVisitApi.sessionId];
+      expect(uploaded?.audioPath, visit.recordingPath);
+      expect(uploaded?.participantCount, 2);
+      expect(files.removedPaths, isEmpty);
     });
 
     test('녹음을 보내지 못하면 기록을 남긴다', () async {

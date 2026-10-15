@@ -54,6 +54,7 @@ void main() {
         'sessionId': 's1',
         'fileName': 'visit-a.wav',
         'participantCount': 2,
+        'uploaded': false,
       },
     ]);
   });
@@ -83,33 +84,48 @@ void main() {
     expect(await store.find('s1'), isNull);
   });
 
-  test('지우면 녹음 파일과 기록을 함께 지운다', () async {
-    final keep = await wav('visit-a.wav');
-    final drop = await wav('visit-b.wav');
-    await store.save(
-      PendingUpload(sessionId: 's1', audioPath: keep, participantCount: 2),
+  test('보냈다고 적으면 다시 보낼 목록에서만 빠지고 파일과 연결은 남는다', () async {
+    final sent = await wav('visit-a.wav');
+    final waiting = await wav('visit-b.wav');
+    final upload = PendingUpload(
+      sessionId: 's1',
+      audioPath: sent,
+      participantCount: 2,
     );
+    await store.save(upload);
     await store.save(
-      PendingUpload(sessionId: 's2', audioPath: drop, participantCount: 2),
+      PendingUpload(sessionId: 's2', audioPath: waiting, participantCount: 3),
     );
 
-    await store.remove('s2');
+    await store.markUploaded(upload);
 
-    expect(await File(drop).exists(), isFalse);
-    expect(await File(keep).exists(), isTrue);
-    expect(await store.find('s2'), isNull);
-    expect(await store.find('s1'), isNotNull);
-
-    await store.remove('s1');
-    expect(await record().exists(), isFalse, reason: '남은 기록이 없으면 지운다');
+    expect(await store.find('s1'), isNull, reason: '다시 보내지 않는다');
+    expect(await store.find('s2'), isNotNull);
+    expect(await File(sent).exists(), isTrue, reason: '원본은 남긴다');
+    expect(
+      (jsonDecode(await record().readAsString()) as List).firstWhere(
+        (e) => e['sessionId'] == 's1',
+      ),
+      {
+        'accountId': null,
+        'sessionId': 's1',
+        'fileName': 'visit-a.wav',
+        'participantCount': 2,
+        'uploaded': true,
+      },
+    );
   });
 
-  test('기록이 없어도 넘긴 파일은 지운다', () async {
+  test('기록이 없어도 보냈다고 적어 계정과 회차 연결을 남긴다', () async {
     final path = await wav('visit-a.wav');
 
-    await store.remove('s1', audioPath: path);
+    await store.markUploaded(
+      PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
+    );
 
-    expect(await File(path).exists(), isFalse);
+    expect(await File(path).exists(), isTrue);
+    expect(await store.find('s1'), isNull);
+    expect(jsonDecode(await record().readAsString()), hasLength(1));
   });
 
   test('읽지 못하는 기록은 빈 것으로 보고 면회를 막지 않는다', () async {
@@ -135,10 +151,23 @@ void main() {
 
       final other = storeOf('account-b');
       expect(await other.find('s1'), isNull);
-      await other.remove('s1');
+      await other.forgetAccount('account-b');
       expect(await File(path).exists(), isTrue);
 
       expect(await storeOf('account-a').find('s1'), isNotNull);
+    });
+
+    test('탈퇴하면 이미 보낸 녹음도 지운다', () async {
+      final path = await wav('visit-a.wav');
+      final mine = storeOf('account-a');
+      await mine.markUploaded(
+        PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
+      );
+
+      await mine.forgetAccount('account-a');
+
+      expect(await File(path).exists(), isFalse);
+      expect(await record().exists(), isFalse);
     });
 
     test('탈퇴한 계정의 녹음과 기록만 지운다', () async {

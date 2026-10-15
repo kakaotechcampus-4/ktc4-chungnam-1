@@ -1,12 +1,14 @@
-/// 서버에 아직 보내지 못한 면회 녹음을 회차별로 기억한다.
+/// 면회 녹음을 회차별로 기억한다.
 ///
 /// 앱을 다시 켜도 `음성 다시 보내기` 가 녹음 파일과 참여자 수를 찾을 수 있게,
 /// 녹음 파일 옆에 작은 기록(`pending-uploads.json`)을 둔다. 담는 것은 계정 ID,
-/// 회차 ID, 파일 이름, 참여자 수뿐이다. 어르신 이름이나 대화 내용은 담지 않는다.
+/// 회차 ID, 파일 이름, 참여자 수, 보냈는지뿐이다. 어르신 이름이나 대화 내용은
+/// 담지 않는다.
 ///
-/// 기록은 녹음 파일과 함께 생기고 함께 지운다. 서버가 녹음을 받았거나(API 6-2
-/// `202`) 다시 받지 않는 회차면 둘 다 지운다. 서버가 받은 직후 지울지, 전사문을
-/// 저장할 때까지 둘지는 아직 정하지 않았다(PR #117 리뷰).
+/// 서버가 녹음을 받았거나(API 6-2 `202`) 다시 받지 않는 회차여도 녹음 파일과
+/// 기록은 지우지 않고 보냈다고만 적는다([PendingUploads.markUploaded]). 서버 처리에
+/// 문제가 생겼을 때 원본으로 되살리기 위해서다. 전사나 리포트가 성공하거나
+/// 실패해도 지우지 않는다(PR #117 리뷰).
 ///
 /// 기록마다 녹음한 계정을 적는다. 로그아웃해도 녹음은 남기되, 다른 계정으로
 /// 들어오면 찾지도 보내지도 못한다. 탈퇴하면 그 계정의 녹음과 기록을 지운다
@@ -45,12 +47,14 @@ abstract interface class PendingUploads {
   /// 회차의 녹음을 기억한다. 같은 회차가 있으면 바꾼다.
   Future<void> save(PendingUpload upload);
 
-  /// 회차의 녹음을 찾는다. 기록이 없거나 파일이 사라졌으면 `null` 이다.
+  /// 아직 보내지 못한 회차의 녹음을 찾는다. 기록이 없거나, 이미 보냈거나,
+  /// 파일이 사라졌으면 `null` 이다.
   Future<PendingUpload?> find(String sessionId);
 
-  /// 녹음 파일과 기록을 함께 지운다. [audioPath] 는 기록이 없을 때도 지울
-  /// 파일이다.
-  Future<void> remove(String sessionId, {String? audioPath});
+  /// 서버가 받았거나 다시 받지 않는 회차의 녹음이라고 적는다. 녹음 파일과 계정,
+  /// 회차 연결은 남기고 다시 보낼 목록에서만 뺀다. 기록이 없었으면 보낸 것으로
+  /// 새로 적는다.
+  Future<void> markUploaded(PendingUpload upload);
 
   /// 탈퇴한 계정의 녹음과 기록을 모두 지운다.
   ///
@@ -84,7 +88,14 @@ class DevicePendingUploads implements PendingUploads {
   }
 
   @override
-  Future<void> save(PendingUpload upload) async {
+  Future<void> save(PendingUpload upload) => _put(upload, uploaded: false);
+
+  @override
+  Future<void> markUploaded(PendingUpload upload) =>
+      _put(upload, uploaded: true);
+
+  /// 같은 회차의 기록을 바꿔 적는다.
+  Future<void> _put(PendingUpload upload, {required bool uploaded}) async {
     final directory = await _directory();
     final entries = await _read(directory)
       ..removeWhere((e) => e['sessionId'] == upload.sessionId && _mine(e));
@@ -94,6 +105,7 @@ class DevicePendingUploads implements PendingUploads {
       // 폴더는 앱이 다시 정하므로 이름만 둔다.
       'fileName': upload.audioPath.split(RegExp(r'[/\\]')).last,
       'participantCount': upload.participantCount,
+      'uploaded': uploaded,
     });
     await _write(directory, entries);
   }
@@ -103,6 +115,8 @@ class DevicePendingUploads implements PendingUploads {
     final directory = await _directory();
     for (final entry in await _read(directory)) {
       if (entry['sessionId'] != sessionId || !_mine(entry)) continue;
+      // 보낸 녹음은 남겨 두되 다시 보내지 않는다.
+      if (entry['uploaded'] == true) return null;
       final name = entry['fileName'];
       final count = entry['participantCount'];
       if (name is! String || count is! int) return null;
@@ -116,25 +130,6 @@ class DevicePendingUploads implements PendingUploads {
       );
     }
     return null;
-  }
-
-  @override
-  Future<void> remove(String sessionId, {String? audioPath}) async {
-    final directory = await _directory();
-    final entries = await _read(directory);
-    final paths = {
-      ?audioPath,
-      for (final e in entries)
-        if (e['sessionId'] == sessionId && _mine(e) && e['fileName'] is String)
-          '${directory.path}/${e['fileName']}',
-    };
-    for (final path in paths) {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
-    }
-
-    entries.removeWhere((e) => e['sessionId'] == sessionId && _mine(e));
-    await _write(directory, entries);
   }
 
   @override

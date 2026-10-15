@@ -52,13 +52,13 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
           );
     } on ApiServerFailure catch (failure) {
       if (!isClosedAnalysis(failure)) rethrow;
-      await _forget(uploads, sessionId);
+      await _markUploaded(uploads, pending);
       return UploadRetryOutcome.alreadyClosed;
     } on FileSystemException {
       return UploadRetryOutcome.notFound;
     }
 
-    await _forget(uploads, sessionId);
+    await _markUploaded(uploads, pending);
     if (ref.mounted) {
       ref
           .read(reportNoticeProvider.notifier)
@@ -67,12 +67,16 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
     return UploadRetryOutcome.sent;
   }
 
-  /// 서버가 받았거나 다시 받지 않는 회차다. 지우다 실패해도 결과는 같다.
-  Future<void> _forget(PendingUploads uploads, String sessionId) async {
+  /// 서버가 받았거나 다시 받지 않는 회차다. 파일은 남기고 다시 보낼 목록에서만
+  /// 뺀다. 적다 실패해도 결과는 같다.
+  Future<void> _markUploaded(
+    PendingUploads uploads,
+    PendingUpload pending,
+  ) async {
     try {
-      await uploads.remove(sessionId);
+      await uploads.markUploaded(pending);
     } on Exception {
-      // 남은 파일은 앱 전용 공간에 있다.
+      // 다음에 다시 보내면 서버가 이미 받은 회차라고 거절하고, 그때 다시 적는다.
     }
   }
 

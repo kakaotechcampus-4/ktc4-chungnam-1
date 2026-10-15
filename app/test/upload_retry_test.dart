@@ -44,7 +44,7 @@ void main() {
       participantCount: 3,
     );
 
-  test('기록한 녹음과 참여자 수를 보내고 기록을 지운다', () async {
+  test('기록한 녹음과 참여자 수를 보내고 보냈다고 적는다', () async {
     final api = FakeVisitApi();
     final uploads = withPending();
     final container = makeContainer(api, uploads);
@@ -58,6 +58,8 @@ void main() {
     expect(api.audio?.audioPath, '/synthetic/visit.wav');
     expect(api.audio?.participantCount, 3);
     expect(uploads.saved, isEmpty);
+    expect(uploads.uploaded[_sessionId]?.audioPath, '/synthetic/visit.wav');
+    expect(uploads.removedPaths, isEmpty, reason: '서버가 받아도 원본은 남긴다');
     expect(
       container.read(reportNoticeProvider),
       ReportNotice.generating,
@@ -87,7 +89,7 @@ void main() {
     expect(api.calls, isEmpty);
   });
 
-  test('이미 끝난 회차라고 거절되면 기록을 지우고 알림은 띄우지 않는다', () async {
+  test('이미 끝난 회차라고 거절되면 보냈다고 적고 알림은 띄우지 않는다', () async {
     final api = FakeVisitApi(
       audioFailure: const ApiServerFailure(
         statusCode: 409,
@@ -102,6 +104,8 @@ void main() {
       UploadRetryOutcome.alreadyClosed,
     );
     expect(uploads.saved, isEmpty);
+    expect(uploads.uploaded, contains(_sessionId));
+    expect(uploads.removedPaths, isEmpty);
     expect(container.read(reportNoticeProvider), isNull);
   });
 
