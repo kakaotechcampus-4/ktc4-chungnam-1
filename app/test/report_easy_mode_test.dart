@@ -18,7 +18,7 @@ void main() {
 
   Future<void> openReport(
     WidgetTester tester, {
-    bool fromHistory = false,
+    bool noChanges = false,
     List<CardReview>? cardReviews,
   }) async {
     tester.view.physicalSize = const Size(1236, 2751);
@@ -32,6 +32,15 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            // 확인할 제안이 없으면 변경 사항 버튼을 두지 않는다.
+            if (noChanges)
+              changeProposalProvider.overrideWith(
+                (ref) async => const ChangeProposal(
+                  sessionId: 'r-001',
+                  lifeFactProposals: [],
+                  topicProposals: [],
+                ),
+              ),
             if (cardReviews != null)
               caregiverEvaluationProvider.overrideWith(
                 (ref) async => CaregiverEvaluation(
@@ -45,12 +54,17 @@ void main() {
           ],
           child: MaterialApp(
             theme: buildAppTheme(),
-            home: ReportScreen(reportId: 'r-001', fromHistory: fromHistory),
+            home: const ReportScreen(reportId: 'r-001'),
           ),
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 80));
     });
+    await tester.pumpAndSettle();
+    // 변경 제안은 리포트를 띄운 뒤에 읽는다. 목 데이터라 실제 시간을 기다린다.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 80)),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -90,8 +104,8 @@ void main() {
       expect(easy.bottom, lessThan(primary.top), reason: '변경 사항 버튼 위에 둔다');
     });
 
-    testWidgets('기록에서 열어 하단 버튼이 없어도 화면 안에 있다', (tester) async {
-      await openReport(tester, fromHistory: true);
+    testWidgets('확인할 제안이 없어 하단 버튼이 없어도 화면 안에 있다', (tester) async {
+      await openReport(tester, noChanges: true);
 
       expect(find.text('변경 사항 확인하기'), findsNothing);
 

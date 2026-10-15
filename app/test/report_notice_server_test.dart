@@ -238,12 +238,39 @@ void main() {
     await _until(() => _info(container)?.notice == ReportNotice.ready);
   });
 
-  test('서버에 닿지 못하면 알림을 지어내지 않는다', () async {
-    final server = FakeReportServer()..offline = true;
+  test('처음 묻지 못하면 확인하지 못했다고 띄우고, 다시 물을 수 있다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+      },
+    )..offline = true;
     final container = await _signedIn(server);
 
-    await _until(() => server.requests.isNotEmpty);
+    await _until(() => _info(container) != null);
+    expect(_info(container)!.notice, ReportNotice.checkFailed);
+    expect(_info(container)!.reportId, isNull, reason: '리포트를 지어내지 않는다');
+
+    server.offline = false;
+    container.read(reportNoticeProvider.notifier).retry();
+
+    await _until(() => _info(container)?.notice == ReportNotice.ready);
+    expect(_info(container)!.reportId, 's1');
+  });
+
+  test('이미 띄운 알림은 다시 묻다 실패해도 그대로 둔다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+      },
+    );
+    final container = await _signedIn(server);
+    await _until(() => _info(container)?.notice == ReportNotice.ready);
+
+    server.offline = true;
+    container.read(reportNoticeProvider.notifier).startGenerating();
+    await _until(() => server.requests.length > 1);
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(_info(container), isNull);
+
+    expect(_info(container)!.notice, isNot(ReportNotice.checkFailed));
   });
 }

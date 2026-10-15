@@ -73,6 +73,9 @@ Future<ProviderContainer> _open(
     () => const MockRepository().loadProfile(),
   ))!;
   final container = ProviderContainer(
+    // 실패한 요청을 저절로 다시 보내지 않게 한다. 테스트가 끝난 뒤 타이머가
+    // 남지 않고, 실패 화면을 바로 확인할 수 있다.
+    retry: (_, _) => null,
     overrides: [
       FakeProfileServer(
         profiles: [
@@ -150,6 +153,20 @@ void main() {
     });
   });
 
+  testWidgets('회차 상태를 묻지 못하면 알리고, 눌러서 다시 묻는다', (tester) async {
+    final server = _completed()..offline = true;
+    await _open(tester, server, AppRoutes.home);
+
+    expect(find.text('리포트 상태를 확인하지 못했어요'), findsOneWidget);
+    expect(find.text('리포트가 도착했어요'), findsNothing);
+
+    server.offline = false;
+    await _tap(tester, find.text('리포트 상태를 확인하지 못했어요'));
+
+    expect(find.text('리포트 상태를 확인하지 못했어요'), findsNothing);
+    expect(find.text('리포트가 도착했어요'), findsOneWidget);
+  });
+
   group('앱을 떠난 사이 멈춘 면회', () {
     for (final (status, title, location) in [
       ('evaluationPending', '평가 이어서 하기', '/visit/review?session=s1'),
@@ -183,7 +200,36 @@ void main() {
 
     expect(server.count('/api/v1/visit-sessions/s1/report'), 1);
     expect(find.text('오늘의 만남'), findsOneWidget);
+    // 기록에서 들어와도 확인할 제안이 남았으면 변경 사항으로 보낸다.
+    expect(find.text('변경 사항 확인하기'), findsOneWidget);
+  });
+
+  testWidgets('확인을 마친 리포트에는 변경 사항 버튼을 두지 않는다', (tester) async {
+    final server = _completed();
+    final proposal = server.proposals['s1']!;
+    server.proposals['s1'] = {
+      ...proposal,
+      'lifeFactProposals': [
+        for (final p in proposal['lifeFactProposals']! as List)
+          {...p as Map<String, Object?>, 'reviewStatus': 'accepted'},
+      ],
+    };
+    await _open(tester, server, AppRoutes.reportOf('s1'));
+
+    expect(server.count('/api/v1/visit-sessions/s1/proposals'), 1);
+    expect(find.text('오늘의 만남'), findsOneWidget);
     expect(find.text('변경 사항 확인하기'), findsNothing);
+  });
+
+  testWidgets('제안을 불러오지 못하면 변경 사항 버튼을 남겨 다시 시도하게 한다', (tester) async {
+    final server = _completed()
+      ..failures['GET /api/v1/visit-sessions/s1/proposals'] = (
+        status: 500,
+        errorCode: 'INTERNAL_SERVER_ERROR',
+      );
+    await _open(tester, server, AppRoutes.reportOf('s1'));
+
+    expect(find.text('변경 사항 확인하기'), findsOneWidget);
   });
 
   group('변경 사항 확인', () {
