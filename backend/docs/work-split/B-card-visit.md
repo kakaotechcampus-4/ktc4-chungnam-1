@@ -27,7 +27,7 @@
 | 4-2 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 | 바로 |
 | 4-3 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 | 바로 |
 | 5-1 | `POST` | `/api/v1/visit-sessions` | 신규 | 바로 |
-| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 테스트 자료로 구현 진행. 실제 사용자 사진 수집 전 동의 연결 검증(후속 3) |
+| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 구현 완료 | 합성 사진과 메모리 저장소로 검증. 실제 S3 연동과 실제 사용자 사진 수집 전 동의 연결 검증은 남음(후속 3) |
 | 5-3 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 | 바로 |
 | 8-2 | | 4-1 처리로 옮김 | 삭제 | |
 
@@ -59,7 +59,7 @@
 3. 5-1, 5-3
 4. 4-1 처리의 요청 조립, 결과 검증, 결과 저장
 5. `start_card_generation`, 4-1
-6. 4-1 처리 함수와 worker 실행 진입점, 테스트 자료를 사용하는 5-2 구현과 검증. 실제 사용자 사진 수집 전 동의 연결 검증은 별도 후속 작업으로 기록한다.
+6. 4-1 처리 함수와 worker 실행 진입점을 연결한다. 5-2는 구현했고 합성 사진과 메모리 저장소로 검증했다. 실제 S3 연동과 실제 사용자 사진 수집 전 동의 연결 검증은 후속 작업이다.
 
 ## 장별 공통 규칙
 
@@ -420,8 +420,11 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
 - **실제 사용자의 면회 사진도 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 가입 시 받은 동의는 기존 계정 동의 이력에 저장한다. 테스트 자료로 업로드와 조회를 먼저 구현하고, 실제 사용자 사진을 받기 전에는 동의 조회와 미동의 차단을 검증한다(후속 3).
+- 현재 5-2 코드에는 사진 보관 동의 검사가 없다. 위 정책을 구현한 상태가 아니며, 테스트 자료로 먼저 개발하되 실제 사용자 사진 수집 전에 해당 검사를 추가한다.
 - 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
+- S3 업로드 동안 회차 행을 잠그지 않도록 평가 여부를 올리기 전에 한 번 확인해 일찍 거절하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 구현: [routes/visit_sessions.py](../../app/api/routes/visit_sessions.py), [services/visit_photos.py](../../app/services/visit_photos.py), 테스트 [test_visit_photos.py](../../tests/test_visit_photos.py)
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
 
 <br>
