@@ -18,18 +18,13 @@ import 'report_text.dart';
 /// 점수를 만들지 않는다.
 ///
 /// 로그인했으면 서버의 리포트(7-2)와 카드별 평가(6-4)를 [reportId] 회차로 읽는다.
+///
+/// `변경 사항 확인하기` 는 확인할 제안(7-3 의 `pending`)이 남았을 때만 둔다. 홈
+/// 알림에서 들어왔는지, 리포트 기록에서 들어왔는지는 보지 않는다.
 class ReportScreen extends ConsumerWidget {
-  const ReportScreen({
-    required this.reportId,
-    this.fromHistory = false,
-    super.key,
-  });
+  const ReportScreen({required this.reportId, super.key});
 
   final String reportId;
-
-  /// 리포트 기록에서 들어왔는지. 이미 반영을 마친 회차라 변경 사항을 다시
-  /// 묻지 않는다.
-  final bool fromHistory;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,7 +38,7 @@ class ReportScreen extends ConsumerWidget {
           message: '리포트를 불러오지 못했어요.',
           onRetry: () => ref.invalidate(reportProvider(reportId)),
         ),
-        data: (data) => _Body(report: data, fromHistory: fromHistory),
+        data: (data) => _Body(report: data),
       ),
     );
   }
@@ -108,10 +103,9 @@ class _TypeSet {
 }
 
 class _Body extends ConsumerStatefulWidget {
-  const _Body({required this.report, required this.fromHistory});
+  const _Body({required this.report});
 
   final VisitReport report;
-  final bool fromHistory;
 
   @override
   ConsumerState<_Body> createState() => _BodyState();
@@ -160,17 +154,25 @@ class _BodyState extends ConsumerState<_Body> {
     final reviews = ref.watch(reportCardReviewsProvider(report.reportId)).value;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
+    // 확인할 제안이 남았을 때만 변경 사항으로 보낸다. 읽는 중에는 두지 않고,
+    // 읽지 못했으면 둔다. 변경 사항 화면이 다시 시도를 보여준다. 실패한 요청을
+    // 다시 시도하는 동안에도 읽지 못한 것으로 본다.
+    final proposals = ref.watch(reportProposalsProvider(report.reportId));
+    final proposal = proposals.value;
+    final hasChanges = proposal != null
+        ? !proposal.nothingPending
+        : proposals.hasError;
+
     // ScreenBody 의 bottom 슬롯이 차지하는 높이다. 그 위에 버튼을 띄운다.
-    final slotHeight = widget.fromHistory
-        ? AppSpacing.xxl
-        : AppSpacing.lg + AppSizes.control + AppSpacing.xxl;
+    final slotHeight = hasChanges
+        ? AppSpacing.lg + AppSizes.control + AppSpacing.xxl
+        : AppSpacing.xxl;
 
     return Stack(
       children: [
         ScreenBody(
           scrollable: true,
-          // 이미 반영을 마친 회차에는 변경 사항을 다시 묻지 않는다.
-          bottom: widget.fromHistory
+          bottom: !hasChanges
               ? null
               : PrimaryButton(
                   label: '변경 사항 확인하기',

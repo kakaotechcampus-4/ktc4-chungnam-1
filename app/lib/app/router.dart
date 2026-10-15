@@ -110,10 +110,7 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.report,
         builder: (context, state) => _NeedsProfile(
-          child: ReportScreen(
-            reportId: state.pathParameters['reportId'] ?? '',
-            fromHistory: state.uri.queryParameters['from'] == 'history',
-          ),
+          child: ReportScreen(reportId: state.pathParameters['reportId'] ?? ''),
         ),
       ),
       GoRoute(

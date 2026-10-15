@@ -81,9 +81,7 @@ class _ReportRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      onTap: () => context.push(
-        AppRoutes.reportOf(report.reportId, fromHistory: true),
-      ),
+      onTap: () => context.push(AppRoutes.reportOf(report.reportId)),
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
         children: [
