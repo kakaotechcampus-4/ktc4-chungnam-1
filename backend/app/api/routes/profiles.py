@@ -110,12 +110,18 @@ async def to_profile_response(
 
 @router.get(
     "",
+    summary="프로필 목록 조회",
     response_model=ProfileListResponse,
     responses=_errors(401, 404, 503),
 )
 async def list_profiles(
     account: CurrentAccountDep, connection: DbConnectionDep
 ) -> ProfileListResponse:
+    """현재 계정의 프로필 목록. 입력 중(`inProgress`)인 프로필도 만든 순서대로 담음.
+
+    API 명세 2-1
+    """
+
     summaries = await profiles.list_profiles(
         connection, account_id=account.account_id
     )
@@ -134,6 +140,7 @@ async def list_profiles(
 
 @router.post(
     "",
+    summary="프로필 생성",
     status_code=status.HTTP_201_CREATED,
     response_model=ProfileResponse,
     responses=_errors(401, 404, 409, 422, 503),
@@ -144,6 +151,11 @@ async def create_profile(
     connection: DbConnectionDep,
     storage: ImageStorageDep,
 ) -> ProfileResponse:
+    """기본 정보로 프로필 생성. 계정당 3개까지이며 입력 중인 프로필도 셈.
+
+    API 명세 2-2
+    """
+
     profile = await profiles.create_profile(
         connection,
         account_id=account.account_id,
@@ -159,6 +171,7 @@ async def create_profile(
 
 @router.get(
     "/{profile_id}",
+    summary="프로필 조회",
     response_model=ProfileResponse,
     responses=_errors(401, 404, 422, 503),
 )
@@ -168,6 +181,11 @@ async def read_profile(
     connection: DbConnectionDep,
     storage: ImageStorageDep,
 ) -> ProfileResponse:
+    """프로필 하나와 그 생애 정보 조회.
+
+    API 명세 2-3
+    """
+
     profile = await profiles.get_profile(
         connection, profile_id, account_id=account.account_id
     )
@@ -176,6 +194,7 @@ async def read_profile(
 
 @router.patch(
     "/{profile_id}",
+    summary="프로필 수정",
     response_model=ProfileResponse,
     responses=_errors(401, 404, 422, 503),
 )
@@ -186,6 +205,11 @@ async def update_profile(
     connection: DbConnectionDep,
     storage: ImageStorageDep,
 ) -> ProfileResponse:
+    """기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정. 세부 정보는 `null`을 보내면 지움.
+
+    API 명세 2-4
+    """
+
     profile = await profiles.update_profile(
         connection,
         profile_id,
@@ -197,12 +221,18 @@ async def update_profile(
 
 @router.delete(
     "/{profile_id}",
+    summary="프로필 삭제",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_errors(401, 404, 422, 503),
 )
 async def delete_profile(
     profile_id: UUID, account: CurrentAccountDep, connection: DbConnectionDep
 ) -> None:
+    """프로필 하나와 그 아래 기록 삭제. 계정과 다른 프로필은 남음.
+
+    API 명세 2-8
+    """
+
     await profiles.delete_profile(
         connection, profile_id, account_id=account.account_id
     )
