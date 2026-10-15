@@ -1,5 +1,6 @@
 # 새록 백엔드 실행 구성. 사용법은 docs/deployment.md를 따른다.
 # - api: 기본으로 실행한다.
+# - card-worker: 카드 생성(4-1) 작업을 처리한다. api와 함께 기본으로 실행한다.
 # - speech-worker: AI 서버 연결 경로가 정해진 뒤 `--profile workers`로 켠다.
 # - db: RDS 같은 외부 DB를 쓰지 않을 때 `--profile local-db`로 켠다.
 # - caddy: 개발 서버에서 HTTPS로 api를 공개할 때 `--profile https`로 켠다.
@@ -28,6 +29,20 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # 4-1이 만든 작업은 이 worker가 가져가야 끝난다. 없으면 카드가 계속 만드는 중으로 남는다.
+  card-worker:
+    build:
+      context: .
+      # 카드 생성 패키지. Dockerfile이 COPY --from=ai로 씀
+      additional_contexts:
+        ai: ../ai
+    image: saerok-backend
+    command: ["python", "-m", "app.workers.card_generation"]
+    env_file: .env
+    # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
+    init: true
+    restart: unless-stopped
 
   speech-worker:
     build:

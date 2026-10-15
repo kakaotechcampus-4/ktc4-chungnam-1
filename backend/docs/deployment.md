@@ -9,6 +9,7 @@
 | 서비스 | 켜는 방법 | 하는 일 |
 | --- | --- | --- |
 | `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 세션 폐기 목록이 메모리에 있으므로 프로세스는 하나다 |
+| `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 설정이 없으면 시작하자마자 종료한다. 이 worker가 없으면 4-1로 만든 작업이 계속 `running`으로 남는다 |
 | `speech-worker` | `--profile workers` | 음성 STT worker. AI 서버 연결 경로가 정해진 뒤 켠다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
 | `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |
@@ -79,6 +80,7 @@ uv run pytest
    | `SAEROK_GOOGLE_CLIENT_IDS` | FE가 쓰는 클라이언트 ID([README](../README.md)의 `aud` 설명). 앱의 `SAEROK_GOOGLE_SERVER_CLIENT_ID`와 같아야 한다 |
    | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. AI 서버 연결 경로가 정해진 뒤 채운다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
+   | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
 
 7. DB, migration, API, HTTPS 앞단 순서로 띄운다.
 
@@ -86,7 +88,7 @@ uv run pytest
    docker compose --profile local-db up -d db
    docker compose build
    docker compose run --rm api alembic upgrade head
-   docker compose up -d api
+   docker compose up -d api card-worker
    curl http://127.0.0.1:8000/health/live
    docker compose --profile https up -d caddy
    ```
@@ -101,10 +103,10 @@ develop에 병합된 뒤 실행한다. migration은 이 단계에서만 적용�
 git pull
 docker compose build
 docker compose run --rm api alembic upgrade head
-docker compose up -d api
+docker compose up -d api card-worker
 ```
 
-상태는 `docker compose ps`, 로그는 `docker compose logs -f api`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
+상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
 
 ### 앱 연결
 
