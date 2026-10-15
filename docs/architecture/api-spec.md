@@ -480,6 +480,8 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
+4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
+
 ### 4-1. `POST /api/v1/profiles/{profileId}/card-generations` — 신규
 
 카드를 만들어 달라고 요청한다. 작업만 만들고 바로 끝난다.
@@ -657,6 +659,8 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | `LLM_UNAVAILABLE` | 엘리스 API 연결 실패, 시간 초과, 호출 한도 |
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
+| `CARD_GENERATION_NOT_STARTED` | 정해진 시간 안에 worker가 작업을 가져가지 않음(4절) |
+| `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함 |
 
 
 ### 4-2. `GET /api/v1/profiles/{profileId}/card-generations/status` — 신규

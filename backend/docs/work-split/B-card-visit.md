@@ -305,7 +305,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 - 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝난 프로필 사진, `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - 결과 검증: 카드 12장, `position` 1~12가 한 번씩, `followUpQuestions` 3개, `cardTitle`·`description`·`primaryQuestion`·`followUpQuestions`가 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`는 이 프로필의 주제이고 `feedback`에 `exclude`가 없음, 근거 항목 형식과 ID가 context에 있음, `profileField`는 context에 값이 있는 항목, `evidenceSource`가 `none`이면 `evidence`는 빈 배열이고 나머지는 같은 종류의 근거 항목이 하나 이상이다. 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제를 `profile_topics`에 만들고 `conversation_cards` 12장을 넣은 뒤 `card_sets`를 `completed`로 바꾸고 `generation_log`(`{"input": context, ...}`)를 넣는다.
-- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다.
+- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다.
 - 결과를 저장할 때 `status = 'completed'`와 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
 - **실패해도 `generation_log`가 있어야 한다**(CHECK). AI에 보낸 입력을 남기며 실패시키려면 `queue.fail(connection, job, error_code=..., generation_input=context)`을 부르고 처리 함수에서 정상 반환한다. 그냥 `AppError`를 올리면 `{"input": null}`로 기록된다.
 - 실행 진입점은 `app/workers/speech_analysis.py`처럼 `run_worker_main`으로 만든다(예: `app/workers/card_generation.py`).
