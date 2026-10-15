@@ -27,7 +27,7 @@
 | 4-2 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 | 바로 |
 | 4-3 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 | 바로 |
 | 5-1 | `POST` | `/api/v1/visit-sessions` | 신규 | 바로 |
-| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 사진 동의 설계 후(미정 3) |
+| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 테스트 자료로 구현 진행. 실제 사용자 사진 수집 전 동의 연결 검증(후속 3) |
 | 5-3 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 | 바로 |
 | 8-2 | | 4-1 처리로 옮김 | 삭제 | |
 
@@ -59,7 +59,7 @@
 3. 5-1, 5-3
 4. 4-1 처리의 요청 조립, 결과 검증, 결과 저장
 5. `start_card_generation`, 4-1
-6. 4-1 처리 함수와 worker 실행 진입점, 사진 동의 설계 후 5-2
+6. 4-1 처리 함수와 worker 실행 진입점, 테스트 자료를 사용하는 5-2 구현과 검증. 실제 사용자 사진 수집 전 동의 연결 검증은 별도 후속 작업으로 기록한다.
 
 ## 장별 공통 규칙
 
@@ -419,7 +419,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 **구현 메모**
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
-- **면회 사진도 등록 사진이라 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 동의 저장 위치가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
+- **실제 사용자의 면회 사진도 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 가입 시 받은 동의는 기존 계정 동의 이력에 저장한다. 테스트 자료로 업로드와 조회를 먼저 구현하고, 실제 사용자 사진을 받기 전에는 동의 조회와 미동의 차단을 검증한다(후속 3).
 - 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
@@ -538,9 +538,9 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ## 미정 사항
 
-아래 항목은 정해지기 전에 구현으로 먼저 정하지 않는다. 번호는 API 명세의 미정 사항 번호다.
+아래에는 미정 정책과 후속 구현 항목이 함께 있다. 미정 정책을 구현으로 확정하지 않되, 테스트 가정을 명시하고 기능 개발과 검증은 진행한다. 개인정보 검토가 남은 항목은 실제 사용자 자료 사용 전에 확인하며 기능 전체를 보류하지 않는다. 번호는 API 명세의 미정 사항 번호다.
 
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
+| 3 | 2026-10-14 PM 결정: 사진 보관과 AI 분석은 가입 시 별도 선택 동의로 받고 기존 계정 동의 이력에 저장. 테스트 자료로 개발을 진행하며, 동의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 실제 사용자 사진 처리 전 구현 및 검증 | 3-1, 5-2, 8-4 | FE, BE, AI. 남은 개인정보 검토는 PM |
