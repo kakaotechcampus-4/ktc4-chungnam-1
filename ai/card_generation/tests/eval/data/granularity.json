@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "about": "주제 크기 평가용 합성 자료. 회차 시뮬레이션에서 실제로 나온 후보를 바탕으로 만들었다. 정답은 '중심 경험이 같으면 같은 이야기, 장소나 시기만 겹치면 다른 이야기'라는 제안 기준을 따르며, 이 기준은 아직 확정되지 않았다(사람 검수 필요). expected.topic은 붙어야 할 기존 주제, expected.group은 새 주제끼리 같은 묶음이어야 하는 후보끼리 같은 값이다. ambiguous는 기준으로도 답이 갈리는 짝, scope는 추천하지 않기 범위를 정해야 답이 나오는 짝이라 채점하지 않는다.",
+  "cases": [
+    {
+      "caseId": "first-visit",
+      "note": "기존 주제가 없는 첫 회차. 새 후보끼리 묶는 크기를 본다.",
+      "existing": [],
+      "candidates": [
+        {"title": "한복 짓던 손길", "angle": "동인천 수선집에서 한복을 바느질하던 손", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."], "expected": {"group": "sewing"}},
+        {"title": "반가운 단골", "angle": "수선집에 오던 단골손님들", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."], "expected": {"group": "sewing"}},
+        {"title": "한복 색깔", "angle": "한복을 만들 때 고르던 색과 무늬", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."], "expected": {"group": "sewing"}},
+        {"title": "일할 때 듣던 노래", "angle": "수선집에서 일하며 라디오로 듣던 옛 노래", "evidence": ["취미: 옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요."], "expected": {"group": "radio"}},
+        {"title": "라디오 소리", "angle": "라디오에서 흘러나오던 노래와 진행자 목소리", "evidence": ["취미: 옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요."], "expected": {"group": "radio"}},
+        {"title": "바닷가 고향", "angle": "서천 바닷가 마을의 풍경", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."], "expected": {"group": "home"}},
+        {"title": "고향의 바닷바람", "angle": "서천 바닷가에서 계절마다 불던 바람", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."], "expected": {"group": "home"}},
+        {"title": "명절 전 부치기", "angle": "명절에 식구들이 모여 전을 부치던 부엌", "evidence": ["가족: 명절이면 온 식구가 모여서 음식을 하셨대요."], "expected": {"group": "holiday"}},
+        {"title": "명절 전날 준비", "angle": "명절 전날 식구들과 음식을 장만하던 일", "evidence": ["가족: 명절이면 온 식구가 모여서 음식을 하셨대요."], "expected": {"group": "holiday"}},
+        {"title": "봄날 쑥 캐기", "angle": "봄에 들에서 쑥을 캐던 일", "evidence": ["좋아하시는 음식: 봄이면 쑥을 캐서 쑥떡을 해 드셨대요."], "expected": {"group": "ssuk"}},
+        {"title": "쑥떡 빚기", "angle": "캐 온 쑥으로 쑥떡을 빚던 손", "evidence": ["좋아하시는 음식: 봄이면 쑥을 캐서 쑥떡을 해 드셨대요."], "expected": {"group": "ssuk"}},
+        {"title": "겨울 아랫목", "angle": "추운 겨울 저녁 아랫목에 모여 앉던 일", "evidence": [], "expected": {"group": "ondol"}},
+        {"title": "추운 날 군고구마", "angle": "겨울에 군고구마를 구워 먹던 일", "evidence": [], "expected": {"group": "potato"}},
+        {"title": "여름 마루 부채질", "angle": "여름 오후 마루에서 부채질하던 일", "evidence": [], "expected": {"group": "fan"}}
+      ]
+    },
+    {
+      "caseId": "broad-existing",
+      "note": "앞 회차 판정이 넓게 써 둔 주제 설명이 있을 때 새 후보가 얼마나 끌려 붙는지 본다.",
+      "existing": [
+        {"key": "sewing", "title": "동인천 수선집에서 한복 짓던 시절", "description": "동인천에서 수선집을 운영하며 재봉틀로 한복을 만들고 단골손님을 맞이했던 경험", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."]},
+        {"key": "songs", "title": "좋아한 옛날 노래", "description": "젊은 시절 라디오로 즐겨 듣던 옛날 노래", "evidence": ["취미: 옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요."]},
+        {"key": "ondol", "title": "겨울 아랫목", "description": "추운 겨울 저녁 가족이 아랫목에 모여 지내던 일", "evidence": []}
+      ],
+      "candidates": [
+        {"title": "재봉틀 소리", "angle": "수선집에서 재봉틀을 돌리던 소리", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."], "expected": {"topic": "sewing"}},
+        {"title": "단골손님의 옷", "angle": "단골손님이 맡기던 옷", "evidence": ["하시던 일: 동인천에서 수선집을 하셨는데 한복을 주로 만드셨대요."], "expected": {"topic": "sewing"}},
+        {"title": "수선집 라디오", "angle": "수선집에서 일하며 라디오로 듣던 노래", "evidence": ["취미: 옛날 노래를 좋아하세요. 일하실 때 라디오를 늘 켜두셨다고 해요."], "expected": {"topic": "songs"}},
+        {"title": "아랫목 이불", "angle": "아랫목에 깔아 두던 두꺼운 이불", "evidence": [], "expected": {"topic": "ondol"}},
+        {"title": "수선집 옆 다방", "angle": "수선집 옆 다방에서 단골손님들과 차를 마시던 일", "evidence": ["수선집 옆 다방: 수선집 옆 다방에서 단골손님들과 차를 드셨대요."], "expected": {"group": "cafe"}},
+        {"title": "추운 날 군고구마", "angle": "겨울에 군고구마를 구워 먹던 일", "evidence": [], "expected": {"group": "potato"}},
+        {"title": "성당 성가대", "angle": "젊을 때 성당 성가대에서 노래를 부르던 일", "evidence": ["성당 성가대: 젊을 때 성당 성가대에서 노래를 부르셨대요."], "tag": "ambiguous", "expected": null},
+        {"title": "아들들 옷 짓기", "angle": "집에서 재봉틀로 아들들 옷을 지어 입히던 일", "evidence": ["아들들 옷: 아들들 어릴 때 재봉틀로 옷을 지어 입히셨대요."], "tag": "ambiguous", "expected": null}
+      ]
+    },
+    {
+      "caseId": "excluded-broad",
+      "note": "넓은 설명의 추천하지 않기 주제가 있을 때. 범위가 정해지지 않은 짝은 scope로 표시한다.",
+      "existing": [
+        {"key": "seaside", "title": "서천 바닷가 고향 마을", "description": "충남 서천 바닷가 마을에서 나고 자라며 본 마을과 바다 풍경", "group": "excluded", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."]}
+      ],
+      "candidates": [
+        {"title": "바닷가 노을", "angle": "고향 바닷가에서 보던 해 질 녘 바다", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."], "expected": {"topic": "seaside"}},
+        {"title": "고향 바닷바람", "angle": "서천 바닷가 마을에 불던 바람", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."], "expected": {"topic": "seaside"}},
+        {"title": "서천 장날 생선", "angle": "서천 장에서 생선을 사 오던 일", "evidence": ["시장 나들이: 장날이면 서천 장에 가서 생선을 사 오셨대요."], "expected": {"group": "market"}},
+        {"title": "서천 갯벌 조개", "angle": "어릴 때 서천 갯벌에서 조개를 캐던 일", "evidence": ["서천 갯벌: 어릴 때 서천 갯벌에서 조개를 캐셨대요."], "tag": "scope", "expected": null},
+        {"title": "고향 집 마당", "angle": "서천 고향 집 마당에서 놀던 일", "evidence": ["고향: 충남 서천 바닷가 마을에서 나고 자라셨어요."], "tag": "scope", "expected": null}
+      ]
+    }
+  ]
+}
