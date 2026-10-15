@@ -606,13 +606,26 @@ enum ReportNotice {
 
   /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
   failed,
+
+  /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
+  /// 묻게 한다.
+  checkFailed,
 }
 
 /// 알림 하나와 그 알림이 가리키는 리포트다.
 class ReportNoticeInfo {
-  const ReportNoticeInfo(this.notice, {this.reportId, this.visitDate});
+  const ReportNoticeInfo(
+    this.notice, {
+    this.reportId,
+    this.visitDate,
+    this.fromServer = false,
+  });
 
   final ReportNotice notice;
+
+  /// 서버의 회차로 정한 알림이다. 아니면 목 데이터의 알림이고, 화면이 목
+  /// 리포트를 가리킨다.
+  final bool fromServer;
 
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
@@ -705,7 +718,10 @@ class _ReportNoticesNotifier
   }) {
     _synced.add(key);
     final round = _nextRound(key);
-    _set(key, const ReportNoticeInfo(ReportNotice.generating));
+    _set(
+      key,
+      const ReportNoticeInfo(ReportNotice.generating, fromServer: true),
+    );
     unawaited(_follow(key, round, remoteProfileId, analysisId: analysisId));
   }
 
@@ -715,10 +731,19 @@ class _ReportNoticesNotifier
     unawaited(_follow(key, _nextRound(key), remoteProfileId));
   }
 
+  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 비운다.
+  void retry(_NoticeKey key, String remoteProfileId) {
+    _synced.add(key);
+    final round = _nextRound(key);
+    _set(key, null);
+    unawaited(_follow(key, round, remoteProfileId));
+  }
+
   /// 가장 최근 회차를 읽어 알림을 정하고, 만드는 중이면 끝날 때까지 묻는다.
   ///
-  /// 서버에 닿지 못하면 지금 알림을 그대로 둔다. 만드는 중에 닿지 못하면 잠시
-  /// 뒤 다시 묻는다.
+  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없을 때
+  /// 묻지 못하면 [ReportNotice.checkFailed] 를 띄운다. 이미 띄운 알림은 그대로
+  /// 둔다.
   Future<void> _follow(
     _NoticeKey key,
     int round,
@@ -745,6 +770,12 @@ class _ReportNoticesNotifier
             state[key]?.notice == ReportNotice.generating) {
           continue;
         }
+        if (state[key] == null) {
+          _set(
+            key,
+            const ReportNoticeInfo(ReportNotice.checkFailed, fromServer: true),
+          );
+        }
         return;
       }
       if (_stale(key, round)) return;
@@ -765,6 +796,7 @@ class _ReportNoticesNotifier
           ReportNotice.generating,
           reportId: latest.sessionId,
           visitDate: latest.visitDate,
+          fromServer: true,
         ),
       );
 
@@ -842,6 +874,7 @@ class _ReportNoticesNotifier
       notice,
       reportId: session.sessionId,
       visitDate: session.visitDate,
+      fromServer: true,
     );
   }
 
@@ -938,6 +971,14 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     } else {
       _notices.startMockGenerating(key);
     }
+  }
+
+  /// 회차 상태를 묻지 못했을 때 다시 묻는다. 서버에 저장한 분일 때만 묻는다.
+  void retry() {
+    final key = _currentNoticeKey(ref);
+    final remoteId = ref.read(careProfilesProvider).selected?.remoteId;
+    if (key == null || key.accountId == null || remoteId == null) return;
+    _notices.retry(key, remoteId);
   }
 
   /// 탈퇴한 계정의 알림을 지운다. 세션이 지워진 뒤에 부르므로 계정을 받는다.

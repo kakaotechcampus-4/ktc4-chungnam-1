@@ -23,9 +23,9 @@ class NoticeScreen extends ConsumerWidget {
     final notice = ref.watch(reportNoticeProvider);
     final info = ref.watch(reportNoticeInfoProvider);
     // 목 데이터의 알림은 목 리포트를 가리킨다. 알림이 뜨기 전부터 읽어 둔다.
-    final mockReport = info?.reportId == null
-        ? ref.watch(visitReportProvider)
-        : null;
+    final mockReport = info?.fromServer ?? false
+        ? null
+        : ref.watch(visitReportProvider);
 
     return Scaffold(
       appBar: AppTopBar(
@@ -56,15 +56,24 @@ class NoticeScreen extends ConsumerWidget {
                   ? _NoticeRow(
                       date: info!.visitDate,
                       notice: notice,
-                      onOpen: () => context.push(switch (notice) {
-                        // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
-                        ReportNotice.evaluationPending =>
-                          AppRoutes.visitReviewOf(info.reportId!),
-                        ReportNotice.audioPending => AppRoutes.visitUploadOf(
-                          info.reportId!,
-                        ),
-                        _ => AppRoutes.reportOf(info.reportId!),
-                      }),
+                      onOpen: () {
+                        final id = info.reportId;
+                        // 회차 상태를 묻지 못했으면 다시 묻는다.
+                        if (notice == ReportNotice.checkFailed) {
+                          ref.read(reportNoticeProvider.notifier).retry();
+                          return;
+                        }
+                        if (id == null) return;
+                        context.push(switch (notice) {
+                          // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
+                          ReportNotice.evaluationPending =>
+                            AppRoutes.visitReviewOf(id),
+                          ReportNotice.audioPending => AppRoutes.visitUploadOf(
+                            id,
+                          ),
+                          _ => AppRoutes.reportOf(id),
+                        });
+                      },
                     )
                   : mockReport.when(
                       loading: () => const LoadingView(),
@@ -122,6 +131,7 @@ class _NoticeRow extends StatelessWidget {
       ReportNotice.failed => ('리포트를 만들지 못했어요', null),
       ReportNotice.evaluationPending => ('평가 이어서 하기', '평가를 마치면 리포트를 만들어요'),
       ReportNotice.audioPending => ('음성 다시 보내기', '녹음을 보내면 리포트를 만들어요'),
+      ReportNotice.checkFailed => ('리포트 상태를 확인하지 못했어요', '눌러서 다시 확인하기'),
     };
     // 만드는 중과 실패는 들어갈 곳이 없다.
     final onTap = switch (notice) {

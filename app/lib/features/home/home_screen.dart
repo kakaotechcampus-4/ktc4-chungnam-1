@@ -30,9 +30,9 @@ class HomeScreen extends ConsumerWidget {
     final info = ref.watch(reportNoticeInfoProvider);
     // 서버의 알림은 리포트와 날짜를 함께 안다. 목 데이터의 알림은 목 리포트를
     // 가리킨다.
-    final mockReport = info?.reportId == null
-        ? ref.watch(visitReportProvider).value
-        : null;
+    final mockReport = info?.fromServer ?? false
+        ? null
+        : ref.watch(visitReportProvider).value;
     final date = info?.visitDate ?? mockReport?.visitDate;
     final reportId = info?.reportId ?? mockReport?.reportId;
     final hasProfile = ref.watch(
@@ -97,6 +97,15 @@ class HomeScreen extends ConsumerWidget {
                           if (reportId == null) return;
                           context.push(AppRoutes.visitUploadOf(reportId));
                         },
+                      ),
+                      // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
+                      ReportNotice.checkFailed => _ResumeNotice(
+                        date: null,
+                        icon: Icons.refresh,
+                        title: '리포트 상태를 확인하지 못했어요',
+                        hint: '눌러서 다시 확인하기',
+                        onTap: () =>
+                            ref.read(reportNoticeProvider.notifier).retry(),
                       ),
                     },
                   ],
@@ -514,20 +523,23 @@ class _FailedNotice extends StatelessWidget {
   }
 }
 
-/// 앱을 떠난 사이 멈춘 면회 흐름을 이어가게 하는 배너다(`api-spec.md` 5-4 의
-/// `evaluationPending`, `audioPending`). 눌러서 그 회차의 화면으로 간다.
+/// 눌러서 이어갈 일이 있는 배너다. 앱을 떠난 사이 멈춘 면회 흐름
+/// (`api-spec.md` 5-4 의 `evaluationPending`, `audioPending`)을 그 회차의 화면에서
+/// 이어가고, 회차 상태를 묻지 못했으면 다시 묻는다.
 class _ResumeNotice extends StatelessWidget {
   const _ResumeNotice({
     required this.date,
     required this.title,
     required this.hint,
     required this.onTap,
+    this.icon = Icons.history,
   });
 
   final String? date;
   final String title;
   final String hint;
   final VoidCallback onTap;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -542,7 +554,7 @@ class _ResumeNotice extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.history, size: 32, color: AppColors.ink),
+            Icon(icon, size: 32, color: AppColors.ink),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: _NoticeText(date: date, title: title, hint: hint),
