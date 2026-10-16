@@ -249,7 +249,7 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
               const SizedBox(height: AppSpacing.lg),
               SecondaryButton(
                 label: '로그인으로 돌아가기',
-                onPressed: () => context.go(AppRoutes.login),
+                onPressed: () => context.go(AppRoutes.signIn),
               ),
             ],
 

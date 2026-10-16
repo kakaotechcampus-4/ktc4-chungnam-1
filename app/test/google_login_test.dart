@@ -22,7 +22,7 @@ import 'package:saerok/features/auth/consent_terms.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
-import 'package:saerok/features/auth/login_screen.dart';
+import 'package:saerok/features/auth/google_sign_in_panel.dart';
 import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
@@ -200,15 +200,14 @@ Widget _app({
   final router = GoRouter(
     initialLocation:
         initialLocation ??
-        (home == null ? AppRoutes.login : AppRoutes.googleConsent),
+        (home == null ? AppRoutes.signIn : AppRoutes.googleConsent),
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        builder: (context, state) => const SplashScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.login,
-        builder: (context, state) => const LoginScreen(),
+        builder: (context, state) => SplashScreen(
+          key: ValueKey(state.uri.toString()),
+          signedOut: state.uri.queryParameters['signedOut'] == 'true',
+        ),
       ),
       GoRoute(
         path: AppRoutes.googleConsent,
@@ -357,7 +356,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(google.calls, 1);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.textContaining('못했어요'), findsNothing);
     });
 
@@ -378,7 +377,7 @@ void main() {
       await tester.tap(find.image(const AssetImage(GoogleSignInButton.asset)));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget, reason: '실패하면 넘어가지 않는다');
+      expect(find.byType(GoogleSignInPanel), findsOneWidget, reason: '실패하면 넘어가지 않는다');
       expect(find.textContaining('로그인 설정이 아직 준비되지 않았어요'), findsOneWidget);
     });
 
@@ -922,7 +921,7 @@ void main() {
 
       expect(paths, ['POST /auth/logout']);
       expect(store.stored, isNull);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
     });
   });
 
@@ -1027,7 +1026,7 @@ void main() {
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 녹음과 재전송 기록을 지운다');
       expect(store.stored, isNull);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);
     });
 
@@ -1099,7 +1098,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(store.stored, isNull, reason: '풀린 세션은 남기지 않는다');
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
     });
@@ -1138,7 +1137,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '로그인으로 돌아가기'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(
         container.read(careProfilesProvider).entries,
         isEmpty,

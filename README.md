@@ -18,7 +18,7 @@ BE 인증 API는 개발용 메모리 저장소를 사용한다. 앱의 실제 �
 1. [문서 안내](docs/README.md): 목적에 맞는 정본 찾기
 2. [PM 제품 기준](docs/pm/README.md): 제품 범위와 미정 사항
 3. [협업 규칙](CONTRIBUTING.md): 브랜치, 리뷰와 문서 갱신 규칙
-4. 담당 영역 README: [FE](app/README.md), [BE](backend/README.md), [AI](local_ai/README.md), [평가](evals/README.md)
+4. 담당 영역 README: [FE](app/README.md), [BE](backend/README.md), [AI](ai/README.md), [STT 서버](stt-server/README.md), [평가](evals/README.md)
 
 구현 세부 사항은 [테크스펙](docs/tech-spec.md), [데이터 계약](docs/architecture/data-contracts.md), [ADR](docs/architecture/decisions/README.md)에서 확인한다.
 
@@ -28,7 +28,8 @@ BE 인증 API는 개발용 메모리 저장소를 사용한다. 앱의 실제 �
 | --- | --- |
 | `app/` | Flutter 앱과 화면 |
 | `backend/` | FastAPI 기준 환경과 처리 파이프라인 |
-| `local_ai/` | STT, VLM과 생성 모델 검증 |
+| `ai/` | 카드·리포트 생성과 VLM을 포함한 AI 모델 검증 |
+| `stt-server/` | STT와 화자 분리를 실행하는 온프레미스 FastAPI 서버 |
 | `evals/` | 평가 자료, 기대 결과와 평가 코드 |
 | `docs/pm/` | 제품 범위와 PM 결정 |
 | `docs/architecture/` | 공통 계약과 기술 결정 |

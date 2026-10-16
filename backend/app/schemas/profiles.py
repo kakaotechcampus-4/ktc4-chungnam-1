@@ -11,6 +11,7 @@ from app.schemas.common import ApiModel
 Gender = Literal["male", "female"]
 ConditionStage = Literal["mildCognitiveImpairment", "mildDementia", "unknown"]
 SetupStatus = Literal["inProgress", "completed"]
+PhotoAnalysisStatus = Literal["pending", "processing", "completed", "failed"]
 
 
 def _not_blank(value: str) -> str:
@@ -114,6 +115,29 @@ class LifeFactResponse(ApiModel):
     created_at: datetime = Field(alias="createdAt")
 
 
+class PhotoAnalysisError(ApiModel):
+    error_code: str = Field(alias="errorCode")
+
+
+class ProfilePhotoResponse(ApiModel):
+    """프로필 사진 (API 3-1, 3-2, data-contracts.md `ProfilePhoto`).
+
+    `imageUrl`은 수명이 짧은 S3 Presigned GET URL이며 `imageUrlExpiresAt`이 지나면 다시
+    조회한다. `description`은 분석이 끝난(`completed`) 사진만, `error`는 실패한(`failed`)
+    사진만 채운다.
+    """
+
+    schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
+    photo_id: UUID = Field(alias="photoId")
+    profile_id: UUID = Field(alias="profileId")
+    image_url: str = Field(alias="imageUrl")
+    image_url_expires_at: datetime = Field(alias="imageUrlExpiresAt")
+    analysis_status: PhotoAnalysisStatus = Field(alias="analysisStatus")
+    description: str | None
+    error: PhotoAnalysisError | None
+    created_at: datetime = Field(alias="createdAt")
+
+
 class ProfileResponse(ApiModel):
     schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
     profile_id: UUID = Field(alias="profileId")
@@ -127,9 +151,8 @@ class ProfileResponse(ApiModel):
     hobby: str | None
     family: str | None
     life_facts: list[LifeFactResponse] = Field(alias="lifeFacts")
-    # 프로필 사진은 3-1 전까지 항상 빈 배열이다. `ProfilePhoto` 응답은 사진 보관과 분석
-    # 동의 설계(API 명세 미정 3) 후 3-1, 3-2와 함께 붙인다.
-    photos: list[Any] = Field(default_factory=list)
+    # 프로필 사진만 담는다. 면회 사진은 면회 기록(5절)에서 내려준다.
+    photos: list[ProfilePhotoResponse]
     created_at: datetime = Field(alias="createdAt")
 
 

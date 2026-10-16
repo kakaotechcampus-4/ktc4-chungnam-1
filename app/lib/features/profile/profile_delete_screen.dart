@@ -18,7 +18,7 @@ import '../visit/pending_uploads.dart';
 /// 회원 탈퇴 확인. 프로필 설정의 `회원탈퇴`를 누르면 뜬다(피그마 설계 없음).
 ///
 /// `탈퇴하기`는 `DELETE /auth/me` 를 부른다. 서버가 계정을 지웠다고 답한 뒤에만
-/// 단말 세션을 지우고 로그인 화면으로 간다. 실패하면 이 화면에 남아 이유를
+/// 단말 세션을 지우고 스플래시의 로그인 버튼으로 간다. 실패하면 이 화면에 남아 이유를
 /// 알린다.
 ///
 /// 탈퇴 후 보유 기간과 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이
@@ -108,7 +108,7 @@ class _BodyState extends ConsumerState<_Body> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('탈퇴가 완료됐어요.')));
-    context.go(AppRoutes.login);
+    context.go(AppRoutes.signIn);
   }
 
   /// 세션이 풀렸거나 계정이 이미 없다. 남은 세션을 버리고 로그인부터 한다.
@@ -119,7 +119,7 @@ class _BodyState extends ConsumerState<_Body> {
     await ref.read(sessionProvider.notifier).discard();
     if (!mounted) return;
     forgetCareProfiles(ref);
-    context.go(AppRoutes.login);
+    context.go(AppRoutes.signIn);
   }
 
   void _toggle(int i) {

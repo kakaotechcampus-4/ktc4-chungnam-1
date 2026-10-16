@@ -13,11 +13,15 @@ class BasicInfoStep extends StatefulWidget {
   const BasicInfoStep({
     required this.draft,
     required this.onChanged,
+    this.title = '기본 정보 입력',
     super.key,
   });
 
   final SetupDraft draft;
   final ValueChanged<SetupDraft> onChanged;
+
+  /// 처음 입력할 때와 프로필 설정에서 고칠 때 제목이 다르다.
+  final String title;
 
   @override
   State<BasicInfoStep> createState() => _BasicInfoStepState();
@@ -39,7 +43,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('기본 정보 입력', style: AppTypography.screenTitle),
+        Text(widget.title, style: AppTypography.screenTitle),
         const SizedBox(height: AppSpacing.section),
 
         AppTextField(
@@ -47,6 +51,9 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           controller: _name,
           required: true,
           hintText: '어르신의 성함을 입력해주세요',
+          errorText: _draft.nameTooLong
+              ? '이름은 ${SetupDraft.maxNameLength}자까지 적을 수 있어요.'
+              : null,
           onChanged: (value) => widget.onChanged(_draft.copyWith(name: value)),
         ),
         const SizedBox(height: AppSpacing.xxl),

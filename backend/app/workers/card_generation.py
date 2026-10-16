@@ -23,7 +23,7 @@ def create_worker(settings: Settings, generate: Generate) -> Worker[CardGenerati
 
 
 def card_generator(settings: Settings) -> Generate:
-    # 생성 함수(local_ai 카드 생성 패키지)는 AI 패키지 PR에서 연결
+    # 생성 함수(ai 카드 생성 패키지)는 AI 패키지 PR에서 연결
     raise RuntimeError("카드 생성 함수가 아직 연결되지 않았습니다.")
 
 

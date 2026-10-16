@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/profile_setup/photo_picker.dart';
 import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
@@ -146,6 +147,52 @@ void main() {
       expect(controller.back(), isTrue);
       expect(container.read(setupControllerProvider).stepIndex, 0);
       expect(controller.back(), isFalse, reason: '첫 단계에서는 흐름을 벗어난다');
+    });
+
+    test('이름이 50자를 넘으면 다 채운 것으로 치지 않는다', () {
+      SetupDraft draftNamed(String name) => SetupDraft(
+        name: name,
+        gender: 'female',
+        birthYear: 1943,
+        birthMonth: 3,
+        birthDay: 12,
+        stage: ConditionStage.mildCognitiveImpairment,
+      );
+
+      expect(draftNamed('가' * 50).basicInfoFilled, isTrue);
+      expect(draftNamed('가' * 51).basicInfoFilled, isFalse);
+      expect(draftNamed('가' * 51).nameTooLong, isTrue);
+    });
+
+    test('마치면 세부 정보도 그 어르신에게 남긴다', () {
+      final container = makeContainer();
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(
+        const SetupDraft(
+          name: '김○○',
+          gender: 'female',
+          birthYear: 1943,
+          birthMonth: 3,
+          birthDay: 12,
+          stage: ConditionStage.mildCognitiveImpairment,
+        ),
+      );
+      controller.recordFact('occupation', '  재봉 일을 오래 하셨어요.  ');
+      controller.recordFact('hobby', '노래 부르기를 좋아하셨어요.');
+      // 고향은 건너뛰었고, 가족은 공백만 남았다.
+      controller.recordFact('family', '   ');
+
+      controller.finish();
+
+      final details = container
+          .read(careProfilesProvider)
+          .selected!
+          .details;
+      expect(details.occupation, '재봉 일을 오래 하셨어요.');
+      expect(details.hobby, '노래 부르기를 좋아하셨어요.');
+      expect(details.hometown, isNull, reason: '건너뛴 항목은 null 이다');
+      expect(details.family, isNull, reason: '계약은 빈 문자열을 받지 않는다');
     });
   });
 

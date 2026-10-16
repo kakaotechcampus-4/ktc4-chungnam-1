@@ -57,8 +57,8 @@
 
 | 경로 | 화면 | 피그마 |
 | --- | --- | --- |
-| `/splash` | 스플래시 | A-1 |
-| `/login` | 로그인 | A-2 |
+| `/splash` | 스플래시와 로그인. 로그인이 필요하면 로고 아래에 구글 버튼을 띄운다. `?signedOut=true`이면 복원 확인 없이 바로 띄운다 | A-1, A-2를 합침 |
+| `/consent` | 구글 로그인 뒤 필수 동의 | 설계 없음 |
 | `/onboarding` | 처음 오셨네요 | B-1 |
 | `/profile/create` | 환자 정보 입력 (6단계). `?adding=<id>`이면 어르신 추가 | B-2 ~ B-7. B-8 사진 태그 고르기는 삭제 |
 | `/home` | 홈 | HOME, HOME-1 |
@@ -74,10 +74,17 @@
 | `/report/:reportId/changes/story` | 이야기 수정. 변경 사항 확인이 `extra`로 넘긴 제목(100자 이하)과 내용을 고치고 `수정 완료`로 돌려준다. 뒤로 가면 버린다 | 설계 없음 |
 | `/profiles` | 함께하는 소중한 분 (어르신 전환, 추가, 순서, 지우기) | 설계 없음 |
 | `/profile` | 프로필 설정 | MYPAGE |
+| `/profile/edit/basic` | 이름과 기본 정보 수정 | 설계 없음 |
+| `/profile/edit/details` | 세부 정보 네 항목 수정 | 설계 없음 |
 | `/profile/delete` | 회원 탈퇴 확인 | 설계 없음 |
 | `/reports` | 리포트 기록 | 설계 없음 |
 | `/notifications` | 알림 | 설계 없음 |
-| `/album` | 일대기 | H, 기획 보류 안내만 표시 |
+| `/album` | 일대기 표지. 책을 누르면 표지가 넘어가며 `/album/book`으로 간다 | H |
+| `/album/book` | 일대기 첫 장. 어르신 사진, 이름, 생년월일, 분류 여섯 칸과 `기타`, 최근 추가된 이야기 세 편 | H |
+| `/album/category/:category` | 한 분류의 목차. 세부 정보 이야기를 먼저 두고 나머지는 먼저 담은 것부터다 | H |
+| `/album/category/:category/story/:storyId` | 이야기 한 편. 이전, 다음 이야기는 목차 순서를 따르고 뒤로 가면 목차다. 오른쪽 위 연필로 고치고 휴지통으로 지운다(확인 창). 세부 정보 이야기는 휴지통이 없고 연필이 `/profile/edit/details`를 연다 | H |
+| `/album/new` | 이야기 추가하기. 분류, 제목(100자 이하), 내용, 기본 그림 다섯 장 중 하나. 그림은 하나를 무작위로 미리 고른다. 쓰던 내용이 있으면 뒤로 갈 때 묻는다 | 설계 없음 |
+| `/album/edit/:storyId` | 이야기 수정하기. 추가와 같은 화면이며 분류를 바꾸면 새 분류의 목차 위에서 다시 연다 | 설계 없음 |
 
 면회 중 카드 E-3, E-4는 녹음 화면의 팝업이다. HOME과 HOME-1은 리포트 알림 유무, B-3의 녹음 완료와 B-4의 인식 실패는 음성 입력 상태, C-1 ~ C-3은 카드 펼침과 추가 상태를 나타낸다.
 
@@ -98,6 +105,8 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | `inVisit` | `아직 마치지 않은 면회가 있어요.` 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다 |
 
 연결 실패와 서버 거절은 오류 안내와 `다시 시도`를 보여준다. 카드 provider는 Riverpod의 자동 재시도를 끈다. 다시 시도하면 4-1을 또 보내므로 버튼으로만 다시 한다. 목 묶음은 테스트에서만 쓰며(`test/fake_card_api.dart`), 서버에 저장한 프로필이 앱에 연결되기 전에는 실제 실행에서 카드를 받을 수 없다.
+
+H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `LifeFact`를 직접 보지 않고 표시용 `LifeStory`만 본다. 이야기는 세부 정보 네 항목(하시던 일→일, 고향, 취미, 가족)에서 만든 것과 목 이야기([life_story_mock.dart](lib/features/life_story/life_story_mock.dart))를 합친다. 분류와 기본 이미지 번호는 API 명세에 없는 FE 안이라 목 이야기는 아직 `assets/mock/profile.json`에 넣지 않았다. 정렬은 생애 시기 대신 담은 날짜순이며, 세부 정보 이야기는 날짜가 없어 목차 맨 앞에 두고 날짜를 표시하지 않는다. 기본 이미지는 분류마다 다섯 장(`assets/images/life-story-<분류>-<1~5>.webp`)이고 파일이 없으면 분류 아이콘과 `가족 3` 같은 이름으로 자리를 채운다. 세부 정보 이야기의 이미지 번호는 저장할 곳이 없어 어르신 ID와 항목 이름으로 계산한다(`detailImageNumber`). 서버 조회(2-3)는 아직 붙이지 않았다. 추가, 수정, 삭제한 이야기는 분류와 삭제 API가 없어 서버에 보내지 않고 어르신 목록처럼 **앱이 켜져 있는 동안만** 어르신별로 기억한다(`lifeStoryEditsProvider`). 로그아웃과 탈퇴 때 `forgetCareProfiles`가 함께 지운다.
 
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
@@ -121,12 +130,12 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | 홈 안내 | `오늘은 ○○ 어르신과 무슨 주제로 대화를 나눠볼까요?` |
 | `/profiles` | 슬롯 3개. 누르면 전환, 빈 슬롯은 추가, 등록하다 나간 분은 `입력 중`으로 남아 이어서 입력. 다시 열면 가 본 가장 먼 단계에서 시작하고(기본 정보를 비웠으면 기본 정보부터), 적어 둔 생애 정보는 그 항목의 글 입력칸에 채워 보여준다. 꾹 눌러 끌면 순서를 바꾸고 이 순서가 화살표 순서다. 맨 아래 버튼으로 지울 분을 골라 확인 후 지운다. 마지막 한 분도 같은 확인창으로 지우며 계정은 남는다 |
 | 어르신 추가 | 처음 오셨네요를 건너뛰고 기본 정보부터 입력한다. 마치면 새 분으로 바뀐다 |
-| 프로필 설정 | 지금 어르신의 기본 정보를 보여준다. 약관 동의는 계정 공통이라 `계정 약관 동의`로 표시한다 |
+| 프로필 설정 | 지금 어르신의 기본 정보와 세부 정보를 보여준다. 기본 정보의 `수정하기`나 이름 옆 연필은 `/profile/edit/basic`을 연다. 처음 입력할 때의 기본 정보 폼을 그대로 쓰고, 고친 값은 그 어르신에게만 남으며 세부 정보는 그대로다. 이름은 50자까지다(온보딩도 같다). 세부 정보의 `수정하기`는 `/profile/edit/details`를 열어 직업·고향·취미·가족을 글로 고치고, 비운 항목은 지운다(`null`). 약관 동의는 계정 공통이라 `계정 약관 동의`로 표시한다 |
 | 회원 탈퇴 | 계정 전체를 지우므로 특정 어르신 이름을 부르지 않는다 |
 
-어르신마다 나뉘는 것은 기본 정보, 홈 리포트 알림, 대화 카드 선택이다. 세부 정보, 사진, 대화 카드와 리포트는 아직 목 데이터 한 벌을 함께 쓴다. 어르신별 데이터는 서버를 붙이면 `profileId` 기준 API(`api-spec.md` 2절, 4-2, 5-4, 7-1)가 내려준다.
+어르신마다 나뉘는 것은 기본 정보, 세부 정보 네 항목(직업·고향·취미·가족), 홈 리포트 알림, 대화 카드 선택이다. 그 밖의 생애 정보, 사진, 대화 카드와 리포트는 아직 목 데이터 한 벌을 함께 쓴다. 어르신별 데이터는 서버를 붙이면 `profileId` 기준 API(`api-spec.md` 2절, 4-2, 5-4, 7-1)가 내려준다.
 
-입력한 기본 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 등록을 마친 분의 세부 정보와 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
+입력한 기본 정보, 세부 정보와 어르신 목록은 프로필 저장 API(`api-spec.md` 2-2)가 없어 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나 로그아웃 또는 탈퇴하면 빈 목록으로 돌아간다(`forgetCareProfiles`). 세부 정보는 `Profile`의 `occupation`, `hometown`, `hobby`, `family`로 다루며 건너뛴 항목은 `null`이다. 등록을 마친 분의 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
 
 홈 리포트 알림은 계정과 어르신마다 따로 둔다. 로그아웃해도 지우지 않으며, 다른 계정으로 들어오면 보이지 않고 원래 계정으로 다시 들어오면 다시 보인다. 로그아웃한 사이 도착한 리포트도 기다리던 계정에 남는다. 탈퇴하면 그 계정의 알림만 지운다. 이 알림도 앱이 켜져 있는 동안만 기억한다. 다만 지금은 로그아웃하면 어르신 목록이 비므로, 같은 계정으로 다시 들어와도 알림을 띄울 어르신이 없다. 서버의 프로필 목록을 받으면 같은 어르신이 돌아와 알림도 다시 보인다.
 
@@ -157,14 +166,14 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 
 ### 흐름
 
-    A-2 로그인의 구글 버튼
+    A-1 스플래시의 구글 버튼 (로그인이 필요할 때 로고 아래에 뜬다)
     → google_sign_in 으로 ID 토큰을 받는다 (사용자가 취소하면 아무것도 하지 않는다)
     → POST /auth/google
         → status=authenticated   → 세션을 받고 /home
-        → status=consentRequired → /login/consent → POST /auth/consent → /onboarding
+        → status=consentRequired → /consent → POST /auth/consent → /onboarding
 
     앱을 다시 켤 때 (A-1 스플래시)
-    → 보관한 세션 읽기 (없으면 /login)
+    → 보관한 세션 읽기 (없으면 같은 화면에 구글 버튼)
     → 만료 전이면 GET /auth/me 로 확인
         → 200                → /home
         → 401, 403           → 아래 무음 로그인
@@ -172,10 +181,10 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
     → 만료됐거나 서버가 거절하면 google_sign_in 무음 로그인으로 새 ID 토큰
     → POST /auth/google
         → status=authenticated   → 새 세션을 보관하고 /home
-        → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 /login
+        → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 구글 버튼
 
-로그인 화면에는 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
-구글 인증만으로는 계정이 만들어지지 않는다. `/login/consent`에서 필수 동의를 제출해야
+따로 있던 로그인 화면(A-2)은 스플래시에 합쳤다. 로그인 버튼과 실패 안내는 `GoogleSignInPanel`이고, 스플래시가 복원 확인을 마친 뒤 로고 아래에 띄운다. 로그아웃, 탈퇴, 세션이 풀린 경우는 `/splash?signedOut=true`(`AppRoutes.signIn`)로 돌아가 2초 로고 없이 바로 버튼을 띄운다. 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
+구글 인증만으로는 계정이 만들어지지 않는다. `/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
 어떤 항목이 필수인지는 서버가 준 `requiredConsents`로 판단한다. 앱 상수로 따로 판단하면
@@ -194,18 +203,18 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 `POST /auth/google`을 다시 부르는 방식이다(`backend/README.md`의 "세션").
 
 서버에 닿지 못했을 때는 만료 전 세션을 버리지 않는다. 확인하지 못했을 뿐 만료된 것은
-아니어서, 여기서 로그인 화면으로 보내면 오프라인에서 앱을 열 수 없다.
+아니어서, 여기서 로그인 버튼으로 보내면 오프라인에서 앱을 열 수 없다.
 
 ### 로그아웃과 탈퇴
 
     MYPAGE 프로필 설정의 로그아웃
-    → 단말 세션 삭제 → POST /auth/logout → 구글 쪽 로그아웃 → /login
+    → 단말 세션 삭제 → POST /auth/logout → 구글 쪽 로그아웃 → /splash?signedOut=true
 
     MYPAGE 프로필 설정의 회원탈퇴 → /profile/delete 의 탈퇴하기
     → DELETE /auth/me
-        → 204                         → 단말 세션 삭제 → 구글 쪽 로그아웃 → /login, "탈퇴가 완료됐어요."
+        → 204                         → 단말 세션 삭제 → 구글 쪽 로그아웃 → /splash?signedOut=true, "탈퇴가 완료됐어요."
         → 401, 404 (세션 풀림, 계정 없음) → 이유를 알리고 "로그인으로 돌아가기"
-                                         → 단말 세션 삭제 → 어르신 목록 비움 → /login
+                                         → 단말 세션 삭제 → 어르신 목록 비움 → /splash?signedOut=true
         → 그 밖의 오류, 연결 실패        → 이 화면에 남아 이유를 알린다. 세션을 지우지 않는다
 
 로그아웃은 `SessionNotifier.signOut()`이다. 단말 세션을 먼저 지우고 서버에 폐기를 알린다.
@@ -239,7 +248,9 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
 | `lib/features/auth/consent_form.dart` | 동의 항목 UI |
-| `lib/features/auth/google_consent_screen.dart` | `/login/consent` 화면 |
+| `lib/features/auth/splash_screen.dart` | 스플래시. 복원 확인 뒤 로그인 버튼을 띄운다 |
+| `lib/features/auth/google_sign_in_panel.dart` | 스플래시의 구글 로그인 버튼과 실패 안내 |
+| `lib/features/auth/google_consent_screen.dart` | `/consent` 화면 |
 | `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
 | `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
 

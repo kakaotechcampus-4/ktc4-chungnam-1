@@ -64,8 +64,17 @@ def _status(latest: dict[str, Any] | None) -> str:
     return "inVisit" if latest["evaluated_at"] is None else "none"
 
 
-async def generation_status(connection: DbConnection, profile_id: UUID) -> str:
-    """`none`, `running`, `ready`, `inVisit`, `failed`."""
+async def generation_status(
+    connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
+) -> str:
+    """`none`, `running`, `ready`, `inVisit`, `failed`.
+
+    더는 끝나지 않을 `running`을 먼저 실패로 정리함(`CardGenerationQueue.expire_stuck`).
+    정리하지 않으면 worker가 없을 때 앱이 `running`만 보고 다시 요청할 수 없음.
+    """
+    await CardGenerationQueue().expire_stuck(
+        connection, profile_id, start_timeout_seconds=start_timeout_seconds
+    )
     return _status(await _latest(connection, profile_id))
 
 
@@ -117,19 +126,28 @@ async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
 
 
 async def start_card_generation(
-    connection: DbConnection, profile_id: UUID, *, model: str, prompt_version: int
+    connection: DbConnection,
+    profile_id: UUID,
+    *,
+    model: str,
+    prompt_version: int,
+    start_timeout_seconds: int,
 ) -> None:
     """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
 
     `ready`도 거절해서 아직 안 쓴 완료 묶음은 늘 최신 묶음 하나뿐이게 함. 그래서 5-1이 받는
     묶음이 4-2, 4-3이 보는 최신 묶음과 같음.
 
+    끝나지 않을 `running`은 상태를 보기 전에 실패로 정리하므로, 그 뒤 요청은 새 작업을 만듦.
+
     프로필당 `running`은 하나(부분 유일 인덱스 `uq_card_sets_running`). `prompt_version` 열이
     문자열 열이라 문자열로 저장함.
     """
     async with connection.transaction():
         await lock_profile(connection, profile_id)
-        status = await generation_status(connection, profile_id)
+        status = await generation_status(
+            connection, profile_id, start_timeout_seconds=start_timeout_seconds
+        )
         if status == "inVisit":
             raise AppError(
                 status_code=409,

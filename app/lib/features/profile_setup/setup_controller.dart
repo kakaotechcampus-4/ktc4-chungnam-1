@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../life_story/life_story_providers.dart';
 import '../profile/photo_description_store.dart';
 import 'photo_picker.dart';
 import 'photo_uploader.dart';
@@ -50,13 +51,44 @@ class SetupDraft {
   /// 사진을 더하거나 뺄 수 있는지. 올리는 중이거나 모두 올린 뒤에는 막는다.
   bool get canEditPhotos => !isUploadingPhotos && !allPhotosUploaded;
 
+  /// 이름은 50자 이하다(`data-contracts.md` 의 Profile).
+  static const maxNameLength = 50;
+
+  bool get nameTooLong => name.trim().length > maxNameLength;
+
   bool get basicInfoFilled =>
       name.trim().isNotEmpty &&
+      !nameTooLong &&
       gender != null &&
       birthYear != null &&
       birthMonth != null &&
       birthDay != null &&
       stage != null;
+
+  /// 등록을 마친 분의 기본 정보로 채운다. 프로필 설정에서 고칠 때 쓴다.
+  factory SetupDraft.fromBasicInfo(EnteredBasicInfo info) {
+    final birth = DateTime.parse(info.birthDate);
+    return SetupDraft(
+      name: info.name,
+      gender: info.gender,
+      birthYear: birth.year,
+      birthMonth: birth.month,
+      birthDay: birth.day,
+      stage: info.stage,
+    );
+  }
+
+  /// 기본 정보를 저장할 모양으로 바꾼다. 다 채우지 않았으면 `null` 이다.
+  EnteredBasicInfo? toBasicInfo() {
+    if (!basicInfoFilled) return null;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return EnteredBasicInfo(
+      name: name.trim(),
+      gender: gender!,
+      birthDate: '$birthYear-${two(birthMonth!)}-${two(birthDay!)}',
+      stage: stage!,
+    );
+  }
 
   SetupDraft copyWith({
     String? name,
@@ -246,26 +278,19 @@ class SetupController extends Notifier<SetupState> {
   ///
   /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작한다. [addingId] 가
   /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 서버 저장
-  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 세부 정보와 사진은 아직
-  /// 넘기지 않는다.
+  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 기본 정보와 세부 정보 네
+  /// 항목을 넘긴다. 사진은 아직 넘기지 않는다.
   void finish({String? addingId}) {
     final draft = state.draft;
-    if (!draft.basicInfoFilled) return;
-
-    String two(int value) => value.toString().padLeft(2, '0');
-    final info = EnteredBasicInfo(
-      name: draft.name.trim(),
-      gender: draft.gender!,
-      birthDate:
-          '${draft.birthYear}-${two(draft.birthMonth!)}-${two(draft.birthDay!)}',
-      stage: draft.stage!,
-    );
+    final info = draft.toBasicInfo();
+    if (info == null) return;
+    final details = EnteredDetails.fromFacts(draft.facts);
     final profiles = ref.read(careProfilesProvider.notifier);
     if (addingId == null) {
-      profiles.startWith(info);
+      profiles.startWith(info, details: details);
       return;
     }
-    profiles.completeAdding(addingId, info);
+    profiles.completeAdding(addingId, info, details: details);
     ref.read(pendingSetupsProvider.notifier).remove(addingId);
   }
 }
@@ -294,12 +319,14 @@ final pendingSetupsProvider =
 /// 앱만 기억하던 어르신 정보와 입력값을 지운다. 로그아웃과 탈퇴 뒤에 부른다.
 ///
 /// 같은 휴대폰으로 다른 사람이 로그인해도 앞사람의 어르신 정보가 보이지 않게
-/// 한다. 어르신 번호는 다시 1 부터 매겨지므로, 어르신마다 고친 사진 설명도
-/// 함께 지워야 다음 사람의 같은 번호 어르신에 남지 않는다.
+/// 한다. 어르신 번호는 다시 1 부터 매겨지므로, 어르신마다 고친 사진 설명과
+/// 일대기에서 바꾼 이야기도 함께 지워야 다음 사람의 같은 번호 어르신에 남지
+/// 않는다.
 void forgetCareProfiles(WidgetRef ref) {
   ref
     ..invalidate(careProfilesProvider)
     ..invalidate(setupControllerProvider)
     ..invalidate(pendingSetupsProvider)
-    ..invalidate(editedPhotoDescriptionsProvider);
+    ..invalidate(editedPhotoDescriptionsProvider)
+    ..invalidate(lifeStoryEditsProvider);
 }

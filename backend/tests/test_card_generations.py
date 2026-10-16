@@ -136,6 +136,38 @@ def test_other_accounts_profile_is_not_found(migrated_database_url):
     assert _sets(migrated_database_url, profile_id) == []
 
 
+def _stuck_running_set(database_url):
+    """worker가 가져가지 않은 채 10분이 지난 `running` 작업."""
+
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id = await card_set_in(connection, profile_id, "running")
+        await connection.execute(
+            "UPDATE card_sets SET created_at = now() - interval '10 minutes' WHERE set_id = %s",
+            (set_id,),
+        )
+        return user_id, profile_id
+
+    return with_db(database_url, build)
+
+
+def test_request_replaces_a_job_no_worker_took(migrated_database_url):
+    user_id, profile_id = _stuck_running_set(migrated_database_url)
+
+    res = _request_cards(migrated_database_url, user_id, profile_id)
+
+    assert res.status_code == 202 and res.json()["status"] == "running"
+    rows = query(
+        migrated_database_url,
+        "SELECT status, error_code FROM card_sets WHERE profile_id = %s ORDER BY created_at",
+        (profile_id,),
+    )
+    assert rows == [
+        {"status": "failed", "error_code": "CARD_GENERATION_NOT_STARTED"},
+        {"status": "running", "error_code": None},
+    ]
+
+
 # ── 4-2 ──────────────────────────────────────────────
 def _status(database_url, user_id, profile_id):
     app = make_app(database_url, user_id)
@@ -184,6 +216,30 @@ def test_status_follows_only_the_latest_set(migrated_database_url):
         user_id, profile_id = await user_and_profile(connection)
         await completed_card_set(connection, profile_id)
         await card_set_in(connection, profile_id, "running")
+        return user_id, profile_id
+
+    user_id, profile_id = with_db(migrated_database_url, build)
+
+    assert _status(migrated_database_url, user_id, profile_id).json()["status"] == "running"
+
+
+def test_status_of_a_job_no_worker_took_is_failed(migrated_database_url):
+    user_id, profile_id = _stuck_running_set(migrated_database_url)
+
+    res = _status(migrated_database_url, user_id, profile_id)
+
+    assert res.json()["status"] == "failed"
+    assert _sets(migrated_database_url, profile_id)[0]["status"] == "failed"
+
+
+def test_status_waits_within_start_timeout(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id = await card_set_in(connection, profile_id, "running")
+        await connection.execute(
+            "UPDATE card_sets SET created_at = now() - interval '5 minutes' WHERE set_id = %s",
+            (set_id,),
+        )
         return user_id, profile_id
 
     user_id, profile_id = with_db(migrated_database_url, build)

@@ -25,6 +25,7 @@ from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.services import ownership
 from app.services.life_facts import LifeFact, list_life_facts
+from app.services.profile_photos import ProfilePhoto, list_profile_photos
 
 # 계정당 프로필 수. 입력 중(`inProgress`)인 프로필도 센다. DB 제약이 없어 서버가 확인한다.
 PROFILE_LIMIT = 3
@@ -67,6 +68,7 @@ class Profile:
     hobby: str | None
     family: str | None
     life_facts: list[LifeFact]
+    photos: list[ProfilePhoto]
     created_at: datetime
 
 
@@ -147,7 +149,7 @@ async def create_profile(
 async def get_profile(
     connection: DbConnection, profile_id: UUID, *, account_id: str
 ) -> Profile:
-    """프로필과 생애 정보를 돌려준다(API 2-3)."""
+    """프로필과 생애 정보, 프로필 사진을 돌려준다(API 2-3)."""
     await ownership.require_owned(
         connection, ownership.PROFILE, profile_id, account_id=account_id
     )
@@ -216,6 +218,7 @@ async def _read_profile(connection: DbConnection, profile_id: UUID) -> Profile:
         **row,
         setup_status=_setup_status(setup_completed),
         life_facts=await list_life_facts(connection, profile_id=profile_id),
+        photos=await list_profile_photos(connection, profile_id=profile_id),
     )
 
 
