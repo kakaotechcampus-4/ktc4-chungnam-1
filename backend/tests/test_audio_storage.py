@@ -1,8 +1,36 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from urllib.parse import parse_qs, urlsplit
+
+import boto3
 
 from app.services.audio_storage import S3AudioStorage
+
+
+def test_download_url_uses_regional_endpoint_without_network(monkeypatch) -> None:
+    create_client = boto3.client
+
+    def client_with_synthetic_credentials(*args, **kwargs):
+        return create_client(
+            *args, **kwargs,
+            aws_access_key_id="synthetic", aws_secret_access_key="synthetic",
+        )
+
+    monkeypatch.setattr(boto3, "client", client_with_synthetic_credentials)
+    storage = S3AudioStorage(
+        bucket="synthetic-bucket", region="ap-northeast-2", presigned_ttl_seconds=900
+    )
+    download = asyncio.run(storage.create_download(
+        object_key="temporary/speech/synthetic.wav",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    ))
+    parsed = urlsplit(download.url)
+    assert parsed.hostname == "synthetic-bucket.s3.ap-northeast-2.amazonaws.com"
+    assert parsed.path == "/temporary/speech/synthetic.wav"
+    query = parse_qs(parsed.query)
+    assert query["X-Amz-Algorithm"] == ["AWS4-HMAC-SHA256"]
+    assert "/ap-northeast-2/s3/aws4_request" in query["X-Amz-Credential"][0]
 
 
 class FakeS3Client:
