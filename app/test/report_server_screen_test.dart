@@ -133,8 +133,9 @@ void main() {
       expect(find.text('오늘은 재봉 일을 하시던 시절 이야기를 나눴어요.'), findsOneWidget);
       expect(find.text('수선집 시절'), findsOneWidget);
       expect(find.text('한복을 주로 만드셨다고 하셨어요.'), findsOneWidget);
-      // 6-4 에서 쓰지 않았다고 답한 카드다.
-      expect(find.text('이번 면회에서 다루지 않았어요'), findsOneWidget);
+      // 쓰지 않은 card-2 와 답하지 않은 card-3 은 제목을 받을 곳이 없어 장 수로
+      // 알린다. 고른 카드는 5-4, 답은 6-4 에서 읽는다.
+      expect(find.text('다루지 않은 카드 1장, 평가하지 않은 카드 1장'), findsOneWidget);
       // 사진 없이 한 면회에는 목 그림을 채우지 않는다.
       expect(find.byType(Image), findsNothing);
     });

@@ -28,10 +28,13 @@ void main() {
     // 목 데이터는 asset 에서 읽으므로 실제 비동기 처리를 기다린다.
     await tester.runAsync(() async {
       final base = await const MockRepository().loadCaregiverEvaluation();
+      // 고른 카드는 목 회차에서 읽는다. 화면이 읽기 전에 실제 시간에서 넣어 둔다.
+      final session = await const MockRepository().loadVisitSession();
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            visitSessionProvider.overrideWith((ref) async => session),
             // 확인할 제안이 없으면 변경 사항 버튼을 두지 않는다.
             if (noChanges)
               changeProposalProvider.overrideWith(
@@ -169,39 +172,26 @@ void main() {
   });
 
   group('대화 카드별 반응', () {
-    // 보호자가 답한 대로 표시한다. 쓰지 않았다는 답과 답하지 않은 것은 다르다.
+    // 목 회차는 카드 네 장(001, 004, 007, 010)을 골랐다. 목 평가는 001, 004 를
+    // 쓰고 평가했고 010 은 쓰지 않았으며 007 에는 답하지 않았다.
+    //
+    // 쓰고 평가한 카드만 요약을 보여주고, 나머지는 제목 없이 장 수로 알린다.
+    // 쓰지 않았다는 답과 답하지 않은 것은 다르게 센다.
 
-    testWidgets('쓰고 평가한 카드는 요약을 그대로 보여준다', (tester) async {
+    testWidgets('쓰고 평가한 카드만 요약을 보여주고 나머지는 장 수로 알린다', (tester) async {
       await openReport(tester);
 
       expect(find.textContaining('한복을 주로 만드셨고'), findsOneWidget);
-    });
-
-    testWidgets('쓰지 않았다고 답한 카드는 그 사실을 적는다', (tester) async {
-      await openReport(
-        tester,
-        cardReviews: const [
-          CardReview(cardId: 'card_demo_001', wasUsed: false),
-        ],
-      );
-
-      expect(find.text('이번 면회에서 다루지 않았어요'), findsOneWidget);
+      expect(find.textContaining('옛날 노래를 따라 부르셨다며'), findsOneWidget);
       expect(
-        find.textContaining('한복을 주로 만드셨고'),
+        find.textContaining('말수가 줄어들어'),
         findsNothing,
-        reason: '쓰지 않은 카드에 분석 결과를 붙이지 않는다',
+        reason: '답하지 않은 카드에 분석 결과를 붙이지 않는다',
       );
+      expect(find.text('다루지 않은 카드 1장, 평가하지 않은 카드 1장'), findsOneWidget);
     });
 
-    testWidgets('답하지 않은 카드는 확인하지 못한 것으로 적는다', (tester) async {
-      // 목록에 담기지 않은 것이 미응답이다.
-      await openReport(tester, cardReviews: const []);
-
-      expect(find.text('확인하지 못했어요'), findsWidgets);
-      expect(find.text('이번 면회에서 다루지 않았어요'), findsNothing);
-    });
-
-    testWidgets('미사용과 미응답을 뭉개지 않는다', (tester) async {
+    testWidgets('쓰지 않았다고 답한 카드는 요약 없이 다루지 않은 카드로 센다', (tester) async {
       await openReport(
         tester,
         cardReviews: const [
@@ -214,13 +204,43 @@ void main() {
         ],
       );
 
-      expect(find.text('이번 면회에서 다루지 않았어요'), findsOneWidget);
-      expect(find.textContaining('옛날 노래를 따라 부르셨다며'), findsOneWidget);
       expect(
-        find.text('확인하지 못했어요'),
-        findsWidgets,
-        reason: '목록에 없는 나머지 카드는 미응답이다',
+        find.textContaining('한복을 주로 만드셨고'),
+        findsNothing,
+        reason: '쓰지 않은 카드에 분석 결과를 붙이지 않는다',
       );
+      expect(find.textContaining('옛날 노래를 따라 부르셨다며'), findsOneWidget);
+      expect(find.text('다루지 않은 카드 1장, 평가하지 않은 카드 2장'), findsOneWidget);
+    });
+
+    testWidgets('하나도 답하지 않았으면 다룬 카드가 없다고 하고 모두 평가하지 않은 카드로 센다', (tester) async {
+      await openReport(tester, cardReviews: const []);
+
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsOneWidget);
+      expect(find.text('평가하지 않은 카드 4장'), findsOneWidget);
+      expect(find.textContaining('다루지 않은 카드'), findsNothing);
+    });
+
+    testWidgets('모두 쓰고 평가했으면 장 수를 적지 않는다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: [
+          for (final id in [
+            'card_demo_001',
+            'card_demo_004',
+            'card_demo_007',
+            'card_demo_010',
+          ])
+            CardReview(
+              cardId: id,
+              wasUsed: true,
+              caregiverReaction: CaregiverReaction.neutral,
+            ),
+        ],
+      );
+
+      expect(find.textContaining('카드 '), findsNothing);
+      expect(find.textContaining('말수가 줄어들어'), findsOneWidget);
     });
   });
 }

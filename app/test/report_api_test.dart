@@ -58,6 +58,28 @@ void main() {
     });
   });
 
+  test('리포트 회차에 고른 카드를 최근 회차 목록(5-4)에서 찾는다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [
+          FakeReportServer.session(id: 's2', status: 'processing'),
+          FakeReportServer.session(id: 's1', status: 'completed'),
+        ],
+      },
+    );
+
+    expect(await server.api.selectedCardIds('p1', 's1'), [
+      'card-1',
+      'card-2',
+      'card-3',
+    ]);
+    expect(
+      await server.api.selectedCardIds('p1', 'no-such'),
+      isNull,
+      reason: '목록에 없으면 고른 카드를 지어내지 않는다',
+    );
+  });
+
   test('분석 작업 상태(6-3)를 읽는다', () async {
     final server = FakeReportServer(
       analyses: {

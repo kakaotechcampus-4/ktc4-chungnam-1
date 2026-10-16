@@ -141,7 +141,7 @@ class FakeReportServer {
     return _error(404, 'NOT_FOUND');
   }
 
-  /// 명세의 VisitSession 하나를 만든다.
+  /// 명세의 VisitSession 하나를 만든다. 카드 세 장을 골랐다.
   static Map<String, Object?> session({
     required String id,
     String profileId = 'p1',
@@ -153,7 +153,7 @@ class FakeReportServer {
     'sessionId': id,
     'profileId': profileId,
     'setId': 'set-1',
-    'selectedCardIds': ['card-1', 'card-2'],
+    'selectedCardIds': ['card-1', 'card-2', 'card-3'],
     'sessionStatus': status,
     'photoId': null,
     'participantCount': analysisId == null ? null : 2,
@@ -162,6 +162,9 @@ class FakeReportServer {
   };
 
   /// 명세의 VisitReport 하나를 만든다.
+  ///
+  /// #106 과 같이 `cardSummaries` 에는 쓰고 평가한 카드(card-1)만 담는다. 쓰지
+  /// 않은 card-2 와 답하지 않은 card-3 은 들어 있지 않다.
   static Map<String, Object?> report({
     required String sessionId,
     String title = '재봉 일 이야기를 나눈 날',
@@ -189,13 +192,12 @@ class FakeReportServer {
         'cardTitle': '수선집 시절',
         'summary': '한복을 주로 만드셨다고 하셨어요.',
       },
-      {'cardId': 'card-2', 'cardTitle': '고향 마을', 'summary': '다루지 못했어요.'},
     ],
     'generatedAt': '2026-10-13T14:30:00+09:00',
   };
 
   /// 명세의 CaregiverEvaluation 하나를 만든다. card-1 은 쓰고 평가했고 card-2 는
-  /// 쓰지 않았다.
+  /// 쓰지 않았다. card-3 에는 답하지 않아 담지 않는다.
   static Map<String, Object?> evaluation(String sessionId) => {
     'schemaVersion': 1,
     'sessionId': sessionId,
