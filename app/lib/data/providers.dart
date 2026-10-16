@@ -2,6 +2,7 @@
 ///
 /// 데이터 출처를 바꿀 때는 `mockRepositoryProvider` 를 override 한다.
 /// 테스트에서 다른 값을 주입할 때도 같은 방법을 쓴다. `ADR-005` 참고.
+/// 대화 카드는 서버에서 받으므로 `currentCardSetProvider` 를 override 한다.
 library;
 
 import 'dart:async';
@@ -10,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
 import 'api_client.dart';
+import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
@@ -501,8 +503,29 @@ String ageRangeOf(String birthDate, DateTime today) {
   return '${age ~/ 10 * 10}s';
 }
 
+/// 고른 어르신의 지금 쓸 카드 묶음(API 4-3).
+///
+/// 서버에서만 받는다. 목 묶음은 테스트가 이 provider 를 override 해서 쓴다.
+/// 자동 재시도는 끈다. 쓸 묶음이 없다는 거절은 다시 물어도 같고, 다시 받기는
+/// 화면의 버튼으로 한다.
+final currentCardSetProvider = FutureProvider<CardSet>((ref) async {
+  final profileId = await ref.watch(serverProfileIdProvider.future);
+  if (profileId == null) throw StateError('고른 어르신이 없다');
+  return ref.watch(cardApiProvider).current(profileId);
+}, retry: (_, _) => null);
+
+/// 서버 API 에 보낼, 고른 어르신의 `profileId`. 고른 분이 없으면 `null` 이다.
+///
+/// 앱 안에서 어르신을 가리키는 값(`careProfilesProvider` 의 `id`)이 아니라
+/// [profileProvider] 의 `profileId` 를 쓴다. 이번 실행에서 새로 등록한 분은 앱
+/// 안의 값과 서버가 준 값이 다를 수 있고, [profileProvider] 가 서버에 저장한
+/// 분이면 서버의 값을 알려준다.
+final serverProfileIdProvider = FutureProvider<String?>(
+  (ref) async => (await ref.watch(profileProvider.future))?.profile.profileId,
+);
+
 final conversationCardsProvider = FutureProvider<List<ConversationCard>>(
-  (ref) => ref.watch(mockRepositoryProvider).loadConversationCards(),
+  (ref) async => (await ref.watch(currentCardSetProvider.future)).cards,
 );
 
 final visitSessionProvider = FutureProvider<VisitSession>(

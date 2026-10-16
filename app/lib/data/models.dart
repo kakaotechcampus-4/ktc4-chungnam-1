@@ -313,6 +313,7 @@ class ProfileBundle {
   final Profile profile;
   final List<LifeFact> lifeFacts;
   final List<CategoryCollectionState> collectionStates;
+
   /// 올린 순서대로다. 최대 5장이다.
   final List<ProfilePhoto> photos;
 
@@ -325,103 +326,190 @@ class ProfileBundle {
 
 // ── 대화 카드 ───────────────────────────────────────
 
+/// 지금 쓸 카드 묶음이다. 계약의 `CardSet` 이며 API 4-3 의 응답이다.
+class CardSet {
+  const CardSet({
+    required this.setId,
+    required this.usedBySessionId,
+    required this.cards,
+  });
+
+  factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
+    setId: json['setId'] as String,
+    usedBySessionId: json['usedBySessionId'] as String?,
+    cards:
+        (json['cards'] as List)
+            .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
+            .toList()
+          // `position` 1~9 가 선택 화면, 10~12 가 보충용이다. 배열 순서에
+          // 기대지 않고 순서 값으로 줄 세운다.
+          ..sort((a, b) => a.position.compareTo(b.position)),
+  );
+
+  /// 녹음을 시작할 때 API 5-1 에 보낸다.
+  final String setId;
+
+  /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
+  final String? usedBySessionId;
+
+  /// 12장. [ConversationCard.position] 순서다.
+  final List<ConversationCard> cards;
+}
+
+/// 카드가 다루는 주제. 회차가 바뀌어도 `topicId` 로 같은 주제를 잇는다.
+class CardTopic {
+  const CardTopic({
+    required this.topicId,
+    required this.title,
+    required this.description,
+  });
+
+  factory CardTopic.fromJson(Map<String, dynamic> json) => CardTopic(
+    topicId: json['topicId'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String,
+  );
+
+  final String topicId;
+  final String title;
+
+  /// 이 주제가 무엇인지 보호자에게 알려주는 설명이다.
+  final String description;
+}
+
 class ConversationCard {
   const ConversationCard({
     required this.cardId,
-    required this.topicKey,
-    required this.topicTitle,
-    required this.topicDescription,
+    required this.position,
+    required this.topic,
+    required this.cardTitle,
+    required this.description,
     required this.primaryQuestion,
     required this.followUpQuestions,
+    required this.evidenceSource,
+    required this.evidence,
     required this.selected,
   });
 
   factory ConversationCard.fromJson(Map<String, dynamic> json) =>
       ConversationCard(
         cardId: json['cardId'] as String,
-        topicKey: json['topicKey'] as String,
-        topicTitle: json['topicTitle'] as String,
-        topicDescription: json['topicDescription'] as String,
+        position: json['position'] as int,
+        topic: CardTopic.fromJson(json['topic'] as Map<String, dynamic>),
+        cardTitle: json['cardTitle'] as String,
+        description: json['description'] as String,
         primaryQuestion: json['primaryQuestion'] as String,
         followUpQuestions: (json['followUpQuestions'] as List).cast<String>(),
-        selected: json['selectionStatus'] == 'selected',
+        evidenceSource: json['evidenceSource'] as String,
+        evidence: (json['evidence'] as List)
+            .cast<Map<String, dynamic>>()
+            .toList(),
+        selected: json['selected'] as bool,
       );
 
   final String cardId;
-  final String topicKey;
-  final String topicTitle;
 
-  /// 이 카드가 어떤 주제인지 보호자에게 알려주는 설명이다.
+  /// 1~12. 1~9 가 선택 화면 대상이고 10~12 가 면회 중 보충용이다.
+  final int position;
+
+  final CardTopic topic;
+  final String cardTitle;
+
+  /// 이 카드가 무엇을 나누는지 보호자에게 알려주는 설명이다.
   /// 어르신에게 그대로 여쭙는 문장은 [primaryQuestion] 이다.
-  final String topicDescription;
+  final String description;
   final String primaryQuestion;
   final List<String> followUpQuestions;
-  final bool selected;
 
-  ConversationCard copyWith({bool? selected}) => ConversationCard(
-    cardId: cardId,
-    topicKey: topicKey,
-    topicTitle: topicTitle,
-    topicDescription: topicDescription,
-    primaryQuestion: primaryQuestion,
-    followUpQuestions: followUpQuestions,
-    selected: selected ?? this.selected,
-  );
+  /// `lifeFact`, `photo`, `profile`, `none`.
+  final String evidenceSource;
+
+  /// `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나의 목록이다.
+  /// [evidenceSource] 가 `none` 이면 비어 있다.
+  final List<Map<String, dynamic>> evidence;
+
+  /// 회차를 만들 때 고른 카드와 면회 중 보충한 카드가 `true` 다.
+  final bool selected;
 }
 
 // ── 면회 회차 ───────────────────────────────────────
 
-/// `sessionStatus` 값. 계약에 정의된 일곱이다.
+/// `sessionStatus` 값. 서버가 평가, 음성 분석 작업과 리포트로 계산한다.
+///
+/// 녹음 일시정지와 종료는 단말에서 처리하고 서버에 알리지 않으므로 녹음 중
+/// 상태는 없다.
 enum SessionStatus {
-  ready,
-  recording,
-  paused,
-  ended,
+  /// 보호자 평가 전.
+  evaluationPending,
+
+  /// 평가 후 음성 접수 전. 업로드 단계에서 실패한 작업만 있어도 여기다.
+  audioPending,
+
+  /// 음성 분석 작업이 진행 중이다.
   processing,
+
+  /// 리포트를 저장했다.
   completed,
+
+  /// 접수된 음성 분석 작업이 실패했다.
   failed;
 
   static SessionStatus? parse(String raw) =>
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 면회 한 회차. 계약의 `VisitSession` 이며 API 5-1, 5-3 의 응답이다.
 class VisitSession {
   const VisitSession({
     required this.sessionId,
     required this.profileId,
+    required this.setId,
     required this.selectedCardIds,
     required this.sessionStatus,
     required this.startedAt,
     this.photoId,
-    this.endedAt,
     this.participantCount,
+    this.analysisId,
   });
 
   factory VisitSession.fromJson(Map<String, dynamic> json) => VisitSession(
     sessionId: json['sessionId'] as String,
     profileId: json['profileId'] as String,
+    setId: json['setId'] as String,
     selectedCardIds: (json['selectedCardIds'] as List).cast<String>(),
     sessionStatus: SessionStatus.parse(json['sessionStatus'] as String),
     photoId: json['photoId'] as String?,
     startedAt: json['startedAt'] as String,
-    endedAt: json['endedAt'] as String?,
     participantCount: json['participantCount'] as int?,
+    analysisId: json['analysisId'] as String?,
   );
 
   final String sessionId;
   final String profileId;
+
+  /// 이 회차가 쓰는 카드 묶음.
+  final String setId;
+
+  /// 회차를 만들 때 고른 카드와 면회 중 더한 보충 카드.
   final List<String> selectedCardIds;
+
+  /// 읽지 못한 값이면 `null` 이다. 다른 상태로 짐작하지 않는다.
   final SessionStatus? sessionStatus;
+
+  /// 면회 사진을 올리지 않았으면 `null` 이다.
   final String? photoId;
+
+  /// 서버가 회차 생성 요청을 받은 시각.
   final String startedAt;
-  final String? endedAt;
 
   /// 대화에 함께한 사람 수. 어르신과 보호자를 포함한다.
   ///
   /// 녹음을 끝낼 때 보호자에게 확인받는다. 앱이 목소리를 세어 짐작하지 않는다.
-  /// STT 화자 분리 요청의 `speakerCount` 로 그대로 넘어간다. 녹음을 끝내기
-  /// 전에는 `null` 이다.
+  /// 음성을 제출할 때 함께 보내며, 그 전에는 `null` 이다.
   final int? participantCount;
+
+  /// 가장 최근 음성 분석 작업. 음성을 제출하기 전에는 `null` 이다.
+  final String? analysisId;
 }
 
 // ── 리포트 ──────────────────────────────────────────
@@ -591,6 +679,40 @@ class CardReview {
 
   /// 쓰지 않은 카드에는 없다.
   final CaregiverReaction? caregiverReaction;
+
+  Map<String, Object?> toJson() => {
+    'cardId': cardId,
+    'wasUsed': wasUsed,
+    'caregiverReaction': caregiverReaction?.name,
+  };
+}
+
+/// 보호자 평가를 저장하는 요청. API 6-1 의 본문이다.
+class EvaluationSubmission {
+  const EvaluationSubmission({
+    required this.conversationSatisfaction,
+    required this.careRecipientReaction,
+    required this.cardReviews,
+    this.freeNote,
+  });
+
+  /// 1 이상 5 이하의 정수다.
+  final int conversationSatisfaction;
+
+  final CareRecipientReaction careRecipientReaction;
+
+  /// 답한 카드만 담는다. 담지 않은 카드가 미응답이다.
+  final List<CardReview> cardReviews;
+
+  /// 비었으면 `null` 이다.
+  final String? freeNote;
+
+  Map<String, Object?> toJson() => {
+    'conversationSatisfaction': conversationSatisfaction,
+    'careRecipientReaction': careRecipientReaction.name,
+    'cardReviews': [for (final review in cardReviews) review.toJson()],
+    'freeNote': freeNote,
+  };
 }
 
 class CaregiverEvaluation {

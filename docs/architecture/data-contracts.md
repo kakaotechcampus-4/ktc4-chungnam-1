@@ -10,7 +10,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | 항목 | 현재 계약 또는 목 화면 | 적용할 기준과 남은 일 |
 | --- | --- | --- |
 | 알림 동의 | 공통 계약, FE와 BE 모두 선택 | [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 BE 규칙과 회귀 테스트를 맞춤. 실제 앱 로그인 연동 검증은 PR #50의 후속 작업 |
-| 목 데이터 | `mock/`의 합성 데이터와 FE 파싱은 v0.2 이전 형식. `profile.json`의 사진은 v0.2 `ProfilePhoto` 목록으로, `caregiver-evaluation.json`의 `changeProposal`은 v0.2로 갱신함 | 나머지 v0.2 객체에 맞춰 갱신 필요 |
+| 목 데이터 | `mock/`의 합성 데이터와 FE 파싱은 v0.2 이전 형식. `profile.json`의 사진은 v0.2 `ProfilePhoto` 목록으로, `caregiver-evaluation.json`의 `changeProposal`, `conversation-cards.json`의 `cardSet`과 `visit-session.json`의 `visitSession`은 v0.2로 갱신함 | 나머지 v0.2 객체에 맞춰 갱신 필요 |
 | 사진 저장 | v0.2에서 프로필 사진과 면회 사진을 서버(S3)에 저장하도록 변경 | 프로필 사진의 `mock/`과 FE 파싱은 `imageUrl`로 갱신함. 면회 사진(`VisitPhoto`)의 `localUri` 갱신 필요. 보관 문구는 [ADR-001의 PR #92 개정안](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)으로 정리 중이며, 보관 및 분석 동의의 분리와 S3 실제 삭제는 후속 연동 필요 |
 | 카드 수와 선택 | 12장 생성, 9장 제시와 3장 보충, 보호자 선택으로 명시 | [PM의 현재 기준](../pm/README.md#카드와-이야기의-현재-기준)과 일치. 카드당 첫 질문 1개와 꼬리 질문 3개를 면회 전에 준비하며, 실시간 생성은 현재 MVP에서 제외 |
 | 이미지 출력 | 태그 후보 대신 사진 설명(`description`) 사용 | 별도 승인 없이 카드 입력에 사용. 앨범의 선택적 수정 API는 [3-3](api-spec.md#3-3-앨범에서-사진-설명-수정--api-미정)에서 정함 |

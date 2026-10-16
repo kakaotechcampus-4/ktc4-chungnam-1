@@ -12,6 +12,7 @@ import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
 
+import 'fake_card_api.dart';
 import 'fake_visit_recorder.dart';
 
 void main() {
@@ -38,6 +39,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
+        ...withMockCards,
       ],
     );
     addTearDown(container.dispose);
@@ -52,7 +54,6 @@ void main() {
 
       await container.read(visitControllerProvider.future);
       final visit = container.read(visitControllerProvider.notifier);
-      visit.confirmCareRecipient(confirmed: true);
       await visit.startRecording();
 
       await tester.pumpWidget(

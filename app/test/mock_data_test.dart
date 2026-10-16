@@ -8,9 +8,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
+
+import 'fake_card_api.dart';
+import 'sample_profile.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -67,16 +71,64 @@ void main() {
     );
   });
 
-  test('대화 카드 12장을 읽는다', () async {
-    final cards = await repository.loadConversationCards();
+  test('대화 카드 묶음 12장을 순서대로 읽는다', () async {
+    final set = await repository.loadCardSet();
+    final cards = set.cards;
 
     expect(cards, hasLength(12));
-    // 앞 9장이 선택 화면, 뒤 3장이 면회 중 보충용이다.
-    expect(cards.take(9), hasLength(9));
+    // 1~9 가 선택 화면, 10~12 가 면회 중 보충용이다.
+    expect(cards.map((c) => c.position), List.generate(12, (i) => i + 1));
+    expect(
+      cards.map((c) => c.topic.topicId).toSet(),
+      hasLength(12),
+      reason: '한 묶음 안에서 같은 주제는 두 번 나오지 않는다',
+    );
     for (final card in cards) {
       expect(card.followUpQuestions, hasLength(3));
-      expect(card.topicDescription, isNotEmpty);
+      expect(card.topic.description, isNotEmpty);
+      expect(card.description, isNotEmpty);
+      expect(
+        card.evidence,
+        card.evidenceSource == 'none' ? isEmpty : isNotEmpty,
+        reason: 'none 이면 근거가 비고, 나머지는 하나 이상이다',
+      );
     }
+  });
+
+  test('카드 묶음은 position 으로 줄 세운다', () {
+    Map<String, dynamic> card(String id, int position) => {
+      'cardId': id,
+      'position': position,
+      'topic': {'topicId': 't$id', 'title': '주제', 'description': '설명'},
+      'cardTitle': '카드',
+      'description': '설명',
+      'primaryQuestion': '질문',
+      'followUpQuestions': ['하나', '둘', '셋'],
+      'evidenceSource': 'none',
+      'evidence': <Object>[],
+      'selected': false,
+    };
+
+    final set = CardSet.fromJson({
+      'setId': 's1',
+      'usedBySessionId': null,
+      'cards': [card('b', 2), card('c', 3), card('a', 1)],
+    });
+
+    expect(set.cards.map((c) => c.cardId), ['a', 'b', 'c']);
+    expect(set.usedBySessionId, isNull);
+  });
+
+  test('목 묶음의 고른 카드는 회차의 선택과 같다', () async {
+    final set = await repository.loadCardSet();
+    final session = await repository.loadVisitSession();
+
+    expect(
+      set.cards.where((c) => c.selected).map((c) => c.cardId),
+      session.selectedCardIds,
+    );
+    expect(set.usedBySessionId, session.sessionId);
+    expect(session.setId, set.setId, reason: '회차는 그 묶음으로 만들었다');
   });
 
   test('면회 회차와 리포트를 읽는다', () async {
@@ -84,6 +136,9 @@ void main() {
     final report = await repository.loadVisitReport();
 
     expect(session.selectedCardIds, hasLength(4));
+    // 리포트까지 저장한 회차라 음성 분석 작업도 있다.
+    expect(session.sessionStatus, SessionStatus.completed);
+    expect(session.analysisId, isNotNull);
     expect(report.sessionId, session.sessionId);
     expect(report.cardSummaries, hasLength(4));
   });
@@ -117,21 +172,23 @@ void main() {
 
   test('provider 를 갈아끼우면 화면이 보는 값이 바뀐다', () async {
     final container = ProviderContainer(
-      overrides: [mockRepositoryProvider.overrideWithValue(_EmptyRepository())],
+      overrides: [
+        withSampleProfile,
+        cardApiProvider.overrideWithValue(_EmptyCardApi()),
+      ],
     );
     addTearDown(container.dispose);
 
     final cards = await container.read(conversationCardsProvider.future);
 
-    expect(cards, isEmpty);
+    expect(cards, isEmpty, reason: '카드는 목 데이터가 아니라 카드 API 에서 온다');
   });
 }
 
-/// 데이터 출처를 바꿀 수 있는지 보기 위한 대역이다. 나중에 서버 구현이 같은
-/// 자리에 들어간다.
-class _EmptyRepository extends MockRepository {
-  const _EmptyRepository();
-
+/// 데이터 출처를 바꿀 수 있는지 보기 위한 대역이다. 카드는 서버 API 자리를
+/// 갈아끼운다.
+class _EmptyCardApi extends FakeCardApi {
   @override
-  Future<List<ConversationCard>> loadConversationCards() async => const [];
+  Future<CardSet> current(String profileId) async =>
+      const CardSet(setId: 'empty', usedBySessionId: null, cards: []);
 }

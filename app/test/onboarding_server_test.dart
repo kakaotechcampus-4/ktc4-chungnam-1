@@ -5,7 +5,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
@@ -14,6 +16,7 @@ import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 
+import 'fake_card_api.dart';
 import 'fake_profile_server.dart';
 
 AuthSession _session() => AuthSession(
@@ -39,9 +42,27 @@ const _filled = SetupDraft(
   stage: ConditionStage.mildDementia,
 );
 
+/// 4-1 이 늘 네트워크 오류로 실패한다.
+class _OfflineCardApi extends FakeCardApi {
+  @override
+  Future<CardGenerationStatus> requestGeneration(String profileId) async {
+    calls.add('request');
+    throw const ApiNetworkFailure();
+  }
+}
+
 /// 로그인한 상태의 컨테이너다. 어르신 목록은 서버에서 빈 목록으로 온다.
-Future<ProviderContainer> _signedIn(FakeProfileServer server) async {
-  final container = ProviderContainer(overrides: [server.override]);
+/// 카드 API 를 넘기지 않으면 요청을 받아들이는 대역을 쓴다.
+Future<ProviderContainer> _signedIn(
+  FakeProfileServer server, {
+  CardApi? cardApi,
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      server.override,
+      cardApiProvider.overrideWithValue(cardApi ?? FakeCardApi()),
+    ],
+  );
   addTearDown(container.dispose);
   container.listen(careProfilesProvider, (_, _) {});
   container.read(sessionProvider.notifier).restore(_session());
@@ -142,12 +163,59 @@ void main() {
       await expectLater(controller.finish(), throwsA(isA<Object>()));
       expect(container.read(careProfilesProvider).entries, isEmpty);
     });
+
+    test('세부 정보를 저장한 뒤 그 분의 첫 카드 생성을 요청한다', () async {
+      final server = FakeProfileServer();
+      final cards = FakeCardApi();
+      final container = await _signedIn(server, cardApi: cards);
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(_filled);
+      await controller.submitBasicInfo();
+      await controller.finish();
+
+      expect(cards.calls, ['request']);
+      expect(cards.profileIds, ['server-1']);
+    });
+
+    test('세부 정보를 저장하지 못하면 카드 생성을 요청하지 않는다', () async {
+      final server = FakeProfileServer();
+      final cards = FakeCardApi();
+      final container = await _signedIn(server, cardApi: cards);
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(_filled);
+      await controller.submitBasicInfo();
+      server.offline = true;
+
+      await expectLater(controller.finish(), throwsA(isA<Object>()));
+      expect(cards.calls, isEmpty);
+    });
+
+    test('카드 생성 요청이 실패해도 등록은 마친다', () async {
+      final server = FakeProfileServer();
+      final cards = _OfflineCardApi();
+      final container = await _signedIn(server, cardApi: cards);
+      final controller = container.read(setupControllerProvider.notifier);
+
+      controller.updateDraft(_filled);
+      await controller.submitBasicInfo();
+      await controller.finish();
+
+      expect(cards.calls, ['request']);
+      final selected = container.read(careProfilesProvider).selected!;
+      expect(selected.remoteId, 'server-1');
+      expect(selected.pending, isFalse);
+    });
   });
 
   group('로그인하지 않았으면', () {
     test('서버를 부르지 않고 그대로 넘어간다', () async {
       final server = FakeProfileServer();
-      final container = ProviderContainer(overrides: [server.override]);
+      final cards = FakeCardApi();
+      final container = ProviderContainer(
+        overrides: [server.override, cardApiProvider.overrideWithValue(cards)],
+      );
       addTearDown(container.dispose);
       final controller = container.read(setupControllerProvider.notifier);
 
@@ -156,6 +224,7 @@ void main() {
       await controller.finish();
 
       expect(server.requests, isEmpty);
+      expect(cards.calls, isEmpty);
       expect(container.read(careProfilesProvider).selected?.remoteId, isNull);
     });
   });
