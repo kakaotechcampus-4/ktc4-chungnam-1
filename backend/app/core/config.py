@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # worker 하나가 앞 작업을 처리하는 동안 기다리는 작업도 있어 임대 시간보다 길게 둠.
     card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
+    # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
+    report_generation_model: str = "gpt-5.6-luna"
 
     # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른
     # 비공개 버킷에 저장한다. 비어 있으면 사진 업로드와 조회 URL 생성을 거절한다.
