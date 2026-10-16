@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
+import '../../data/card_api.dart';
 import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
@@ -335,8 +337,11 @@ class SetupController extends Notifier<SetupState> {
   /// 정보 네 항목을 넘긴다. 사진은 아직 넘기지 않는다.
   ///
   /// 로그인했으면 세부 정보 네 항목을 서버에 저장한 뒤(2-4) 목록에 넣는다.
-  /// 실패하면 [ApiFailure] 를 던지고 목록은 그대로다. 첫 카드 생성(4-1)은 카드
-  /// 작업이 이어서 한다.
+  /// 실패하면 [ApiFailure] 를 던지고 목록은 그대로다.
+  ///
+  /// 세부 정보를 저장하면 첫 카드 생성(4-1)을 요청한다. 서버는 이 요청이
+  /// 있어야 등록을 마친 것(`completed`)으로 센다. 요청이 실패해도 등록은
+  /// 마친다. 카드 화면에 들어가면 상태(4-2)를 보고 다시 요청한다.
   Future<void> finish({String? addingId}) async {
     final draft = state.draft;
     final info = draft.toBasicInfo();
@@ -347,6 +352,12 @@ class SetupController extends Notifier<SetupState> {
       // 기본 정보에서 저장하지 못한 채로 왔으면 지금 만든다.
       remoteId ??= (await api.create(info)).profileId;
       await api.updateDetails(remoteId, EnteredDetails.fromFacts(draft.facts));
+      if (!ref.mounted) return;
+      try {
+        await ref.read(cardApiProvider).requestGeneration(remoteId);
+      } on ApiFailure {
+        // 카드 화면이 다시 요청한다.
+      }
       if (!ref.mounted) return;
     }
     final details = EnteredDetails.fromFacts(draft.facts);
