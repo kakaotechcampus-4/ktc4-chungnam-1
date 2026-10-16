@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import '../../data/profile_api.dart';
 import '../../data/providers.dart';
+import '../auth/auth_providers.dart';
 import '../life_story/life_story_providers.dart';
 import '../profile/photo_description_store.dart';
 import 'photo_picker.dart';
@@ -117,7 +119,30 @@ class SetupState {
     this.stepIndex = 0,
     this.draft = const SetupDraft(),
     this.reachedIndex = 0,
+    this.remoteId,
   });
+
+  /// 서버에서 불러온 입력 중인 분을 이어서 입력할 때 쓴다. 서버에 저장된 기본
+  /// 정보와 세부 정보로 채우고, 기본 정보는 이미 마쳤으므로 세부 정보부터 연다.
+  factory SetupState.resumeOf(CareProfileEntry entry) {
+    final info = entry.basicInfo;
+    if (info == null) return SetupState(remoteId: entry.remoteId);
+    return SetupState(
+      draft: SetupDraft.fromBasicInfo(info).copyWith(
+        facts: {
+          for (final step in lifeFactSteps)
+            step.category: ?entry.details.of(step.category),
+        },
+      ),
+      reachedIndex: 1,
+      remoteId: entry.remoteId,
+    );
+  }
+
+  /// 기본 정보를 마칠 때 서버가 만든 `profileId`(2-2). 로그인 없이 들어왔거나
+  /// 아직 기본 정보를 마치지 않았으면 `null` 이다. 있으면 다시 만들지 않고
+  /// 고친다(2-4).
+  final String? remoteId;
 
   /// 0 = 기본 정보, 1 ~ 4 = 생애 정보, 5 = 사진.
   final int stepIndex;
@@ -150,12 +175,13 @@ class SetupState {
     return math.min(math.max(stepIndex, reachedIndex), _photoIndex);
   }
 
-  SetupState copyWith({int? stepIndex, SetupDraft? draft}) {
+  SetupState copyWith({int? stepIndex, SetupDraft? draft, String? remoteId}) {
     final step = stepIndex ?? this.stepIndex;
     return SetupState(
       stepIndex: step,
       draft: draft ?? this.draft,
       reachedIndex: math.max(reachedIndex, step),
+      remoteId: remoteId ?? this.remoteId,
     );
   }
 }
@@ -167,6 +193,34 @@ class SetupController extends Notifier<SetupState> {
   SetupState build() => const SetupState();
 
   void updateDraft(SetupDraft draft) => state = state.copyWith(draft: draft);
+
+  /// 로그인 세션이 있으면 서버에 저장한다. 없으면(임시 건너뛰기) 앱 안에만 둔다.
+  bool get _online => ref.read(sessionProvider) != null;
+
+  /// 기본 정보를 마치고 다음 단계로 간다.
+  ///
+  /// 로그인했으면 서버에 프로필을 만든다(2-2). 이미 만들었으면 고친다(2-4).
+  /// 실패하면 [ApiFailure] 를 던지고 이 단계에 남는다. [addingId] 는 어르신을
+  /// 더 등록하는 `입력 중` 슬롯이다.
+  Future<void> submitBasicInfo({String? addingId}) async {
+    final info = state.draft.toBasicInfo();
+    if (info == null) return;
+    if (_online) {
+      final api = ref.read(profileApiProvider);
+      final id = state.remoteId;
+      final saved = id == null
+          ? await api.create(info)
+          : await api.updateBasicInfo(id, info);
+      if (!ref.mounted) return;
+      state = state.copyWith(remoteId: saved.profileId);
+      if (addingId != null) {
+        ref
+            .read(careProfilesProvider.notifier)
+            .attachRemote(addingId, saved.profileId);
+      }
+    }
+    next();
+  }
 
   /// 입력 중이던 분의 입력을 가 본 가장 먼 단계부터 다시 연다
   /// ([SetupState.resumeIndex]). 앞 단계로는 뒤로 가기로 돌아갈 수 있다.
@@ -277,20 +331,36 @@ class SetupController extends Notifier<SetupState> {
   /// 입력을 마친다. 입력한 어르신을 목록에 넣고 그 분으로 바꾼다.
   ///
   /// 회원가입에서 온 첫 입력이면 목록을 이 분으로 시작한다. [addingId] 가
-  /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 서버 저장
-  /// (`api-spec.md` 2-2)이 생기기 전의 임시 처리다. 기본 정보와 세부 정보 네
-  /// 항목을 넘긴다. 사진은 아직 넘기지 않는다.
-  void finish({String? addingId}) {
+  /// 있으면 그 `입력 중` 슬롯을 등록을 마친 분으로 채운다. 기본 정보와 세부
+  /// 정보 네 항목을 넘긴다. 사진은 아직 넘기지 않는다.
+  ///
+  /// 로그인했으면 세부 정보 네 항목을 서버에 저장한 뒤(2-4) 목록에 넣는다.
+  /// 실패하면 [ApiFailure] 를 던지고 목록은 그대로다. 첫 카드 생성(4-1)은 카드
+  /// 작업이 이어서 한다.
+  Future<void> finish({String? addingId}) async {
     final draft = state.draft;
     final info = draft.toBasicInfo();
     if (info == null) return;
+    var remoteId = state.remoteId;
+    if (_online) {
+      final api = ref.read(profileApiProvider);
+      // 기본 정보에서 저장하지 못한 채로 왔으면 지금 만든다.
+      remoteId ??= (await api.create(info)).profileId;
+      await api.updateDetails(remoteId, EnteredDetails.fromFacts(draft.facts));
+      if (!ref.mounted) return;
+    }
     final details = EnteredDetails.fromFacts(draft.facts);
     final profiles = ref.read(careProfilesProvider.notifier);
     if (addingId == null) {
-      profiles.startWith(info, details: details);
+      profiles.startWith(info, details: details, remoteId: remoteId);
       return;
     }
-    profiles.completeAdding(addingId, info, details: details);
+    profiles.completeAdding(
+      addingId,
+      info,
+      details: details,
+      remoteId: remoteId,
+    );
     ref.read(pendingSetupsProvider.notifier).remove(addingId);
   }
 }

@@ -105,6 +105,11 @@ void main() {
       expect(find.text('리포트가 도착했어요'), findsOneWidget);
 
       await tester.tap(find.text('리포트가 도착했어요'));
+      await tester.pump();
+      // 리포트 화면은 실제 시간에서 읽어 둔 목 리포트를 기다린다.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
       await tester.pumpAndSettle();
 
       // 화면 이동은 리포트 화면에만 있는 문구로 확인한다(router_test.dart 와 같은 방법).

@@ -31,6 +31,8 @@ import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
 
 import 'fake_pending_uploads.dart';
+import 'fake_profile_server.dart';
+import 'fake_report_server.dart';
 import 'sample_profile.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
@@ -247,6 +249,9 @@ Widget _app({
       googleAuthenticatorProvider.overrideWithValue(google),
       // 테스트는 설정 없이 디버그로 돈다. 실제 흐름을 보려면 임시 건너뛰기를 끈다.
       skipGoogleLoginProvider.overrideWithValue(skipGoogleLogin),
+      // 로그인하면 어르신 목록을 서버에서 불러온다. 실제 주소로 나가지 않게 한다.
+      FakeProfileServer().override,
+      FakeReportServer().override,
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
