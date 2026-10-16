@@ -125,6 +125,29 @@ class ReportApi {
     });
   }
 
+  /// 5-4 에서 [sessionId] 회차에 고른 카드. 최근 100회차 안에 없으면 `null` 이다.
+  ///
+  /// 리포트(7-2)는 쓰고 평가한 카드만 담고, 평가(6-4)는 답한 카드만 담는다.
+  /// 답하지 않은 카드를 세려면 고른 카드 전체가 필요하다.
+  Future<List<String>?> selectedCardIds(
+    String profileId,
+    String sessionId,
+  ) async {
+    final body = await _client.get(
+      '$_base/profiles/$profileId/visit-sessions',
+      query: {'limit': '100'},
+    );
+    return _read(() {
+      for (final item in body['sessions'] as List) {
+        final session = item as Map<String, dynamic>;
+        if (session['sessionId'] == sessionId) {
+          return (session['selectedCardIds'] as List).cast<String>();
+        }
+      }
+      return null;
+    });
+  }
+
   /// 6-3 음성 분석 작업의 상태. 모르는 값이면 `null` 이다.
   Future<AnalysisStatus?> analysis(String analysisId) async {
     final body = await _client.get('$_base/speech-analyses/$analysisId');

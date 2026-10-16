@@ -544,6 +544,24 @@ final reportCardReviewsProvider = FutureProvider.autoDispose
       return evaluation.cardReviews;
     });
 
+/// 리포트 회차에 고른 카드(5-4). 모르면 `null` 이다.
+///
+/// 서버에 저장하지 않은 분이거나 최근 회차 목록에 없으면 모른다.
+final reportSelectedCardIdsProvider = FutureProvider.autoDispose
+    .family<List<String>?, String>((ref, reportId) async {
+      if (_online(ref)) {
+        final profileId = ref.watch(
+          careProfilesProvider.select((p) => p.selected?.remoteId),
+        );
+        if (profileId == null) return null;
+        return ref
+            .watch(reportApiProvider)
+            .selectedCardIds(profileId, reportId);
+      }
+      final session = await ref.watch(visitSessionProvider.future);
+      return session.selectedCardIds;
+    });
+
 /// 리포트 회차의 변경 제안(7-3).
 final reportProposalsProvider = FutureProvider.autoDispose
     .family<ChangeProposal, String>((ref, reportId) {
