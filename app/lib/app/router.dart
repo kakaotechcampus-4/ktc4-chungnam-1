@@ -33,6 +33,7 @@ import '../features/visit/record_screen.dart';
 import '../features/visit/visit_photo_screen.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_states.dart';
+import '../widgets/care_profiles_loading.dart';
 import 'routes.dart';
 
 /// 화면 이동을 한곳에 선언한다. 화면이 늘어나면 여기에 경로도 함께 등록한다.
@@ -77,7 +78,9 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.home,
-        builder: (context, state) => const HomeScreen(),
+        // 서버에서 어르신을 불러오기 전에는 등록 안내를 띄우지 않는다.
+        builder: (context, state) =>
+            const CareProfilesLoading(child: HomeScreen()),
       ),
       GoRoute(
         path: AppRoutes.cards,
@@ -113,10 +116,7 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.report,
         builder: (context, state) => _NeedsProfile(
-          child: ReportScreen(
-            reportId: state.pathParameters['reportId'] ?? '',
-            fromHistory: state.uri.queryParameters['from'] == 'history',
-          ),
+          child: ReportScreen(reportId: state.pathParameters['reportId'] ?? ''),
         ),
       ),
       GoRoute(
@@ -141,7 +141,8 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.profile,
-        builder: (context, state) => const ProfileScreen(),
+        builder: (context, state) =>
+            const CareProfilesLoading(withTopBar: true, child: ProfileScreen()),
       ),
       GoRoute(
         path: AppRoutes.profileEditBasic,
@@ -155,7 +156,10 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: AppRoutes.profileSwitch,
-        builder: (context, state) => const ProfileSwitchScreen(),
+        builder: (context, state) => const CareProfilesLoading(
+          withTopBar: true,
+          child: ProfileSwitchScreen(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.profileDelete,
@@ -249,13 +253,17 @@ class _NeedsProfile extends ConsumerWidget {
     );
     if (hasProfile) return child;
 
-    return Scaffold(
+    // 불러오는 중이거나 실패했으면 등록 안내 대신 그 상태를 보여준다.
+    return CareProfilesLoading(
+      withTopBar: true,
+      child: Scaffold(
       appBar: const AppTopBar(),
       body: EmptyStateView(
         message: '함께하는 소중한 분을 등록한 뒤\n이용할 수 있어요.',
         icon: Icons.person_add_alt_1_outlined,
         actionLabel: '등록하러 가기',
         onAction: () => context.pushReplacement(AppRoutes.profileSwitch),
+      ),
       ),
     );
   }

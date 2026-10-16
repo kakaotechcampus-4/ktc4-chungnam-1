@@ -49,16 +49,26 @@ abstract final class AppRoutes {
   /// F 보호자 소감 작성.
   static const visitReview = '/visit/review';
 
+  /// 앱을 다시 켠 뒤 평가 전(`evaluationPending`)인 회차의 평가를 이어서 한다.
+  /// 홈의 `평가 이어서 하기` 배너가 연다.
+  static String visitReviewOf(String sessionId) =>
+      '$visitReview?session=$sessionId';
+
+  /// 평가 뒤 음성을 보내지 못한(`audioPending`) 회차의 음성을 다시 보낸다.
+  /// 홈의 `음성 다시 보내기` 배너가 연다. 화면은 면회 흐름이 만든다.
+  static const visitUpload = '/visit/upload';
+
+  static String visitUploadOf(String sessionId) =>
+      '$visitUpload?session=$sessionId';
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
 
   /// G 리포트. `:reportId` 를 받는다.
   static const report = '/report/:reportId';
 
-  /// 리포트 기록에서 들어오면 이미 반영을 마친 회차라 변경 사항을 다시 묻지
-  /// 않는다. 홈의 도착 알림에서 들어오면 아직 확인 전이다.
-  static String reportOf(String reportId, {bool fromHistory = false}) =>
-      fromHistory ? '/report/$reportId?from=history' : '/report/$reportId';
+  /// 홈 알림과 리포트 기록이 같은 주소로 연다. 서버의 리포트는 회차 ID 다.
+  static String reportOf(String reportId) => '/report/$reportId';
 
   /// G-2 변경 사항 확인.
   static const reportChanges = '/report/:reportId/changes';

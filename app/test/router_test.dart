@@ -121,19 +121,33 @@ void main() {
       expect(find.byType(StoryEditMissingView), findsOneWidget);
     });
 
-    testWidgets('기록에서 연 리포트에는 변경 사항 버튼이 없다', (tester) async {
-      await openAt(tester, AppRoutes.reportOf('report_demo_001'));
+    testWidgets('확인할 제안이 남은 리포트에는 변경 사항 버튼이 있다', (tester) async {
+      // 확인 전(pending) 제안이 하나 남은 회차다. 값은 합성이다.
+      const proposal = ChangeProposal(
+        sessionId: 'session_demo_001',
+        lifeFactProposals: [
+          LifeFactProposal(
+            proposalId: 'proposal_demo_001',
+            title: '한복',
+            content: '한복을 주로 만드셨어요.',
+            reason: '이번 면회에서 말씀하셨어요.',
+            reviewStatus: ChangeReviewStatus.pending,
+          ),
+        ],
+        topicProposals: [],
+      );
+      await openAt(
+        tester,
+        AppRoutes.reportOf('report_demo_001'),
+        overrides: [
+          changeProposalProvider.overrideWith((ref) async => proposal),
+        ],
+      );
       expect(
         find.text('변경 사항 확인하기'),
         findsOneWidget,
-        reason: '알림에서 들어오면 아직 확인 전이다',
+        reason: '목 제안은 모두 확인 전(pending)이다',
       );
-
-      await openAt(
-        tester,
-        AppRoutes.reportOf('report_demo_001', fromHistory: true),
-      );
-      expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이미 반영을 마친 회차다');
     });
 
     testWidgets('일대기는 책 표지부터 보여준다', (tester) async {

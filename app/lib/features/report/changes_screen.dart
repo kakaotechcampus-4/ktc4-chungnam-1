@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart';
+import '../auth/auth_providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -117,24 +120,43 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
     ],
   );
 
+  /// 로그인했으면 서버(7-4)에 보낸다. 보내지 못하면 알리고 이 화면에 남는다.
   Future<void> _apply(ChangeProposal proposal) async {
     setState(() => _submitting = true);
-    await ref
-        .read(mockRepositoryProvider)
-        .submitProposalReview(proposal.sessionId, _review(proposal));
+    final review = _review(proposal);
+    if (ref.read(sessionProvider) == null) {
+      await ref
+          .read(mockRepositoryProvider)
+          .submitProposalReview(proposal.sessionId, review);
+    } else {
+      try {
+        await ref
+            .read(reportApiProvider)
+            .reviewProposals(proposal.sessionId, review);
+      } on ApiFailure catch (failure) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(reportFailureMessage(failure))),
+          );
+        return;
+      }
+    }
     if (!mounted) return;
     _finish();
   }
 
   /// 리포트 알림을 지우고 홈으로 간다. 검토할 제안이 없으면 보내지 않고 이것만 한다.
   void _finish() {
-    ref.read(reportNoticeProvider.notifier).dismiss();
+    ref.read(reportNoticeProvider.notifier).dismiss(reportId: widget.reportId);
     context.go(AppRoutes.home);
   }
 
   @override
   Widget build(BuildContext context) {
-    final proposal = ref.watch(changeProposalProvider);
+    final proposal = ref.watch(reportProposalsProvider(widget.reportId));
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -142,7 +164,8 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
           message: '변경 사항을 불러오지 못했어요.',
-          onRetry: () => ref.invalidate(changeProposalProvider),
+          onRetry: () =>
+              ref.invalidate(reportProposalsProvider(widget.reportId)),
         ),
         data: (data) {
           if (data.nothingPending) return _NothingToReview(onDone: _finish);
