@@ -37,6 +37,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
 
 @router.post(
     "/profiles/{profile_id}/life-facts",
+    summary="생애 정보 추가",
     status_code=status.HTTP_201_CREATED,
     response_model=LifeFactResponse,
     responses=_errors(401, 404, 422, 503),
@@ -47,6 +48,11 @@ async def add_life_fact(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
 ) -> LifeFactResponse:
+    """일대기에서 세부 정보 네 항목 밖의 생애 정보 추가.
+
+    API 명세 2-6
+    """
+
     fact = await life_facts.add_life_fact(
         connection,
         profile_id,
@@ -59,6 +65,7 @@ async def add_life_fact(
 
 @router.patch(
     "/life-facts/{fact_id}",
+    summary="생애 정보 수정",
     response_model=LifeFactResponse,
     responses=_errors(401, 404, 422, 503),
 )
@@ -68,6 +75,11 @@ async def update_life_fact(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
 ) -> LifeFactResponse:
+    """생애 정보 중 보낸 필드(`title`, `content`)만 수정.
+
+    API 명세 2-7
+    """
+
     fact = await life_facts.update_life_fact(
         connection,
         fact_id,

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     ml_api_key: SecretStr = SecretStr("")
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
     card_generation_lease_seconds: int = Field(default=300, ge=60)
+    # 4-1 뒤 이 시간 안에 worker가 가져가지 않은 작업은 4-1, 4-2가 실패로 정리함.
+    # worker 하나가 앞 작업을 처리하는 동안 기다리는 작업도 있어 임대 시간보다 길게 둠.
+    card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른

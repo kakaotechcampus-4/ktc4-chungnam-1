@@ -1,7 +1,7 @@
 /// 화면 경로를 한곳에 모은다. 화면 이동은 문자열을 직접 적지 않고 여기를 쓴다.
 ///
 /// 사용자 흐름은 `app/README.md` 의 "현재 사용자 흐름" 과 피그마 스토리맵
-/// A~H 를 따른다. `H` 일대기와 `리포트 기록` 은 기획 보류 상태다.
+/// A~H 를 따른다. `리포트 기록` 은 기획 보류 상태다.
 library;
 
 abstract final class AppRoutes {
@@ -112,6 +112,28 @@ abstract final class AppRoutes {
   /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
   static const notifications = '/notifications';
 
-  /// H 일대기. 기획 보류.
+  /// H 일대기의 표지. 하단 탭의 일대기에서 들어온다.
   static const album = '/album';
+
+  /// 일대기 표지를 펼친 첫 장. 어르신 정보, 분류와 최근 이야기.
+  static const albumBook = '/album/book';
+
+  /// 한 분류의 목차. `:category` 는 `LifeStoryCategory` 의 이름이다.
+  static const albumCategory = '/album/category/:category';
+
+  static String albumCategoryOf(String category) => '/album/category/$category';
+
+  /// 이야기 한 편. 목차 아래에 두어 뒤로 가면 목차가 나온다.
+  static const albumStory = '/album/category/:category/story/:storyId';
+
+  static String albumStoryOf(String category, String storyId) =>
+      '/album/category/$category/story/$storyId';
+
+  /// 일대기 첫 장의 `이야기 추가하기`.
+  static const albumStoryNew = '/album/new';
+
+  /// 이야기 화면의 연필. 고친 이야기를 돌려준다.
+  static const albumStoryEdit = '/album/edit/:storyId';
+
+  static String albumStoryEditOf(String storyId) => '/album/edit/$storyId';
 }
