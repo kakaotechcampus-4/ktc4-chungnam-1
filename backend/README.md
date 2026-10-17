@@ -81,6 +81,13 @@ uv run alembic upgrade head
 CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
 그대로 신뢰하지 않고 반드시 검토한다.
 
+`init.sql`과 migration이 어긋나지 않는지는 [test_migration_consistency.py](tests/test_migration_consistency.py)가
+검사한다. 임시 DB 두 개에 각각 migration과 `init.sql`을 적용하고 카탈로그에서 열, 제약의 이름과
+정의, 인덱스, 뷰, 함수, trigger와 확장을 읽어 비교한다. 열 순서는 비교하지 않는다. 같은 파일에서
+`alembic/env.py`가 호출하는 쪽이 넘긴 주소를 유지하고, `alembic.ini`의 기본 예시 주소일 때만
+`SAEROK_DATABASE_URL`을 쓰는지도 각각 검사한다. 다른 DB 테스트처럼 `SAEROK_TEST_DATABASE_URL`이
+없으면 건너뛰며 공용 DB나 작업용 DB에는 연결하지 않는다.
+
 PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정은 PostgreSQL에 저장하지만 세션 폐기 목록은 아직 프로세스 메모리 구현이다.
 
 ## DB 연결과 저장소 작성 규칙
