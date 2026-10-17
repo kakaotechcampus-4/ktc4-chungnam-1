@@ -1,12 +1,13 @@
-"""생애 정보 (API 2-6, 2-7).
+"""생애 정보 (API 2-6, 2-7, 2-9).
 
-일대기에서 세부 정보 네 항목 밖의 생애 정보를 추가하고 고친다. 변경 제안 승인으로
+일대기에서 세부 정보 네 항목 밖의 생애 정보를 추가하고 고치고 지운다. 변경 제안 승인으로
 만드는 생애 정보(7-4)는 작업 C가 `app.services.life_facts.create_life_fact`로 만든다.
+2-9 번호는 임시다(`backend/docs/work-split/D-life-story.md`).
 """
 
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.api.deps import CurrentAccountDep, DbConnectionDep
 from app.api.routes.profiles import to_life_fact_response
@@ -37,6 +38,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
 
 @router.post(
     "/profiles/{profile_id}/life-facts",
+    summary="생애 정보 추가",
     status_code=status.HTTP_201_CREATED,
     response_model=LifeFactResponse,
     responses=_errors(401, 404, 422, 503),
@@ -47,18 +49,26 @@ async def add_life_fact(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
 ) -> LifeFactResponse:
+    """일대기에서 세부 정보 네 항목 밖의 생애 정보 추가.
+
+    API 명세 2-6
+    """
+
     fact = await life_facts.add_life_fact(
         connection,
         profile_id,
         account_id=account.account_id,
         title=payload.title,
         content=payload.content,
+        story_category=payload.story_category,
+        image_number=payload.image_number,
     )
     return to_life_fact_response(fact)
 
 
 @router.patch(
     "/life-facts/{fact_id}",
+    summary="생애 정보 수정",
     response_model=LifeFactResponse,
     responses=_errors(401, 404, 422, 503),
 )
@@ -68,6 +78,11 @@ async def update_life_fact(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
 ) -> LifeFactResponse:
+    """생애 정보 중 보낸 필드(`storyCategory`, `title`, `content`, `imageNumber`)만 수정.
+
+    API 명세 2-7
+    """
+
     fact = await life_facts.update_life_fact(
         connection,
         fact_id,
@@ -75,3 +90,26 @@ async def update_life_fact(
         changes=payload.column_changes(),
     )
     return to_life_fact_response(fact)
+
+
+@router.delete(
+    "/life-facts/{fact_id}",
+    summary="생애 정보 삭제",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses=_errors(401, 404, 503),
+)
+async def delete_life_fact(
+    fact_id: UUID,
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+) -> Response:
+    """일대기에서 생애 정보 삭제. 이미 만든 카드와 주제는 남는다.
+
+    API 명세 2-9
+    """
+
+    await life_facts.delete_life_fact(
+        connection, fact_id, account_id=account.account_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

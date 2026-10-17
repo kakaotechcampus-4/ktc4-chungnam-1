@@ -16,6 +16,7 @@ router = APIRouter(tags=["speech-analyses"])
 
 @router.post(
     "/api/v1/visit-sessions/{session_id}/speech-analyses",
+    summary="면회 음성 분석 요청",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=SpeechAnalysisAccepted,
     response_model_by_alias=True,
@@ -30,7 +31,10 @@ async def submit_speech_analysis(
         Form(alias="participantCount", ge=1, le=8),
     ],
 ) -> SpeechAnalysisAccepted:
-    """면회 WAV를 안전하게 인수하고 비동기 분석 작업을 등록한다."""
+    """면회 WAV를 안전하게 인수하고 비동기 분석 작업을 등록한다.
+
+    API 명세 6-2
+    """
 
     job = await submission.submit(
         account=account,
@@ -47,6 +51,7 @@ async def submit_speech_analysis(
 
 @router.get(
     "/api/v1/speech-analyses/{analysis_id}",
+    summary="음성 분석 상태 조회",
     response_model=SpeechAnalysisStatusResponse,
     response_model_by_alias=True,
 )
@@ -55,7 +60,10 @@ async def get_speech_analysis(
     submission: SpeechSubmissionDep,
     analysis_id: Annotated[str, Path(min_length=1, max_length=128)],
 ) -> SpeechAnalysisStatusResponse:
-    """요청 계정이 소유한 음성 분석 작업의 안전한 상태만 반환한다."""
+    """요청 계정이 소유한 음성 분석 작업의 안전한 상태만 반환한다.
+
+    API 명세 6-3
+    """
 
     job = await submission.get(
         account=account,

@@ -22,41 +22,57 @@ ADMIN_DATABASE_URL = os.environ.get("SAEROK_TEST_DATABASE_URL")
 
 
 @pytest.fixture
-def test_database_url():
-    """빈 임시 DB의 SQLAlchemy 형식 연결 문자열."""
+def create_test_database():
+    """빈 임시 DB를 만들어 SQLAlchemy 형식 연결 문자열을 돌려주는 함수.
+
+    한 테스트에서 DB 두 개가 필요할 때(init.sql과 migration 결과 비교, env.py의 주소
+    선택 검사) 쓴다. 만든 DB는 테스트가 끝나면 모두 지운다.
+    """
     if not ADMIN_DATABASE_URL:
         pytest.skip(
             "SAEROK_TEST_DATABASE_URL이 설정된 실제 PostgreSQL에서만 실행한다 "
             "(예: postgresql://postgres:postgres@localhost:5432/postgres)"
         )
     admin_dsn = psycopg_dsn(ADMIN_DATABASE_URL)
-    db_name = f"saerok_test_{uuid.uuid4().hex[:12]}"
-
-    with psycopg.connect(admin_dsn, autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{db_name}"')
-
     base = admin_dsn.rsplit("/", 1)[0]
-    database_url = f"{base}/{db_name}".replace(
-        "postgresql://", "postgresql+psycopg://"
-    )
+    created: list[str] = []
+
+    def create() -> str:
+        db_name = f"saerok_test_{uuid.uuid4().hex[:12]}"
+        with psycopg.connect(admin_dsn, autocommit=True) as conn:
+            conn.execute(f'CREATE DATABASE "{db_name}"')
+        created.append(db_name)
+        return f"{base}/{db_name}".replace("postgresql://", "postgresql+psycopg://")
+
     try:
-        yield database_url
+        yield create
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (db_name,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
+            for db_name in created:
+                conn.execute(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = %s AND pid <> pg_backend_pid()",
+                    (db_name,),
+                )
+                conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
+
+
+@pytest.fixture
+def test_database_url(create_test_database):
+    """빈 임시 DB의 SQLAlchemy 형식 연결 문자열."""
+    return create_test_database()
+
+
+def make_alembic_config(database_url: str) -> Config:
+    config = Config(str(BACKEND_DIR / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    return config
 
 
 @pytest.fixture
 def alembic_config(test_database_url):
-    config = Config(str(BACKEND_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    config.set_main_option("sqlalchemy.url", test_database_url)
-    return config
+    return make_alembic_config(test_database_url)
 
 
 @pytest.fixture

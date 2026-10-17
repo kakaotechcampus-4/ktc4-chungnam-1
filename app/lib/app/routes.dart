@@ -1,7 +1,7 @@
 /// 화면 경로를 한곳에 모은다. 화면 이동은 문자열을 직접 적지 않고 여기를 쓴다.
 ///
 /// 사용자 흐름은 `app/README.md` 의 "현재 사용자 흐름" 과 피그마 스토리맵
-/// A~H 를 따른다. `H` 일대기와 `리포트 기록` 은 기획 보류 상태다.
+/// A~H 를 따른다. `리포트 기록` 은 기획 보류 상태다.
 library;
 
 abstract final class AppRoutes {
@@ -49,16 +49,26 @@ abstract final class AppRoutes {
   /// F 보호자 소감 작성.
   static const visitReview = '/visit/review';
 
+  /// 앱을 다시 켠 뒤 평가 전(`evaluationPending`)인 회차의 평가를 이어서 한다.
+  /// 홈의 `평가 이어서 하기` 배너가 연다.
+  static String visitReviewOf(String sessionId) =>
+      '$visitReview?session=$sessionId';
+
+  /// 평가 뒤 음성을 보내지 못한(`audioPending`) 회차의 음성을 다시 보낸다.
+  /// 피그마 설계 없음. 홈의 `음성 다시 보내기` 배너가 연다.
+  static const visitUpload = '/visit/upload';
+
+  static String visitUploadOf(String sessionId) =>
+      '$visitUpload?session=$sessionId';
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
 
   /// G 리포트. `:reportId` 를 받는다.
   static const report = '/report/:reportId';
 
-  /// 리포트 기록에서 들어오면 이미 반영을 마친 회차라 변경 사항을 다시 묻지
-  /// 않는다. 홈의 도착 알림에서 들어오면 아직 확인 전이다.
-  static String reportOf(String reportId, {bool fromHistory = false}) =>
-      fromHistory ? '/report/$reportId?from=history' : '/report/$reportId';
+  /// 홈 알림과 리포트 기록이 같은 주소로 연다. 서버의 리포트는 회차 ID 다.
+  static String reportOf(String reportId) => '/report/$reportId';
 
   /// G-2 변경 사항 확인.
   static const reportChanges = '/report/:reportId/changes';
@@ -102,6 +112,28 @@ abstract final class AppRoutes {
   /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
   static const notifications = '/notifications';
 
-  /// H 일대기. 기획 보류.
+  /// H 일대기의 표지. 하단 탭의 일대기에서 들어온다.
   static const album = '/album';
+
+  /// 일대기 표지를 펼친 첫 장. 어르신 정보, 분류와 최근 이야기.
+  static const albumBook = '/album/book';
+
+  /// 한 분류의 목차. `:category` 는 `LifeStoryCategory` 의 이름이다.
+  static const albumCategory = '/album/category/:category';
+
+  static String albumCategoryOf(String category) => '/album/category/$category';
+
+  /// 이야기 한 편. 목차 아래에 두어 뒤로 가면 목차가 나온다.
+  static const albumStory = '/album/category/:category/story/:storyId';
+
+  static String albumStoryOf(String category, String storyId) =>
+      '/album/category/$category/story/$storyId';
+
+  /// 일대기 첫 장의 `이야기 추가하기`.
+  static const albumStoryNew = '/album/new';
+
+  /// 이야기 화면의 연필. 고친 이야기를 돌려준다.
+  static const albumStoryEdit = '/album/edit/:storyId';
+
+  static String albumStoryEditOf(String storyId) => '/album/edit/$storyId';
 }

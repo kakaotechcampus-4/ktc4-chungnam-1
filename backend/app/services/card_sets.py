@@ -64,8 +64,17 @@ def _status(latest: dict[str, Any] | None) -> str:
     return "inVisit" if latest["evaluated_at"] is None else "none"
 
 
-async def generation_status(connection: DbConnection, profile_id: UUID) -> str:
-    """`none`, `running`, `ready`, `inVisit`, `failed`."""
+async def generation_status(
+    connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
+) -> str:
+    """`none`, `running`, `ready`, `inVisit`, `failed`.
+
+    더는 끝나지 않을 `running`을 먼저 실패로 정리함(`CardGenerationQueue.expire_stuck`).
+    정리하지 않으면 worker가 없을 때 앱이 `running`만 보고 다시 요청할 수 없음.
+    """
+    await CardGenerationQueue().expire_stuck(
+        connection, profile_id, start_timeout_seconds=start_timeout_seconds
+    )
     return _status(await _latest(connection, profile_id))
 
 
@@ -117,19 +126,28 @@ async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
 
 
 async def start_card_generation(
-    connection: DbConnection, profile_id: UUID, *, model: str, prompt_version: int
+    connection: DbConnection,
+    profile_id: UUID,
+    *,
+    model: str,
+    prompt_version: int,
+    start_timeout_seconds: int,
 ) -> None:
     """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
 
     `ready`도 거절해서 아직 안 쓴 완료 묶음은 늘 최신 묶음 하나뿐이게 함. 그래서 5-1이 받는
     묶음이 4-2, 4-3이 보는 최신 묶음과 같음.
 
+    끝나지 않을 `running`은 상태를 보기 전에 실패로 정리하므로, 그 뒤 요청은 새 작업을 만듦.
+
     프로필당 `running`은 하나(부분 유일 인덱스 `uq_card_sets_running`). `prompt_version` 열이
     문자열 열이라 문자열로 저장함.
     """
     async with connection.transaction():
         await lock_profile(connection, profile_id)
-        status = await generation_status(connection, profile_id)
+        status = await generation_status(
+            connection, profile_id, start_timeout_seconds=start_timeout_seconds
+        )
         if status == "inVisit":
             raise AppError(
                 status_code=409,
@@ -180,6 +198,18 @@ class CardGenerationError(RuntimeError):
 async def _rows(connection: DbConnection, sql: str, profile_id: UUID) -> list[dict[str, Any]]:
     cursor = await connection.execute(sql, {"profile_id": profile_id})
     return await cursor.fetchall()
+
+
+def _without_deleted_facts(
+    evidence: list[dict[str, str]], fact_ids: set[str]
+) -> list[dict[str, str]]:
+    """지금 없는 생애 정보를 가리키는 근거 항목을 뺌.
+
+    보호자가 일대기에서 지운 이야기(API 2-9)도 주제와 지난 카드의 근거에는 남아 있음(FK 없는
+    JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시 써서 결과 검증에서 실패함. 저장된 근거는
+    고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는 미정(작업 D 문서 미정 D3).
+    """
+    return [item for item in evidence if "factId" not in item or item["factId"] in fact_ids]
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -238,6 +268,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         " ORDER BY v.started_at, c.position",
         profile_id,
     )
+    fact_ids = {str(row["fact_id"]) for row in facts}
     feedback_by_topic: dict[UUID, list[TopicFeedback]] = {}
     for row in feedback:
         feedback_by_topic.setdefault(row["topic_id"], []).append(
@@ -262,7 +293,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=row["evidence"],
+                evidence=_without_deleted_facts(row["evidence"], fact_ids),
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -280,7 +311,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 position=row["position"],
                 card_title=row["card_title"],
                 primary_question=row["primary_question"],
-                evidence=row["evidence"],
+                evidence=_without_deleted_facts(row["evidence"], fact_ids),
                 selected=row["selected"],
                 review_reaction=row["review_reaction"],
             )

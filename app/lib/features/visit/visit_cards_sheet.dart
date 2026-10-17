@@ -82,7 +82,7 @@ class _Cards extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: _MainQuestion(
-                      topicTitle: card.topicTitle,
+                      cardTitle: card.cardTitle,
                       question: card.primaryQuestion,
                     ),
                   ),
@@ -185,9 +185,9 @@ class _StatusBar extends StatelessWidget {
 
 /// 위쪽 절반. 흰 바탕에 어르신께 여쭙는 문장을 크게 둔다.
 class _MainQuestion extends StatelessWidget {
-  const _MainQuestion({required this.topicTitle, required this.question});
+  const _MainQuestion({required this.cardTitle, required this.question});
 
-  final String topicTitle;
+  final String cardTitle;
   final String question;
 
   @override
@@ -205,7 +205,7 @@ class _MainQuestion extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            '[ $topicTitle ]',
+            '[ $cardTitle ]',
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),

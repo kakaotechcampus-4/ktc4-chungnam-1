@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -145,7 +147,7 @@ class _StepBody extends StatelessWidget {
   }
 }
 
-class _Actions extends StatelessWidget {
+class _Actions extends StatefulWidget {
   const _Actions({
     required this.state,
     required this.controller,
@@ -157,12 +159,47 @@ class _Actions extends StatelessWidget {
   final String? addingId;
 
   @override
+  State<_Actions> createState() => _ActionsState();
+}
+
+class _ActionsState extends State<_Actions> {
+  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않게 버튼을 막는다.
+  bool _saving = false;
+
+  /// 저장을 기다리고, 실패하면 이유를 알리고 이 단계에 남는다.
+  Future<bool> _save(Future<void> Function() action) async {
+    setState(() => _saving = true);
+    try {
+      await action();
+      return true;
+    } on ApiFailure catch (failure) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(profileFailureMessage(failure))));
+      return false;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // 기본 정보는 모두 채워야 넘어간다.
+    final state = widget.state;
+    final controller = widget.controller;
+    final addingId = widget.addingId;
+
+    if (_saving) {
+      return const PrimaryButton(label: '저장하는 중이에요', onPressed: null);
+    }
+
+    // 기본 정보는 모두 채워야 넘어간다. 로그인했으면 여기서 서버에 만든다.
     if (state.isBasicInfo) {
       return PrimaryButton(
         label: '다음',
-        onPressed: state.draft.basicInfoFilled ? controller.next : null,
+        onPressed: state.draft.basicInfoFilled
+            ? () => _save(() => controller.submitBasicInfo(addingId: addingId))
+            : null,
       );
     }
 
@@ -178,11 +215,13 @@ class _Actions extends StatelessWidget {
     // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다. 마치면 입력한 분을
     // 목록에 넣고 홈으로 간다.
     final draft = state.draft;
-    void finish() {
+    Future<void> finish() async {
       final name = draft.name.trim();
       final messenger = ScaffoldMessenger.of(context);
-      controller.finish(addingId: addingId);
-      context.go(AppRoutes.home);
+      final router = GoRouter.of(context);
+      final saved = await _save(() => controller.finish(addingId: addingId));
+      if (!saved) return;
+      router.go(AppRoutes.home);
       if (addingId != null) {
         messenger
           ..hideCurrentSnackBar()
@@ -206,9 +245,9 @@ class _Actions extends StatelessWidget {
             photo.status == PhotoUploadStatus.waiting ||
             (photo.failure?.retryable ?? false),
       );
-      void dropAndGoHome() {
+      Future<void> dropAndGoHome() async {
         controller.dropFailedPhotos();
-        finish();
+        await finish();
       }
 
       return Column(

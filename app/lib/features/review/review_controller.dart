@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
 import '../../data/models.dart';
+import '../../data/providers.dart';
+import '../visit/pending_uploads.dart';
 import '../visit/visit_controller.dart';
 
 /// 보호자가 면회를 마치고 남기는 평가다.
@@ -75,25 +78,15 @@ class ReviewController extends Notifier<ReviewDraft> {
     state = state.copyWith(cardAnswers: next);
   }
 
-  /// 화면에서 모은 값을 계약 객체로 바꾼다.
+  /// 화면에서 모은 값을 API 6-1 요청으로 바꾼다. 필수 답이 없으면 `null` 이다.
   ///
   /// 답하지 않은 카드는 `cardReviews` 에 담지 않는다. 담지 않는 것이 미응답이고,
   /// `wasUsed` 가 `false` 인 것이 미사용이다. 둘을 뭉개면 보호자가 하지 않은
   /// 판단을 대신 만들게 된다.
-  ///
-  /// **아직 화면에서 부르지 않는다.** 지금은 테스트가 계약 형태를 확인하는 데만
-  /// 쓰고, 소감 화면의 제출 버튼은 처리 중 화면으로 이동만 한다. 저장 인터페이스가
-  /// 정해지면 그 버튼에서 이 메서드를 부른다.
-  CaregiverEvaluation? toEvaluation({
-    required String reviewId,
-    required String sessionId,
-    required List<ConversationCard> cards,
-  }) {
+  EvaluationSubmission? toSubmission({required List<ConversationCard> cards}) {
     if (!state.canSubmit) return null;
 
-    return CaregiverEvaluation(
-      reviewId: reviewId,
-      sessionId: sessionId,
+    return EvaluationSubmission(
       conversationSatisfaction: state.satisfaction!,
       careRecipientReaction: state.reaction!,
       cardReviews: [
@@ -113,8 +106,75 @@ class ReviewController extends Notifier<ReviewDraft> {
 final reviewControllerProvider =
     NotifierProvider<ReviewController, ReviewDraft>(ReviewController.new);
 
-/// 소감 화면에서 평가할 카드. 면회에서 다룬 카드를 그대로 쓴다.
-final reviewCardsProvider = FutureProvider<List<ConversationCard>>((ref) async {
-  final visit = await ref.watch(visitControllerProvider.future);
-  return visit.cards;
-});
+/// 소감을 남길 회차와 그 회차에서 다룬 카드, 보낼 녹음.
+class ReviewTarget {
+  const ReviewTarget({
+    required this.sessionId,
+    required this.cards,
+    this.audioPath,
+    this.participantCount,
+  });
+
+  /// 서버의 회차. 녹음을 시작하지 못해 회차가 없으면 `null` 이다.
+  final String? sessionId;
+
+  /// 평가할 카드. 면회에서 다룬 카드다.
+  final List<ConversationCard> cards;
+
+  /// 보낼 녹음 파일. 없으면 녹음을 보내지 못한다.
+  final String? audioPath;
+
+  /// 녹음을 끝낼 때 보호자가 확인한 1~8. 없으면 녹음을 보내지 못한다.
+  final int? participantCount;
+}
+
+/// 소감 화면이 볼 회차.
+///
+/// 인자가 `null` 이면 지금 막 마친 면회다. 앱이 켜져 있는 동안 면회 상태가
+/// 들고 있는 값을 쓴다.
+///
+/// 인자가 회차 ID 면 앱을 다시 켠 뒤 홈 배너의 `평가 이어서 하기` 로 들어온
+/// 경우다(`/visit/review?session=<회차 ID>`). 카드는 지금 쓰는 묶음(API 4-3)에서
+/// 이 회차가 고른 카드를, 녹음은 기기 기록([PendingUploads])에서 찾는다. 묶음이
+/// 이 회차의 것이 아니면 이어서 할 수 없으므로 `null` 이다.
+final reviewTargetProvider = FutureProvider.family<ReviewTarget?, String?>((
+  ref,
+  sessionId,
+) async {
+  if (sessionId == null) {
+    final visit = await ref.watch(visitControllerProvider.future);
+    return ReviewTarget(
+      sessionId: visit.sessionId,
+      cards: visit.cards,
+      audioPath: visit.recordingPath,
+      participantCount: visit.participantCount,
+    );
+  }
+
+  final CardSet set;
+  try {
+    set = await ref.watch(currentCardSetProvider.future);
+  } on ApiServerFailure catch (failure) {
+    // 쓸 묶음이 없다. 평가를 마쳤거나 다른 회차로 넘어간 경우다.
+    if (failure.statusCode == 404) return null;
+    rethrow;
+  }
+  if (set.usedBySessionId != sessionId) return null;
+
+  // 기록을 읽지 못해도 소감은 받는다. 녹음은 보내지 못한다고 알린다.
+  PendingUpload? pending;
+  try {
+    pending = await ref.read(pendingUploadsProvider).find(sessionId);
+  } on Exception {
+    pending = null;
+  }
+  return ReviewTarget(
+    sessionId: sessionId,
+    cards: [
+      for (final card in set.cards)
+        if (card.selected) card,
+    ],
+    audioPath: pending?.audioPath,
+    participantCount: pending?.participantCount,
+  );
+}, retry: (_, _) => null);

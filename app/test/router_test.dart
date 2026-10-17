@@ -11,7 +11,10 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/report/story_edit_screen.dart';
+import 'package:saerok/features/review/review_screen.dart';
+import 'package:saerok/features/review/status_notice.dart';
 
+import 'fake_card_api.dart';
 import 'sample_profile.dart';
 
 void main() {
@@ -34,7 +37,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [withSampleProfile, ...overrides],
+          overrides: [withSampleProfile, ...withMockCards, ...overrides],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,
@@ -71,6 +74,24 @@ void main() {
         expect(find.byType(Scaffold), findsWidgets);
       });
     }
+
+    testWidgets('음성 다시 보내기는 회차 ID 를 받는다', (tester) async {
+      await openAt(tester, '${AppRoutes.visitUpload}?session=session_test_001');
+      expect(tester.takeException(), isNull);
+      // 대역 기록에 이 회차가 없으므로 리포트를 만들 수 없다고 안내한다.
+      expect(find.text(noRecordingTitle), findsOneWidget);
+      expect(find.text('다시 보내기'), findsNothing, reason: '다시 보내라고 반복하지 않는다');
+    });
+
+    testWidgets('평가 이어서 하기는 회차 ID 를 받는다', (tester) async {
+      await openAt(tester, '${AppRoutes.visitReview}?session=session_other');
+      expect(tester.takeException(), isNull);
+      // 회차를 찾지 못했을 때의 안내는 `review_resume_test.dart` 에서 본다.
+      expect(
+        tester.widget<ReviewScreen>(find.byType(ReviewScreen)).sessionId,
+        'session_other',
+      );
+    });
 
     testWidgets('리포트는 reportId 를 받는다', (tester) async {
       await openAt(tester, AppRoutes.reportOf('report_demo_001'));
@@ -121,24 +142,38 @@ void main() {
       expect(find.byType(StoryEditMissingView), findsOneWidget);
     });
 
-    testWidgets('기록에서 연 리포트에는 변경 사항 버튼이 없다', (tester) async {
-      await openAt(tester, AppRoutes.reportOf('report_demo_001'));
+    testWidgets('확인할 제안이 남은 리포트에는 변경 사항 버튼이 있다', (tester) async {
+      // 확인 전(pending) 제안이 하나 남은 회차다. 값은 합성이다.
+      const proposal = ChangeProposal(
+        sessionId: 'session_demo_001',
+        lifeFactProposals: [
+          LifeFactProposal(
+            proposalId: 'proposal_demo_001',
+            title: '한복',
+            content: '한복을 주로 만드셨어요.',
+            reason: '이번 면회에서 말씀하셨어요.',
+            reviewStatus: ChangeReviewStatus.pending,
+          ),
+        ],
+        topicProposals: [],
+      );
+      await openAt(
+        tester,
+        AppRoutes.reportOf('report_demo_001'),
+        overrides: [
+          changeProposalProvider.overrideWith((ref) async => proposal),
+        ],
+      );
       expect(
         find.text('변경 사항 확인하기'),
         findsOneWidget,
-        reason: '알림에서 들어오면 아직 확인 전이다',
+        reason: '목 제안은 모두 확인 전(pending)이다',
       );
-
-      await openAt(
-        tester,
-        AppRoutes.reportOf('report_demo_001', fromHistory: true),
-      );
-      expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이미 반영을 마친 회차다');
     });
 
-    testWidgets('보류된 일대기는 안내를 보여준다', (tester) async {
+    testWidgets('일대기는 책 표지부터 보여준다', (tester) async {
       await openAt(tester, AppRoutes.album);
-      expect(find.text('화면 설계 중입니다'), findsOneWidget);
+      expect(find.text('쌓아온 이야기'), findsOneWidget);
     });
 
     testWidgets('없는 경로는 오류 안내를 보여준다', (tester) async {

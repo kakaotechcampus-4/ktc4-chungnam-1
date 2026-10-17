@@ -27,7 +27,7 @@
 | 4-2 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 | 바로 |
 | 4-3 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 | 바로 |
 | 5-1 | `POST` | `/api/v1/visit-sessions` | 신규 | 바로 |
-| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 | 사진 동의 설계 후(미정 3) |
+| 5-2 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 구현 완료 | 합성 사진과 메모리 저장소로 검증. 실제 S3 연동과 실제 사용자 사진 수집 전 동의 연결 검증은 남음(후속 3) |
 | 5-3 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 | 바로 |
 | 8-2 | | 4-1 처리로 옮김 | 삭제 | |
 
@@ -59,7 +59,7 @@
 3. 5-1, 5-3
 4. 4-1 처리의 요청 조립, 결과 검증, 결과 저장
 5. `start_card_generation`, 4-1
-6. 4-1 처리 함수와 worker 실행 진입점, 사진 동의 설계 후 5-2
+6. 4-1 처리 함수와 worker 실행 진입점을 연결한다. 5-2는 구현했고 합성 사진과 메모리 저장소로 검증했다. 실제 S3 연동과 실제 사용자 사진 수집 전 동의 연결 검증은 후속 작업이다.
 
 ## 장별 공통 규칙
 
@@ -305,7 +305,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝난 프로필 사진, `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - 결과 검증: 카드 12장, `position` 1~12가 한 번씩, `followUpQuestions` 3개, `cardTitle`·`description`·`primaryQuestion`·`followUpQuestions`가 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`는 이 프로필의 주제이고 `feedback`에 `exclude`가 없음, 근거 항목 형식과 ID가 context에 있음, `profileField`는 context에 값이 있는 항목, `evidenceSource`가 `none`이면 `evidence`는 빈 배열이고 나머지는 같은 종류의 근거 항목이 하나 이상이다. 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제를 `profile_topics`에 만들고 `conversation_cards` 12장을 넣은 뒤 `card_sets`를 `completed`로 바꾸고 `generation_log`(`{"input": context, ...}`)를 넣는다.
-- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다.
+- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다.
 - 결과를 저장할 때 `status = 'completed'`와 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
 - **실패해도 `generation_log`가 있어야 한다**(CHECK). AI에 보낸 입력을 남기며 실패시키려면 `queue.fail(connection, job, error_code=..., generation_input=context)`을 부르고 처리 함수에서 정상 반환한다. 그냥 `AppError`를 올리면 `{"input": null}`로 기록된다.
 - 실행 진입점은 `app/workers/speech_analysis.py`처럼 `run_worker_main`으로 만든다(예: `app/workers/card_generation.py`).
@@ -419,9 +419,12 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 **구현 메모**
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
-- **면회 사진도 등록 사진이라 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 동의 저장 위치가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
+- **실제 사용자의 면회 사진도 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 가입 시 받은 동의는 기존 계정 동의 이력에 저장한다. 테스트 자료로 업로드와 조회를 먼저 구현하고, 실제 사용자 사진을 받기 전에는 동의 조회와 미동의 차단을 검증한다(후속 3).
+- 현재 5-2 코드에는 사진 보관 동의 검사가 없다. 위 정책을 구현한 상태가 아니며, 테스트 자료로 먼저 개발하되 실제 사용자 사진 수집 전에 해당 검사를 추가한다.
 - 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
+- S3 업로드 동안 회차 행을 잠그지 않도록 평가 여부를 올리기 전에 한 번 확인해 일찍 거절하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 구현: [routes/visit_sessions.py](../../app/api/routes/visit_sessions.py), [services/visit_photos.py](../../app/services/visit_photos.py), 테스트 [test_visit_photos.py](../../tests/test_visit_photos.py)
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
 
 <br>
@@ -538,9 +541,9 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ## 미정 사항
 
-아래 항목은 정해지기 전에 구현으로 먼저 정하지 않는다. 번호는 API 명세의 미정 사항 번호다.
+아래에는 미정 정책과 후속 구현 항목이 함께 있다. 미정 정책을 구현으로 확정하지 않되, 테스트 가정을 명시하고 기능 개발과 검증은 진행한다. 개인정보 검토가 남은 항목은 실제 사용자 자료 사용 전에 확인하며 기능 전체를 보류하지 않는다. 번호는 API 명세의 미정 사항 번호다.
 
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
+| 3 | 2026-10-14 PM 결정: 사진 보관과 AI 분석은 가입 시 별도 선택 동의로 받고 기존 계정 동의 이력에 저장. 테스트 자료로 개발을 진행하며, 동의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 실제 사용자 사진 처리 전 구현 및 검증 | 3-1, 5-2, 8-4 | FE, BE, AI. 남은 개인정보 검토는 PM |
