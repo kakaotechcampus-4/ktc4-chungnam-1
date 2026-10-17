@@ -10,6 +10,7 @@ import '../../data/providers.dart';
 import '../auth/auth_providers.dart';
 import '../life_story/life_story_providers.dart';
 import '../profile/photo_description_store.dart';
+import '../visit/visit_camera.dart';
 import 'photo_picker.dart';
 import 'photo_uploader.dart';
 import 'setup_steps.dart';
@@ -402,12 +403,13 @@ final pendingSetupsProvider =
 /// 같은 휴대폰으로 다른 사람이 로그인해도 앞사람의 어르신 정보가 보이지 않게
 /// 한다. 어르신 번호는 다시 1 부터 매겨지므로, 어르신마다 고친 사진 설명과
 /// 일대기에서 바꾼 이야기도 함께 지워야 다음 사람의 같은 번호 어르신에 남지
-/// 않는다.
+/// 않는다. 찍어 두고 올리지 않은 면회 사진도 기기에서 지운다.
 void forgetCareProfiles(WidgetRef ref) {
   ref
     ..invalidate(careProfilesProvider)
     ..invalidate(setupControllerProvider)
     ..invalidate(pendingSetupsProvider)
     ..invalidate(editedPhotoDescriptionsProvider)
-    ..invalidate(lifeStoryEditsProvider);
+    ..invalidate(lifeStoryEditsProvider)
+    ..invalidate(visitPhotoProvider);
 }
