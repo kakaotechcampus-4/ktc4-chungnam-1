@@ -24,6 +24,14 @@ class FakeVisitApi implements VisitApi {
   /// 6-2 가 이 실패로 끝나게 한다.
   Object? audioFailure;
 
+  /// 5-2 가 차례로 이 실패로 끝나게 한다. 다 쓰면 성공한다.
+  final photoFailures = <Object>[];
+
+  /// 5-2 로 올린 사진.
+  final photos = <({String sessionId, String photoPath})>[];
+
+  static const photoId = 'photo_test_001';
+
   /// 6-2 로 보낸 녹음.
   ({String sessionId, String audioPath, int participantCount})? audio;
 
@@ -51,6 +59,17 @@ class FakeVisitApi implements VisitApi {
     if (failCreate) throw const ApiNetworkFailure();
     created = (setId: setId, selectedCardIds: selectedCardIds);
     return _session(setId, selectedCardIds);
+  }
+
+  @override
+  Future<String> uploadPhoto(
+    String sessionId, {
+    required String photoPath,
+  }) async {
+    calls.add('photo');
+    if (photoFailures.isNotEmpty) throw photoFailures.removeAt(0);
+    photos.add((sessionId: sessionId, photoPath: photoPath));
+    return photoId;
   }
 
   @override

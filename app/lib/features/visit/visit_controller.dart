@@ -8,6 +8,7 @@ import '../../data/providers.dart';
 import '../../data/visit_api.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
+import 'visit_camera.dart';
 import 'visit_recorder.dart';
 
 /// 녹음이 뜻대로 되지 않은 경우다. 화면은 이 값으로 안내 문구를 고른다.
@@ -27,6 +28,23 @@ enum VisitRecordingProblem {
   sessionFailed,
 }
 
+/// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
+///
+/// 사진은 녹음을 막지 않는다. 회차를 만든 뒤 녹음과 따로 올린다.
+enum VisitPhotoUpload {
+  /// 찍은 사진이 없거나 아직 회차가 없다.
+  none,
+  uploading,
+  uploaded,
+
+  /// 올리지 못했다. 다시 올리면 될 수 있다.
+  failed,
+
+  /// 올리지 못했고 다시 올려도 받지 않는다. 형식과 크기 거절, 평가가 끝난
+  /// 회차 등이다. 리포트에는 사진 없이 담긴다.
+  rejected,
+}
+
 /// 면회 한 회차의 진행 상태다.
 ///
 /// 녹음 장치는 [VisitRecorder] 가 맡는다. 여기서는 화면이 필요로 하는 상태와
@@ -44,6 +62,7 @@ class VisitState {
     this.recordingPath,
     this.problem,
     this.participantCount,
+    this.photoUpload = VisitPhotoUpload.none,
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -78,6 +97,8 @@ class VisitState {
   /// 녹음을 끝낼 때 보호자가 종료 모달에서 확인해 준 값이다. 앱이 목소리를
   /// 세어 짐작하지 않는다. 확인 전에는 `null` 이다.
   final int? participantCount;
+
+  final VisitPhotoUpload photoUpload;
 
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
@@ -115,6 +136,7 @@ class VisitState {
     String? recordingPath,
     VisitRecordingProblem? problem,
     int? participantCount,
+    VisitPhotoUpload? photoUpload,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -129,6 +151,7 @@ class VisitState {
     recordingPath: recordingPath ?? this.recordingPath,
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
+    photoUpload: photoUpload ?? this.photoUpload,
   );
 }
 
@@ -251,6 +274,8 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
 
       _update((now) => now.copyWith(sessionId: session.sessionId));
+      // 녹음은 사진을 기다리지 않는다.
+      unawaited(_uploadPhoto(retryOnce: true));
       return true;
     } on ApiFailure {
       _fail(VisitRecordingProblem.sessionFailed);
@@ -259,6 +284,56 @@ class VisitController extends AsyncNotifier<VisitState> {
       _creatingSession = false;
     }
   }
+
+  /// 올리지 못한 면회 사진을 다시 올린다. 녹음 화면의 버튼이 부른다.
+  ///
+  /// 소감을 저장하면(6-1) 서버가 받지 않으므로 녹음 화면에서만 부른다.
+  Future<void> retryPhotoUpload() async {
+    if (state.value?.photoUpload != VisitPhotoUpload.failed) return;
+    await _uploadPhoto(retryOnce: false);
+  }
+
+  /// 찍어 둔 사진을 회차에 올린다(API 5-2). 사진이 없으면 아무것도 하지 않는다.
+  ///
+  /// [retryOnce] 면 다시 시도해도 되는 실패(연결 실패, 서버가 `retryable`
+  /// 로 알린 실패)에 한 번만 더 올린다. 올리면 기기의 사진 파일을 지운다.
+  Future<void> _uploadPhoto({required bool retryOnce}) async {
+    final sessionId = state.value?.sessionId;
+    final photoPath = ref.read(visitPhotoProvider);
+    if (sessionId == null || photoPath == null) return;
+
+    _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploading));
+    final api = ref.read(visitApiProvider);
+    var attemptsLeft = retryOnce ? 2 : 1;
+    while (true) {
+      attemptsLeft--;
+      try {
+        await api.uploadPhoto(sessionId, photoPath: photoPath);
+        if (!ref.mounted) return;
+        _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploaded));
+        ref.read(visitPhotoProvider.notifier).forget();
+        return;
+      } on ApiFailure catch (failure) {
+        if (!ref.mounted) return;
+        final retryable = _isRetryable(failure);
+        if (retryable && attemptsLeft > 0) continue;
+        _update(
+          (now) => now.copyWith(
+            photoUpload: retryable
+                ? VisitPhotoUpload.failed
+                : VisitPhotoUpload.rejected,
+          ),
+        );
+        return;
+      }
+    }
+  }
+
+  static bool _isRetryable(ApiFailure failure) => switch (failure) {
+    ApiNetworkFailure() => true,
+    ApiServerFailure(:final retryable) => retryable,
+    _ => false,
+  };
 
   Future<void> _resumeRecording() async {
     try {

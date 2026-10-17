@@ -96,6 +96,13 @@ class VisitPhotoNotifier extends Notifier<String?> {
     state = _path = path;
     if (previous != null && previous != path) _camera.discard(previous);
   }
+
+  /// 서버에 올린 뒤 기기의 사진 파일을 지운다.
+  void forget() {
+    final path = _path;
+    state = _path = null;
+    if (path != null) _camera.discard(path);
+  }
 }
 
 final visitPhotoProvider = NotifierProvider<VisitPhotoNotifier, String?>(

@@ -1,6 +1,7 @@
 /// 면회 회차 API(`docs/architecture/api-spec.md` 5절).
 ///
-/// 회차는 녹음을 시작할 때 고른 카드로 만든다(5-1). 녹음 일시정지와 종료는
+/// 회차는 녹음을 시작할 때 고른 카드로 만든다(5-1). 면회 전에 찍은 사진은
+/// 회차를 만든 뒤 5-2 로 올린다. 녹음 일시정지와 종료는
 /// 단말에서 처리하고 서버에 알리지 않는다. 면회 중 보충 카드는 5-3 으로 더한다.
 /// 면회를 마치면 보호자 평가를 6-1 로 저장하고 녹음을 6-2 로 보낸다.
 library;
@@ -19,6 +20,12 @@ abstract interface class VisitApi {
     required String setId,
     required List<String> selectedCardIds,
   });
+
+  /// 5-2. 면회 전에 찍은 사진 한 장을 회차에 올리고 `photoId` 를 받는다.
+  ///
+  /// 평가(6-1) 전 회차만 받는다. 다시 올리면 서버가 앞 사진을 교체한다.
+  /// 형식은 서버가 파일 앞부분으로 가리므로 JPEG 또는 PNG 파일을 그대로 보낸다.
+  Future<String> uploadPhoto(String sessionId, {required String photoPath});
 
   /// 5-3. 면회 중 꺼낸 보충 카드를 회차에 더한다.
   ///
@@ -61,6 +68,22 @@ class ServerVisitApi implements VisitApi {
       'selectedCardIds': selectedCardIds,
     }),
   );
+
+  @override
+  Future<String> uploadPhoto(
+    String sessionId, {
+    required String photoPath,
+  }) async {
+    final body = await _client.postMultipart(
+      '/api/v1/visit-sessions/${Uri.encodeComponent(sessionId)}/photo',
+      files: [await http.MultipartFile.fromPath('image', photoPath)],
+    );
+    final photoId = body['photoId'];
+    if (photoId is! String || photoId.isEmpty) {
+      throw const ApiUnexpectedResponseFailure('photoId 가 없다');
+    }
+    return photoId;
+  }
 
   @override
   Future<VisitSession> addCards(String sessionId, List<String> cardIds) async =>
