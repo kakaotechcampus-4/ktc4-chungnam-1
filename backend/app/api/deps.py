@@ -34,7 +34,7 @@ from app.services.image_storage import (
     UnconfiguredImageStorage,
 )
 from app.services.session_revocations import (
-    InMemorySessionRevocationStore,
+    PostgresSessionRevocationStore,
     SessionRevocationStore,
 )
 from app.services.session_tokens import SessionClaims, TokenIssuer
@@ -161,9 +161,9 @@ def get_speech_submission_service(
     )
 
 
-@lru_cache
-def get_session_revocations() -> SessionRevocationStore:
-    return InMemorySessionRevocationStore()
+def get_session_revocations(connection: DbConnectionDep) -> SessionRevocationStore:
+    # 폐기 기록은 DB에 둔다. 서버를 다시 띄워도 만료 전 폐기한 세션을 계속 거절한다.
+    return PostgresSessionRevocationStore(connection)
 
 
 def _unauthenticated() -> AppError:

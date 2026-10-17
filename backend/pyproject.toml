@@ -14,6 +14,8 @@ dependencies = [
     "python-multipart>=0.0.20,<0.1",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.52.4,<0.53",
+    # 카드 생성(ai/card_generation). 저장소 안의 ai/를 경로 의존성으로 설치
+    "saerok-local-ai",
 ]
 
 [dependency-groups]
@@ -28,3 +30,6 @@ testpaths = ["tests"]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+saerok-local-ai = { path = "../ai", editable = true }

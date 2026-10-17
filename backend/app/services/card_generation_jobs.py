@@ -17,6 +17,9 @@ from psycopg.types.json import Jsonb
 from app.core.database import DbConnection
 from app.workers.base import LEASE_EXPIRED_ERROR
 
+# 정해진 시간 안에 worker가 가져가지 않은 작업의 실패 코드. worker가 없거나 멈췄다.
+NOT_STARTED_ERROR = "CARD_GENERATION_NOT_STARTED"
+
 
 @dataclass(frozen=True)
 class CardGenerationJob:
@@ -38,6 +41,38 @@ class CardGenerationQueue:
              WHERE status = 'running' AND lease_expires_at <= now()
             """,
             (LEASE_EXPIRED_ERROR,),
+        )
+        return cursor.rowcount
+
+    async def expire_stuck(
+        self, connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
+    ) -> int:
+        """프로필에서 더는 끝나지 않을 작업을 실패로 정리하고 정리한 수를 돌려준다.
+
+        `expire_leases`는 worker 루프 안에서만 돌아서, worker가 없으면 작업이 계속
+        `running`으로 남는다. 4-1과 4-2가 상태를 보기 전에 불러 다음 두 작업을 정리한다.
+
+        - 임대 없이 `start_timeout_seconds`가 지난 작업: 가져갈 worker가 없다
+        - 임대가 만료된 작업: 가져간 worker가 멈췄다
+
+        worker가 먼저 가져간 작업은 임대가 남아 있어 건드리지 않는다. 여기서 실패로 바꾼
+        작업은 `claim`이 `running`만 고르므로 worker가 가져가지 않는다.
+        """
+        cursor = await connection.execute(
+            """
+            UPDATE card_sets
+               SET status = 'failed',
+                   error_code = CASE WHEN lease_expires_at IS NULL THEN %s ELSE %s END,
+                   lease_expires_at = NULL,
+                   generation_log = jsonb_build_object('input', NULL)
+             WHERE profile_id = %s AND status = 'running'
+               AND (
+                    (lease_expires_at IS NULL
+                     AND created_at <= now() - (%s * interval '1 second'))
+                    OR lease_expires_at <= now()
+               )
+            """,
+            (NOT_STARTED_ERROR, LEASE_EXPIRED_ERROR, profile_id, start_timeout_seconds),
         )
         return cursor.rowcount
 

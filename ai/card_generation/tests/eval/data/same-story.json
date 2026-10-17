@@ -1,0 +1,763 @@
+{
+  "schemaVersion": 1,
+  "about": "추천하지 않기 판정 평가용 합성 자료. 사례 하나는 어르신 한 분이고, 막힌 주제 두 개와 새 후보들로 이뤄진다. expected는 해당하는 막힌 주제의 topicKey(없으면 null), tag는 짝의 종류다. 정답은 작성자(AI)가 정한 것이라 사람 검수가 필요하다. ambiguous는 PM이 범위를 정해야 답이 나오는 짝이라 정답 지표에서 뺀다. 같은 사람의 다른 이야기는 ambiguous, 같은 장소·시대·배경·솜씨만 겹치는 다른 이야기는 diff_context로 둔다.",
+  "tags": {
+    "same_overlap": "같은 이야기, 제목 낱말이 겹침",
+    "same_paraphrase": "같은 이야기, 제목 낱말이 거의 안 겹침",
+    "same_implicit": "같은 이야기, 낱말이 안 겹치고 상식이나 근거 글로만 이어짐",
+    "diff_overlap": "다른 이야기, 낱말이나 소재가 겹침",
+    "diff_context": "다른 이야기, 장소·시대·배경·솜씨가 겹침(실제 실행에서 잘못 막은 '옛날 장터 풍경' 같은 짝)",
+    "diff": "다른 이야기, 겹치는 것 없음",
+    "ambiguous": "범위를 정해야 답이 나옴. 같은 사람의 다른 이야기 등"
+  },
+  "cases": [
+    {
+      "caseId": "A",
+      "profile": {
+        "ageBand": "80s",
+        "gender": "male"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "military_service",
+          "topicTitle": "군대 이야기",
+          "description": "군 복무 시절의 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": []
+        },
+        {
+          "topicKey": "late_wife",
+          "topicTitle": "아내와의 추억",
+          "description": "먼저 떠나신 아내분과 함께한 일을 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "아내분은 10년 전에 돌아가셨어요."
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "군대 동기",
+          "note": "함께 지내던 동기들 이야기",
+          "evidenceTexts": [],
+          "expected": "military_service",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "입대하던 날",
+          "note": "처음 집을 떠나 입대하던 날의 기억",
+          "evidenceTexts": [],
+          "expected": "military_service",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "훈련소 시절",
+          "note": "훈련받던 때의 하루",
+          "evidenceTexts": [],
+          "expected": "military_service",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "휴가 나온 날",
+          "note": "부대에서 휴가를 받아 집에 오던 날",
+          "evidenceTexts": [],
+          "expected": "military_service",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "겨울 군고구마",
+          "note": "겨울밤 사 먹던 군고구마",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "아들 면회 가던 길",
+          "note": "아들이 군대에 있을 때 면회 가던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "아내가 해 주던 음식",
+          "note": "아내분이 즐겨 해 주시던 음식",
+          "evidenceTexts": [],
+          "expected": "late_wife",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "결혼식 올리던 날",
+          "note": "혼례를 치르던 날의 풍경",
+          "evidenceTexts": [],
+          "expected": "late_wife",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "신혼 단칸방",
+          "note": "결혼하고 처음 살림을 차린 방",
+          "evidenceTexts": [],
+          "expected": "late_wife",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "어머니가 해 주던 음식",
+          "note": "어릴 때 어머니가 해 주시던 음식",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "고향 바닷가",
+          "note": "고향 바닷가 풍경",
+          "evidenceTexts": [
+            "충남 서천 바닷가 마을에서 자라셨어요."
+          ],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "라디오 노래",
+          "note": "라디오에서 듣던 옛날 노래",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "전방 초소의 겨울",
+          "note": "눈 덮인 초소에서 밤을 새우던 일",
+          "evidenceTexts": [],
+          "expected": "military_service",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "그 시절 유행가",
+          "note": "스무 살 무렵 유행하던 노래",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        }
+      ]
+    },
+    {
+      "caseId": "B",
+      "profile": {
+        "ageBand": "70s",
+        "gender": "female"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "textile_factory",
+          "topicTitle": "방직 공장 시절",
+          "description": "젊어서 방직 공장에 다니던 시절을 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "열여섯에 대구 방직 공장에 들어가 일하셨어요."
+          ]
+        },
+        {
+          "topicKey": "in_laws",
+          "topicTitle": "시집살이",
+          "description": "시댁에서 지내던 시절을 여쭤보는 주제예요.",
+          "evidenceTexts": []
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "공장 기숙사 친구",
+          "note": "기숙사에서 함께 지낸 친구들",
+          "evidenceTexts": [],
+          "expected": "textile_factory",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "밤새 돌던 기계 소리",
+          "note": "야간 근무 때 듣던 소리",
+          "evidenceTexts": [
+            "열여섯에 대구 방직 공장에 들어가 일하셨어요."
+          ],
+          "expected": "textile_factory",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "첫 월급 받던 날",
+          "note": "처음 월급을 받아 들던 날",
+          "evidenceTexts": [
+            "열여섯에 대구 방직 공장에 들어가 일하셨어요."
+          ],
+          "expected": "textile_factory",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "한복 옷감 고르기",
+          "note": "명절 한복 옷감을 고르던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "시어머니",
+          "note": "시어머니와 지내던 이야기",
+          "evidenceTexts": [],
+          "expected": "in_laws",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "시댁 김장",
+          "note": "시댁 식구들과 하던 김장",
+          "evidenceTexts": [],
+          "expected": "in_laws",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "새벽 우물 물 긷기",
+          "note": "새벽마다 우물물을 긷던 일",
+          "evidenceTexts": [
+            "시집와서 새벽마다 우물물을 길으셨어요."
+          ],
+          "expected": "in_laws",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "친정 나들이",
+          "note": "명절에 친정에 다녀오던 길",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "친정어머니의 김장",
+          "note": "어릴 때 친정어머니가 하던 김장",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "딸 결혼식",
+          "note": "딸을 시집보내던 날",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "동네 장날",
+          "note": "장날에 사 오던 것들",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "좋아하던 꽃",
+          "note": "마당에 키우던 꽃",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        }
+      ]
+    },
+    {
+      "caseId": "C",
+      "profile": {
+        "ageBand": "80s",
+        "gender": "male"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "school_days",
+          "topicTitle": "학창 시절",
+          "description": "학교 다니던 시절의 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": []
+        },
+        {
+          "topicKey": "hometown_house",
+          "topicTitle": "고향 집",
+          "description": "어린 시절 살던 고향 집을 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "전북 정읍 산골 마을에서 자라셨어요."
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "학교 운동회",
+          "note": "운동회 날 달리기",
+          "evidenceTexts": [],
+          "expected": "school_days",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "국민학교 소풍",
+          "note": "소풍 가던 날 싸 가던 도시락",
+          "evidenceTexts": [],
+          "expected": "school_days",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "담임 선생님",
+          "note": "기억에 남는 선생님",
+          "evidenceTexts": [],
+          "expected": "school_days",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "손주 입학식",
+          "note": "손주 초등학교 입학식에 가던 날",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "야학 다니던 밤",
+          "note": "일 마치고 밤에 글을 배우러 다니던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "고향 집 마당 감나무",
+          "note": "마당에 있던 감나무",
+          "evidenceTexts": [
+            "전북 정읍 산골 마을에서 자라셨어요."
+          ],
+          "expected": "hometown_house",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "어릴 적 초가집",
+          "note": "어릴 때 살던 초가지붕 집",
+          "evidenceTexts": [],
+          "expected": "hometown_house",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "부엌 아궁이",
+          "note": "어릴 적 부엌 아궁이에 불 때던 일",
+          "evidenceTexts": [
+            "전북 정읍 산골 마을에서 자라셨어요."
+          ],
+          "expected": "hometown_house",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "고향 친구들",
+          "note": "고향에서 같이 놀던 친구들",
+          "evidenceTexts": [
+            "전북 정읍 산골 마을에서 자라셨어요."
+          ],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "서울 첫 셋방",
+          "note": "서울에 올라와 처음 얻은 셋방",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "즐겨 부르던 노래",
+          "note": "술자리에서 부르던 노래",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "저수지 낚시",
+          "note": "주말마다 가던 낚시",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "고향 마을 개울",
+          "note": "여름에 멱 감던 동네 개울",
+          "evidenceTexts": [
+            "전북 정읍 산골 마을에서 자라셨어요."
+          ],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "사랑방 겨울밤",
+          "note": "어릴 적 집 사랑방에서 할아버지 옛이야기를 듣던 밤",
+          "evidenceTexts": [],
+          "expected": "hometown_house",
+          "tag": "same_implicit"
+        }
+      ]
+    },
+    {
+      "caseId": "D",
+      "profile": {
+        "ageBand": "80s",
+        "gender": "female"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "youngest_daughter",
+          "topicTitle": "막내딸 이야기",
+          "description": "막내딸을 키우던 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "딸 셋 중 막내딸과는 연락이 뜸해요."
+          ]
+        },
+        {
+          "topicKey": "church",
+          "topicTitle": "교회 다니던 시절",
+          "description": "교회에 다니던 시절의 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": []
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "막내딸 돌잔치",
+          "note": "막내딸 첫돌 잔치",
+          "evidenceTexts": [
+            "딸 셋 중 막내딸과는 연락이 뜸해요."
+          ],
+          "expected": "youngest_daughter",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "막내 도시락",
+          "note": "막내에게 싸 주던 도시락",
+          "evidenceTexts": [
+            "딸 셋 중 막내딸과는 연락이 뜸해요."
+          ],
+          "expected": "youngest_daughter",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "큰딸 첫 출근",
+          "note": "큰딸이 처음 직장에 나가던 날",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "외손녀 재롱",
+          "note": "외손녀가 어릴 때 부리던 재롱",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "성가대",
+          "note": "성가대에서 노래하던 일",
+          "evidenceTexts": [],
+          "expected": "church",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "부활절 달걀",
+          "note": "부활절에 달걀을 꾸미던 일",
+          "evidenceTexts": [],
+          "expected": "church",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "주일 아침",
+          "note": "주일 아침 예배 가던 길",
+          "evidenceTexts": [],
+          "expected": "church",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "성당 앞 골목",
+          "note": "성당 앞 골목에서 놀던 어린 시절",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_overlap"
+        },
+        {
+          "topicTitle": "장독대",
+          "note": "장독대를 닦던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "뜨개질",
+          "note": "겨울마다 뜨던 스웨터",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "동네 목욕탕",
+          "note": "명절 앞두고 가던 목욕탕",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        }
+      ]
+    },
+    {
+      "caseId": "E",
+      "profile": {
+        "ageBand": "80s",
+        "gender": "female"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "market_jeogori",
+          "topicTitle": "장날마다의 한복 저고리",
+          "description": "장날마다 한복 저고리를 지어 내다 팔던 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "장날마다 서천 장에 저고리를 지어 내다 파셨어요."
+          ]
+        },
+        {
+          "topicKey": "son_business",
+          "topicTitle": "큰아들 사업",
+          "description": "큰아들의 사업이 어려워졌던 때를 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "큰아들 사업이 어려워져 가게를 정리했어요."
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "옛날 장터 풍경",
+          "note": "장날 장터의 북적이던 모습",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "장날 국밥",
+          "note": "장에 가면 사 먹던 국밥",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "명절 설빔",
+          "note": "아이들 설빔을 지어 입히던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "저고리 동정 달기",
+          "note": "저고리에 동정을 다는 솜씨",
+          "evidenceTexts": [],
+          "expected": "market_jeogori",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "장에 내다 판 옷",
+          "note": "지은 옷을 장에 가지고 나가 팔던 일",
+          "evidenceTexts": [
+            "장날마다 서천 장에 저고리를 지어 내다 파셨어요."
+          ],
+          "expected": "market_jeogori",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "한복 바느질 솜씨",
+          "note": "삯바느질로 한복을 짓던 솜씨",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "가게 문 닫던 날",
+          "note": "가게를 정리하던 날",
+          "evidenceTexts": [
+            "큰아들 사업이 어려워져 가게를 정리했어요."
+          ],
+          "expected": "son_business",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "큰아들 어릴 적",
+          "note": "큰아들이 개구쟁이이던 어린 시절",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "손주 돌잔치",
+          "note": "손주 첫돌 잔치",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "뒷산 나물",
+          "note": "봄마다 뒷산에서 캐던 나물",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        }
+      ]
+    },
+    {
+      "caseId": "F",
+      "profile": {
+        "ageBand": "80s",
+        "gender": "male"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "war_refuge",
+          "topicTitle": "6·25 피란길",
+          "description": "전쟁 때 피란 가던 이야기를 여쭤보는 주제예요.",
+          "evidenceTexts": []
+        },
+        {
+          "topicKey": "coal_mine",
+          "topicTitle": "탄광 시절",
+          "description": "탄광에서 일하던 시절을 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "젊어서 태백 탄광에서 일하셨어요."
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "피란길 주먹밥",
+          "note": "피란 가며 먹던 주먹밥",
+          "evidenceTexts": [],
+          "expected": "war_refuge",
+          "tag": "same_overlap"
+        },
+        {
+          "topicTitle": "부산 판잣집",
+          "note": "전쟁 통에 부산에서 지내던 판잣집",
+          "evidenceTexts": [],
+          "expected": "war_refuge",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "1960년대 서울 거리",
+          "note": "젊은 시절 서울 거리 풍경",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "광부 동료들",
+          "note": "함께 일하던 광부 동료들",
+          "evidenceTexts": [],
+          "expected": "coal_mine",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "갱도 안 도시락",
+          "note": "땅속 일터에서 먹던 도시락",
+          "evidenceTexts": [
+            "젊어서 태백 탄광에서 일하셨어요."
+          ],
+          "expected": "coal_mine",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "연탄 갈던 겨울밤",
+          "note": "집에서 연탄을 갈던 겨울밤",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "완행열차 여행",
+          "note": "완행열차를 타고 다니던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "막걸리 한 잔",
+          "note": "일 끝나고 마시던 막걸리",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        }
+      ]
+    },
+    {
+      "caseId": "G",
+      "profile": {
+        "ageBand": "70s",
+        "gender": "female"
+      },
+      "blockedTopics": [
+        {
+          "topicKey": "beauty_salon",
+          "topicTitle": "미용실 하던 시절",
+          "description": "미용실을 운영하던 시절을 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "미용실을 30년 하셨어요."
+          ]
+        },
+        {
+          "topicKey": "husband_care",
+          "topicTitle": "남편 병간호",
+          "description": "남편분을 오래 간호하던 때를 여쭤보는 주제예요.",
+          "evidenceTexts": [
+            "남편분을 오래 간호하셨어요."
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "topicTitle": "파마 약 냄새",
+          "note": "하루 종일 맡던 파마 약 냄새",
+          "evidenceTexts": [],
+          "expected": "beauty_salon",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "단골손님 수다",
+          "note": "단골들과 나누던 이야기",
+          "evidenceTexts": [
+            "미용실을 30년 하셨어요."
+          ],
+          "expected": "beauty_salon",
+          "tag": "same_paraphrase"
+        },
+        {
+          "topicTitle": "젊을 때 멋 부리던 머리",
+          "note": "처녀 시절 즐겨 하던 머리 모양",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "딸 머리 땋아 주기",
+          "note": "아침마다 딸 머리를 땋아 주던 일",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff_context"
+        },
+        {
+          "topicTitle": "병원 다니던 길",
+          "note": "매일 병원을 오가던 길",
+          "evidenceTexts": [
+            "남편분을 오래 간호하셨어요."
+          ],
+          "expected": "husband_care",
+          "tag": "same_implicit"
+        },
+        {
+          "topicTitle": "남편과 첫 데이트",
+          "note": "남편분을 처음 만나 나들이 가던 날",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "ambiguous"
+        },
+        {
+          "topicTitle": "동네 목욕탕",
+          "note": "명절 앞두고 가던 목욕탕",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        },
+        {
+          "topicTitle": "봄나물 무침",
+          "note": "봄마다 무치던 나물",
+          "evidenceTexts": [],
+          "expected": null,
+          "tag": "diff"
+        }
+      ]
+    }
+  ]
+}

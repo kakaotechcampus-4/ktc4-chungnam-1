@@ -17,6 +17,9 @@ class AppTextField extends StatelessWidget {
     this.errorText,
     this.onChanged,
     this.suffix,
+    this.maxLength,
+    this.minLines,
+    this.maxLines = 1,
     super.key,
   });
 
@@ -30,6 +33,16 @@ class AppTextField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final Widget? suffix;
 
+  /// 글자 수 상한. 주면 입력칸 아래에 쓴 글자 수와 상한을 함께 보여주고 넘는
+  /// 입력은 받지 않는다.
+  final int? maxLength;
+
+  /// 여러 줄을 받을 때 처음 보이는 줄 수.
+  final int? minLines;
+
+  /// `null` 이면 내용만큼 늘어난다. 기본은 한 줄이다.
+  final int? maxLines;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -42,8 +55,12 @@ class AppTextField extends StatelessWidget {
           obscureText: obscureText,
           keyboardType: keyboardType,
           onChanged: onChanged,
+          maxLength: maxLength,
+          minLines: minLines,
+          maxLines: maxLines,
           style: AppTypography.body,
           decoration: InputDecoration(
+            counterStyle: AppTypography.caption,
             hintText: hintText,
             hintStyle: AppTypography.body.copyWith(
               color: AppColors.textDisabled,

@@ -104,6 +104,107 @@ def test_card_generation_job_whose_lease_expired_fails(migrated_database_url):
     assert row["generation_log"] == {"input": None}
 
 
+def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            # 프로필마다 running은 하나라 상황마다 프로필을 따로 만든다
+            waiting_long = await _running_card_set(connection)
+            waiting_now = await _running_card_set(connection)
+            leased_expired = await _running_card_set(connection)
+            leased_alive = await _running_card_set(connection)
+            await connection.execute(
+                "UPDATE card_sets SET created_at = now() - interval '10 minutes'"
+                " WHERE set_id = %s",
+                (waiting_long,),
+            )
+            await connection.execute(
+                "UPDATE card_sets SET lease_expires_at = now() - interval '1 second',"
+                " attempt_count = 1 WHERE set_id = %s",
+                (leased_expired,),
+            )
+            await connection.execute(
+                "UPDATE card_sets SET lease_expires_at = now() + interval '5 minutes',"
+                " attempt_count = 1, created_at = now() - interval '10 minutes'"
+                " WHERE set_id = %s",
+                (leased_alive,),
+            )
+            expired = {}
+            for set_id in (waiting_long, waiting_now, leased_expired, leased_alive):
+                profile_id = await _value(
+                    connection, "SELECT profile_id FROM card_sets WHERE set_id = %s", (set_id,)
+                )
+                expired[set_id] = await queue.expire_stuck(
+                    connection, profile_id, start_timeout_seconds=360
+                )
+            rows = {
+                set_id: await _row(
+                    connection, "SELECT * FROM card_sets WHERE set_id = %s", (set_id,)
+                )
+                for set_id in expired
+            }
+            return (waiting_long, waiting_now, leased_expired, leased_alive), expired, rows
+
+    (waiting_long, waiting_now, leased_expired, leased_alive), expired, rows = run(scenario())
+
+    assert expired == {waiting_long: 1, waiting_now: 0, leased_expired: 1, leased_alive: 0}
+    assert (rows[waiting_long]["status"], rows[waiting_long]["error_code"]) == (
+        "failed",
+        "CARD_GENERATION_NOT_STARTED",
+    )
+    assert (rows[leased_expired]["status"], rows[leased_expired]["error_code"]) == (
+        "failed",
+        "WORKER_LEASE_EXPIRED",
+    )
+    for set_id in (waiting_long, leased_expired):
+        assert rows[set_id]["lease_expires_at"] is None
+        assert rows[set_id]["generation_log"] == {"input": None}
+    assert rows[waiting_now]["status"] == "running", "막 들어온 작업은 worker를 기다린다"
+    assert rows[leased_alive]["status"] == "running", "임대가 남은 작업은 worker가 처리 중이다"
+
+
+def test_stuck_jobs_of_other_profiles_are_left_alone(migrated_database_url):
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            mine = await _running_card_set(connection)
+            other = await _running_card_set(connection)
+            await connection.execute(
+                "UPDATE card_sets SET created_at = now() - interval '10 minutes'"
+            )
+            profile_id = await _value(
+                connection, "SELECT profile_id FROM card_sets WHERE set_id = %s", (mine,)
+            )
+            await queue.expire_stuck(connection, profile_id, start_timeout_seconds=360)
+            return await _value(
+                connection, "SELECT status FROM card_sets WHERE set_id = %s", (other,)
+            )
+
+    assert run(scenario()) == "running"
+
+
+def test_worker_does_not_claim_a_job_failed_as_stuck(migrated_database_url):
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            set_id = await _running_card_set(connection)
+            await connection.execute(
+                "UPDATE card_sets SET created_at = now() - interval '10 minutes'"
+                " WHERE set_id = %s",
+                (set_id,),
+            )
+            profile_id = await _value(
+                connection, "SELECT profile_id FROM card_sets WHERE set_id = %s", (set_id,)
+            )
+            await queue.expire_stuck(connection, profile_id, start_timeout_seconds=360)
+            return await queue.claim(connection, lease_seconds=600)
+
+    assert run(scenario()) is None
+
+
 def test_completed_card_set_cannot_keep_a_lease(migrated_database_url):
     async def scenario():
         async with connect(migrated_database_url) as connection:

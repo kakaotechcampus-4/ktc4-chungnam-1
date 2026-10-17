@@ -93,11 +93,11 @@ models/
 *.pth
 *.tflite
 
-/local_ai/docs/stt-mobile-benchmark/data/*
 /ai/docs/stt-mobile-benchmark/data/*
-/ai/tests/asr_test_data.json
-/ai/tests/results/local/
-/ai/:memory:.ses
+/stt-server/docs/stt-mobile-benchmark/data/*
+/stt-server/tests/asr_test_data.json
+/stt-server/tests/results/local/
+/stt-server/:memory:.ses
 
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/

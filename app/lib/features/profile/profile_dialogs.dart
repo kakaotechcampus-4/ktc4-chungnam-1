@@ -51,6 +51,28 @@ Future<void> showProfileRequiredDialog(BuildContext context) async {
   }
 }
 
+/// 제목, 설명과 두 버튼만 있는 확인 창을 다른 화면에서도 같은 모양으로 띄운다.
+///
+/// [primaryLabel] 을 누르면 `true`, 그 밖에는 `false` 다.
+Future<bool> showChoiceDialog(
+  BuildContext context, {
+  required String title,
+  required String detail,
+  required String primaryLabel,
+  required String secondaryLabel,
+}) async {
+  final chosen = await showDialog<bool>(
+    context: context,
+    builder: (context) => _ChoiceDialog(
+      title: title,
+      detail: detail,
+      primaryLabel: primaryLabel,
+      secondaryLabel: secondaryLabel,
+    ),
+  );
+  return chosen ?? false;
+}
+
 /// 제목, 설명과 두 버튼만 있는 창이다. 만남 끝내기 확인 창과 같은 모양이다.
 class _ChoiceDialog extends StatelessWidget {
   const _ChoiceDialog({

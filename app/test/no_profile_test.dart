@@ -12,6 +12,7 @@ import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 
+import 'fake_card_api.dart';
 import 'sample_profile.dart';
 
 void main() {
@@ -20,7 +21,7 @@ void main() {
   group('어르신 목록', () {
     ProviderContainer makeContainer({bool withProfile = false}) {
       final container = ProviderContainer(
-        overrides: [if (withProfile) withSampleProfile],
+        overrides: [if (withProfile) withSampleProfile, ...withMockCards],
       );
       addTearDown(container.dispose);
       return container;
@@ -83,7 +84,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [if (withProfile) withSampleProfile],
+          overrides: [if (withProfile) withSampleProfile, ...withMockCards],
           child: MaterialApp.router(
             theme: buildAppTheme(),
             routerConfig: router,

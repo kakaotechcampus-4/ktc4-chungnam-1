@@ -27,16 +27,28 @@ class MockRepository {
     return Account.fromJson(json['account'] as Map<String, dynamic>);
   }
 
+  /// 목 사진의 `imageUrl` 은 계약 예시 주소라 열리지 않는다. 화면에서 볼 수
+  /// 있도록 앱에 든 합성 그림으로 바꿔 끼운다. 공동 목 데이터는 계약 형식대로
+  /// 두고 이 사본을 읽을 때만 바꾼다.
+  static const _demoPhotoImages = {
+    'profile_photo_demo_001': 'asset:assets/images/family.webp',
+    'profile_photo_demo_002': 'asset:assets/images/visitation.webp',
+    'profile_photo_demo_003': 'asset:assets/images/patient-male.webp',
+  };
+
   Future<ProfileBundle> loadProfile() async {
-    return ProfileBundle.fromJson(await _read('profile.json'));
+    final json = await _read('profile.json');
+    for (final photo in json['photos'] as List? ?? const []) {
+      final map = photo as Map<String, dynamic>;
+      final image = _demoPhotoImages[map['photoId']];
+      if (image != null) map['imageUrl'] = image;
+    }
+    return ProfileBundle.fromJson(json);
   }
 
-  Future<List<ConversationCard>> loadConversationCards() async {
+  Future<CardSet> loadCardSet() async {
     final json = await _read('conversation-cards.json');
-    final cards = json['conversationCards'] as Map<String, dynamic>;
-    return (cards['cards'] as List)
-        .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return CardSet.fromJson(json['cardSet'] as Map<String, dynamic>);
   }
 
   Future<VisitSession> loadVisitSession() async {
@@ -44,9 +56,26 @@ class MockRepository {
     return VisitSession.fromJson(json['visitSession'] as Map<String, dynamic>);
   }
 
+  /// 목 면회 사진도 열리는 주소가 없어 앱에 든 합성 그림을 붙인다.
   Future<VisitReport> loadVisitReport() async {
     final json = await _read('visit-report.json');
-    return VisitReport.fromJson(json['visitReport'] as Map<String, dynamic>);
+    final report = VisitReport.fromJson(
+      json['visitReport'] as Map<String, dynamic>,
+    );
+    return VisitReport(
+      reportId: report.reportId,
+      sessionId: report.sessionId,
+      reportStatus: report.reportStatus,
+      title: report.title,
+      visitDate: report.visitDate,
+      mood: report.mood,
+      photoId: report.photoId,
+      photoUrl: report.photoId == null
+          ? null
+          : 'asset:assets/images/visitation.webp',
+      summaryText: report.summaryText,
+      cardSummaries: report.cardSummaries,
+    );
   }
 
   Future<CaregiverEvaluation> loadCaregiverEvaluation() async {
@@ -72,4 +101,13 @@ class MockRepository {
       json['changeProposal'] as Map<String, dynamic>,
     );
   }
+
+  /// 변경 제안 검토를 보낸다. API 7-4 자리다.
+  ///
+  /// 목 데이터 단계라 아무 데도 저장하지 않는다. 서버를 붙이면 이 자리가
+  /// `POST /api/v1/visit-sessions/{sessionId}/proposals/review` 호출로 바뀐다.
+  Future<void> submitProposalReview(
+    String sessionId,
+    ProposalReview review,
+  ) async {}
 }

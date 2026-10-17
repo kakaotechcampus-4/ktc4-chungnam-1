@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS
 DROP TABLE IF EXISTS
     topic_feedback, topic_proposals, life_fact_proposals, profile_topics, speech_analysis_jobs, photos,
     conversation_cards, card_sets, visit_sessions, life_facts, profiles, withdrawal_feedback, consent_records,
-    users, storage_deletion_request_queue
+    users, storage_deletion_request_queue, session_revocations
     CASCADE;
 DROP FUNCTION IF EXISTS queue_storage_deletion();
 DROP FUNCTION IF EXISTS delete_orphan_topic();
@@ -74,7 +74,13 @@ CREATE TABLE life_facts (
     title          VARCHAR(100) NOT NULL CHECK (length(btrim(title)) > 0),
     content        TEXT         NOT NULL CHECK (length(btrim(content)) > 0),
     source_proposal_id UUID     UNIQUE,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- 일대기의 분류와 기본 그림 번호. 그림 파일은 앱에 있고 서버는 번호만 둔다.
+    story_category VARCHAR(10)  NOT NULL DEFAULT 'other'
+                     CONSTRAINT life_facts_story_category_check CHECK (story_category IN
+                       ('family', 'hobby', 'work', 'hometown', 'friend', 'travel', 'other')),
+    image_number   SMALLINT     NOT NULL DEFAULT 1
+                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5)
 );
 CREATE INDEX idx_life_facts_profile ON life_facts(profile_id, created_at);
 
@@ -147,12 +153,15 @@ CREATE TABLE conversation_cards (
     set_id              UUID     NOT NULL,
     profile_id          UUID     NOT NULL,
     topic_id            UUID     NOT NULL,
-    card_title          VARCHAR(100) NOT NULL,
+    card_title          VARCHAR(100) NOT NULL CHECK (card_title ~ '\S'),
     position            SMALLINT NOT NULL CHECK (position BETWEEN 1 AND 12),
-    description         TEXT     NOT NULL,
-    primary_question    TEXT     NOT NULL,
-    follow_up_questions TEXT[]   NOT NULL CHECK (cardinality(follow_up_questions) >= 1),
-    evidence_source     VARCHAR(10) NOT NULL CHECK (evidence_source IN ('life_fact', 'photo', 'none')),
+    description         TEXT     NOT NULL CHECK (description ~ '\S'),
+    primary_question    TEXT     NOT NULL CHECK (primary_question ~ '\S'),
+    follow_up_questions TEXT[]   NOT NULL CHECK (
+        cardinality(follow_up_questions) = 3
+        AND coalesce(follow_up_questions[1] ~ '\S' AND follow_up_questions[2] ~ '\S'
+                     AND follow_up_questions[3] ~ '\S', false)),
+    evidence_source     VARCHAR(10) NOT NULL CHECK (evidence_source IN ('life_fact', 'photo', 'profile', 'none')),
     evidence            JSONB    NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(evidence) = 'array'),
     selected            BOOLEAN  NOT NULL DEFAULT false,
     review_reaction     VARCHAR(10) CHECK (review_reaction IN ('positive', 'neutral', 'negative', 'notUsed')),
@@ -167,7 +176,7 @@ CREATE TABLE conversation_cards (
     CHECK (review_reaction IS NULL OR selected),
     CHECK (report_summary IS NULL OR coalesce(review_reaction IN ('positive', 'neutral', 'negative'), false)),
     CHECK (CASE WHEN jsonb_typeof(evidence) <> 'array' THEN false
-                WHEN evidence_source IN ('life_fact', 'photo') THEN jsonb_array_length(evidence) > 0
+                WHEN evidence_source IN ('life_fact', 'photo', 'profile') THEN jsonb_array_length(evidence) > 0
                 ELSE evidence = '[]'::jsonb END)
 );
 CREATE INDEX idx_conversation_cards_topic ON conversation_cards(topic_id);
@@ -336,3 +345,11 @@ CREATE TABLE withdrawal_feedback (
                             'hardToUse', 'recordingBurden', 'other']::VARCHAR(30)[]),
     CHECK (('other' = ANY (reasons)) = (other_text IS NOT NULL))
 );
+
+-- 로그아웃과 탈퇴로 폐기한 세션의 `jti`. 그 세션의 만료 시각까지만 둔다.
+-- 계정을 참조하지 않으므로 탈퇴로 계정이 지워져도 만료까지 남는다.
+CREATE TABLE session_revocations (
+    token_id   VARCHAR(64) PRIMARY KEY CHECK (length(btrim(token_id)) > 0),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_session_revocations_expires ON session_revocations(expires_at);
