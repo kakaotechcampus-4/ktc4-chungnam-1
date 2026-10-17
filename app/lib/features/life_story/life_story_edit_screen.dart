@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -19,6 +21,7 @@ import 'life_story_providers.dart';
 /// 분류, 제목(100자 이하), 내용과 기본 이미지 다섯 장 중 하나를 받는다. 새
 /// 이야기는 이미지를 하나 미리 골라 둔다. 저장하면 앞 화면으로 돌아가고, 고친
 /// 이야기는 그 결과를 돌려준다. 고치던 내용이 있는데 뒤로 가면 한 번 묻는다.
+/// 저장하지 못하면 안내하고 쓰던 내용을 그대로 둔다.
 class LifeStoryEditScreen extends StatelessWidget {
   const LifeStoryEditScreen({this.storyId, super.key});
 
@@ -66,6 +69,9 @@ class _EditFormState extends ConsumerState<_EditForm> {
   /// 저장했거나 나가기로 했다. 이때는 다시 묻지 않고 닫는다.
   bool _leaving = false;
 
+  /// 서버에 보내는 중이다. 이때는 버튼을 막아 두 번 담기지 않게 한다.
+  bool _saving = false;
+
   /// 계약상 제목과 내용은 비울 수 없다.
   bool get _filled =>
       _category != null &&
@@ -85,19 +91,33 @@ class _EditFormState extends ConsumerState<_EditForm> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     final draft = LifeStoryDraft(
       category: _category!,
       title: _title.text.trim(),
       content: _content.text.trim(),
       imageNumber: _imageNumber,
     );
-    final edits = ref.read(lifeStoryEditsProvider.notifier);
+    final store = ref.read(lifeStoryStoreProvider);
     final story = widget.story;
-    final saved = story == null
-        ? edits.add(widget.profileId, draft)
-        : edits.update(widget.profileId, story, draft);
-    ScaffoldMessenger.of(context)
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _saving = true);
+    final LifeStory saved;
+    try {
+      saved = story == null
+          ? await store.add(widget.profileId, draft)
+          : await store.update(widget.profileId, story, draft);
+    } on ApiFailure catch (failure) {
+      // 쓰던 내용은 그대로 두고 다시 누를 수 있게 한다.
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(profileFailureMessage(failure))));
+      return;
+    }
+    if (!mounted) return;
+    messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(content: Text(story == null ? '이야기를 담았어요.' : '이야기를 고쳤어요.')),
@@ -129,8 +149,12 @@ class _EditFormState extends ConsumerState<_EditForm> {
       child: ScreenBody(
         scrollable: true,
         bottom: PrimaryButton(
-          label: widget.story == null ? '이야기 담기' : '수정 완료',
-          onPressed: _filled ? _save : null,
+          label: _saving
+              ? '저장하는 중이에요'
+              : widget.story == null
+              ? '이야기 담기'
+              : '수정 완료',
+          onPressed: _filled && !_saving ? _save : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
