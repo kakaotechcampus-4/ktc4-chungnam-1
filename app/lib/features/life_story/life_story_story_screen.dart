@@ -67,7 +67,7 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
       context,
       title: '이 이야기를 지울까요?',
       // 이야기만 지우고 그 이야기로 만든 카드와 면회 기록은 남긴다(api-spec 2-9).
-      detail: '지운 이야기는 되돌릴 수 없어요. 이 이야기로 이미 만든 대화 카드와 리포트는 그대로 남아요.',
+      detail: '지운 이야기는 되돌릴 수 없어요.\n이 이야기로 이미 만든 대화 카드와 리포트는\n그대로 남아요.',
       primaryLabel: '지우기',
       secondaryLabel: '취소',
     );

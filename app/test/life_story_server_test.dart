@@ -205,7 +205,7 @@ void main() {
 
     await _tap(tester, find.byTooltip('이야기 지우기'));
     expect(
-      find.text('지운 이야기는 되돌릴 수 없어요. 이 이야기로 이미 만든 대화 카드와 리포트는 그대로 남아요.'),
+      find.text('지운 이야기는 되돌릴 수 없어요.\n이 이야기로 이미 만든 대화 카드와 리포트는\n그대로 남아요.'),
       findsOneWidget,
     );
     await _tap(tester, find.text('지우기'));
