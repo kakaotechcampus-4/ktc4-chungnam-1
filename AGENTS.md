@@ -36,6 +36,8 @@
 
 ## 문서 포인터
 
+GitHub 작업 전 [PR 분리 원칙](CONTRIBUTING.md#독립적으로-검증할-작업-단위)을 읽고 따른다.
+
 - 제품 범위와 PM 결정: `docs/pm/README.md`
 - FE와 Flutter 앱: `app/README.md`
 - BE와 데이터 처리: `backend/README.md`
