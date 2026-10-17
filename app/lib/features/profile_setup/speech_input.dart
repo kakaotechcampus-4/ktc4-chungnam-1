@@ -76,8 +76,8 @@ class MockSpeechInput implements SpeechInput {
       return const SpeechNotHeard();
     }
 
-    final fact = _bundle.factOf(category);
-    if (fact != null) return SpeechHeard(fact.text);
+    final detail = _bundle.profile.detailOf(category);
+    if (detail != null) return SpeechHeard(detail);
 
     // 목 데이터에 문장이 없는 항목은 화면에 보여준 예시를 결과로 쓴다.
     // 없는 생애 정보를 지어내지 않기 위해서다.

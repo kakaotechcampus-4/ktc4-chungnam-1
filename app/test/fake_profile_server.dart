@@ -57,6 +57,11 @@ class FakeProfileServer {
     }
 
     final segments = request.url.pathSegments;
+    // /api/v1/life-facts/{factId}
+    if (segments.length == 4 && segments[2] == 'life-facts') {
+      return _lifeFact(request.method, segments[3], body);
+    }
+
     // /api/v1/profiles
     if (segments.length == 3) {
       if (request.method == 'GET') {
@@ -96,6 +101,21 @@ class FakeProfileServer {
         'retryable': false,
       }, 404);
     }
+    // /api/v1/profiles/{id}/life-facts
+    if (segments.length == 5 && request.method == 'POST') {
+      final fact = {
+        'schemaVersion': 1,
+        'factId': 'fact-${_next++}',
+        'profileId': id,
+        ...(body as Map).cast<String, Object?>(),
+        'createdAt': '2026-10-18T10:00:00+09:00',
+      };
+      profiles[index] = {
+        ...profiles[index],
+        'lifeFacts': [...profiles[index]['lifeFacts'] as List, fact],
+      };
+      return _json(fact, 201);
+    }
     switch (request.method) {
       case 'GET':
         return _json(profiles[index], 200);
@@ -119,6 +139,52 @@ class FakeProfileServer {
     return _json({}, 405);
   }
 
+  /// 2-7 고치기와 2-9 지우기. 어느 분의 이야기든 `factId` 로 찾는다.
+  http.Response _lifeFact(String method, String factId, Object? body) {
+    for (var i = 0; i < profiles.length; i++) {
+      final facts = (profiles[i]['lifeFacts'] as List)
+          .cast<Map<String, Object?>>();
+      final fact = facts.where((f) => f['factId'] == factId).firstOrNull;
+      if (fact == null) continue;
+      final updated = {...fact, ...?(body as Map?)?.cast<String, Object?>()};
+      profiles[i] = {
+        ...profiles[i],
+        'lifeFacts': [
+          for (final f in facts)
+            if (f != fact) f else if (method == 'PATCH') updated,
+        ],
+      };
+      return method == 'DELETE' ? http.Response('', 204) : _json(updated, 200);
+    }
+    return _json({
+      'schemaVersion': 1,
+      'errorCode': 'LIFE_FACT_NOT_FOUND',
+      'message': '테스트용 오류',
+      'requestId': 'req_test',
+      'retryable': false,
+    }, 404);
+  }
+
+  /// 명세의 LifeFact 응답 하나를 만든다.
+  static Map<String, Object?> lifeFact({
+    required String id,
+    required String profileId,
+    String storyCategory = 'work',
+    String title = '단골손님',
+    String content = '수선집에 오래 다닌 단골손님이 많았어요.',
+    int imageNumber = 3,
+    String createdAt = '2026-09-01T10:00:00+09:00',
+  }) => {
+    'schemaVersion': 1,
+    'factId': id,
+    'profileId': profileId,
+    'storyCategory': storyCategory,
+    'title': title,
+    'content': content,
+    'imageNumber': imageNumber,
+    'createdAt': createdAt,
+  };
+
   /// 명세의 Profile 응답 하나를 만든다.
   static Map<String, Object?> profile({
     required String id,
@@ -131,6 +197,7 @@ class FakeProfileServer {
     String? hometown,
     String? hobby,
     String? family,
+    List<Map<String, Object?>> lifeFacts = const [],
   }) => {
     'schemaVersion': 1,
     'profileId': id,
@@ -143,7 +210,7 @@ class FakeProfileServer {
     'hometown': hometown,
     'hobby': hobby,
     'family': family,
-    'lifeFacts': <Object>[],
+    'lifeFacts': lifeFacts,
     'photos': <Object>[],
     'createdAt': '2026-10-13T09:00:00+09:00',
   };

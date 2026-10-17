@@ -35,6 +35,7 @@ Map<String, Object?> _profile({
   String stage = 'mildDementia',
   String? occupation,
   String? family,
+  List<Object> lifeFacts = const [],
 }) => {
   'schemaVersion': 1,
   'profileId': _id,
@@ -47,9 +48,27 @@ Map<String, Object?> _profile({
   'hometown': null,
   'hobby': null,
   'family': family,
-  'lifeFacts': <Object>[],
+  'lifeFacts': lifeFacts,
   'photos': <Object>[],
   'createdAt': '2026-10-13T09:00:00+09:00',
+};
+
+const _factId = '00000000-0000-4000-8000-000000000111';
+
+/// 명세의 LifeFact 응답이다.
+Map<String, Object?> _fact({
+  String storyCategory = 'work',
+  String title = '단골손님',
+  int imageNumber = 3,
+}) => {
+  'schemaVersion': 1,
+  'factId': _factId,
+  'profileId': _id,
+  'storyCategory': storyCategory,
+  'title': title,
+  'content': '수선집에 오래 다닌 단골손님이 많았어요.',
+  'imageNumber': imageNumber,
+  'createdAt': '2026-08-21T12:10:00+09:00',
 };
 
 const _info = EnteredBasicInfo(
@@ -175,6 +194,157 @@ void main() {
 
     expect(sent.method, 'DELETE');
     expect(sent.url.path, '/api/v1/profiles/$_id');
+  });
+
+  group('일대기 이야기', () {
+    test('2-3 담은 이야기를 분류, 그림 번호와 함께 읽는다', () async {
+      final api = _api(
+        (request) async => _json(
+          _profile(
+            lifeFacts: [
+              _fact(),
+              {
+                ..._fact(storyCategory: 'travel', imageNumber: 1),
+                'factId': 'fact-2',
+              },
+            ],
+          ),
+          200,
+        ),
+      );
+
+      final profile = await api.get(_id);
+
+      expect(profile.lifeFacts.map((f) => f.factId), [_factId, 'fact-2']);
+      final first = profile.lifeFacts.first;
+      expect(first.storyCategory, 'work');
+      expect(first.title, '단골손님');
+      expect(first.content, '수선집에 오래 다닌 단골손님이 많았어요.');
+      expect(first.imageNumber, 3);
+      expect(first.createdAt, '2026-08-21T12:10:00+09:00');
+      expect(profile.lifeFacts.last.storyCategory, 'travel');
+    });
+
+    test('2-6 네 항목을 보내고 서버가 만든 이야기를 받는다', () async {
+      late http.Request sent;
+      final api = _api((request) async {
+        sent = request;
+        return _json(_fact(), 201);
+      });
+
+      final fact = await api.createLifeFact(
+        _id,
+        storyCategory: 'work',
+        title: '단골손님',
+        content: '수선집에 오래 다닌 단골손님이 많았어요.',
+        imageNumber: 3,
+      );
+
+      expect(sent.method, 'POST');
+      expect(sent.url.path, '/api/v1/profiles/$_id/life-facts');
+      expect(jsonDecode(sent.body), {
+        'storyCategory': 'work',
+        'title': '단골손님',
+        'content': '수선집에 오래 다닌 단골손님이 많았어요.',
+        'imageNumber': 3,
+      });
+      expect(fact.factId, _factId);
+    });
+
+    test('2-7 네 항목을 모두 보내고 고친 이야기를 받는다', () async {
+      late http.Request sent;
+      final api = _api((request) async {
+        sent = request;
+        return _json(
+          _fact(storyCategory: 'friend', title: '계모임', imageNumber: 2),
+          200,
+        );
+      });
+
+      final fact = await api.updateLifeFact(
+        _factId,
+        storyCategory: 'friend',
+        title: '계모임',
+        content: '수선집에 오래 다닌 단골손님이 많았어요.',
+        imageNumber: 2,
+      );
+
+      expect(sent.method, 'PATCH');
+      expect(sent.url.path, '/api/v1/life-facts/$_factId');
+      expect(jsonDecode(sent.body), {
+        'storyCategory': 'friend',
+        'title': '계모임',
+        'content': '수선집에 오래 다닌 단골손님이 많았어요.',
+        'imageNumber': 2,
+      });
+      expect(fact.storyCategory, 'friend');
+      expect(fact.imageNumber, 2);
+    });
+
+    test('2-9 이야기를 지운다', () async {
+      late http.Request sent;
+      final api = _api((request) async {
+        sent = request;
+        return http.Response('', 204);
+      });
+
+      await api.deleteLifeFact(_factId);
+
+      expect(sent.method, 'DELETE');
+      expect(sent.url.path, '/api/v1/life-facts/$_factId');
+    });
+
+    test('없는 이야기는 서버의 오류 코드를 그대로 전한다', () async {
+      final api = _api(
+        (request) async => _json({
+          'schemaVersion': 1,
+          'errorCode': 'LIFE_FACT_NOT_FOUND',
+          'message': '테스트용 오류',
+          'requestId': 'req_test',
+          'retryable': false,
+        }, 404),
+      );
+
+      await expectLater(
+        api.deleteLifeFact(_factId),
+        throwsA(
+          isA<ApiServerFailure>()
+              .having((f) => f.statusCode, 'statusCode', 404)
+              .having((f) => f.errorCode, 'errorCode', 'LIFE_FACT_NOT_FOUND'),
+        ),
+      );
+      expect(
+        profileFailureMessage(
+          const ApiServerFailure(
+            statusCode: 404,
+            errorCode: 'LIFE_FACT_NOT_FOUND',
+          ),
+        ),
+        '이야기를 찾지 못했어요. 이미 지운 이야기일 수 있어요.',
+      );
+    });
+
+    test('이야기 응답 모양이 다르면 성공으로 넘기지 않는다', () async {
+      final missingTitle = _fact()..remove('title');
+      final textNumber = {..._fact(), 'imageNumber': '3'};
+
+      expect(
+        _api((request) async => _json(missingTitle, 201)).createLifeFact(
+          _id,
+          storyCategory: 'work',
+          title: '단골손님',
+          content: '내용',
+          imageNumber: 3,
+        ),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
+      );
+      expect(
+        _api(
+          (request) async => _json(_profile(lifeFacts: [textNumber]), 200),
+        ).get(_id),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
+      );
+    });
   });
 
   test('3명을 넘기면 서버의 오류 코드를 그대로 전한다', () async {
