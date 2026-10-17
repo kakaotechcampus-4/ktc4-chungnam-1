@@ -74,7 +74,13 @@ CREATE TABLE life_facts (
     title          VARCHAR(100) NOT NULL CHECK (length(btrim(title)) > 0),
     content        TEXT         NOT NULL CHECK (length(btrim(content)) > 0),
     source_proposal_id UUID     UNIQUE,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- 일대기의 분류와 기본 그림 번호. 그림 파일은 앱에 있고 서버는 번호만 둔다.
+    story_category VARCHAR(10)  NOT NULL DEFAULT 'other'
+                     CONSTRAINT life_facts_story_category_check CHECK (story_category IN
+                       ('family', 'hobby', 'work', 'hometown', 'friend', 'travel', 'other')),
+    image_number   SMALLINT     NOT NULL DEFAULT 1
+                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5)
 );
 CREATE INDEX idx_life_facts_profile ON life_facts(profile_id, created_at);
 

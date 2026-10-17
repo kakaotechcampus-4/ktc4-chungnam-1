@@ -12,6 +12,8 @@ Gender = Literal["male", "female"]
 ConditionStage = Literal["mildCognitiveImpairment", "mildDementia", "unknown"]
 SetupStatus = Literal["inProgress", "completed"]
 PhotoAnalysisStatus = Literal["pending", "processing", "completed", "failed"]
+# 일대기의 분류. 필드 이름 `storyCategory`, `imageNumber`는 임시다(작업 D 문서 미정 D1, D2).
+StoryCategory = Literal["family", "hobby", "work", "hometown", "friend", "travel", "other"]
 
 
 def _not_blank(value: str) -> str:
@@ -25,6 +27,8 @@ def _not_blank(value: str) -> str:
 NonBlankText = Annotated[str, AfterValidator(_not_blank)]
 ProfileName = Annotated[NonBlankText, Field(max_length=50)]
 LifeFactTitle = Annotated[NonBlankText, Field(max_length=100)]
+# 분류마다 기본 그림이 5장이다(`life_facts.image_number` CHECK).
+ImageNumber = Annotated[int, Field(strict=True, ge=1, le=5)]
 
 
 def _reject_null(model: ApiModel, *fields: str) -> None:
@@ -83,25 +87,30 @@ class ProfileUpdateRequest(ApiModel):
 
 
 class LifeFactCreateRequest(ApiModel):
+    story_category: StoryCategory = Field(alias="storyCategory")
     title: LifeFactTitle
     content: NonBlankText
+    image_number: ImageNumber = Field(alias="imageNumber")
 
 
 class LifeFactUpdateRequest(ApiModel):
-    """보낸 필드만 바꾼다. 둘 다 비울 수 없으므로 `null`도 받지 않는다."""
+    """보낸 필드만 바꾼다. 모두 비울 수 없으므로 `null`도 받지 않는다."""
 
+    story_category: StoryCategory | None = Field(default=None, alias="storyCategory")
     title: LifeFactTitle | None = None
     content: NonBlankText | None = None
+    image_number: ImageNumber | None = Field(default=None, alias="imageNumber")
 
     @model_validator(mode="after")
     def _fields_are_not_cleared(self) -> "LifeFactUpdateRequest":
-        _reject_null(self, "title", "content")
+        _reject_null(self, "story_category", "title", "content", "image_number")
         return self
 
-    def column_changes(self) -> dict[str, str]:
+    def column_changes(self) -> dict[str, Any]:
+        """보낸 필드를 `life_facts`의 열 이름과 값으로 옮긴다."""
         return {
             field: getattr(self, field)
-            for field in ("title", "content")
+            for field in ("story_category", "title", "content", "image_number")
             if field in self.model_fields_set
         }
 
@@ -110,8 +119,10 @@ class LifeFactResponse(ApiModel):
     schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
     fact_id: UUID = Field(alias="factId")
     profile_id: UUID = Field(alias="profileId")
+    story_category: StoryCategory = Field(alias="storyCategory")
     title: str
     content: str
+    image_number: int = Field(alias="imageNumber")
     created_at: datetime = Field(alias="createdAt")
 
 
