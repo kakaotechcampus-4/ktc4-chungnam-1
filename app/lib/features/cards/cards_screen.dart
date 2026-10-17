@@ -15,6 +15,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../review/review_controller.dart';
+import '../visit/visit_camera.dart';
 import '../visit/visit_controller.dart';
 import 'card_generation_controller.dart';
 import 'cards_controller.dart';
@@ -154,9 +155,10 @@ class _BodyState extends ConsumerState<_Body> {
           // 한 장도 고르지 않으면 시작하지 않는다.
           onPressed: state.canStart
               ? () {
-                  // 지난 회차의 녹음 시간과 소감이 남아 있지 않게 비운다.
+                  // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
                   ref.invalidate(visitControllerProvider);
                   ref.invalidate(reviewControllerProvider);
+                  ref.invalidate(visitPhotoProvider);
                   context.push(AppRoutes.visitPhoto);
                 }
               : null,
