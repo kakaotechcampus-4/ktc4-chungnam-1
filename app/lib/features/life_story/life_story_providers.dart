@@ -4,13 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
 import 'life_story.dart';
-import 'life_story_mock.dart';
 
 /// 지금 보고 있는 어르신의 일대기다. 등록을 마친 분이 없으면 `null` 이다.
 ///
-/// 세부 정보 이야기는 입력한 값에서 만들고, 나머지는 목 이야기에 보호자가
-/// 추가, 수정, 삭제한 것([lifeStoryEditsProvider])을 얹는다. 이야기 조회
-/// (API 2-3)를 붙이면 목 이야기 자리를 `lifeFacts[]` 로 바꾼다.
+/// 세부 정보 이야기는 입력한 값에서 만들고, 나머지는 프로필의 `lifeFacts[]`
+/// 에 보호자가 추가, 수정, 삭제한 것([lifeStoryEditsProvider])을 얹는다.
+/// `lifeFacts[]` 는 아직 목 데이터(`assets/mock/profile.json`)다.
 ///
 /// 프로필을 읽는 것만 기다리고 이야기를 합치는 것은 바로 한다. 이야기를 바꿀
 /// 때마다 다시 기다리지 않게 하려는 것이다.
@@ -23,9 +22,9 @@ final lifeStoryBookProvider = Provider<AsyncValue<LifeStoryBook?>>((ref) {
       profile: profile,
       stories: [
         ...detailStoriesOf(profile),
-        ...(edits[profile.profileId] ?? const LifeStoryEdits()).applyTo(
-          sampleLifeStories,
-        ),
+        ...(edits[profile.profileId] ?? const LifeStoryEdits()).applyTo([
+          for (final fact in bundle.lifeFacts) LifeStory.fromLifeFact(fact),
+        ]),
       ],
     );
   });
