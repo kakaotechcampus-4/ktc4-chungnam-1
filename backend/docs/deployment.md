@@ -8,7 +8,7 @@
 
 | 서비스 | 켜는 방법 | 하는 일 |
 | --- | --- | --- |
-| `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 세션 폐기 목록이 메모리에 있으므로 프로세스는 하나다 |
+| `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 개발 서버는 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 둔다 |
 | `speech-worker` | `--profile workers` | 음성 STT worker. AI 서버 연결 경로가 정해진 뒤 켠다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
 | `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |

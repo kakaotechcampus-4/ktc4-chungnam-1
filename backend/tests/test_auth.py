@@ -89,7 +89,7 @@ def _harness(
     jwks_fails: bool = False,
     database_url: str | None = None,
 ) -> _Harness:
-    """`database_url` 을 주면 메모리 저장소 대신 그 DB 의 계정 저장소를 쓴다."""
+    """`database_url` 을 주면 메모리 대역 대신 그 DB 의 계정 저장소와 폐기 기록을 쓴다."""
 
     async def fetcher() -> dict[str, Any]:
         if jwks_fails:
@@ -116,7 +116,7 @@ def _harness(
     app.dependency_overrides[get_google_verifier] = lambda: verifier
     if database_url is None:
         app.dependency_overrides[get_account_repository] = lambda: repository
-    app.dependency_overrides[get_session_revocations] = lambda: revocations
+        app.dependency_overrides[get_session_revocations] = lambda: revocations
     return _Harness(app, repository)
 
 
@@ -444,6 +444,23 @@ def test_postgres_account_survives_the_whole_login_flow(
     assert again["account"]["accountId"] == account["accountId"]
     assert deleted.status_code == 204
     assert after["status"] == "consentRequired"
+
+
+def test_logged_out_session_stays_revoked_after_a_restart(
+    migrated_database_url: str,
+) -> None:
+    harness = _harness(database_url=migrated_database_url)
+    revoked = _register(harness).json()["accessToken"]
+    kept = harness.login(google_tokens.id_token()).json()["accessToken"]
+    assert harness.logout(revoked).status_code == 204
+
+    # 서버를 다시 띄운 것처럼 앱과 의존성을 새로 만든다. 같은 DB 만 이어서 쓴다.
+    restarted = _harness(database_url=migrated_database_url)
+    after = restarted.me(revoked)
+
+    assert after.status_code == 401
+    assert after.json()["errorCode"] == "UNAUTHENTICATED"
+    assert restarted.me(kept).status_code == 200
 
 
 def test_responses_do_not_expose_the_google_subject() -> None:

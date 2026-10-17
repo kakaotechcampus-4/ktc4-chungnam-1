@@ -38,6 +38,7 @@ DOMAIN_TABLES = {
     "topic_proposals",
     "topic_feedback",
     "withdrawal_feedback",
+    "session_revocations",
 }
 
 
@@ -73,7 +74,7 @@ def test_upgrade_creates_all_tables_and_view(engine):
     inspector = sa.inspect(engine)
 
     assert DOMAIN_TABLES <= set(inspector.get_table_names())
-    assert len(DOMAIN_TABLES) == 15
+    assert len(DOMAIN_TABLES) == 16
     assert "current_consents" in inspector.get_view_names()
 
 

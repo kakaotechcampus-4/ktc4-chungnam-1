@@ -10,7 +10,7 @@
 항상 받고, 기본값은 기존 행과 7-4로 만드는 이야기(미정 D5)를 위한 것.
 
 Revision ID: b7e2c4a9d153
-Revises: d466bb108618
+Revises: c3a91f5e7d20
 Create Date: 2026-10-17 15:00:00.000000
 
 """
@@ -20,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'b7e2c4a9d153'
-down_revision: Union[str, Sequence[str], None] = 'd466bb108618'
+down_revision: Union[str, Sequence[str], None] = 'c3a91f5e7d20'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

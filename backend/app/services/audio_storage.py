@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import BinaryIO, Protocol
 
 import boto3
+from botocore.config import Config
 
 
 @dataclass(frozen=True)
@@ -44,7 +45,12 @@ class S3AudioStorage:
         self._bucket = bucket
         self._presigned_ttl_seconds = presigned_ttl_seconds
         self._server_side_encryption = server_side_encryption
-        self._client = client or boto3.client("s3", region_name=region)
+        self._client = client or boto3.client(
+            "s3",
+            region_name=region,
+            endpoint_url=f"https://s3.{region}.amazonaws.com",
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        )
 
     async def upload(self, *, object_key: str, file: BinaryIO) -> None:
         file.seek(0)
