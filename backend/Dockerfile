@@ -26,6 +26,6 @@ USER saerok
 
 EXPOSE 8000
 
-# 세션 폐기 목록이 프로세스 메모리에 있으므로 API 프로세스는 하나만 띄운다.
+# 개발 서버는 API 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 있어 프로세스 수의 제약은 아니다.
 # 개발용 scripts/run_backend.sh의 --reload는 Windows 이벤트 루프 대응이라 쓰지 않는다.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log"]
