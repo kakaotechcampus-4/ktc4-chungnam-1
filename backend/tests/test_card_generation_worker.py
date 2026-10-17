@@ -3,12 +3,15 @@
 임시 DB에 최신 migration을 적용해 실행(`conftest.py`). 값은 모두 합성 데이터.
 """
 
+import card_generation as ai
 import pytest
 from psycopg.types.json import Jsonb
 
 from app.core.config import Settings
 from app.core.database import connect
 from app.schemas.card_generation import (
+    CardContext,
+    CardGenerationRequest,
     CardGenerationResult,
     GeneratedCard,
     GeneratedTopic,
@@ -315,3 +318,78 @@ def test_worker_needs_database_and_ml_key():
         create_worker(Settings(_env_file=None, database_url="postgresql://x/y"), fake_result)
     with pytest.raises(RuntimeError):
         card_generator(Settings(_env_file=None))
+
+
+def fake_ai_result(request: ai.GenerationRequest) -> ai.GenerationResult:
+    """`fake_result`와 같은 카드를 ai 카드 생성 패키지의 결과 형식으로."""
+    be_request = CardGenerationRequest.model_validate(request.model_dump(mode="json", by_alias=True))
+    result = fake_result(be_request, reuse_topic=be_request.context.topics[0].topic_id)
+    data = result.model_dump(mode="json", by_alias=True)
+    for card in data["cards"]:
+        card["extra"] = {
+            "kind": "general",
+            "bucket": "new",
+            "angle": "겨울날 아랫목에서 쉬던 때",
+            "pickReason": "새 이야기 자리",
+            "agentReason": "아직 다루지 않은 계절 이야기",
+            "matchReason": "같은 이야기의 기존 주제가 없음",
+        }
+    return ai.GenerationResult.model_validate(data)
+
+
+def _ai_generator(monkeypatch, generate_cards):
+    monkeypatch.setattr(ai, "generate_cards", generate_cards)
+    return card_generator(Settings(_env_file=None, ml_api_key="synthetic-key"))
+
+
+def test_card_generator_saves_what_the_ai_package_returns(migrated_database_url, monkeypatch):
+    seen = {}
+
+    def generate_cards(request, *, api_key):
+        seen["request"], seen["api_key"] = request, api_key
+        return fake_ai_result(request)
+
+    card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
+
+    request = seen["request"]
+    assert isinstance(request, ai.GenerationRequest) and seen["api_key"] == "synthetic-key"
+    assert request.context.age_range == "80s" and request.context.profile_facts.hobby == "합성 취미"
+    assert card_set["status"] == "completed"
+    assert set(card_set["generation_log"]["cards"][0]) == {
+        "position", "kind", "bucket", "angle", "pickReason", "agentReason", "matchReason"
+    }
+    assert len(cards) == 12 and str(cards[0]["topic_id"]) == request.context.topics[0].topic_id
+
+
+def test_card_generator_keeps_the_ai_failure_code(migrated_database_url, monkeypatch):
+    def generate_cards(request, *, api_key):
+        raise ai.CardGenerationError("NOT_ENOUGH_TOPICS", "다시 찾아도 주제가 모자람")
+
+    card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
+
+    assert (card_set["status"], card_set["error_code"]) == ("failed", "NOT_ENOUGH_TOPICS")
+    assert cards == []
+
+
+def test_card_generator_turns_a_context_the_ai_package_rejects_into_invalid_context(monkeypatch):
+    def generate_cards(request, *, api_key):
+        raise AssertionError("형식이 틀리면 부르지 않아야 함")
+
+    request = CardGenerationRequest(
+        model="synthetic-model",
+        prompt_version=1,
+        context=CardContext.model_validate(
+            {
+                "ageRange": "여든",
+                "profileFacts": {"occupation": None, "hometown": None, "hobby": None, "family": None},
+                "lifeFacts": [],
+                "photos": [],
+                "topics": [],
+                "visits": [],
+                "pastCards": [],
+            }
+        ),
+    )
+    with pytest.raises(CardGenerationError) as error:
+        _ai_generator(monkeypatch, generate_cards)(request)
+    assert error.value.code == "INVALID_CONTEXT"
