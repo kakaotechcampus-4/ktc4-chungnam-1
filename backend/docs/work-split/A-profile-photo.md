@@ -43,6 +43,7 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
+| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다 |
 | `profiles` | 2-2 생성, 2-4 세부 정보 저장과 수정, 2-8 삭제 | B는 4-1 카드 생성 요청에서 저장된 프로필을 읽는다. 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
@@ -102,7 +103,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- 공통 기반 이전에 병합된 `feature/backend-account-management`에 구현돼 있다. 세션 폐기 목록은 아직 메모리이며 DB로 옮기는 일은 보류했다.
+- 공통 기반 이전에 병합된 `feature/backend-account-management`에 구현돼 있다. 세션 폐기 기록은 #129에서 `session_revocations` 테이블로 옮겼다.
 
 <br>
 
