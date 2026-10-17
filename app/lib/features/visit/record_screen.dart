@@ -38,14 +38,42 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   /// `StateError` 를 던져 파일을 닫지 못한 채 화면만 사라진다.
   late final VisitController _controller;
 
+  /// 면회 사진을 올리지 못했다는 알림 띠. 화면을 떠나면 닫는다.
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _photoNotice;
+
   @override
   void initState() {
     super.initState();
     _controller = ref.read(visitControllerProvider.notifier);
   }
 
+  /// 사진 업로드 결과를 알린다. 녹음 화면이 뜨기 전에 끝나도 놓치지 않게
+  /// 녹음 전 안내부터 지켜본다. 만남을 끝내면(참여자 수 확인) 닫는다.
+  void _onPhotoUpload(
+    (VisitPhotoUpload?, bool)? previous,
+    (VisitPhotoUpload?, bool) next,
+  ) {
+    final (upload, stopped) = next;
+    _closePhotoNotice();
+    if (stopped) return;
+    if (upload == VisitPhotoUpload.failed ||
+        upload == VisitPhotoUpload.rejected) {
+      _photoNotice = _showPhotoNotice(
+        context,
+        retryable: upload == VisitPhotoUpload.failed,
+        onRetry: _controller.retryPhotoUpload,
+      );
+    }
+  }
+
+  void _closePhotoNotice() {
+    _photoNotice?.close();
+    _photoNotice = null;
+  }
+
   @override
   void dispose() {
+    _closePhotoNotice();
     // 끝내기를 누르지 않고 뒤로 나간 경우다. 열린 파일을 닫지 않으면 WAV 헤더가
     // 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
     // 없으면 상태가 알아서 지나간다.
@@ -56,6 +84,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   @override
   Widget build(BuildContext context) {
     final visit = ref.watch(visitControllerProvider);
+    ref.listen(
+      visitControllerProvider.select(
+        (v) => (v.value?.photoUpload, v.value?.participantCount != null),
+      ),
+      _onPhotoUpload,
+    );
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -212,6 +246,30 @@ class _ProblemNotice extends StatelessWidget {
     );
   }
 }
+
+/// 면회 사진을 올리지 못했으면 화면 아래 알림 띠로 알린다(API 5-2).
+///
+/// 녹음 화면은 아래 카드 자리 때문에 안내를 둘 높이가 남지 않아, 본문에 두면
+/// 스크롤해야 보인다. 녹음은 그대로 이어지므로 녹음 실패보다 약하게 알린다.
+/// 다시 올릴 수 있는 실패는 버튼을 달아 닫을 때까지 남기고, 받지 않는 거절은
+/// 잠시 보여주고 사라진다.
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
+  BuildContext context, {
+  required bool retryable,
+  required VoidCallback onRetry,
+}) => ScaffoldMessenger.of(context).showSnackBar(
+  SnackBar(
+    content: Text(
+      retryable
+          ? '사진을 올리지 못했어요.\n녹음은 그대로 이어져요.'
+          : '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+    ),
+    action: retryable
+        ? SnackBarAction(label: '사진 다시 올리기', onPressed: onRetry)
+        : null,
+    showCloseIcon: retryable,
+  ),
+);
 
 /// E-2. 녹음 중.
 class _Recording extends ConsumerWidget {
