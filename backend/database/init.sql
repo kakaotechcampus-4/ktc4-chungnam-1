@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS
 DROP TABLE IF EXISTS
     topic_feedback, topic_proposals, life_fact_proposals, profile_topics, speech_analysis_jobs, photos,
     conversation_cards, card_sets, visit_sessions, life_facts, profiles, withdrawal_feedback, consent_records,
-    users, storage_deletion_request_queue
+    users, storage_deletion_request_queue, session_revocations
     CASCADE;
 DROP FUNCTION IF EXISTS queue_storage_deletion();
 DROP FUNCTION IF EXISTS delete_orphan_topic();
@@ -339,3 +339,11 @@ CREATE TABLE withdrawal_feedback (
                             'hardToUse', 'recordingBurden', 'other']::VARCHAR(30)[]),
     CHECK (('other' = ANY (reasons)) = (other_text IS NOT NULL))
 );
+
+-- 로그아웃과 탈퇴로 폐기한 세션의 `jti`. 그 세션의 만료 시각까지만 둔다.
+-- 계정을 참조하지 않으므로 탈퇴로 계정이 지워져도 만료까지 남는다.
+CREATE TABLE session_revocations (
+    token_id   VARCHAR(64) PRIMARY KEY CHECK (length(btrim(token_id)) > 0),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_session_revocations_expires ON session_revocations(expires_at);
