@@ -282,7 +282,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ## 프로필과 생애 정보 API
 
-[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
+[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-9이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
@@ -293,6 +293,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 | `DELETE` | `/api/v1/profiles/{profileId}` | 프로필 하나와 그 아래 기록 삭제. `204` |
 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 일대기에서 생애 정보 추가. `201` |
 | `PATCH` | `/api/v1/life-facts/{factId}` | 생애 정보 중 보낸 필드만 수정 |
+| `DELETE` | `/api/v1/life-facts/{factId}` | 일대기에서 생애 정보 삭제. `204` |
 
 - `setupStatus`는 저장하지 않고 `card_sets` 행이 있는지로 계산한다.
 - 계정당 프로필은 입력 중인 것을 포함해 3개까지다. DB 제약이 없으므로 같은 트랜잭션에서 계정 행을 `FOR UPDATE`로 잠근 뒤 세어, 동시 요청에도 넘지 않는다. 넘으면 `PROFILE_LIMIT_EXCEEDED`(409)다.
@@ -302,7 +303,9 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
 - 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
 - 실제 사용자 사진을 받기 전에는 계정별 동의 확인과 철회 처리를 구현하고 검증한다(후속 3). 현재 업로드와 조회 테스트는 합성 사진과 메모리 저장소를 사용하며 실제 S3 업로드는 미검증이다.
-- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
+- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다. 7-4는 분류와 그림 번호를 보내지 않으므로 `other`와 서버가 고른 1~5 번호로 만든다.
+- 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름, 7-4의 분류와 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
+- 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_deleted_facts`).
 
 ## AI 음성 분석 연동
 

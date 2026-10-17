@@ -66,6 +66,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 2-6 | 생애 정보 추가 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 |
 | 2-7 | 생애 정보 수정 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 |
 | 2-8 | 어르신 목록 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 |
+| 2-9 | 일대기 이야기 삭제 | `DELETE` | `/api/v1/life-facts/{factId}` | 신규 |
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 앨범에서 사진 설명 수정 | | | 수정 API 미정, 필수 승인 없음 |
@@ -102,7 +103,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
     [평가]        6-1 → 6-2 → 6-3 폴링
     [리포트]      7-2, 6-4 → 7-3 → 7-4
-    [일대기]      2-3, 2-6, 2-7
+    [일대기]      2-3, 2-6, 2-7, 2-9
     [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
 <br>
@@ -358,12 +359,17 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 ```json
 {
+  "storyCategory": "work",
   "title": "단골손님",
-  "content": "수선집에 오래 다닌 단골손님이 많았어요."
+  "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+  "imageNumber": 3
 }
 ```
 
+- `storyCategory`: 일대기의 분류. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
 - `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `imageNumber`: 분류별 기본 그림 번호. 1~5 정수. 그림 파일은 앱에 있고 서버는 번호만 저장한다.
+- 네 필드 모두 필수다. `storyCategory`, `imageNumber`의 필드 이름은 임시다([미정 사항](#미정-사항) 11).
 
 응답 `201` — [LifeFact](#lifefact)
 
@@ -380,6 +386,9 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 ```json
 { "content": "수선집에 오래 다닌 단골손님이 많았고 시장 상인들과도 친하셨어요." }
 ```
+
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고 `null`로 지울 수 없다.
+- 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
 
 응답 `200` — [LifeFact](#lifefact)
 
@@ -401,6 +410,20 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+
+### 2-9. `DELETE /api/v1/life-facts/{factId}` — 신규
+
+일대기 이야기 한 편의 휴지통에서 확인 창을 거쳐 호출한다. 본문 없음.
+
+응답 `204`
+
+- 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 `context.lifeFacts`에서 빠지며, 주제와 지난 카드의 근거에 남은 그 `factId`도 4-1 입력을 만들 때 뺀다. 저장된 근거는 고치지 않는다.
+- 이미 만든 카드와 주제, 그 이야기를 출처로 한 변경 제안은 지우지 않는다. 지운 이야기를 근거로 한 카드와 주제의 처리는 미정([미정 사항](#미정-사항) 12)
+- 세부 정보 네 항목은 생애 정보가 아니므로 이 API로 지우지 않는다(2-4에서 `null`).
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `LIFE_FACT_NOT_FOUND` |
 
 <br>
 
@@ -1291,11 +1314,15 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "schemaVersion": 1,
   "factId": "00000000-0000-4000-8000-000000000111",
   "profileId": "00000000-0000-4000-8000-000000000101",
+  "storyCategory": "work",
   "title": "단골손님",
   "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+  "imageNumber": 3,
   "createdAt": "2026-08-21T12:10:00+09:00"
 }
 ```
+
+- `storyCategory`, `imageNumber`: 2-6과 같다. 7-4로 만든 생애 정보는 `other`이고 번호는 서버가 1~5 중에 고른다(분류 결정 방식은 [미정 사항](#미정-사항) 13).
 
 ### ProfilePhoto
 
@@ -1494,3 +1521,6 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |
+| 11 | 일대기 분류와 그림 번호의 필드 이름(`storyCategory`, `imageNumber`는 임시) | 2-3, 2-6, 2-7 | FE, BE. [작업 D 문서](../../backend/docs/work-split/D-life-story.md) D1, D2 |
+| 12 | 지운 이야기를 근거로 만든 카드와 주제의 처리, 카드 생성 기록(`generation_log`)에 남는 이야기 내용, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제 | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
+| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |
