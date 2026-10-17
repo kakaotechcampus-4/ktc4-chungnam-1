@@ -239,8 +239,8 @@ void main() {
       final bundle = await const MockRepository().loadProfile();
       final input = MockSpeechInput(bundle);
 
-      // profile.json 에 hometown LifeFact 는 없다.
-      expect(bundle.factOf('hometown'), isNull);
+      // profile.json 의 hometown 은 비어 있다.
+      expect(bundle.profile.hometown, isNull);
 
       final outcome = await listen(input, category: 'hometown', attempt: 1);
       final example = lifeFactSteps
@@ -259,7 +259,7 @@ void main() {
       final outcome = await listen(input, category: 'occupation', attempt: 1);
 
       expect(outcome, isA<SpeechHeard>());
-      expect((outcome as SpeechHeard).text, bundle.factOf('occupation')?.text);
+      expect((outcome as SpeechHeard).text, bundle.profile.occupation);
     });
   });
 
