@@ -9,35 +9,12 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/visit/visit_camera.dart';
 import 'package:saerok/features/visit/visit_photo_screen.dart';
 
-/// 정해 둔 순서대로 찍은 결과를 돌려주는 카메라다. 실제 카메라는 열지 않는다.
-///
-/// 결과는 경로(찍음), `null`(찍지 않고 나옴), [VisitCameraUnavailable](열지
-/// 못함) 중 하나다. 경로는 기기에 없는 가짜 경로다.
-class _FakeCamera implements VisitCamera {
-  _FakeCamera(this._results);
+import 'fake_visit_camera.dart';
 
-  final List<Object?> _results;
-  final discarded = <String>[];
-  int captures = 0;
-
-  /// 있으면 끝날 때까지 카메라가 열려 있는 것으로 친다.
-  Completer<void>? gate;
-
-  @override
-  Future<String?> capture() async {
-    captures++;
-    final gate = this.gate;
-    if (gate != null) await gate.future;
-    final result = _results.removeAt(0);
-    if (result is VisitCameraUnavailable) throw result;
-    return result as String?;
-  }
-
-  @override
-  Future<void> discard(String path) async => discarded.add(path);
-}
-
-Future<ProviderContainer> _open(WidgetTester tester, _FakeCamera camera) async {
+Future<ProviderContainer> _open(
+  WidgetTester tester,
+  FakeVisitCamera camera,
+) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
   tester.view.devicePixelRatio = 3;
@@ -90,7 +67,7 @@ Future<void> _tapShutter(WidgetTester tester) async {
 
 void main() {
   testWidgets('찍기 전에는 사진 없이 녹음으로 넘어간다', (tester) async {
-    final camera = _FakeCamera([]);
+    final camera = FakeVisitCamera();
     final container = await _open(tester, camera);
 
     expect(find.text('눌러서 촬영하기'), findsOneWidget);
@@ -105,7 +82,7 @@ void main() {
   });
 
   testWidgets('찍으면 그 사진을 보여주고 들고 있는다', (tester) async {
-    final camera = _FakeCamera(['/fake/visit-1.jpg']);
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg']);
     final container = await _open(tester, camera);
 
     await _tapShutter(tester);
@@ -120,7 +97,7 @@ void main() {
   });
 
   testWidgets('다시 찍으면 앞 사진 파일을 지운다', (tester) async {
-    final camera = _FakeCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
     final container = await _open(tester, camera);
 
     await _tapShutter(tester);
@@ -132,7 +109,7 @@ void main() {
   });
 
   testWidgets('다시 찍다가 그만두면 앞 사진을 그대로 둔다', (tester) async {
-    final camera = _FakeCamera(['/fake/visit-1.jpg', null]);
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg', null]);
     final container = await _open(tester, camera);
 
     await _tapShutter(tester);
@@ -144,7 +121,7 @@ void main() {
   });
 
   testWidgets('카메라를 열지 못하면 안내하고 사진 없이 시작할 수 있다', (tester) async {
-    final camera = _FakeCamera([
+    final camera = FakeVisitCamera([
       const VisitCameraUnavailable('no_available_camera'),
     ]);
     final container = await _open(tester, camera);
@@ -160,7 +137,7 @@ void main() {
   });
 
   testWidgets('카메라가 열려 있는 동안에는 셔터와 시작을 막는다', (tester) async {
-    final camera = _FakeCamera(['/fake/visit-1.jpg'])..gate = Completer();
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg'])..gate = Completer();
     await _open(tester, camera);
 
     await tester.tap(find.bySemanticsLabel('사진 찍기'));
@@ -178,7 +155,7 @@ void main() {
   });
 
   test('새 회차로 비우면 찍어 둔 사진 파일을 지운다', () {
-    final camera = _FakeCamera([]);
+    final camera = FakeVisitCamera();
     final container = ProviderContainer(
       overrides: [visitCameraProvider.overrideWithValue(camera)],
     );
