@@ -82,6 +82,8 @@ uploading → queued → transcribing → sttCompleted
 (`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초)을 넘으면 `AI_SERVER_TIMEOUT`,
 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 리포트 저장과
 `completed`는 한 트랜잭션이며 끝난 작업의 상태는 다시 바꾸지 않는다(README 평가와 리포트 API).
+STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 와도 전사문을 남기지 않고 리포트
+생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다.
 `--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
@@ -555,6 +557,7 @@ error_code = null
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
 | AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
+| STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
