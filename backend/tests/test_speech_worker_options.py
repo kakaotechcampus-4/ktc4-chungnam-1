@@ -19,6 +19,35 @@ def test_report_wiring(monkeypatch, stt_only):
     assert (worker['report_generator'] is None) is stt_only
 
 
+def test_stt_only_runs_without_the_ml_api_key(monkeypatch):
+    monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
+    monkeypatch.setattr(entry, 'create_speech_worker', lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url='postgresql://synthetic',
+        speech_audio_s3_bucket='synthetic', ml_api_key='',
+    )
+    assert entry.create_worker(settings, stt_only=True)['report_generator'] is None
+    # 키 없이 전체 처리(리포트 생성)가 되는 것처럼 시작하지 않는다.
+    with pytest.raises(RuntimeError, match='SAEROK_ML_API_KEY'):
+        entry.create_worker(settings)
+
+
+def test_report_time_limit_must_fit_in_the_lease(monkeypatch):
+    monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
+    monkeypatch.setattr(entry, 'create_speech_worker', lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url='postgresql://synthetic',
+        speech_audio_s3_bucket='synthetic', ml_api_key='synthetic-key',
+        speech_analysis_lease_seconds=900, report_generation_time_limit_seconds=841,
+    )
+    with pytest.raises(RuntimeError, match='LEASE_SECONDS'):
+        entry.create_worker(settings)
+    # STT만 돌릴 때는 리포트 제한 시간을 보지 않는다.
+    assert entry.create_worker(settings, stt_only=True)['report_generator'] is None
+    fits = settings.model_copy(update={'report_generation_time_limit_seconds': 840})
+    assert entry.create_worker(fits)['report_generator'] is not None
+
+
 def test_production_rejects_stt_only():
     with pytest.raises(RuntimeError, match='development/test'):
         entry.create_worker(Settings(environment='production'), stt_only=True)

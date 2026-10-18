@@ -4,6 +4,7 @@ API는 실제 라우터와 임시 DB를 쓰고, S3와 STT AI 서버, `ai/`의 �
 결과로 바꿔 끼운다. 실제 모델은 부르지 않는다. 값은 모두 합성 데이터다.
 """
 
+import threading
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -16,7 +17,13 @@ from common import visit_report as ai_visit_report
 from tests.card_fixtures import completed_card_set, with_db
 from tests.support import request, run
 from tests.test_speech_analyses import FakeAudioStorage, synthetic_wav
-from tests.test_visit_report_generator import FakeAi, _connected, _connected_generator
+from tests.test_visit_report_generator import (
+    FakeAi,
+    _ai_report,
+    _connected,
+    _connected_generator,
+    _finish_generation_threads,
+)
 from tests.visit_records import Records
 
 
@@ -89,7 +96,7 @@ class Flow:
             files={"audio": ("synthetic.wav", synthetic_wav(), "audio/wav")},
         )
 
-    def run_worker(self) -> None:
+    def run_worker(self, *, time_limit_seconds: float = 30) -> None:
         database_url = self.records.database_url
         worker = create_speech_worker(
             jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
@@ -99,7 +106,7 @@ class Flow:
             ai_server=FakeAi().client(),
             open_connection=lambda: connect(database_url),
             lease_seconds=900,
-            report_generator=_connected_generator(),
+            report_generator=_connected_generator(time_limit_seconds),
         )
         assert run(worker.run_once()) is True
 
@@ -227,3 +234,32 @@ def test_another_account_cannot_follow_the_flow(migrated_database_url, monkeypat
 
     assert codes == ["SPEECH_ANALYSIS_NOT_FOUND", "VISIT_SESSION_NOT_FOUND", "VISIT_SESSION_NOT_FOUND"]
     assert other_audio.status_code == 404
+
+
+def test_timed_out_report_generation_is_failed_and_not_retried(migrated_database_url, monkeypatch):
+    """제한 시간을 넘긴 생성은 실패로 끝나고, 늦게 끝난 생성 결과도 저장하지 않는다."""
+    flow = Flow(migrated_database_url)
+    release = threading.Event()
+
+    def slow_report(request):
+        assert release.wait(10)
+        return _ai_report(request)
+
+    calls = _connected(monkeypatch, report=slow_report)
+    session_id = flow.start_visit()
+    analysis_id = flow.submit_audio(session_id).json()["analysisId"]
+
+    flow.run_worker(time_limit_seconds=0.3)
+    release.set()
+    _finish_generation_threads()
+
+    assert flow.call("GET", f"/api/v1/speech-analyses/{analysis_id}").json()["errorCode"] == (
+        "AI_SERVER_TIMEOUT"
+    )
+    assert [call["kind"] for call in calls] == ["report"]
+    assert flow.call("GET", f"/api/v1/visit-sessions/{session_id}/report").json()[
+        "errorCode"
+    ] == "REPORT_NOT_FOUND"
+    assert flow.latest_session()["sessionStatus"] == "failed"
+    # 자동 재시도는 없고, 같은 회차를 다시 보내도 새 작업을 만들지 않는다.
+    assert flow.submit_audio(session_id).json()["errorCode"] == "ANALYSIS_ALREADY_FAILED"

@@ -6,7 +6,10 @@ STT(8-1) AI 서버는 `httpx.MockTransport`로, 리포트 생성 함수는 정�
 실행한다(`conftest.py`). 값은 모두 합성 데이터다.
 """
 
+import asyncio
 import json
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -24,9 +27,10 @@ from app.core.errors import AppError
 from app.schemas.speech_analysis import SpeechAnalysisResult
 from app.services.audio_storage import AudioDownload
 from app.services.speech_analysis_jobs import PostgresSpeechAnalysisJobRepository
-from app.services.speech_analysis_pipeline import create_speech_worker
+from app.services.speech_analysis_pipeline import SpeechAnalysisQueue, create_speech_worker
 from app.schemas.visit_report_generation import VisitReportRequest, VisitReportResult
 from app.services.visit_report_generator import (
+    ReportDeadline,
     VisitReportGenerator,
     build_request,
     parse_result,
@@ -37,6 +41,8 @@ from tests.support import run
 from tests.visit_records import Records, Visit
 
 ANALYSIS_ID = "00000000-0000-4000-8000-000000000601"
+# 테스트의 리포트 생성 제한 시간(초). 시간 제한 테스트는 따로 짧게 준다.
+TIME_LIMIT_SECONDS = 30
 
 
 def _speech(analysis_id: str = ANALYSIS_ID) -> SpeechAnalysisResult:
@@ -98,7 +104,7 @@ class FakeAi:
         speech = _speech(body["analysisId"]).model_dump(mode="json", by_alias=True)
         return httpx.Response(200, json=speech)
 
-    def generate(self, request: VisitReportRequest) -> VisitReportResult:
+    def generate(self, request: VisitReportRequest, deadline: ReportDeadline) -> VisitReportResult:
         self.report_requests.append(request.model_dump(mode="json", by_alias=True))
         return parse_result(self.response, request)
 
@@ -120,14 +126,22 @@ def _evaluated(records: Records) -> Visit:
     return visit
 
 
-def _generate(records: Records, visit: Visit, ai: FakeAi) -> None:
-    async def scenario():
-        async with connect(records.database_url) as connection:
-            await VisitReportGenerator(generate=ai.generate).generate(
-                connection, session_id=str(visit.session_id), speech=_speech()
-            )
+def _generating_job(records: Records, visit: Visit) -> UUID:
+    """생성기를 바로 부르는 테스트용 `generatingReport` 작업(임대 1시간). 이미 있으면 그대로 쓴다."""
+    analysis_id = UUID(ANALYSIS_ID)
+    if not records.scalar(
+        "SELECT count(*) FROM speech_analysis_jobs WHERE analysis_id = %s", (analysis_id,)
+    ):
+        records.job(visit.session_id, "generatingReport", analysis_id=analysis_id)
+    return analysis_id
 
-    run(scenario())
+
+def _generate(records: Records, visit: Visit, ai: FakeAi) -> None:
+    _generate_with(
+        records,
+        visit,
+        VisitReportGenerator(generate=ai.generate, time_limit_seconds=TIME_LIMIT_SECONDS),
+    )
 
 
 def _saved_rows(records: Records, visit: Visit) -> dict:
@@ -460,7 +474,9 @@ def _run_worker(records: Records, ai: FakeAi) -> None:
         ai_server=ai.client(),
         open_connection=lambda: connect(records.database_url),
         lease_seconds=900,
-        report_generator=VisitReportGenerator(generate=ai.generate),
+        report_generator=VisitReportGenerator(
+            generate=ai.generate, time_limit_seconds=TIME_LIMIT_SECONDS
+        ),
     )
     assert run(worker.run_once()) is True
 
@@ -576,12 +592,16 @@ def _connected(monkeypatch, *, report=_ai_report, proposals=_ai_proposals) -> li
     return calls
 
 
-def _connected_generator() -> VisitReportGenerator:
+def _connected_generator(time_limit_seconds: float = TIME_LIMIT_SECONDS) -> VisitReportGenerator:
     settings = Settings(_env_file=None, ml_api_key="synthetic-key")
-    return VisitReportGenerator(generate=report_generator(settings))
+    return VisitReportGenerator(
+        generate=report_generator(settings), time_limit_seconds=time_limit_seconds
+    )
 
 
 def _generate_with(records: Records, visit: Visit, generator: VisitReportGenerator) -> None:
+    _generating_job(records, visit)
+
     async def scenario():
         async with connect(records.database_url) as connection:
             await generator.generate(
@@ -710,6 +730,223 @@ def test_worker_completes_with_the_connected_generator(migrated_database_url, mo
     assert run(worker.run_once()) is True
 
     assert calls[0]["request"].analysis_id == str(analysis_id)
+    assert _job(records, analysis_id) == {
+        "status": "completed",
+        "error_code": None,
+        "transcript_deleted": True,
+    }
+
+
+# ── 전체 시간 제한과 늦은 결과(#123 리뷰) ─────────────────────
+# 생성 함수가 마감을 넘기거나, 임대가 끝난 뒤 결과를 돌려주는 상황을 가짜 함수로 만든다.
+
+SHORT_LIMIT_SECONDS = 0.3
+
+
+class SlowAi(FakeAi):
+    """`release`가 풀릴 때까지 결과를 돌려주지 않는 생성 함수."""
+
+    def __init__(self, response: dict | None = None):
+        super().__init__(response)
+        self.release = threading.Event()
+
+    def generate(self, request: VisitReportRequest, deadline: ReportDeadline) -> VisitReportResult:
+        assert self.release.wait(10)
+        return super().generate(request, deadline)
+
+
+class HookAi(FakeAi):
+    """결과를 돌려주기 직전에 `before_return`을 부르는 생성 함수."""
+
+    def __init__(self, response: dict, before_return) -> None:
+        super().__init__(response)
+        self.before_return = before_return
+
+    def generate(self, request: VisitReportRequest, deadline: ReportDeadline) -> VisitReportResult:
+        self.before_return()
+        return super().generate(request, deadline)
+
+
+def _finish_generation_threads() -> None:
+    """마감 뒤에도 남은 생성 스레드가 끝날 때까지 기다린다."""
+    for thread in threading.enumerate():
+        if thread.name == "report-generation":
+            thread.join(5)
+            assert not thread.is_alive()
+
+
+def _run_worker_with(records: Records, ai: FakeAi, generator: VisitReportGenerator) -> None:
+    worker = create_speech_worker(
+        jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
+            connection, lease_seconds=900
+        ),
+        audio_storage=FakeAudioStorage(),
+        ai_server=ai.client(),
+        open_connection=lambda: connect(records.database_url),
+        lease_seconds=900,
+        report_generator=generator,
+    )
+    assert run(worker.run_once()) is True
+
+
+def test_generation_over_the_time_limit_times_out_and_the_late_result_is_not_saved(
+    migrated_database_url,
+):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    ai = SlowAi(_report(visit))
+    generator = VisitReportGenerator(generate=ai.generate, time_limit_seconds=SHORT_LIMIT_SECONDS)
+
+    started = time.monotonic()
+    with pytest.raises(AppError) as error:
+        _generate_with(records, visit, generator)
+    waited = time.monotonic() - started
+    # 결과가 늦게 도착한다.
+    ai.release.set()
+    _finish_generation_threads()
+
+    assert error.value.error_code == "AI_SERVER_TIMEOUT"
+    assert waited < 5
+    assert len(ai.report_requests) == 1
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+    assert _job(records, UUID(ANALYSIS_ID))["status"] == "generatingReport"
+
+
+def test_worker_fails_a_timed_out_job_and_ignores_the_late_result(migrated_database_url):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = records.job(visit.session_id, "queued")
+    ai = SlowAi(_report(visit, analysis_id=str(analysis_id)))
+    generator = VisitReportGenerator(generate=ai.generate, time_limit_seconds=SHORT_LIMIT_SECONDS)
+
+    _run_worker_with(records, ai, generator)
+    after_timeout = _job(records, analysis_id)
+    ai.release.set()
+    _finish_generation_threads()
+
+    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": True}
+    assert after_timeout == expected
+    assert _job(records, analysis_id) == expected
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def test_connected_generator_stops_before_the_proposal_call_after_the_time_limit(
+    migrated_database_url, monkeypatch
+):
+    """마감 뒤 남은 스레드가 변경 제안을 위해 전사문을 다시 보내지 않는다."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    release = threading.Event()
+
+    def slow_report(request):
+        assert release.wait(10)
+        return _ai_report(request)
+
+    calls = _connected(monkeypatch, report=slow_report)
+
+    with pytest.raises(AppError) as error:
+        _generate_with(records, visit, _connected_generator(SHORT_LIMIT_SECONDS))
+    release.set()
+    _finish_generation_threads()
+
+    assert error.value.error_code == "AI_SERVER_TIMEOUT"
+    assert [call["kind"] for call in calls] == ["report"]
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def _expire_lease(records: Records, analysis_id: UUID) -> None:
+    records.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second' "
+        "WHERE analysis_id = %s",
+        (analysis_id,),
+    )
+
+
+def test_result_after_another_worker_expired_the_lease_is_not_saved(migrated_database_url):
+    """생성 중 임대가 끝나 다른 worker가 실패 처리한 작업에 늦은 결과를 저장하지 않는다."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = records.job(visit.session_id, "queued")
+
+    def expired_by_another_worker() -> None:
+        _expire_lease(records, analysis_id)
+
+        async def expire() -> int:
+            async with connect(records.database_url) as connection:
+                queue = SpeechAnalysisQueue(
+                    jobs_for=lambda c: PostgresSpeechAnalysisJobRepository(c, lease_seconds=900),
+                    audio_storage=FakeAudioStorage(),
+                )
+                return await queue.expire_leases(connection)
+
+        assert run(expire()) == 1
+
+    ai = HookAi(_report(visit, analysis_id=str(analysis_id)), expired_by_another_worker)
+    generator = VisitReportGenerator(generate=ai.generate, time_limit_seconds=TIME_LIMIT_SECONDS)
+
+    _run_worker_with(records, ai, generator)
+
+    # 먼저 남은 실패 코드를 덮지 않는다.
+    assert _job(records, analysis_id) == {
+        "status": "failed",
+        "error_code": "WORKER_LEASE_EXPIRED",
+        "transcript_deleted": True,
+    }
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def test_result_after_the_lease_ended_is_not_saved_before_cleanup(migrated_database_url):
+    """임대가 끝났지만 아직 아무도 정리하지 않은 경계에서도 저장하지 않는다."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = records.job(visit.session_id, "queued")
+    ai = HookAi(
+        _report(visit, analysis_id=str(analysis_id)), lambda: _expire_lease(records, analysis_id)
+    )
+    generator = VisitReportGenerator(generate=ai.generate, time_limit_seconds=TIME_LIMIT_SECONDS)
+
+    _run_worker_with(records, ai, generator)
+
+    assert _job(records, analysis_id) == {
+        "status": "failed",
+        "error_code": "WORKER_LEASE_EXPIRED",
+        "transcript_deleted": True,
+    }
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+def test_late_result_does_not_overwrite_a_saved_report(migrated_database_url):
+    """같은 작업의 생성이 둘 겹쳐도 하나만 저장하고 먼저 저장한 결과를 덮지 않는다."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = _generating_job(records, visit)
+    first = FakeAi(_report(visit))
+    second = FakeAi(_report(visit, title="늦은 합성 리포트 제목"))
+    second_may_return = threading.Event()
+
+    def generate_second(request, deadline):
+        assert second_may_return.wait(10)
+        return second.generate(request, deadline)
+
+    async def scenario():
+        async def generate(fn):
+            async with connect(records.database_url) as connection:
+                await VisitReportGenerator(
+                    generate=fn, time_limit_seconds=TIME_LIMIT_SECONDS
+                ).generate(connection, session_id=str(visit.session_id), speech=_speech())
+
+        late = asyncio.create_task(generate(generate_second))
+        await generate(first.generate)
+        second_may_return.set()
+        return await asyncio.gather(late, return_exceptions=True)
+
+    (late_outcome,) = run(scenario())
+
+    assert isinstance(late_outcome, AppError)
+    assert late_outcome.error_code in {"WORKER_LEASE_EXPIRED", "REPORT_ALREADY_GENERATED"}
+    assert _saved_rows(records, visit)["report"]["report_title"] == "합성 리포트 제목"
+    assert records.scalar("SELECT count(*) FROM life_fact_proposals") == 1
+    assert records.scalar("SELECT count(*) FROM topic_proposals") == 1
     assert _job(records, analysis_id) == {
         "status": "completed",
         "error_code": None,

@@ -19,11 +19,15 @@ from app.services.speech_analysis_jobs import (
 from app.services.speech_analysis_pipeline import create_speech_worker
 from app.services.visit_report_generator import (
     GenerateReport,
+    ReportDeadline,
     VisitReportGenerator,
     generation_failed,
     parse_result,
 )
 from app.workers.base import Worker, run_worker_main
+
+# 리포트 생성 제한 시간이 끝난 뒤 저장과 완료 처리에 남겨 둘 임대 시간.
+REPORT_SAVE_MARGIN_SECONDS = 60
 
 
 def create_worker(
@@ -47,7 +51,17 @@ def create_worker(
     lease_seconds = settings.speech_analysis_lease_seconds
     report = None
     if not stt_only:
-        report = VisitReportGenerator(generate=generate or report_generator(settings))
+        time_limit = settings.report_generation_time_limit_seconds
+        if time_limit + REPORT_SAVE_MARGIN_SECONDS > lease_seconds:
+            raise RuntimeError(
+                "SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS는 "
+                "SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS보다 "
+                f"{REPORT_SAVE_MARGIN_SECONDS}초 이상 짧아야 합니다."
+            )
+        report = VisitReportGenerator(
+            generate=generate or report_generator(settings),
+            time_limit_seconds=time_limit,
+        )
     return create_speech_worker(
         jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
             connection, lease_seconds=lease_seconds
@@ -72,14 +86,16 @@ def create_worker(
 def report_generator(settings: Settings) -> GenerateReport:
     """ai 패키지의 리포트·변경 제안 생성 함수를 8-3 형식으로 감싼 생성 함수.
 
-    리포트와 변경 제안을 차례로 만들고 `combine`으로 8-3 응답 하나로 합친다.
+    리포트와 변경 제안을 차례로 만들고 `combine`으로 8-3 응답 하나로 합친다. 각 호출
+    직전에 마감을 확인해, 제한 시간이 지난 뒤 남은 스레드가 외부 ML API로 전사문을
+    다시 보내지 않게 한다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
     """
     api_key = settings.ml_api_key.get_secret_value()
     if not api_key:
         raise RuntimeError("리포트 생성에는 SAEROK_ML_API_KEY가 필요합니다.")
     model = settings.report_generation_model
 
-    def generate(request: VisitReportRequest) -> VisitReportResult:
+    def generate(request: VisitReportRequest, deadline: ReportDeadline) -> VisitReportResult:
         # 두 쪽 형식은 JSON 이름이 같음. UUID는 JSON에서 문자열로 바뀜
         try:
             sent = ai.VisitReportRequest.model_validate(
@@ -88,7 +104,9 @@ def report_generator(settings: Settings) -> GenerateReport:
         except ValidationError as error:
             raise generation_failed("INVALID_REQUEST") from error
         try:
+            deadline.check()
             report = report_generation.generate_report(sent, model=model, api_key=api_key)
+            deadline.check()
             proposals = proposal_generation.generate_proposals(
                 sent, model=model, api_key=api_key
             )

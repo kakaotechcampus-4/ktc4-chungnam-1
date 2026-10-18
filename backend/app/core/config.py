@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
     # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
     report_generation_model: str = "gpt-5.6-luna"
+    # 리포트 생성 전체(요청 조립 → 리포트·변경 제안 생성 → 검증) 제한 시간. 넘기면
+    # AI_SERVER_TIMEOUT. 저장과 완료 처리까지 음성 작업 임대 안에 끝나도록 임대보다
+    # 60초 이상 짧아야 하며, 아니면 음성 worker가 시작하지 않음.
+    report_generation_time_limit_seconds: int = Field(default=600, ge=10)
 
     # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른
     # 비공개 버킷에 저장한다. 비어 있으면 사진 업로드와 조회 URL 생성을 거절한다.

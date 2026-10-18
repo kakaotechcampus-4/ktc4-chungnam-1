@@ -191,9 +191,10 @@ class Records:
         participant_count: int = 2,
         accepted: bool = True,
         created_at: datetime | None = None,
+        analysis_id: UUID | None = None,
     ) -> UUID:
         """음성 분석 작업 하나. `accepted=False`면 업로드 단계의 작업이다."""
-        analysis_id = uuid4()
+        analysis_id = analysis_id or uuid4()
         uploaded = accepted and status != "uploading"
         leased = status in {"uploading", "transcribing", "generatingReport"}
         transcript = status in {"sttCompleted", "generatingReport"}
