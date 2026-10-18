@@ -3,6 +3,9 @@
 모든 경로는 현재 계정의 프로필만 다룬다. 다른 계정의 프로필은 없는 프로필과 같은 404
 (`PROFILE_NOT_FOUND`)를 받는다. 온보딩은 2-4로 세부 정보를 저장한 뒤 작업 B의 4-1로
 첫 카드 생성을 요청한다.
+
+프로필 응답의 사진마다 조회 URL을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로
+버킷이 설정되지 않아도 사진 없는 프로필은 그대로 응답한다.
 """
 
 import logging
@@ -10,19 +13,23 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from app.api.deps import CurrentAccountDep, DbConnectionDep
+from app.api.deps import CurrentAccountDep, DbConnectionDep, ImageStorageDep
 from app.schemas.common import ErrorResponse
 from app.schemas.profiles import (
     Condition,
     LifeFactResponse,
+    PhotoAnalysisError,
     ProfileCreateRequest,
     ProfileListResponse,
+    ProfilePhotoResponse,
     ProfileResponse,
     ProfileSummaryResponse,
     ProfileUpdateRequest,
 )
 from app.services import profiles
+from app.services.image_storage import ImageStorage
 from app.services.life_facts import LifeFact
+from app.services.profile_photos import ProfilePhoto
 from app.services.profiles import Profile
 
 logger = logging.getLogger("saerok.profiles")
@@ -37,7 +44,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
         404: "프로필 또는 계정 없음",
         409: "계정당 프로필 수 초과",
         422: "요청 형식 오류",
-        503: "DB 설정 미완료",
+        503: "DB 설정 미완료 또는 사진 저장소 사용 불가",
     }
     return {
         code: {"model": ErrorResponse, "description": descriptions[code]}
@@ -50,13 +57,38 @@ def to_life_fact_response(fact: LifeFact) -> LifeFactResponse:
     return LifeFactResponse(
         fact_id=fact.fact_id,
         profile_id=fact.profile_id,
+        story_category=fact.story_category,
         title=fact.title,
         content=fact.content,
+        image_number=fact.image_number,
         created_at=fact.created_at,
     )
 
 
-def to_profile_response(profile: Profile) -> ProfileResponse:
+async def to_profile_photo_response(
+    photo: ProfilePhoto, storage: ImageStorage
+) -> ProfilePhotoResponse:
+    # 프로필 응답이 사진을 담으므로 여기에 두고 3-1, 3-2 라우트도 쓴다.
+    download = await storage.create_download(object_key=photo.object_key)
+    return ProfilePhotoResponse(
+        photo_id=photo.photo_id,
+        profile_id=photo.profile_id,
+        image_url=download.url,
+        image_url_expires_at=download.expires_at,
+        analysis_status=photo.analysis_status,
+        description=photo.description,
+        error=(
+            PhotoAnalysisError(error_code=photo.error_code)
+            if photo.error_code is not None
+            else None
+        ),
+        created_at=photo.created_at,
+    )
+
+
+async def to_profile_response(
+    profile: Profile, storage: ImageStorage
+) -> ProfileResponse:
     return ProfileResponse(
         profile_id=profile.profile_id,
         setup_status=profile.setup_status,
@@ -71,6 +103,9 @@ def to_profile_response(profile: Profile) -> ProfileResponse:
         hobby=profile.hobby,
         family=profile.family,
         life_facts=[to_life_fact_response(fact) for fact in profile.life_facts],
+        photos=[
+            await to_profile_photo_response(photo, storage) for photo in profile.photos
+        ],
         created_at=profile.created_at,
     )
 
@@ -116,6 +151,7 @@ async def create_profile(
     payload: ProfileCreateRequest,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    storage: ImageStorageDep,
 ) -> ProfileResponse:
     """기본 정보로 프로필 생성. 계정당 3개까지이며 입력 중인 프로필도 셈.
 
@@ -132,7 +168,7 @@ async def create_profile(
         symptom_note=payload.condition.symptom_note,
     )
     logger.info("profile_created")
-    return to_profile_response(profile)
+    return await to_profile_response(profile, storage)
 
 
 @router.get(
@@ -142,7 +178,10 @@ async def create_profile(
     responses=_errors(401, 404, 422, 503),
 )
 async def read_profile(
-    profile_id: UUID, account: CurrentAccountDep, connection: DbConnectionDep
+    profile_id: UUID,
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    storage: ImageStorageDep,
 ) -> ProfileResponse:
     """프로필 하나와 그 생애 정보 조회.
 
@@ -152,7 +191,7 @@ async def read_profile(
     profile = await profiles.get_profile(
         connection, profile_id, account_id=account.account_id
     )
-    return to_profile_response(profile)
+    return await to_profile_response(profile, storage)
 
 
 @router.patch(
@@ -166,6 +205,7 @@ async def update_profile(
     payload: ProfileUpdateRequest,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    storage: ImageStorageDep,
 ) -> ProfileResponse:
     """기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정. 세부 정보는 `null`을 보내면 지움.
 
@@ -178,7 +218,7 @@ async def update_profile(
         account_id=account.account_id,
         changes=payload.column_changes(),
     )
-    return to_profile_response(profile)
+    return await to_profile_response(profile, storage)
 
 
 @router.delete(

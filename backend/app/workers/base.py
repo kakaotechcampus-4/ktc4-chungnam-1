@@ -128,15 +128,17 @@ def run_worker_main(
     description: str,
     create_worker: Callable[[Settings], Worker],
     poll_seconds: Callable[[Settings], float],
+    parser: argparse.ArgumentParser | None = None,
+    namespace: argparse.Namespace | None = None,
 ) -> None:
     """worker 실행 진입점. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다."""
-    parser = argparse.ArgumentParser(description=description)
+    parser = parser or argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--once",
         action="store_true",
         help="대기 중인 작업을 최대 하나 처리하고 종료합니다.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=namespace)
 
     async def main() -> None:
         settings = get_settings()

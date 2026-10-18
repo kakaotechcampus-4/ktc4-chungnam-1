@@ -156,7 +156,7 @@ def test_detail_returns_life_facts_in_creation_order(migrated_database_url):
         caregiver.call(
             "POST",
             f"/api/v1/profiles/{profile_id}/life-facts",
-            json={"title": title, "content": "합성 내용"},
+            json={"storyCategory": "work", "title": title, "content": "합성 내용", "imageNumber": 1},
         )
 
     response = caregiver.call("GET", f"/api/v1/profiles/{profile_id}")
@@ -426,7 +426,7 @@ def test_deleting_a_profile_with_cards_and_topics_removes_its_records(
     caregiver.call(
         "POST",
         f"/api/v1/profiles/{removed}/life-facts",
-        json={"title": "합성 제목", "content": "합성 내용"},
+        json={"storyCategory": "other", "title": "합성 제목", "content": "합성 내용", "imageNumber": 1},
     )
 
     response = caregiver.call("DELETE", f"/api/v1/profiles/{removed}")

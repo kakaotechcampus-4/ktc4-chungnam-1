@@ -2,6 +2,7 @@
 ///
 /// 데이터 출처를 바꿀 때는 `mockRepositoryProvider` 를 override 한다.
 /// 테스트에서 다른 값을 주입할 때도 같은 방법을 쓴다. `ADR-005` 참고.
+/// 대화 카드는 서버에서 받으므로 `currentCardSetProvider` 를 override 한다.
 library;
 
 import 'dart:async';
@@ -9,8 +10,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'api_client.dart';
+import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
+import 'profile_api.dart';
+import 'report_api.dart';
 
 final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
@@ -84,16 +89,21 @@ class EnteredDetails {
 
 /// 보호자가 돌보는 어르신 한 분이다.
 ///
-/// [pending] 이면 [basicInfo] 가 비어 있다. 등록을 마친 분은 늘 기본 정보가 있다.
+/// 앱 안에서 등록을 시작한 [pending] 인 분은 [basicInfo] 가 비어 있다. 서버에서
+/// 불러온 입력 중인 분은 기본 정보를 함께 들고 온다. 등록을 마친 분은 늘 기본
+/// 정보가 있다.
 class CareProfileEntry {
   const CareProfileEntry({
     required this.id,
     this.basicInfo,
     this.details = const EnteredDetails(),
     this.pending = false,
+    this.remoteId,
   });
 
+  /// 앱 안에서 이 분을 가리키는 값. 서버에서 불러온 분은 [remoteId] 와 같다.
   final String id;
+
   final EnteredBasicInfo? basicInfo;
 
   /// 세부 정보 네 항목. 입력하지 않았으면 모두 `null` 이다.
@@ -102,13 +112,45 @@ class CareProfileEntry {
   /// 등록하다 마치지 않고 나간 분이다. 슬롯 하나를 차지하고 `입력 중` 으로
   /// 보이며, 고를 수는 없다. 입력한 값은 입력 흐름이 들고 있다.
   final bool pending;
+
+  /// 서버의 `profileId`(`api-spec.md` 2절). 서버에 저장하지 않은 분은 `null`
+  /// 이다. 로그인 없이 들어왔거나, 기본 정보를 마치기 전인 경우다.
+  final String? remoteId;
+
+  CareProfileEntry copyWith({
+    EnteredBasicInfo? basicInfo,
+    EnteredDetails? details,
+    bool? pending,
+    String? remoteId,
+  }) => CareProfileEntry(
+    id: id,
+    basicInfo: basicInfo ?? this.basicInfo,
+    details: details ?? this.details,
+    pending: pending ?? this.pending,
+    remoteId: remoteId ?? this.remoteId,
+  );
+}
+
+/// 어르신 목록을 서버에서 불러온 상태다.
+enum CareProfilesLoad {
+  /// 서버를 쓰지 않는다. 로그인 세션 없이 들어온 경우다.
+  local,
+
+  loading,
+  loaded,
+  failed,
 }
 
 /// 등록한 어르신 목록과 지금 보고 있는 어르신이다.
 class CareProfiles {
-  const CareProfiles({required this.entries, required this.selectedId});
+  const CareProfiles({
+    required this.entries,
+    required this.selectedId,
+    this.load = CareProfilesLoad.local,
+  });
 
-  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다.
+  /// 한 보호자가 등록할 수 있는 어르신 수. 입력 중인 분도 자리를 차지한다
+  /// (`api-spec.md` 2-2).
   static const max = 3;
 
   /// 전환 화면의 슬롯 순서 그대로다.
@@ -116,6 +158,13 @@ class CareProfiles {
 
   /// 고른 분이 없으면 `null` 이다.
   final String? selectedId;
+
+  /// 불러오는 중이거나 실패했으면 [entries] 가 비어 있어도 등록한 분이 없다는
+  /// 뜻이 아니다. 화면은 이때 등록 안내 대신 기다림이나 다시 시도를 보여준다.
+  final CareProfilesLoad load;
+
+  bool get isLoading => load == CareProfilesLoad.loading;
+  bool get loadFailed => load == CareProfilesLoad.failed;
 
   /// 고를 수 있는 분들이다. 입력 중인 분은 빠진다.
   List<CareProfileEntry> get ready => entries.where((e) => !e.pending).toList();
@@ -132,37 +181,118 @@ class CareProfiles {
   bool get hasSelected => selected != null;
 
   bool get isFull => entries.length >= max;
+
+  CareProfileEntry? byId(String id) =>
+      entries.where((e) => e.id == id).firstOrNull;
+
+  CareProfiles copyWith({
+    List<CareProfileEntry>? entries,
+    String? selectedId,
+    CareProfilesLoad? load,
+  }) => CareProfiles(
+    entries: entries ?? this.entries,
+    selectedId: selectedId ?? this.selectedId,
+    load: load ?? this.load,
+  );
 }
 
 /// 어르신 목록을 다룬다.
 ///
-/// 프로필을 서버에 저장하는 API(`docs/architecture/api-spec.md` 2-2)가 아직 없어
-/// 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지 않았으므로
-/// (`data-contracts.md`, 이슈 18) 단말 저장소에 쓰지 않는다. 앱을 다시 켜거나
-/// 로그아웃하면 빈 목록으로 돌아간다.
+/// 로그인 세션이 있으면 서버(`api-spec.md` 2절)가 기준이다. 세션이 생기면
+/// 목록을 불러오고, 등록과 수정은 화면이 서버에 저장한 뒤 이 상태에 반영한다.
+/// 슬롯 순서는 서버에 저장하지 않으므로 다시 불러오면 만든 순서로 돌아간다.
 ///
-/// 서버를 쓰면 회원가입에서 첫 분을 반드시 등록하므로, 빈 목록은 마지막 분을
-/// 지운 경우다. 지금은 로그인만 하고 들어와도 빈 목록이며 같은 화면을 보여준다.
-///
-/// 계약상 계정당 프로필은 1개다(`api-spec.md` 2-2). 최대 3분은 BE 와 합의 전인
-/// 화면 설계이며, 서버를 붙일 때 이 제한을 함께 맞춘다.
+/// 로그인 세션 없이 들어오면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기)
+/// 서버를 부르지 않고 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지
+/// 않았으므로(`data-contracts.md`, 이슈 18) 단말 저장소에는 쓰지 않는다.
 class CareProfilesNotifier extends Notifier<CareProfiles> {
   int _nextId = 0;
 
+  /// 늦게 도착한 이전 불러오기가 새 결과를 덮지 않게 차례를 센다.
+  int _loadRound = 0;
+
   @override
-  CareProfiles build() => const CareProfiles(entries: [], selectedId: null);
+  CareProfiles build() {
+    final accountId = ref.watch(
+      sessionProvider.select((s) => s?.account.accountId),
+    );
+    if (accountId == null) {
+      return const CareProfiles(entries: [], selectedId: null);
+    }
+    // build 안에서는 상태를 바꿀 수 없어 다음 차례에 불러온다.
+    Future.microtask(reload);
+    return const CareProfiles(
+      entries: [],
+      selectedId: null,
+      load: CareProfilesLoad.loading,
+    );
+  }
+
+  /// 서버에서 목록을 다시 불러온다(2-1, 2-3). 고른 분은 남아 있으면 그대로 둔다.
+  ///
+  /// 서버의 `inProgress` 는 첫 카드 생성 전이라는 뜻이라 `입력 중` 으로 둔다.
+  Future<void> reload() async {
+    final round = ++_loadRound;
+    final previous = state.selectedId;
+    state = state.copyWith(load: CareProfilesLoad.loading);
+    final api = ref.read(profileApiProvider);
+    try {
+      final summaries = await api.list();
+      final profiles = await Future.wait([
+        for (final summary in summaries) api.get(summary.profileId),
+      ]);
+      if (!ref.mounted || round != _loadRound) return;
+      final entries = [
+        for (final profile in profiles)
+          CareProfileEntry(
+            id: profile.profileId,
+            remoteId: profile.profileId,
+            basicInfo: profile.basicInfo,
+            details: profile.details,
+            pending: profile.setupStatus != SetupStatus.completed,
+          ),
+      ];
+      state = CareProfiles(
+        entries: entries,
+        selectedId: entries.any((e) => e.id == previous && !e.pending)
+            ? previous
+            : null,
+        load: CareProfilesLoad.loaded,
+      );
+    } on ApiFailure {
+      if (!ref.mounted || round != _loadRound) return;
+      state = CareProfiles(
+        entries: const [],
+        selectedId: null,
+        load: CareProfilesLoad.failed,
+      );
+    }
+  }
 
   /// 회원가입으로 첫 어르신을 입력했다. 목록을 이 분으로 시작한다.
+  ///
+  /// 서버에 저장했으면 [remoteId] 를 넘긴다. 서버에서 불러온 목록에 이미 있는
+  /// 분이면 새로 만들지 않고 그 자리를 채운다.
   void startWith(
     EnteredBasicInfo info, {
     EnteredDetails details = const EnteredDetails(),
+    String? remoteId,
   }) {
+    final existing = remoteId == null ? null : state.byId(remoteId);
+    if (existing != null) {
+      _replace(
+        existing.copyWith(basicInfo: info, details: details, pending: false),
+        select: true,
+      );
+      return;
+    }
     final entry = CareProfileEntry(
-      id: _newId(),
+      id: remoteId ?? _newId(),
+      remoteId: remoteId,
       basicInfo: info,
       details: details,
     );
-    state = CareProfiles(entries: [entry], selectedId: entry.id);
+    state = state.copyWith(entries: [entry], selectedId: entry.id);
   }
 
   /// 어르신을 더 등록하기 시작했다. 빈자리가 없으면 `null` 이다.
@@ -171,11 +301,15 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   String? beginAdding() {
     if (state.isFull) return null;
     final entry = CareProfileEntry(id: _newId(), pending: true);
-    state = CareProfiles(
-      entries: [...state.entries, entry],
-      selectedId: state.selectedId,
-    );
+    state = state.copyWith(entries: [...state.entries, entry]);
     return entry.id;
+  }
+
+  /// 입력 중이던 분이 서버에 저장됐다(2-2). 마치기 전이라 `입력 중` 그대로다.
+  void attachRemote(String id, String remoteId) {
+    final entry = state.byId(id);
+    if (entry == null) return;
+    _replace(entry.copyWith(remoteId: remoteId));
   }
 
   /// 입력 중이던 분의 등록을 마치고 그 분으로 바꾼다. 자리는 그대로다.
@@ -183,50 +317,38 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     String id,
     EnteredBasicInfo info, {
     EnteredDetails details = const EnteredDetails(),
+    String? remoteId,
   }) {
-    if (state.entries.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: info, details: details)
-              : e,
-      ],
-      selectedId: id,
+    final entry = state.byId(id);
+    if (entry == null) return;
+    _replace(
+      entry.copyWith(
+        basicInfo: info,
+        details: details,
+        pending: false,
+        remoteId: remoteId,
+      ),
+      select: true,
     );
   }
 
   /// 등록을 마친 분의 기본 정보를 고친다. 세부 정보는 그대로 둔다.
   void updateBasicInfo(String id, EnteredBasicInfo info) {
-    if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: info, details: e.details)
-              : e,
-      ],
-      selectedId: state.selectedId,
-    );
+    final entry = state.byId(id);
+    if (entry == null || entry.pending) return;
+    _replace(entry.copyWith(basicInfo: info));
   }
 
   /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
   void updateDetails(String id, EnteredDetails details) {
-    if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(
-      entries: [
-        for (final e in state.entries)
-          e.id == id
-              ? CareProfileEntry(id: id, basicInfo: e.basicInfo, details: details)
-              : e,
-      ],
-      selectedId: state.selectedId,
-    );
+    final entry = state.byId(id);
+    if (entry == null || entry.pending) return;
+    _replace(entry.copyWith(details: details));
   }
 
   void select(String id) {
     if (state.ready.every((e) => e.id != id)) return;
-    state = CareProfiles(entries: state.entries, selectedId: id);
+    state = state.copyWith(selectedId: id);
   }
 
   /// 목록 순서대로 다음 어르신으로 바꾼다. 마지막이면 처음으로 돌아간다.
@@ -243,13 +365,13 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   void reorder(int oldIndex, int newIndex) {
     final entries = [...state.entries];
     entries.insert(newIndex, entries.removeAt(oldIndex));
-    state = CareProfiles(entries: entries, selectedId: state.selectedId);
+    state = state.copyWith(entries: entries);
   }
 
   /// 슬롯 하나를 비운다. 보고 있던 분을 지우면 남은 첫 분으로 바꾼다.
   ///
   /// 마지막 분도 지울 수 있다. 프로필 삭제는 계정 탈퇴가 아니므로 계정은
-  /// 그대로 두고 빈 목록이 된다.
+  /// 그대로 두고 빈 목록이 된다. 서버에서 지우는 일(2-8)은 화면이 먼저 한다.
   ///
   /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
   void remove(String id) {
@@ -258,11 +380,24 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final selectedId = state.selectedId == id
         ? entries.where((e) => !e.pending).firstOrNull?.id
         : state.selectedId;
-    state = CareProfiles(entries: entries, selectedId: selectedId);
+    state = CareProfiles(
+      entries: entries,
+      selectedId: selectedId,
+      load: state.load,
+    );
     ref.read(_reportNoticesProvider.notifier).dismiss((
       accountId: ref.read(sessionProvider)?.account.accountId,
       profileId: id,
     ));
+  }
+
+  void _replace(CareProfileEntry entry, {bool select = false}) {
+    state = state.copyWith(
+      entries: [
+        for (final e in state.entries) e.id == entry.id ? entry : e,
+      ],
+      selectedId: select ? entry.id : null,
+    );
   }
 
   String _newId() => 'local-${_nextId++}';
@@ -337,7 +472,8 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final details = selected.details;
   return ProfileBundle(
     profile: Profile(
-      profileId: selected.id,
+      // 서버에 저장한 분은 서버의 profileId 를 쓴다. 카드 생성(4-1)이 이 값을 쓴다.
+      profileId: selected.remoteId ?? selected.id,
       name: entered.name,
       gender: entered.gender,
       birthDate: entered.birthDate,
@@ -367,8 +503,29 @@ String ageRangeOf(String birthDate, DateTime today) {
   return '${age ~/ 10 * 10}s';
 }
 
+/// 고른 어르신의 지금 쓸 카드 묶음(API 4-3).
+///
+/// 서버에서만 받는다. 목 묶음은 테스트가 이 provider 를 override 해서 쓴다.
+/// 자동 재시도는 끈다. 쓸 묶음이 없다는 거절은 다시 물어도 같고, 다시 받기는
+/// 화면의 버튼으로 한다.
+final currentCardSetProvider = FutureProvider<CardSet>((ref) async {
+  final profileId = await ref.watch(serverProfileIdProvider.future);
+  if (profileId == null) throw StateError('고른 어르신이 없다');
+  return ref.watch(cardApiProvider).current(profileId);
+}, retry: (_, _) => null);
+
+/// 서버 API 에 보낼, 고른 어르신의 `profileId`. 고른 분이 없으면 `null` 이다.
+///
+/// 앱 안에서 어르신을 가리키는 값(`careProfilesProvider` 의 `id`)이 아니라
+/// [profileProvider] 의 `profileId` 를 쓴다. 이번 실행에서 새로 등록한 분은 앱
+/// 안의 값과 서버가 준 값이 다를 수 있고, [profileProvider] 가 서버에 저장한
+/// 분이면 서버의 값을 알려준다.
+final serverProfileIdProvider = FutureProvider<String?>(
+  (ref) async => (await ref.watch(profileProvider.future))?.profile.profileId,
+);
+
 final conversationCardsProvider = FutureProvider<List<ConversationCard>>(
-  (ref) => ref.watch(mockRepositoryProvider).loadConversationCards(),
+  (ref) async => (await ref.watch(currentCardSetProvider.future)).cards,
 );
 
 final visitSessionProvider = FutureProvider<VisitSession>(
@@ -387,22 +544,136 @@ final changeProposalProvider = FutureProvider<ChangeProposal>(
   (ref) => ref.watch(mockRepositoryProvider).loadChangeProposal(),
 );
 
-/// 홈 화면의 리포트 도착 알림 상태다.
+/// 로그인해 서버와 이어진 상태다. 아니면 목 데이터를 쓴다(구글 설정이 없는
+/// 디버그 빌드의 임시 건너뛰기).
+bool _online(Ref ref) => ref.watch(sessionProvider.select((s) => s != null));
+
+/// 리포트 하나. [reportId] 는 서버에서는 회차 ID 다(7-2).
+final reportProvider = FutureProvider.autoDispose.family<VisitReport, String>((
+  ref,
+  reportId,
+) {
+  if (_online(ref)) return ref.watch(reportApiProvider).report(reportId);
+  return ref.watch(visitReportProvider.future);
+});
+
+/// 리포트 회차에서 보호자가 카드마다 남긴 답(6-4).
+final reportCardReviewsProvider = FutureProvider.autoDispose
+    .family<List<CardReview>, String>((ref, reportId) async {
+      if (_online(ref)) {
+        return ref.watch(reportApiProvider).cardReviews(reportId);
+      }
+      final evaluation = await ref.watch(caregiverEvaluationProvider.future);
+      return evaluation.cardReviews;
+    });
+
+/// 리포트 회차에 고른 카드(5-4). 모르면 `null` 이다.
 ///
-/// 리포트가 만들어진 뒤에만 뜬다. 회원가입하고 처음 들어온 사용자에게는
-/// 보이지 않는다. 계약상 `VisitReport.reportStatus` 가 `ready` 가 되는 시점에
-/// 해당한다.
+/// 서버에 저장하지 않은 분이거나 최근 회차 목록에 없으면 모른다.
+final reportSelectedCardIdsProvider = FutureProvider.autoDispose
+    .family<List<String>?, String>((ref, reportId) async {
+      if (_online(ref)) {
+        final profileId = ref.watch(
+          careProfilesProvider.select((p) => p.selected?.remoteId),
+        );
+        if (profileId == null) return null;
+        return ref
+            .watch(reportApiProvider)
+            .selectedCardIds(profileId, reportId);
+      }
+      final session = await ref.watch(visitSessionProvider.future);
+      return session.selectedCardIds;
+    });
+
+/// 리포트 회차의 변경 제안(7-3).
+final reportProposalsProvider = FutureProvider.autoDispose
+    .family<ChangeProposal, String>((ref, reportId) {
+      if (_online(ref)) return ref.watch(reportApiProvider).proposals(reportId);
+      return ref.watch(changeProposalProvider.future);
+    });
+
+/// 지금 보고 있는 어르신의 리포트 기록(7-1). 최근 면회부터다.
 ///
-/// 리포트를 읽는 것만으로는 사라지지 않고, 변경 사항까지 확인해야 사라진다.
+/// 서버에 저장하지 않은 분이면 빈 목록이다. 목 데이터에는 리포트가 하나뿐이다.
+final reportHistoryProvider = FutureProvider.autoDispose<List<ReportListItem>>((
+  ref,
+) async {
+  if (_online(ref)) {
+    final profileId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (profileId == null) return const [];
+    return ref.watch(reportApiProvider).reports(profileId);
+  }
+  final report = await ref.watch(visitReportProvider.future);
+  return [
+    ReportListItem(
+      reportId: report.reportId,
+      title: report.title,
+      visitDate: report.visitDate,
+      mood: report.mood,
+    ),
+  ];
+});
+
+/// 리포트를 만드는 동안 서버에 상태를 묻는 간격. 테스트는 짧게 바꾼다.
+///
+/// 명세는 폴링 간격을 정하지 않는다. 목 데이터가 리포트를 만드는 시간과 같게
+/// 둔다.
+final reportPollIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
 /// 홈 화면에 띄우는 리포트 알림이다.
 ///
-/// 계약의 `ReportStatus` 중 홈에서 보여줄 둘만 쓴다. 새 어휘를 만들지 않는다.
+/// 리포트가 만들어지는 중이거나 만들어진 뒤에만 뜬다. 회원가입하고 처음 들어온
+/// 사용자에게는 보이지 않는다. 리포트를 읽는 것만으로는 사라지지 않고, 변경
+/// 사항까지 확인해야 사라진다.
+///
+/// 서버의 회차 상태(5-4)를 홈 표시로 옮긴 것이다. 평가 전과 음성 접수 전은
+/// 앱을 다시 켠 뒤 면회 흐름을 이어가게 한다. 이어가는 화면은 면회 흐름이 맡는다.
 enum ReportNotice {
-  /// 만드는 중. 소감을 제출한 뒤부터 도착까지다.
+  /// 평가 전에 앱을 떠났다(`evaluationPending`). 눌러서 평가를 이어서 한다.
+  evaluationPending,
+
+  /// 평가 뒤 음성을 보내지 못했다(`audioPending`). 눌러서 음성을 다시 보낸다.
+  audioPending,
+
+  /// 만드는 중. 음성을 보낸 뒤부터 도착까지다(`processing`).
   generating,
 
-  /// 다 만들어졌다. 눌러서 리포트로 들어간다.
+  /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
+
+  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  failed,
+
+  /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
+  /// 묻게 한다.
+  checkFailed,
+}
+
+/// 알림 하나와 그 알림이 가리키는 리포트다.
+class ReportNoticeInfo {
+  const ReportNoticeInfo(
+    this.notice, {
+    this.reportId,
+    this.visitDate,
+    this.fromServer = false,
+  });
+
+  final ReportNotice notice;
+
+  /// 서버의 회차로 정한 알림이다. 아니면 목 데이터의 알림이고, 화면이 목
+  /// 리포트를 가리킨다.
+  final bool fromServer;
+
+  /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
+  /// 화면이 목 리포트를 연다.
+  final String? reportId;
+
+  /// 면회한 날. 모르면 `null` 이다.
+  final String? visitDate;
 }
 
 /// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
@@ -418,48 +689,233 @@ typedef _NoticeKey = ({String? accountId, String profileId});
 /// 않다가 그 계정으로 다시 들어오면 다시 보인다. 화면은 이것을 직접 보지 않고
 /// [reportNoticeProvider] 를 본다.
 ///
-/// 앱이 켜져 있는 동안만 기억한다. 계정이 없어지면(탈퇴) 그 계정 몫을 지운다.
-class _ReportNoticesNotifier extends Notifier<Map<_NoticeKey, ReportNotice>> {
+/// 로그인했으면 서버의 가장 최근 회차(5-4)로 알림을 정하고, 만드는 중이면 분석
+/// 작업(6-3)을 다 될 때까지 묻는다. 그래서 앱을 다시 켜도 같은 알림이 뜬다.
+/// 로그인하지 않았으면 목 데이터가 정한 시간을 센다.
+class _ReportNoticesNotifier
+    extends Notifier<Map<_NoticeKey, ReportNoticeInfo>> {
   /// 자리마다 지금 기다리는 회차. 지우거나 다시 시작하면 올라가고, 지난
   /// 기다림의 결과는 버린다.
   final _rounds = <_NoticeKey, int>{};
 
+  /// 서버에 한 번 물어본 자리. 같은 자리를 화면이 다시 그릴 때마다 묻지 않는다.
+  final _synced = <_NoticeKey>{};
+
+  /// 이번 실행에서 변경 사항 확인을 마친 리포트. 서버가 확인 여부를 저장하지
+  /// 않아(api-spec 미정 사항 2) 다시 물어도 도착으로 띄우지 않도록 기억한다.
+  /// 앱을 다시 켜면 잊는다.
+  final _acknowledged = <String>{};
+
   bool _gone = false;
 
   @override
-  Map<_NoticeKey, ReportNotice> build() {
+  Map<_NoticeKey, ReportNoticeInfo> build() {
     ref.onDispose(() => _gone = true);
     return const {};
   }
 
   int _nextRound(_NoticeKey key) => _rounds[key] = (_rounds[key] ?? 0) + 1;
 
-  void _set(_NoticeKey key, ReportNotice? notice) {
-    final next = Map<_NoticeKey, ReportNotice>.from(state);
+  bool _stale(_NoticeKey key, int round) => _gone || _rounds[key] != round;
+
+  void _set(_NoticeKey key, ReportNoticeInfo? notice) {
+    final next = Map<_NoticeKey, ReportNoticeInfo>.from(state);
     notice == null ? next.remove(key) : next[key] = notice;
     state = next;
   }
 
-  void dismiss(_NoticeKey key) {
+  void dismiss(_NoticeKey key, {String? reportId}) {
+    for (final id in [reportId, state[key]?.reportId]) {
+      if (id != null) _acknowledged.add(id);
+    }
     _nextRound(key);
     _set(key, null);
   }
 
   void arrive(_NoticeKey key) {
     _nextRound(key);
-    _set(key, ReportNotice.ready);
+    _set(key, const ReportNoticeInfo(ReportNotice.ready));
   }
 
-  void startGenerating(_NoticeKey key) {
+  /// 목 데이터로 리포트를 기다린다. 정해진 시간이 지나면 도착한다.
+  void startMockGenerating(_NoticeKey key) {
     final round = _nextRound(key);
-    _set(key, ReportNotice.generating);
+    _set(key, const ReportNoticeInfo(ReportNotice.generating));
 
     unawaited(
       ref.read(mockRepositoryProvider).awaitReportReady().then((_) {
         // 그 사이 지웠거나 다시 시작했으면 지난 기다림의 결과다.
-        if (_gone || _rounds[key] != round) return;
-        _set(key, ReportNotice.ready);
+        if (_stale(key, round)) return;
+        _set(key, const ReportNoticeInfo(ReportNotice.ready));
       }),
+    );
+  }
+
+  /// 서버에 리포트를 만들기 시작했다. 다 될 때까지 서버에 묻는다.
+  void startGenerating(
+    _NoticeKey key,
+    String remoteProfileId, {
+    String? analysisId,
+  }) {
+    _synced.add(key);
+    final round = _nextRound(key);
+    _set(
+      key,
+      const ReportNoticeInfo(ReportNotice.generating, fromServer: true),
+    );
+    unawaited(_follow(key, round, remoteProfileId, analysisId: analysisId));
+  }
+
+  /// 이 자리를 아직 서버에 묻지 않았으면 가장 최근 회차로 알림을 정한다.
+  void syncOnce(_NoticeKey key, String remoteProfileId) {
+    if (!_synced.add(key)) return;
+    unawaited(_follow(key, _nextRound(key), remoteProfileId));
+  }
+
+  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 비운다.
+  void retry(_NoticeKey key, String remoteProfileId) {
+    _synced.add(key);
+    final round = _nextRound(key);
+    _set(key, null);
+    unawaited(_follow(key, round, remoteProfileId));
+  }
+
+  /// 가장 최근 회차를 읽어 알림을 정하고, 만드는 중이면 끝날 때까지 묻는다.
+  ///
+  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없을 때
+  /// 묻지 못하면 [ReportNotice.checkFailed] 를 띄운다. 이미 띄운 알림은 그대로
+  /// 둔다.
+  Future<void> _follow(
+    _NoticeKey key,
+    int round,
+    String remoteProfileId, {
+    String? analysisId,
+  }) async {
+    final api = ref.read(reportApiProvider);
+    final interval = ref.read(reportPollIntervalProvider);
+    var first = true;
+
+    while (true) {
+      if (!first) {
+        await Future<void>.delayed(interval);
+        if (_stale(key, round)) return;
+      }
+      first = false;
+
+      final VisitProgress? latest;
+      try {
+        latest = await api.latestSession(remoteProfileId);
+      } on ApiFailure catch (failure) {
+        if (_stale(key, round)) return;
+        if (_retryable(failure) &&
+            state[key]?.notice == ReportNotice.generating) {
+          continue;
+        }
+        if (state[key] == null) {
+          _set(
+            key,
+            const ReportNoticeInfo(ReportNotice.checkFailed, fromServer: true),
+          );
+        }
+        return;
+      }
+      if (_stale(key, round)) return;
+
+      if (latest == null) {
+        _set(key, null);
+        return;
+      }
+
+      if (latest.status != VisitStatus.processing) {
+        _set(key, _noticeOf(latest, latest.status));
+        return;
+      }
+
+      _set(
+        key,
+        ReportNoticeInfo(
+          ReportNotice.generating,
+          reportId: latest.sessionId,
+          visitDate: latest.visitDate,
+          fromServer: true,
+        ),
+      );
+
+      // 만드는 중이면 분석 작업(6-3)을 묻는다. 작업 ID 를 모르면 회차를 다시
+      // 묻는다.
+      final id = analysisId ?? latest.analysisId;
+      if (id == null) continue;
+      final done = await _pollAnalysis(key, round, id, latest);
+      if (done) return;
+      // 작업을 찾지 못했다. 회차부터 다시 묻는다.
+      analysisId = null;
+    }
+  }
+
+  /// 분석 작업이 끝날 때까지 묻는다. 끝났거나 그만 물어야 하면 `true`, 작업을
+  /// 찾지 못해 회차부터 다시 물어야 하면 `false` 다.
+  Future<bool> _pollAnalysis(
+    _NoticeKey key,
+    int round,
+    String analysisId,
+    VisitProgress session,
+  ) async {
+    final api = ref.read(reportApiProvider);
+    final interval = ref.read(reportPollIntervalProvider);
+
+    while (true) {
+      await Future<void>.delayed(interval);
+      if (_stale(key, round)) return true;
+
+      final AnalysisStatus? status;
+      try {
+        status = await api.analysis(analysisId);
+      } on ApiFailure catch (failure) {
+        if (_stale(key, round)) return true;
+        if (_retryable(failure)) continue;
+        if (failure is ApiServerFailure && failure.statusCode == 404) {
+          return false;
+        }
+        return true;
+      }
+      if (_stale(key, round)) return true;
+
+      switch (status) {
+        case AnalysisStatus.completed:
+          _set(key, _noticeOf(session, VisitStatus.completed));
+          return true;
+        case AnalysisStatus.failed:
+          _set(key, _noticeOf(session, VisitStatus.failed));
+          return true;
+        default:
+          continue;
+      }
+    }
+  }
+
+  /// 서버에 닿지 못했거나 서버가 다시 시도해도 된다고 알렸다.
+  static bool _retryable(ApiFailure failure) =>
+      failure is ApiNetworkFailure ||
+      (failure is ApiServerFailure && failure.retryable);
+
+  /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
+  /// `null` 이다.
+  ReportNoticeInfo? _noticeOf(VisitProgress session, VisitStatus? status) {
+    final notice = switch (status) {
+      VisitStatus.evaluationPending => ReportNotice.evaluationPending,
+      VisitStatus.audioPending => ReportNotice.audioPending,
+      VisitStatus.processing => ReportNotice.generating,
+      VisitStatus.completed =>
+        _acknowledged.contains(session.sessionId) ? null : ReportNotice.ready,
+      VisitStatus.failed => ReportNotice.failed,
+      null => null,
+    };
+    if (notice == null) return null;
+    return ReportNoticeInfo(
+      notice,
+      reportId: session.sessionId,
+      visitDate: session.visitDate,
+      fromServer: true,
     );
   }
 
@@ -472,6 +928,7 @@ class _ReportNoticesNotifier extends Notifier<Map<_NoticeKey, ReportNotice>> {
     for (final key in keys) {
       _nextRound(key);
     }
+    _synced.removeWhere((k) => k.accountId == accountId);
     state = {
       for (final e in state.entries)
         if (e.key.accountId != accountId) e.key: e.value,
@@ -480,36 +937,55 @@ class _ReportNoticesNotifier extends Notifier<Map<_NoticeKey, ReportNotice>> {
 }
 
 final _reportNoticesProvider =
-    NotifierProvider<_ReportNoticesNotifier, Map<_NoticeKey, ReportNotice>>(
+    NotifierProvider<_ReportNoticesNotifier, Map<_NoticeKey, ReportNoticeInfo>>(
       _ReportNoticesNotifier.new,
     );
 
-/// 지금 로그인한 계정과 보고 있는 어르신의 리포트 알림이다.
+/// 지금 로그인한 계정과 보고 있는 어르신의 리포트 알림과 그 리포트다.
 ///
 /// 다른 어르신의 리포트가 도착해도 이 어르신의 홈에는 띄우지 않는다. 다른
 /// 어르신의 알림을 어떻게 알릴지는 PM 확인 전이다. 다른 계정의 알림은 띄우지
 /// 않는다.
+///
+/// 서버에 저장한 분을 처음 보면 서버에 가장 최근 회차를 묻는다.
+final reportNoticeInfoProvider = Provider<ReportNoticeInfo?>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  final selected = ref.watch(
+    careProfilesProvider.select(
+      (p) => (id: p.selected?.id, remoteId: p.selected?.remoteId),
+    ),
+  );
+  final profileId = selected.id;
+  if (profileId == null) return null;
+  final key = (accountId: accountId, profileId: profileId);
+  final remoteId = selected.remoteId;
+  if (accountId != null && remoteId != null) {
+    // 화면을 그리는 중에 상태를 바꾸지 않도록 미룬다.
+    Future.microtask(() {
+      if (ref.mounted) {
+        ref.read(_reportNoticesProvider.notifier).syncOnce(key, remoteId);
+      }
+    });
+  }
+  return ref.watch(_reportNoticesProvider.select((m) => m[key]));
+});
+
+/// 지금 보고 있는 어르신의 리포트 알림이다. [reportNoticeInfoProvider] 의
+/// 알림 종류만 본다.
 class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   @override
-  ReportNotice? build() {
-    final accountId = ref.watch(
-      sessionProvider.select((s) => s?.account.accountId),
-    );
-    final profileId = ref.watch(
-      careProfilesProvider.select((p) => p.selected?.id),
-    );
-    if (profileId == null) return null;
-    final key = (accountId: accountId, profileId: profileId);
-    return ref.watch(_reportNoticesProvider.select((m) => m[key]));
-  }
+  ReportNotice? build() => ref.watch(reportNoticeInfoProvider)?.notice;
 
   _ReportNoticesNotifier get _notices =>
       ref.read(_reportNoticesProvider.notifier);
 
-  /// 변경 사항 확인을 마쳤다.
-  void dismiss() {
+  /// 변경 사항 확인을 마쳤다. [reportId] 는 확인한 리포트다. 서버가 그 회차를
+  /// 계속 `completed` 로 주어도 이번 실행에서는 다시 띄우지 않는다.
+  void dismiss({String? reportId}) {
     final key = _currentNoticeKey(ref);
-    if (key != null) _notices.dismiss(key);
+    if (key != null) _notices.dismiss(key, reportId: reportId);
   }
 
   /// 리포트가 만들어졌다.
@@ -518,18 +994,32 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     if (key != null) _notices.arrive(key);
   }
 
-  /// 리포트를 만들기 시작했다. 다 되면 스스로 도착으로 바뀐다.
+  /// 리포트를 만들기 시작했다. 다 되면 스스로 도착이나 실패로 바뀐다.
   ///
-  /// 얼마나 걸리는지도, 어떻게 알아내는지도 여기서 정하지 않는다. 저장소에
-  /// 맡기므로 서버를 붙일 때 `mockRepositoryProvider` 만 갈아 끼우면 된다
-  /// (`ADR-005`). 기다림을 화면이 아니라 이 상태가 안고 있어, 사용자가 홈을
-  /// 떠나 다른 화면을 보고 있어도 도착은 알려진다.
+  /// 서버에 저장한 분이면 음성을 보낸 뒤(6-2) 부른다. [analysisId] 는 6-2 가
+  /// 돌려준 작업이며, 모르면 서버의 가장 최근 회차(5-4)에서 찾는다. 로그인하지
+  /// 않았으면 목 데이터의 시간을 센다. 기다림을 화면이 아니라 이 상태가 안고
+  /// 있어, 사용자가 홈을 떠나 다른 화면을 보고 있어도 도착은 알려진다.
   ///
   /// 고른 어르신이 없으면 아무것도 하지 않는다. 면회는 어르신을 고른 뒤에만
   /// 할 수 있다.
-  void startGenerating() {
+  void startGenerating({String? analysisId}) {
     final key = _currentNoticeKey(ref);
-    if (key != null) _notices.startGenerating(key);
+    if (key == null) return;
+    final remoteId = ref.read(careProfilesProvider).selected?.remoteId;
+    if (key.accountId != null && remoteId != null) {
+      _notices.startGenerating(key, remoteId, analysisId: analysisId);
+    } else {
+      _notices.startMockGenerating(key);
+    }
+  }
+
+  /// 회차 상태를 묻지 못했을 때 다시 묻는다. 서버에 저장한 분일 때만 묻는다.
+  void retry() {
+    final key = _currentNoticeKey(ref);
+    final remoteId = ref.read(careProfilesProvider).selected?.remoteId;
+    if (key == null || key.accountId == null || remoteId == null) return;
+    _notices.retry(key, remoteId);
   }
 
   /// 탈퇴한 계정의 알림을 지운다. 세션이 지워진 뒤에 부르므로 계정을 받는다.

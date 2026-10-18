@@ -12,7 +12,7 @@
 | --- | --- |
 | `account.json` | `Account` |
 | `profile.json` | `Profile`, `LifeFact`, `LifeFactCollectionState`, `ProfilePhoto` 목록 |
-| `conversation-cards.json` | `ConversationCard` 12장 |
+| `conversation-cards.json` | `CardSet`(카드 12장) |
 | `visit-session.json` | `VisitSession`, `VisitPhoto` |
 | `caregiver-evaluation.json` | `CaregiverEvaluation`, `ChangeProposal` |
 | `visit-report.json` | `VisitReport` |

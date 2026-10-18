@@ -38,6 +38,7 @@ DOMAIN_TABLES = {
     "topic_proposals",
     "topic_feedback",
     "withdrawal_feedback",
+    "session_revocations",
 }
 
 
@@ -73,7 +74,7 @@ def test_upgrade_creates_all_tables_and_view(engine):
     inspector = sa.inspect(engine)
 
     assert DOMAIN_TABLES <= set(inspector.get_table_names())
-    assert len(DOMAIN_TABLES) == 15
+    assert len(DOMAIN_TABLES) == 16
     assert "current_consents" in inspector.get_view_names()
 
 
@@ -348,3 +349,49 @@ def test_downgrade_removes_all_tables_then_upgrade_recreates_them(
         engine2.dispose()
 
     assert DOMAIN_TABLES <= table_names
+
+
+def test_life_fact_story_columns_fill_existing_rows_and_reject_bad_values(
+    alembic_config, test_database_url
+):
+    """일대기 분류와 그림 번호(b7e2c4a9d153). 기존 행은 `other`, 1로 채운다."""
+    command.upgrade(alembic_config, "d466bb108618")
+    engine = sa.create_engine(test_database_url)
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            fact_id = conn.execute(
+                sa.text(
+                    "INSERT INTO life_facts (profile_id, title, content) "
+                    "VALUES (:profile_id, '합성 제목', '합성 내용') RETURNING fact_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+
+        command.upgrade(alembic_config, "head")
+
+        with engine.begin() as conn:
+            row = conn.execute(
+                sa.text(
+                    "SELECT story_category, image_number FROM life_facts "
+                    "WHERE fact_id = :fact_id"
+                ),
+                {"fact_id": fact_id},
+            ).one()
+        assert (row.story_category, row.image_number) == ("other", 1)
+
+        for column, bad in (("story_category", "occupation"), ("image_number", 0), ("image_number", 6)):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    sa.text(f"UPDATE life_facts SET {column} = :bad WHERE fact_id = :fact_id"),
+                    {"bad": bad, "fact_id": fact_id},
+                )
+
+        command.downgrade(alembic_config, "d466bb108618")
+        with engine.begin() as conn:
+            columns = {
+                c["name"] for c in sa.inspect(conn).get_columns("life_facts")
+            }
+        assert {"story_category", "image_number"}.isdisjoint(columns)
+    finally:
+        engine.dispose()

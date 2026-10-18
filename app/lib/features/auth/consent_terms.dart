@@ -10,8 +10,6 @@
 /// PR 에 남겨 두었다(`CONTRIBUTING.md` 의 검토 책임).
 ///
 /// 계약에 없는 동의 항목은 이 화면에서 받지 않는다.
-/// - 피보호자 동의 확인은 `VisitSession.consent.careRecipientConfirmation` 이라
-///   면회를 시작할 때 받는다.
 /// - 이미지 분석 동의는 기능을 이용하는 시점에 따로 받는다.
 library;
 

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -13,8 +15,7 @@ import '../profile_setup/setup_steps.dart';
 ///
 /// 항목은 `Profile` 의 `occupation`, `hometown`, `hobby`, `family` 다
 /// (`api-spec.md` 2-4). 칸을 비우면 그 항목을 지운다(`null`). 계약이 빈 문자열을
-/// 받지 않기 때문이다. 프로필 수정 API 가 연결되기 전이라 앱이 켜져 있는 동안만
-/// 기억한다.
+/// 받지 않기 때문이다. 서버에 저장한 분이면 프로필 수정 API 로 저장한 뒤 반영한다.
 class ProfileDetailsEditScreen extends ConsumerStatefulWidget {
   const ProfileDetailsEditScreen({super.key});
 
@@ -55,11 +56,36 @@ class _ProfileDetailsEditScreenState
     );
   }
 
-  void _save() {
+  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
+  bool _saving = false;
+
+  Future<void> _save() async {
     final entry = _entry;
     if (entry == null) return;
 
-    ref.read(careProfilesProvider.notifier).updateDetails(entry.id, _edited);
+    var details = _edited;
+    final remoteId = entry.remoteId;
+    if (remoteId != null) {
+      setState(() => _saving = true);
+      try {
+        final saved = await ref
+            .read(profileApiProvider)
+            .updateDetails(remoteId, details);
+        details = saved.details;
+      } on ApiFailure catch (failure) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(profileFailureMessage(failure))),
+          );
+        return;
+      }
+      if (!mounted) return;
+    }
+
+    ref.read(careProfilesProvider.notifier).updateDetails(entry.id, details);
     final messenger = ScaffoldMessenger.of(context);
     context.pop();
     messenger
@@ -95,8 +121,8 @@ class _ProfileDetailsEditScreenState
                 const SizedBox(height: AppSpacing.xxl),
               ],
               PrimaryButton(
-                label: '저장하기',
-                onPressed: _changed ? _save : null,
+                label: _saving ? '저장하는 중이에요' : '저장하기',
+                onPressed: _changed && !_saving ? _save : null,
               ),
               const SizedBox(height: AppSpacing.xxl),
             ],

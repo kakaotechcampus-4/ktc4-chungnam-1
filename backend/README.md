@@ -6,6 +6,10 @@ STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
+## 개발과 개인정보 검토 순서
+
+2026-10-14 PM 결정에 따라 합성 데이터로 기능 구현과 연동 테스트를 먼저 진행한다. 동의 문구나 법률 검토가 남았다는 이유로 사진 업로드, 분석 worker 등 기능 전체를 보류하지 않는다. 미정 정책에 필요한 테스트 가정은 표시하고, 실제 사용자 자료를 사용하기 전에는 [동의와 처리 조건](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인) 및 관련 구현을 검증한다. 기존 인증, 접근 권한과 삭제 처리를 해제하는 결정은 아니다.
+
 ## 실행과 테스트
 
 저장소 루트에서 최초 설정:
@@ -77,7 +81,14 @@ uv run alembic upgrade head
 CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 있으므로
 그대로 신뢰하지 않고 반드시 검토한다.
 
-PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정은 PostgreSQL에 저장하지만 세션 폐기 목록은 아직 프로세스 메모리 구현이다.
+`init.sql`과 migration이 어긋나지 않는지는 [test_migration_consistency.py](tests/test_migration_consistency.py)가
+검사한다. 임시 DB 두 개에 각각 migration과 `init.sql`을 적용하고 카탈로그에서 열, 제약의 이름과
+정의, 인덱스, 뷰, 함수, trigger와 확장을 읽어 비교한다. 열 순서는 비교하지 않는다. 같은 파일에서
+`alembic/env.py`가 호출하는 쪽이 넘긴 주소를 유지하고, `alembic.ini`의 기본 예시 주소일 때만
+`SAEROK_DATABASE_URL`을 쓰는지도 각각 검사한다. 다른 DB 테스트처럼 `SAEROK_TEST_DATABASE_URL`이
+없으면 건너뛰며 공용 DB나 작업용 DB에는 연결하지 않는다.
+
+PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다.
 
 ## DB 연결과 저장소 작성 규칙
 
@@ -108,7 +119,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
-- **`PhotoAnalysisQueue`는 사진 동의 설계 전에는 worker에 연결하지 않는다.** 지금은 `pending`인 프로필 사진을 모두 가져오지만, [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지 못하게 한다. 분석 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지면 그 조건을 가져오기 조건에 더한다.
+- **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정
@@ -134,7 +145,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
     → 보호자 검토
     → 승인된 사실 반영, 서버 중심 관리
 
-이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001의 사진 보관 개정안](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. 해당 개정안은 PR #92 검토 중이며 실제 사용자 자료 수집을 승인한 것이 아니다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
+이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. PR #92는 병합됐고 사진 보관과 AI 분석을 가입 시 선택 동의로 받아 계정별로 저장하는 방향은 2026-10-14 PM이 확정했지만, 동의 및 삭제 연결과 실제 사용자 자료 처리 검증은 남아 있다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
 
 직접 식별정보와 허용 목록 밖의 원본은 외부 AI로 보내지 않는다. 데이터 경로 변경 전 [법률 문서](../docs/legal/README.md), [동의 및 임시 처리 ADR](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md)과 데이터 흐름을 갱신한다. 외부 업체의 이름, 국가, 목적, 항목, 보유기간과 자체 학습 여부가 정해지기 전에는 실제 사용자 자료로 호출하지 않는다.
 
@@ -174,6 +185,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
+
+사진 보관과 AI 분석을 가입 화면에서 선택 동의로 받는 2026-10-14 PM 결정은 [보관 기준과 후속 작업](#보관-기준과-후속-작업)에 기록했다. 아래 네 항목의 API 예시는 현재 구현이며 새 두 항목은 아직 포함하지 않는다.
 
 아래 동의 목록은 현재 BE 구현의 예시다. [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 알림 수신을 선택 동의로 옮겨 공통 계약과 FE의 기준에 맞췄다. 알림을 거부해도 필수 동의를 완료하면 계정이 생성된다.
 
@@ -219,7 +232,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 폐기 목록(`InMemorySessionRevocationStore`)에 올린다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 목록에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않는다. 프로세스 메모리에만 있어 서버를 다시 시작하면 비고, 그 전에 폐기한 세션은 만료까지 다시 통과한다. 서버를 여러 개 띄우면 서로의 목록을 보지 못한다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -269,24 +282,24 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 현재 스키마의 `users`는 구글 `sub`, 표시 이름과 가입 시각만 두고 이메일 컬럼이 없다. 표시 이름이 비어 있으면 `보호자`를 쓴다. 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
 - **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
 - **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saelog.app` 과 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
-- **세션 폐기 목록 저장소** — 계정은 PostgreSQL로 옮겼지만 폐기 목록은 프로세스 메모리에 남아 있다. DB로 옮기려면 스키마에 테이블을 더하는 새 migration이 필요하며, 영향이 만료 시각(기본 1시간)까지로 작아 보류했다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
 ## 프로필과 생애 정보 API
 
-[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
+[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-9이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | `GET` | `/api/v1/profiles` | 현재 계정의 프로필 목록. 만든 순서이며 입력 중인 프로필도 담는다 |
 | `POST` | `/api/v1/profiles` | 기본 정보로 프로필 생성. `201`, `setupStatus`는 `inProgress` |
-| `GET` | `/api/v1/profiles/{profileId}` | 프로필과 생애 정보 |
+| `GET` | `/api/v1/profiles/{profileId}` | 프로필, 생애 정보와 프로필 사진 |
 | `PATCH` | `/api/v1/profiles/{profileId}` | 기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정 |
 | `DELETE` | `/api/v1/profiles/{profileId}` | 프로필 하나와 그 아래 기록 삭제. `204` |
 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 일대기에서 생애 정보 추가. `201` |
 | `PATCH` | `/api/v1/life-facts/{factId}` | 생애 정보 중 보낸 필드만 수정 |
+| `DELETE` | `/api/v1/life-facts/{factId}` | 일대기에서 생애 정보 삭제. `204` |
 
 - `setupStatus`는 저장하지 않고 `card_sets` 행이 있는지로 계산한다.
 - 계정당 프로필은 입력 중인 것을 포함해 3개까지다. DB 제약이 없으므로 같은 트랜잭션에서 계정 행을 `FOR UPDATE`로 잠근 뒤 세어, 동시 요청에도 넘지 않는다. 넘으면 `PROFILE_LIMIT_EXCEEDED`(409)다.
@@ -294,8 +307,11 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - 빈 문자열과 공백만 있는 값은 이름, 세부 정보와 생애 정보의 제목과 내용에서 `INVALID_REQUEST`(422)다. DB CHECK도 막지만 요청 검증이 먼저 거절한다.
 - 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
-- 응답의 `photos`는 3-1 전까지 항상 빈 배열이다. 사진 보관과 분석 동의 설계(미정 3) 후 3-1, 3-2와 함께 `ProfilePhoto`와 `imageUrl`을 붙인다.
-- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
+- 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
+- 실제 사용자 사진을 받기 전에는 계정별 동의 확인과 철회 처리를 구현하고 검증한다(후속 3). 현재 업로드와 조회 테스트는 합성 사진과 메모리 저장소를 사용하며 실제 S3 업로드는 미검증이다.
+- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다. 7-4는 분류와 그림 번호를 보내지 않으므로 `other`와 서버가 고른 1~5 번호로 만든다.
+- 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름, 7-4의 분류와 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
+- 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_deleted_facts`).
 
 ## AI 음성 분석 연동
 
@@ -384,7 +400,34 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 
 ## 사진 저장 (S3)
 
-PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 추가한다. 사진 API 라우트 연결은 아직 구현되지 않았다. 아래는 라우트 구현 시 적용할 사용 순서다.
+PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 프로필 사진과 면회 사진 API가 사용한다.
+
+### 면회 사진
+
+면회 사진(5-2) `POST /api/v1/visit-sessions/{sessionId}/photo`는 이 순서로 구현했다. 라우트는 [visit_sessions.py](app/api/routes/visit_sessions.py), 저장은 [services/visit_photos.py](app/services/visit_photos.py)에 있다.
+
+- `multipart/form-data`의 `image` 한 장을 받아 `201`과 `VisitPhoto`를 돌려준다. 회차당 한 장(`uq_photos_session`)이며, 다시 올리면 기존 행을 지우고 새 행을 넣는다. 지운 행의 객체 키는 trigger가 S3 삭제 대기열에 넣는다.
+- 평가 전 회차만 받는다(`INVALID_SESSION_STATE`, 409). 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 확인하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. S3 업로드 동안에는 잠그지 않는다.
+- 행을 넣지 못하면(그 사이 평가 저장이나 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 이미지 분석을 하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만 사진 분석 대기열은 `session_id IS NULL`인 행만 가져간다.
+
+### 프로필 사진
+
+프로필 사진 API(3-1, 3-2)의 라우트는 [profile_photos.py](app/api/routes/profile_photos.py), 저장은 [services/profile_photos.py](app/services/profile_photos.py)에 있다.
+
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `POST` | `/api/v1/profiles/{profileId}/photos` | `multipart/form-data`의 `image` 한 장을 S3에 올리고 `analysisStatus = pending`인 행을 만든다. `201` |
+| `GET` | `/api/v1/profile-photos/{photoId}` | 프로필 사진 하나와 새 `imageUrl`. 분석이 끝날 때까지 앱이 폴링한다 |
+
+- 프로필당 5장이다(`PHOTO_LIMIT_EXCEEDED`, 409). 면회 사진은 세지 않는다. 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 세고, 행을 넣을 때 프로필 행을 `FOR UPDATE`로 잠근 뒤 다시 센다. S3 업로드 동안에는 잠그지 않는다.
+- 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다. 행이 없어 trigger가 넣어 주지 않기 때문이다.
+- 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져갈 대상이지만, worker는 아직 연결하지 않았다(위 worker 절의 `PhotoAnalysisQueue`).
+- 면회 사진과 다른 계정의 사진은 3-2에서 없는 사진과 같은 `PROFILE_PHOTO_NOT_FOUND`(404)다.
+
+### 공통 처리 순서
+
+아래는 3-1의 처리 순서이며 5-2도 같은 순서를 따른다. 합성 사진과 메모리 저장소로 검증했으며 실제 S3 업로드와 조회는 미검증이다.
 
 프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
@@ -405,9 +448,13 @@ PR #92는 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 ### 보관 기준과 후속 작업
 
-2026-10-05 PM 수정안은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에 있으며 PR #92에서 검토한다.
+PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장 방식은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
 
+- 사진 서버 보관과 AI 분석을 가입 화면의 별도 선택 동의로 받는다. 기존 `consent_records`에 두 항목을 추가하고 `current_consents`에서 최신 상태를 조회하도록 확장한다. 유효한 동의는 반복 요청하지 않으며 미동의, 철회 또는 기록 없는 계정이 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 이용할 수 있다.
+- BE는 업로드 전에 보관 동의를, AI 작업 생성 전에 분석 동의를 각각 검사한다. 보관만 동의한 사진은 분석하지 않는다. 두 동의의 계정별 저장 방향은 확정됐지만 필드명, migration, 가입 및 동의 변경 API와 FE 연결, 철회 후 중단 및 삭제는 후속 구현이다.
+- 현재 3-1 코드에는 사진 보관 동의 검사가 없고, 업로드한 사진은 모두 `pending`으로 저장한다. 이는 합성 사진을 사용하는 개발 단계의 구현 상태이며, 보관 또는 분석 동의를 없애기로 한 결정이 아니다. 실제 사용자 사진을 받기 전에는 위 동의 검사와 분석 대상 구분을 구현하고 검증한다.
 - 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
+- 현재 5-2 코드에도 사진 보관 동의 검사가 없다. 가입 시 계정별 동의를 받는 정책은 위 ADR-001로 확정했으며, 실제 사용자 사진을 받기 전 동의 조회와 미동의 차단 구현 및 검증이 남아 있다. 테스트 자료로 개발을 먼저 진행하는 기준은 유지한다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
 - 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
 - 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.

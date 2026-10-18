@@ -7,6 +7,8 @@ import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
 
+import 'fake_card_api.dart';
+import 'fake_visit_api.dart';
 import 'fake_visit_recorder.dart';
 
 void main() {
@@ -14,10 +16,16 @@ void main() {
 
   // 실제 마이크는 테스트에서 열 수 없다. 장치 부르는 순서는
   // `visit_recording_test.dart` 에서 따로 본다.
-  ProviderContainer makeContainer() {
+  ProviderContainer makeContainer({
+    FakeVisitApi? visitApi,
+    FakeVisitRecorder? recorder,
+  }) {
     final container = ProviderContainer(
       overrides: [
-        visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
+        visitRecorderProvider.overrideWithValue(
+          recorder ?? FakeVisitRecorder(),
+        ),
+        ...mockCardsWith(visitApi: visitApi),
       ],
     );
     addTearDown(container.dispose);
@@ -25,8 +33,12 @@ void main() {
   }
 
   /// 선택 화면에서 카드 두 장을 고른 상태를 만든다.
-  Future<ProviderContainer> withSelection(int count) async {
-    final container = makeContainer();
+  Future<ProviderContainer> withSelection(
+    int count, {
+    FakeVisitApi? visitApi,
+    FakeVisitRecorder? recorder,
+  }) async {
+    final container = makeContainer(visitApi: visitApi, recorder: recorder);
     final cards = await container.read(cardsControllerProvider.future);
     final controller = container.read(cardsControllerProvider.notifier);
     for (final card in cards.cards.take(count)) {
@@ -65,11 +77,11 @@ void main() {
           await container.read(supplementCardsProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
 
-      controller.addCards(supplements.take(1));
+      await controller.addCards(supplements.take(1));
       expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
 
       // 같은 카드를 두 번 더하지 않는다.
-      controller.addCards(supplements.take(1));
+      await controller.addCards(supplements.take(1));
       expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
     });
   });
@@ -127,22 +139,6 @@ void main() {
   });
 
   group('녹음', () {
-    test('피보호자 동의를 확인해야 시작할 수 있다', () async {
-      final container = await withSelection(1);
-      final initial = await container.read(visitControllerProvider.future);
-
-      // 계약의 VisitSession.consent.careRecipientConfirmation 에 해당한다.
-      expect(initial.careRecipientConfirmed, isFalse);
-
-      container
-          .read(visitControllerProvider.notifier)
-          .confirmCareRecipient(confirmed: true);
-      expect(
-        container.read(visitControllerProvider).value!.careRecipientConfirmed,
-        isTrue,
-      );
-    });
-
     test('잠시 멈춰도 시작 전으로 돌아가지 않는다', () async {
       final container = await withSelection(1);
       await container.read(visitControllerProvider.future);
@@ -179,7 +175,6 @@ void main() {
       expect(fresh.recording, isFalse);
       expect(fresh.elapsed, Duration.zero);
       expect(fresh.followUpIndex, 0);
-      expect(fresh.careRecipientConfirmed, isFalse);
       expect(fresh.recordingPath, isNull, reason: '지난 회차의 녹음 파일을 물려받지 않는다');
       expect(fresh.problem, isNull);
     });
@@ -194,6 +189,123 @@ void main() {
             .elapsedLabel,
         '00:05:38',
       );
+    });
+  });
+
+  group('서버 회차', () {
+    test('녹음을 처음 시작할 때 고른 카드와 묶음으로 회차를 만든다', () async {
+      final api = FakeVisitApi();
+      final container = await withSelection(2, visitApi: api);
+      final visit = await container.read(visitControllerProvider.future);
+      final set = await container.read(currentCardSetProvider.future);
+
+      await container.read(visitControllerProvider.notifier).startRecording();
+
+      expect(api.created?.setId, set.setId);
+      expect(
+        api.created?.selectedCardIds,
+        visit.cards.map((c) => c.cardId).toList(),
+      );
+      final state = container.read(visitControllerProvider).value!;
+      expect(state.sessionId, FakeVisitApi.sessionId);
+      expect(state.recording, isTrue);
+    });
+
+    test('잠시 멈췄다 이어 녹음해도 회차를 또 만들지 않는다', () async {
+      final api = FakeVisitApi();
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      await controller.startRecording();
+      await controller.pauseRecording();
+      await controller.startRecording();
+
+      expect(api.calls.where((c) => c == 'create'), hasLength(1));
+    });
+
+    test('마이크 권한이 없으면 회차를 만들지 않는다', () async {
+      final api = FakeVisitApi();
+      final container = await withSelection(
+        1,
+        visitApi: api,
+        recorder: FakeVisitRecorder(permitted: false),
+      );
+      await container.read(visitControllerProvider.future);
+
+      await container.read(visitControllerProvider.notifier).startRecording();
+
+      expect(api.calls, isEmpty);
+      expect(
+        container.read(visitControllerProvider).value!.problem,
+        VisitRecordingProblem.permissionDenied,
+      );
+    });
+
+    test('회차를 만들지 못하면 녹음을 시작하지 않는다', () async {
+      final api = FakeVisitApi(failCreate: true);
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      await controller.startRecording();
+
+      var state = container.read(visitControllerProvider).value!;
+      expect(state.problem, VisitRecordingProblem.sessionFailed);
+      expect(state.started, isFalse);
+      expect(state.sessionId, isNull);
+
+      // 다시 누르면 처음부터 시도한다.
+      api.failCreate = false;
+      await controller.startRecording();
+      state = container.read(visitControllerProvider).value!;
+      expect(state.recording, isTrue);
+      expect(state.problem, isNull);
+    });
+
+    test('회차가 있으면 보충 카드를 서버에 먼저 알린다', () async {
+      final api = FakeVisitApi();
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      final supplements = await container.read(supplementCardsProvider.future);
+      await controller.startRecording();
+
+      final added = await controller.addCards(supplements.take(1));
+
+      expect(added, isTrue);
+      expect(api.added, [supplements.first.cardId]);
+      expect(container.read(visitControllerProvider).value!.cards, hasLength(2));
+    });
+
+    test('보충 카드를 서버에 알리지 못하면 화면에도 더하지 않는다', () async {
+      final api = FakeVisitApi(failAdd: true);
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      final supplements = await container.read(supplementCardsProvider.future);
+      await controller.startRecording();
+
+      final added = await controller.addCards(supplements.take(1));
+
+      expect(added, isFalse);
+      expect(container.read(visitControllerProvider).value!.cards, hasLength(1));
+    });
+
+    test('녹음 전에 더한 보충 카드는 회차를 만든 뒤 따로 더한다', () async {
+      final api = FakeVisitApi();
+      final container = await withSelection(1, visitApi: api);
+      final visit = await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      final supplements = await container.read(supplementCardsProvider.future);
+
+      await controller.addCards(supplements.take(1));
+      expect(api.calls, isEmpty, reason: '회차가 없으니 아직 보내지 않는다');
+
+      await controller.startRecording();
+
+      expect(api.created?.selectedCardIds, [visit.cards.first.cardId]);
+      expect(api.added, [supplements.first.cardId]);
     });
   });
 }

@@ -1,7 +1,7 @@
 """임시 DB를 쓰는 API 테스트의 공통 준비.
 
 계정은 DB에 직접 만들고, 세션은 테스트 서명 키로 발급해 실제 인증 경로(`CurrentAccountDep`)를
-그대로 거친다. 값은 모두 합성 데이터다.
+그대로 거친다. 세션 폐기 기록도 같은 DB에 둔다. 값은 모두 합성 데이터다.
 """
 
 from datetime import UTC, datetime
@@ -11,12 +11,11 @@ from uuid import uuid4
 from fastapi import FastAPI
 from httpx import Response
 
-from app.api.deps import get_session_revocations, get_token_issuer
+from app.api.deps import get_token_issuer
 from app.core.config import Settings, get_settings
 from app.core.database import connect
 from app.main import create_app
 from app.services.accounts import Account, ConsentRecord, PostgresAccountRepository
-from app.services.session_revocations import InMemorySessionRevocationStore
 from tests.support import request, run
 
 SESSION_SECRET = "test-session-secret-value-32bytes-long"
@@ -35,8 +34,6 @@ class DbApi:
         )
         self.app: FastAPI = create_app()
         self.app.dependency_overrides[get_settings] = lambda: self.settings
-        revocations = InMemorySessionRevocationStore()
-        self.app.dependency_overrides[get_session_revocations] = lambda: revocations
         self._issuer = get_token_issuer(self.settings)
 
     def create_account(self, social_id: str | None = None) -> "Caregiver":
@@ -92,12 +89,14 @@ class Caregiver:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> Response:
         return request(
             self.api.app,
             method,
             path,
             json=json,
+            files=files,
             headers={"Authorization": f"Bearer {self.token}"},
         )
 

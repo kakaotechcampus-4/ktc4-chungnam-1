@@ -5,6 +5,7 @@
 
 import card_generation as ai
 import pytest
+from psycopg.types.json import Jsonb
 
 from app.core.config import Settings
 from app.core.database import connect
@@ -165,6 +166,47 @@ def test_context_has_only_what_card_generation_may_see(migrated_database_url):
     assert len(context.past_cards) == 12 and {c.set_id for c in context.past_cards} == {old_set}
     feedback = {topic.topic_id: [f.action for f in topic.feedback] for topic in context.topics}
     assert feedback[topic_id] == ["more"]
+
+
+def test_context_drops_evidence_of_deleted_life_facts(migrated_database_url):
+    """일대기에서 지운 이야기(2-9)를 가리키는 근거는 context에서만 빠짐. 저장된 근거는 그대로."""
+
+    async def build(connection):
+        profile_id, _, old_set, topic_id = await _seed(connection)
+        kept = await value(
+            connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
+        )
+        deleted = await value(
+            connection,
+            "INSERT INTO life_facts (profile_id, title, content)"
+            " VALUES (%s, '지울 제목', '지울 이야기') RETURNING fact_id",
+            (profile_id,),
+        )
+        await connection.execute(
+            "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+            (Jsonb([{"factId": str(deleted)}, {"profileField": "hobby"}]), topic_id),
+        )
+        await connection.execute(
+            "UPDATE conversation_cards SET evidence_source = 'life_fact', evidence = %s"
+            " WHERE set_id = %s AND topic_id = %s",
+            (Jsonb([{"factId": str(deleted)}, {"factId": str(kept)}]), old_set, topic_id),
+        )
+        await connection.execute("DELETE FROM life_facts WHERE fact_id = %s", (deleted,))
+        context = await build_context(connection, profile_id)
+        stored = await value(
+            connection, "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topic_id,)
+        )
+        return context, old_set, topic_id, kept, deleted, stored
+
+    context, old_set, topic_id, kept, deleted, stored = with_db(migrated_database_url, build)
+
+    assert [fact.fact_id for fact in context.life_facts] == [kept]
+    topic = next(t for t in context.topics if t.topic_id == topic_id)
+    assert topic.evidence == [{"profileField": "hobby"}]
+    card = next(c for c in context.past_cards if c.set_id == old_set and c.topic_id == topic_id)
+    assert card.evidence == [{"factId": str(kept)}]
+    assert str(deleted) not in context.model_dump_json(by_alias=True)
+    assert stored == [{"factId": str(deleted)}, {"profileField": "hobby"}]
 
 
 def test_generated_cards_and_new_topics_are_saved(migrated_database_url):
