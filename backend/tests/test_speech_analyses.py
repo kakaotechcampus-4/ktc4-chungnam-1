@@ -328,6 +328,41 @@ def test_worker_maps_participant_count_and_completes_after_report() -> None:
     assert storage.objects == {}
 
 
+class LeaseLosingAiServer(FakeAiServer):
+    """STT 도중 임대 정리가 작업을 실패로 끝낸 상황을 만든다."""
+
+    def __init__(self, jobs: InMemorySpeechAnalysisJobRepository) -> None:
+        super().__init__()
+        self._jobs = jobs
+
+    async def analyze_speech(self, payload):
+        await self._jobs.mark_failed(
+            analysis_id=payload.analysis_id, error_code="WORKER_LEASE_EXPIRED"
+        )
+        return await super().analyze_speech(payload)
+
+
+def test_worker_does_not_generate_a_report_for_a_job_that_lost_its_lease() -> None:
+    application, jobs, storage, _ = harness()
+    accepted = submit(application).json()
+    reports = FakeReportGenerator()
+    worker = speech_worker(jobs, storage, LeaseLosingAiServer(jobs), reports)
+
+    run(worker.run_once())
+
+    job = asyncio.run(
+        jobs.get_for_account(
+            analysis_id=accepted["analysisId"], account_id=ACCOUNT.account_id
+        )
+    )
+    assert job is not None
+    assert job.status == SpeechAnalysisStatus.FAILED
+    assert job.error_code == "WORKER_LEASE_EXPIRED"
+    assert job.stt_completed_at is None
+    assert job.audio_deleted_at is not None
+    assert reports.sessions == []
+
+
 def test_worker_finishes_stt_without_claiming_report_completion() -> None:
     application, jobs, storage, _ = harness()
     accepted = submit(application).json()
