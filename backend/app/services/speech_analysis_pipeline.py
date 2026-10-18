@@ -227,13 +227,17 @@ class SpeechAnalysisProcessor:
         jobs = self._jobs_for(connection)
         speech = await self._transcribe(job)
         await _delete_audio(jobs, self._audio_storage, job)
-        await jobs.mark_stt_completed(
+        # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
+        # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
+        if not await jobs.mark_stt_completed(
             analysis_id=job.analysis_id,
             transcript=_transcript_for_report(speech),
-        )
+        ):
+            return
         if self._report_generator is None:
             return
-        await jobs.mark_generating_report(analysis_id=job.analysis_id)
+        if not await jobs.mark_generating_report(analysis_id=job.analysis_id):
+            return
         await self._report_generator.generate(
             connection, session_id=job.session_id, speech=speech
         )
