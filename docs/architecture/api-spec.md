@@ -4,7 +4,7 @@
 
 2026-10-12 문서 정리: 사진 설명은 별도 승인 없이 카드 생성에 쓰고 앨범에서 선택적으로 수정한다(3-3). 카드 API와 요청 및 결과 형식은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)에 맞췄다. 프로필 저장(2-4) 후 카드 생성을 요청(4-1)하고, BE의 4-1 처리에서 생성 함수를 호출한다. 이전 2-5와 내부 8-2는 삭제했으며, 실제 AI 생성 함수 연결은 후속 작업이다.
 
-STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내부 HTTP 형식을 실제 GPU 실행 위치와 동일시하지 않는다. 특히 리포트의 함수 호출 전환은 [PR #110](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/110)에서 #106 담당자와 검토 중이다.
+STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내부 HTTP 형식을 실제 GPU 실행 위치와 동일시하지 않는다. 리포트(8-3)는 [PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)에서 BE가 `ai/`의 생성 함수를 직접 부르는 방식으로 연결한다. 요청과 응답 형식, BE 검증과 오류 코드는 그대로이며, 생성 함수 안에서 외부 ML API로 요청을 보낸다는 점도 같다.
 
 ## 공통
 
@@ -1081,7 +1081,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 백엔드 worker가 동기 호출한다. 앱은 호출하지 않는다. 원본 파일은 수명이 짧은 S3 Presigned GET URL로만 전달한다. 피보호자의 이름, 성별, 생년월일은 어떤 요청에도 넣지 않는다.
 
-AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다.
+AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다.
 
 8-3, 8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다. 카드 생성은 AI 서버를 거치지 않으며 4-1에 적는다(8-2 삭제).
 
@@ -1139,6 +1139,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 카드 생성 처리](#4-1-카드-생성-처리)).
 
 ### 8-3. `POST /internal/v1/visit-reports` — 신규
+
+전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
 
 요청
 
