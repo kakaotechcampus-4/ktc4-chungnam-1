@@ -553,9 +553,10 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 
 - `ReportGenerator`(`app/services/speech_analysis_pipeline.py`)를 구현해 `app/workers/speech_analysis.py`의 `report_generator=None` 자리에 넣는다. 형태는 `async def generate(connection, *, session_id, speech)`다. worker는 `sttCompleted` 뒤 `generatingReport`로 바꾸고 생성기를 부르며, 생성기가 끝나면 작업을 `completed`로 바꾸고 전사문을 지운다.
 - 생성기 안에서 8-3 호출은 트랜잭션 밖에서 하고, 리포트와 변경 제안 저장만 `async with connection.transaction():`으로 묶는다. 실패는 `AppError`로 올리면 대기열이 작업을 실패로 기록한다.
+- (PR #123) 8-3은 HTTP가 아니라 `ai/`의 리포트·변경 제안 생성 함수를 직접 부른다. 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본 600초, 임대보다 60초 이상 짧게)를 넘으면 `AI_SERVER_TIMEOUT`이다. 저장 트랜잭션은 작업 행을 잠가 `generatingReport`이고 임대가 남았을 때만 저장하며, 아니면 `WORKER_LEASE_EXPIRED`로 아무것도 저장하지 않는다. 자세한 내용은 [README 평가와 리포트 API](../../README.md#평가와-리포트-api).
 - 요청 조립: `visitDate`, `evaluation`(만족도, 반응, 메모), `cards`(선택 카드의 `cardId`, `cardTitle`, `topic`, `reaction = review_reaction`), `profileFacts`, `lifeFacts`, `transcript`. 이름, 성별, 생년월일은 넣지 않는다.
 - 응답 검증: `cardSummaries`는 `positive`, `neutral`, `negative` 카드만, `topicProposals`는 요청 `cards` 안에서 카드당 최대 1개다. 미사용과 미응답만으로 `less`, `exclude`를 제안하면 안 된다는 PM 결정을 어긴 응답을 실패로 볼지 그 제안만 뺄지는 AI 담당과 정한다.
-- 저장은 한 트랜잭션이다: `visit_sessions`의 `report_title`, `report_body`, `report_model`, `report_prompt_version`, `report_generated_at`(CHECK: 다섯 값은 함께, `evaluated_at` 필요), `conversation_cards.report_summary`(CHECK: 평가한 카드만), `life_fact_proposals`, `topic_proposals`(`topic_id`는 그 카드의 주제)를 넣는다. 작업의 `completed`와 전사문 삭제는 worker의 `mark_completed`가 한다.
+- 저장은 한 트랜잭션이다: `visit_sessions`의 `report_title`, `report_body`, `report_model`, `report_prompt_version`, `report_generated_at`(CHECK: 다섯 값은 함께, `evaluated_at` 필요), `conversation_cards.report_summary`(CHECK: 평가한 카드만), `life_fact_proposals`, `topic_proposals`(`topic_id`는 그 카드의 주제)를 넣는다. 작업의 `completed`와 전사문 삭제도 같은 트랜잭션에서 한다(PR #123, 늦은 결과 저장 방지). worker의 `mark_completed`는 이미 끝난 작업을 바꾸지 않는다.
 
 <br>
 
