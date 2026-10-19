@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,7 +29,10 @@ enum _Phase {
   /// 한 번 알아듣지 못했다. 다시 시도할 수 있다.
   notHeardOnce,
 
-  /// 글로 직접 쓴다. 처음부터 고른 경우와 두 번 실패한 경우 모두 여기로 온다.
+  /// 서버에 닿지 못해 글로 옮기지 못했다. 녹음이 남아 있어 다시 보낼 수 있다.
+  sendFailed,
+
+  /// 글로 직접 쓴다. 처음부터 고른 경우와 실패한 경우 모두 여기로 온다.
   manualInput,
 }
 
@@ -63,6 +68,8 @@ class LifeFactStepView extends ConsumerStatefulWidget {
 
 class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   _Phase _phase = _Phase.choosing;
+
+  /// 알아들었는지 판정을 받은 녹음 수. 서버에 닿지 못한 실패는 세지 않는다.
   int _attempt = 0;
   String? _heardText;
   final _manual = TextEditingController();
@@ -70,9 +77,36 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   /// 진행 중인 녹음. 녹음이 시작되기 전과 끝낸 뒤에는 없다.
   SpeechRecording? _recording;
 
-  /// 직접 입력에 음성 실패로 온 것인지, 사용자가 처음부터 고른 것인지.
-  /// 따로 값을 두지 않고 음성 시도 횟수로 구분한다.
-  bool get _cameFromFailure => _attempt >= 2;
+  /// 보내지 못해 남겨 둔 녹음. [_Phase.sendFailed] 에서만 있다.
+  SpeechRecording? _unsent;
+
+  /// 남겨 둔 녹음을 다시 보낸 횟수. 새로 녹음하면 0 이다.
+  int _resends = 0;
+
+  /// 알아들은 녹음이 최대 길이에 닿아 멈춘 것이다.
+  bool _stoppedAtLimit = false;
+
+  /// 직접 입력으로 넘어온 이유. 사용자가 처음부터 고른 경우는 없다.
+  String? _manualNotice;
+
+  /// 직접 입력에 실패로 온 것인지, 사용자가 처음부터 고른 것인지.
+  bool get _cameFromFailure => _manualNotice != null;
+
+  /// 이 항목에서는 다시 녹음해도 같은 결과라 말로 돌아가는 버튼을 숨긴다.
+  /// 동의 없음, 형식 오류처럼 다시 해도 안 되는 실패로 넘어온 경우다.
+  bool _voiceUnavailable = false;
+
+  /// 재시도를 이만큼 실패하면 직접 입력으로 넘어간다.
+  static const _maxResends = 2;
+
+  // 넘어온 이유마다 문구가 다르다. 다시 녹음하기를 두는 경우는 원인이 풀리면
+  // 다시 말로 답할 수 있는 경우다.
+  static const _notHeardNotice = '목소리를 잘 듣지 못했어요.\n글로 적어 보시겠어요?';
+  static const _connectionNotice = '지금은 연결이 원활하지 않아요.\n글로 적어 보시겠어요?';
+  static const _micDeniedNotice = '마이크가 꺼져 있어요.\n휴대전화 설정에서 새록의 마이크를 켜 주세요.';
+  // 세부 정보는 선택 사항이다. 글을 쓰기 어려운 사람도 막히지 않게 화면
+  // 아래 `건너뛰기` 로 넘어갈 수 있음을 알린다.
+  static const _unavailableNotice = '지금은 말씀을 글로 옮기기 어려워요.\n글로 적거나 건너뛰어도 괜찮아요.';
 
   @override
   void initState() {
@@ -88,32 +122,64 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
 
   @override
   void dispose() {
-    // 듣는 중에 화면을 벗어나면 녹음을 남기지 않는다.
+    // 듣는 중이거나 보내지 못한 녹음이 있으면 화면을 벗어날 때 지운다.
     _recording?.cancel();
+    _unsent?.cancel();
     _manual.dispose();
     super.dispose();
   }
 
+  /// 남겨 둔 녹음을 버린다. 새로 녹음하거나 방법을 바꿀 때 부른다.
+  Future<void> _dropUnsent() async {
+    final unsent = _unsent;
+    _unsent = null;
+    _resends = 0;
+    await unsent?.cancel();
+  }
+
   Future<void> _startListening() async {
+    // 남은 녹음을 다 지운 뒤 시작한다. 지우는 중에 새 녹음을 시작하면 지우는
+    // 쪽이 녹음 중인 장치를 멈출 수 있다.
+    final dropping = _dropUnsent();
     setState(() {
       _phase = _Phase.listening;
-      _attempt += 1;
+      _stoppedAtLimit = false;
     });
 
     final input = await ref.read(speechInputProvider.future);
-    final recording = await input.start(
-      category: widget.step.category,
-      attempt: _attempt,
-    );
+    await dropping;
+    final SpeechRecording recording;
+    try {
+      recording = await input.start(
+        category: widget.step.category,
+        attempt: _attempt + 1,
+      );
+    } on SpeechStartFailure catch (failure) {
+      if (!mounted) return;
+      _toManual(switch (failure.problem) {
+        SpeechStartProblem.micDenied => _micDeniedNotice,
+        SpeechStartProblem.unavailable => _unavailableNotice,
+      }, voiceUnavailable: failure.problem == SpeechStartProblem.unavailable);
+      return;
+    }
     if (!mounted) {
       await recording.cancel();
       return;
     }
     setState(() => _recording = recording);
+
+    // 최대 길이에 닿으면 다 말했다고 알린 것처럼 끝낸다.
+    unawaited(
+      recording.limitReached.then((_) {
+        if (mounted && _recording == recording) {
+          _finishListening(atLimit: true);
+        }
+      }),
+    );
   }
 
   /// 녹음을 끝내고 글로 옮기는 동안 기다린다.
-  Future<void> _finishListening() async {
+  Future<void> _finishListening({bool atLimit = false}) async {
     final recording = _recording;
     // 녹음이 아직 시작되지 않았다.
     if (recording == null) return;
@@ -124,52 +190,130 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
     });
 
     final outcome = await recording.finish();
-    if (!mounted) return;
+    if (!mounted) {
+      // 보내지 못해 남은 녹음이 있어도 화면을 벗어났으니 지운다.
+      await recording.cancel();
+      return;
+    }
+    _settle(recording, outcome, atLimit: atLimit);
+  }
 
+  /// 보내지 못한 녹음을 다시 보낸다. 다시 말하지 않아도 된다.
+  Future<void> _resend() async {
+    final recording = _unsent;
+    if (recording == null) return;
+
+    setState(() {
+      _unsent = null;
+      _resends += 1;
+      _phase = _Phase.transcribing;
+    });
+
+    final outcome = await recording.resend();
+    if (!mounted) {
+      await recording.cancel();
+      return;
+    }
+    _settle(recording, outcome, atLimit: _stoppedAtLimit);
+  }
+
+  void _settle(
+    SpeechRecording recording,
+    SpeechOutcome outcome, {
+    required bool atLimit,
+  }) {
     switch (outcome) {
       case SpeechHeard(:final text):
         setState(() {
+          _attempt += 1;
+          _resends = 0;
           _phase = _Phase.heard;
           _heardText = text;
+          _stoppedAtLimit = atLimit;
         });
         widget.onCaptured(text);
       case SpeechNotHeard():
+        _resends = 0;
+        _attempt += 1;
+        // 2회 실패하면 직접 입력으로 넘어간다.
+        if (_attempt >= 2) {
+          _toManual(_notHeardNotice);
+        } else {
+          setState(() => _phase = _Phase.notHeardOnce);
+          widget.onCleared();
+        }
+      case SpeechFailed(canResend: true) when _resends < _maxResends:
         setState(() {
-          // 2회 실패하면 직접 입력으로 넘어간다.
-          _phase = _attempt >= 2 ? _Phase.manualInput : _Phase.notHeardOnce;
+          _unsent = recording;
+          _stoppedAtLimit = atLimit;
+          _phase = _Phase.sendFailed;
         });
         widget.onCleared();
+      // 재시도를 다 써도 연결 문제다. 연결이 돌아오면 다시 말할 수 있다.
+      case SpeechFailed(canResend: true):
+        recording.cancel();
+        _toManual(_connectionNotice);
+      case SpeechFailed():
+        recording.cancel();
+        _toManual(_unavailableNotice, voiceUnavailable: true);
     }
   }
 
-  void _retry() {
+  /// 실패해서 직접 입력으로 넘어간다. [notice] 로 이유를 알린다.
+  void _toManual(String notice, {bool voiceUnavailable = false}) {
+    unawaited(_dropUnsent());
     setState(() {
-      _phase = _Phase.idle;
-      _heardText = null;
-    });
-    widget.onCleared();
-  }
-
-  /// 말로 답하러 간다. 방법을 처음 고를 때와 글로 쓰다 바꿀 때, 두 번 실패한 뒤
-  /// 다시 녹음할 때 모두 이리로 온다. 어느 쪽이든 마이크 화면이 바로 나온다.
-  void _startVoice() {
-    setState(() {
-      _phase = _Phase.idle;
-      _attempt = 0;
+      _phase = _Phase.manualInput;
+      _manualNotice = notice;
+      _voiceUnavailable = voiceUnavailable;
       _heardText = null;
       _manual.clear();
     });
     widget.onCleared();
   }
 
+  void _retry() {
+    setState(() {
+      _phase = _Phase.idle;
+      _heardText = null;
+      _stoppedAtLimit = false;
+    });
+    widget.onCleared();
+  }
+
+  /// 말로 답하러 간다. 방법을 처음 고를 때와 글로 쓰다 바꿀 때, 실패한 뒤
+  /// 다시 녹음할 때 모두 이리로 온다. 어느 쪽이든 마이크 화면이 바로 나온다.
+  void _startVoice() {
+    unawaited(_dropUnsent());
+    setState(() {
+      _phase = _Phase.idle;
+      _attempt = 0;
+      _heardText = null;
+      _stoppedAtLimit = false;
+      _manualNotice = null;
+      _voiceUnavailable = false;
+      _manual.clear();
+    });
+    widget.onCleared();
+  }
+
   /// 글로 답하러 간다. 음성을 거치지 않았으므로 시도 횟수를 0 으로 둔다.
+  ///
+  /// 알아들은 문장이 있으면 입력칸에 채운다. 틀린 곳을 고치거나 녹음이 끊긴
+  /// 뒤를 이어 쓸 수 있게 하려는 것이다. 이미 넘긴 값이므로 다시 알리지 않는다.
   void _startText() {
+    unawaited(_dropUnsent());
+    final heard = _phase == _Phase.heard ? _heardText : null;
     setState(() {
       _phase = _Phase.manualInput;
       _attempt = 0;
       _heardText = null;
+      _stoppedAtLimit = false;
+      _manualNotice = null;
+      _voiceUnavailable = false;
+      if (heard != null) _manual.text = heard;
     });
-    widget.onCleared();
+    if (heard == null) widget.onCleared();
   }
 
   @override
@@ -217,7 +361,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
         else if (_phase == _Phase.manualInput)
           _ManualInput(
             controller: _manual,
-            afterFailure: _cameFromFailure,
+            notice: _manualNotice,
             onChanged: (value) => value.trim().isEmpty
                 ? widget.onCleared()
                 : widget.onCaptured(value.trim()),
@@ -229,13 +373,17 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
             onStart: _startListening,
             onFinish: _recording == null ? null : _finishListening,
             onRetry: _retry,
+            onResend: _resend,
+            stoppedAtLimit: _stoppedAtLimit,
           ),
 
         const Spacer(flex: 3),
 
         // 방법을 바꾸는 길은 안내 문구에서 멀리 떼어 화면 아래에 둔다. 문구
         // 바로 밑에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지 않는다.
-        if (_phase == _Phase.manualInput)
+        if (_phase == _Phase.manualInput && _voiceUnavailable)
+          const SizedBox.shrink()
+        else if (_phase == _Phase.manualInput)
           _SwitchMethodButton(
             icon: Icons.record_voice_over_outlined,
             label: _cameFromFailure ? '다시 녹음하기' : '말로 답할게요',
@@ -380,6 +528,8 @@ class _MicArea extends StatelessWidget {
     required this.onStart,
     required this.onFinish,
     required this.onRetry,
+    required this.onResend,
+    required this.stoppedAtLimit,
   });
 
   final _Phase phase;
@@ -391,15 +541,24 @@ class _MicArea extends StatelessWidget {
 
   final VoidCallback onRetry;
 
+  /// 보내지 못한 녹음을 다시 보낸다.
+  final VoidCallback onResend;
+
+  /// 알아들은 녹음이 최대 길이에 닿아 멈췄다.
+  final bool stoppedAtLimit;
+
   @override
   Widget build(BuildContext context) {
-    final failed = phase == _Phase.notHeardOnce;
+    final sendFailed = phase == _Phase.sendFailed;
+    final failed = phase == _Phase.notHeardOnce || sendFailed;
     final heard = phase == _Phase.heard;
     final listening = phase == _Phase.listening;
     final transcribing = phase == _Phase.transcribing;
 
     // 듣는 중에는 마이크를 다시 눌러도 녹음을 끝낸다. 옮기는 중에는 누를 수 없다.
-    final VoidCallback? onTap = transcribing
+    // 보내지 못했을 때도 막는다. 할 일을 재시도 하나로 두기 위해서다. 다시
+    // 말하려면 글로 답할게요 → 말로 답할게요로 간다.
+    final VoidCallback? onTap = transcribing || sendFailed
         ? null
         : listening
         ? onFinish
@@ -458,15 +617,39 @@ class _MicArea extends StatelessWidget {
           SecondaryButton(label: '다 말했어요', onPressed: onFinish, expand: false),
         ] else if (transcribing) ...[
           const Text('말씀을 글로 옮기고 있어요', style: AppTypography.body),
-          const SizedBox(height: AppSpacing.sm),
-          const Text('잠시만 기다려주세요', style: AppTypography.sub),
-        ]
-        else if (failed)
+        ] else if (sendFailed) ...[
+          // 인터넷이 끊긴 경우와 서버가 처리하지 못한 경우를 함께 덮는다.
+          // 확인하지 않은 원인을 단정하지 않는다.
+          Text(
+            '연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.',
+            style: AppTypography.body.copyWith(color: AppColors.danger),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SecondaryButton(
+            label: '재시도',
+            icon: Icons.refresh,
+            onPressed: onResend,
+            expand: false,
+          ),
+        ] else if (failed) ...[
           Text(
             '목소리를 잘 듣지 못했어요.',
             style: AppTypography.body.copyWith(color: AppColors.danger),
-          )
-        else if (heard) ...[
+          ),
+          // 처음 안내가 실패 문구로 바뀌면 마이크를 다시 누르면 된다는 것을
+          // 알기 어렵다. 버튼을 따로 두지 않고 할 일을 마이크 하나로 둔다.
+          const SizedBox(height: AppSpacing.sm),
+          const Text('마이크를 눌러 다시 말씀해주세요.', style: AppTypography.sub),
+        ] else if (heard) ...[
+          if (stoppedAtLimit) ...[
+            const Text(
+              "5분이 지나 녹음을 멈췄어요.\n이어서 적으려면 '글로 답할게요'를 눌러주세요.",
+              style: AppTypography.sub,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Text(
@@ -491,15 +674,16 @@ class _MicArea extends StatelessWidget {
 class _ManualInput extends StatelessWidget {
   const _ManualInput({
     required this.controller,
-    required this.afterFailure,
+    required this.notice,
     required this.onChanged,
   });
 
   final TextEditingController controller;
 
-  /// 두 번 알아듣지 못해 넘어온 경우다. 사용자가 처음부터 고른 경우와 안내
-  /// 문구가 달라야 한다. 스스로 고른 사람에게 실패를 알릴 이유가 없다.
-  final bool afterFailure;
+  /// 실패해서 넘어온 이유. 두 번 알아듣지 못했거나, 마이크를 쓸 수 없거나,
+  /// 서버가 글로 옮기지 못한 경우다. 사용자가 처음부터 고른 경우는 `null` 이다.
+  /// 스스로 고른 사람에게 실패를 알릴 이유가 없다.
+  final String? notice;
 
   final ValueChanged<String> onChanged;
 
@@ -508,9 +692,9 @@ class _ManualInput extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (afterFailure) ...[
+        if (notice case final notice?) ...[
           Text(
-            '목소리를 잘 듣지 못했어요.',
+            notice,
             style: AppTypography.bodyStrong.copyWith(color: AppColors.danger),
           ),
           const SizedBox(height: AppSpacing.md),
