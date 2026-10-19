@@ -29,22 +29,30 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
   /// 카메라가 열려 있는 동안 셔터를 다시 누르지 못하게 한다.
   bool _capturing = false;
 
-  /// 카메라를 열지 못했는지. 다시 누르면 지운다.
-  bool _cameraFailed = false;
+  /// 찍지 못한 이유를 알리는 문구. 다시 누르면 지운다.
+  String? _problem;
 
   Future<void> _capture() async {
     setState(() {
       _capturing = true;
-      _cameraFailed = false;
+      _problem = null;
     });
     try {
       final path = await ref.read(visitCameraProvider).capture();
+      // 카메라가 열린 사이 화면을 떠났으면 결과를 쓰지 않는다.
+      if (!mounted) return;
       // 찍지 않고 나오면 앞에 찍은 사진을 그대로 둔다.
       if (path != null) {
         await ref.read(visitPhotoProvider.notifier).replace(path);
       }
     } on VisitCameraUnavailable {
-      if (mounted) setState(() => _cameraFailed = true);
+      if (mounted) {
+        setState(() => _problem = '카메라를 열지 못했어요.\n사진 없이 시작해도 괜찮아요.');
+      }
+    } on FileSystemException {
+      if (mounted) {
+        setState(() => _problem = '사진을 저장하지 못했어요.\n다시 찍거나 사진 없이 시작해도 괜찮아요.');
+      }
     } finally {
       if (mounted) setState(() => _capturing = false);
     }
@@ -124,10 +132,10 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
                     captured ? '다시 찍기' : '눌러서 촬영하기',
                     style: AppTypography.sub,
                   ),
-                  if (_cameraFailed) ...[
+                  if (_problem case final problem?) ...[
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      '카메라를 열지 못했어요.\n사진 없이 시작해도 괜찮아요.',
+                      problem,
                       style: AppTypography.sub.copyWith(
                         color: AppColors.danger,
                       ),

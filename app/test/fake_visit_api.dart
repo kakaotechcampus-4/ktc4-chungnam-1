@@ -1,5 +1,7 @@
 // 서버 대신 쓰는 면회 회차 API 대역이다. 값은 모두 합성이다.
 
+import 'dart:async';
+
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/visit_api.dart';
@@ -26,6 +28,9 @@ class FakeVisitApi implements VisitApi {
 
   /// 5-2 가 차례로 이 실패로 끝나게 한다. 다 쓰면 성공한다.
   final photoFailures = <Object>[];
+
+  /// 있으면 끝날 때까지 5-2 가 응답하지 않는다. 올리는 중을 흉내 낸다.
+  Completer<void>? photoGate;
 
   /// 5-2 로 올린 사진.
   final photos = <({String sessionId, String photoPath})>[];
@@ -67,6 +72,8 @@ class FakeVisitApi implements VisitApi {
     required String photoPath,
   }) async {
     calls.add('photo');
+    final gate = photoGate;
+    if (gate != null) await gate.future;
     if (photoFailures.isNotEmpty) throw photoFailures.removeAt(0);
     photos.add((sessionId: sessionId, photoPath: photoPath));
     return photoId;

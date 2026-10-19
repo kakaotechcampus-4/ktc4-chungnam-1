@@ -45,6 +45,10 @@ enum VisitPhotoUpload {
   /// 올리지 못했고 다시 올려도 받지 않는다. 형식과 크기 거절, 평가가 끝난
   /// 회차 등이다. 리포트에는 사진 없이 담긴다.
   rejected,
+
+  /// 찍은 사진 파일을 찾거나 읽지 못했다. 다시 올려도 같아 리포트에는 사진
+  /// 없이 담긴다. 녹음은 그대로 이어진다.
+  missing,
 }
 
 /// 면회 한 회차의 진행 상태다.
@@ -169,6 +173,9 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 회차를 만드는 중인지. 두 번 눌러 회차가 둘 생기지 않게 막는다.
   bool _creatingSession = false;
 
+  /// 사진 올리기를 차례로 잇는다([_uploadPhoto]).
+  Future<void> _photoQueue = Future.value();
+
   VisitRecorder get _recorder => ref.read(visitRecorderProvider);
 
   @override
@@ -183,7 +190,16 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _fileOpen = false;
     _creatingSession = false;
+    _photoQueue = Future.value();
     ref.onDispose(() => _ticker?.cancel());
+
+    // 회차를 만든 뒤 사진을 다시 찍었으면 새 사진을 올린다. 5-2 는 다시 올리면
+    // 앞 사진을 바꿔 끼운다.
+    ref.listen(visitPhotoProvider, (previous, next) {
+      if (next == null || next == previous) return;
+      if (state.value?.sessionId == null) return;
+      unawaited(_uploadPhoto(retryOnce: true));
+    });
 
     return VisitState(
       cards: chosen,
@@ -297,43 +313,66 @@ class VisitController extends AsyncNotifier<VisitState> {
 
   /// 찍어 둔 사진을 회차에 올린다(API 5-2). 사진이 없으면 아무것도 하지 않는다.
   ///
-  /// [retryOnce] 면 다시 시도해도 되는 실패(연결 실패, 서버가 `retryable`
-  /// 로 알린 실패)에 한 번만 더 올린다. 올려도 기기의 사진 파일은 남기고 올린
-  /// 회차만 적는다([VisitPhotos]).
-  Future<void> _uploadPhoto({required bool retryOnce}) async {
+  /// 올리기는 차례로 한다. 앞 사진을 올리는 중에 다시 찍었으면 앞 요청이 끝난
+  /// 뒤 새 사진을 올려, 늦게 닿은 앞 사진이 서버에서 새 사진을 덮지 않게 한다.
+  Future<void> _uploadPhoto({required bool retryOnce}) =>
+      _photoQueue = _photoQueue.then((_) => _sendPhoto(retryOnce: retryOnce));
+
+  /// 지금 사진을 올린다. 올려도 기기의 사진 파일은 남기고 올린 회차만 적는다
+  /// ([VisitPhotos]).
+  ///
+  /// 올리는 사이 사진을 다시 찍었으면 결과를 화면 상태에 쓰지 않는다. 앞 사진의
+  /// 결과이고, 새 사진은 [_photoQueue] 에서 뒤이어 올린다.
+  Future<void> _sendPhoto({required bool retryOnce}) async {
+    if (!ref.mounted) return;
     final sessionId = state.value?.sessionId;
     final photoPath = ref.read(visitPhotoProvider);
     if (sessionId == null || photoPath == null) return;
 
+    final photos = ref.read(visitPhotosProvider);
+    final photo = ref.read(visitPhotoProvider.notifier)..sending(photoPath);
     _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploading));
+
+    final result = await _sendPhotoFile(
+      sessionId,
+      photoPath,
+      retryOnce: retryOnce,
+    );
+    if (result == VisitPhotoUpload.uploaded) {
+      try {
+        await photos.markUploaded(photoPath, sessionId);
+      } on FileSystemException {
+        // 기록을 못 적어도 사진은 올라갔다. 탈퇴 때는 기록 없는 파일로 지운다.
+      }
+    }
+    await photo.sent(photoPath);
+
+    if (!ref.mounted) return;
+    if (ref.read(visitPhotoProvider) != photoPath) return;
+    _update((now) => now.copyWith(photoUpload: result));
+  }
+
+  /// [retryOnce] 면 다시 시도해도 되는 실패(연결 실패, 서버가 `retryable`
+  /// 로 알린 실패)에 한 번만 더 올린다.
+  Future<VisitPhotoUpload> _sendPhotoFile(
+    String sessionId,
+    String photoPath, {
+    required bool retryOnce,
+  }) async {
     final api = ref.read(visitApiProvider);
     var attemptsLeft = retryOnce ? 2 : 1;
     while (true) {
       attemptsLeft--;
       try {
         await api.uploadPhoto(sessionId, photoPath: photoPath);
-        if (!ref.mounted) return;
-        _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploaded));
-        try {
-          await ref
-              .read(visitPhotosProvider)
-              .markUploaded(photoPath, sessionId);
-        } on FileSystemException {
-          // 기록을 못 적어도 사진은 올라갔다. 탈퇴 때는 기록 없는 파일로 지운다.
-        }
-        return;
+        return VisitPhotoUpload.uploaded;
       } on ApiFailure catch (failure) {
-        if (!ref.mounted) return;
         final retryable = _isRetryable(failure);
         if (retryable && attemptsLeft > 0) continue;
-        _update(
-          (now) => now.copyWith(
-            photoUpload: retryable
-                ? VisitPhotoUpload.failed
-                : VisitPhotoUpload.rejected,
-          ),
-        );
-        return;
+        return retryable ? VisitPhotoUpload.failed : VisitPhotoUpload.rejected;
+      } on FileSystemException {
+        // 사진 파일이 없거나 읽지 못했다. 다시 올려도 같다.
+        return VisitPhotoUpload.missing;
       }
     }
   }

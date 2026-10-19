@@ -3,6 +3,9 @@
 // 사진은 녹음을 막지 않는다. 회차를 만든 뒤 따로 올리고, 다시 시도해도 되는
 // 실패에만 한 번 더 올린다. 그래도 안 되면 녹음 화면에 다시 올리기를 둔다.
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -154,6 +157,69 @@ void main() {
     expect(api.calls.where((c) => c == 'photo'), hasLength(1));
   });
 
+  test('사진 파일을 찾지 못하면 알리고 녹음은 이어 간다', () async {
+    final api = FakeVisitApi()
+      ..photoFailures.add(PathNotFoundException(_photo, const OSError()));
+    final container = _container(api);
+
+    final visit = await _start(container);
+
+    expect(api.calls.where((c) => c == 'photo'), hasLength(1));
+    expect(_read(container).photoUpload, VisitPhotoUpload.missing);
+    expect(_read(container).recording, isTrue);
+
+    await visit.retryPhotoUpload();
+    expect(api.calls.where((c) => c == 'photo'), hasLength(1));
+  });
+
+  test('올리는 중에 다시 찍으면 앞 결과가 새 사진을 건드리지 않고 새 사진을 올린다', () async {
+    const retaken = '/fake/visit-photo-2.jpg';
+    final api = FakeVisitApi()..photoGate = Completer();
+    final photos = FakeVisitPhotos();
+    final container = _container(api, photos);
+
+    await _start(container);
+    expect(_read(container).photoUpload, VisitPhotoUpload.uploading);
+
+    await container.read(visitPhotoProvider.notifier).replace(retaken);
+    expect(photos.discarded, isEmpty, reason: '올리는 중인 사진은 지우지 않는다');
+
+    api.photoGate!.complete();
+    await pumpEventQueue();
+
+    expect(api.photos.map((p) => p.photoPath), [_photo, retaken]);
+    expect(container.read(visitPhotoProvider), retaken);
+    expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
+    expect(photos.discarded, isEmpty);
+    expect(photos.kept, {
+      _photo: FakeVisitApi.sessionId,
+      retaken: FakeVisitApi.sessionId,
+    });
+  });
+
+  test('올리는 중에 다시 찍고 앞 사진이 실패하면 앞 사진만 지운다', () async {
+    const retaken = '/fake/visit-photo-2.jpg';
+    final api = FakeVisitApi()
+      ..photoGate = Completer()
+      ..photoFailures.add(
+        const ApiServerFailure(
+          statusCode: 422,
+          errorCode: 'INVALID_IMAGE_FORMAT',
+        ),
+      );
+    final photos = FakeVisitPhotos();
+    final container = _container(api, photos);
+
+    await _start(container);
+    await container.read(visitPhotoProvider.notifier).replace(retaken);
+    api.photoGate!.complete();
+    await pumpEventQueue();
+
+    expect(photos.discarded, [_photo]);
+    expect(photos.kept, {retaken: FakeVisitApi.sessionId});
+    expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
+  });
+
   test('회차를 만들지 못하면 사진도 올리지 않는다', () async {
     final api = FakeVisitApi(failCreate: true);
     final container = _container(api);
@@ -249,6 +315,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
+      expect(find.text('사진 다시 올리기'), findsNothing);
+    });
+
+    testWidgets('사진 파일을 찾지 못하면 알리고 다시 올리기를 숨긴다', (tester) async {
+      final api = FakeVisitApi()
+        ..photoFailures.add(PathNotFoundException(_photo, const OSError()));
+      final container = _container(api);
+      await openRecording(tester, container);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.textContaining('찍은 사진을 찾지 못해'), findsOneWidget);
+      expect(find.textContaining('녹음은 그대로 이어져요'), findsOneWidget);
       expect(find.text('사진 다시 올리기'), findsNothing);
     });
 

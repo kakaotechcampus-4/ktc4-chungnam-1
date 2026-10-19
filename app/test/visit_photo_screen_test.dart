@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -187,6 +188,45 @@ void main() {
     camera.gate!.complete();
     await tester.pumpAndSettle();
     expect(_shownPhoto(tester), '/fake/visit-1.jpg');
+  });
+
+  testWidgets('사진을 저장하지 못하면 안내하고 사진 없이 시작할 수 있다', (tester) async {
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg']);
+    final photos = FakeVisitPhotos()
+      ..keepFailure = const FileSystemException('합성 실패');
+    final container = await _open(tester, camera, photos: photos);
+
+    await _tapShutter(tester);
+
+    expect(find.textContaining('사진을 저장하지 못했어요'), findsOneWidget);
+    expect(container.read(visitPhotoProvider), isNull);
+
+    await tester.tap(find.text('사진 없이 시작할게요'));
+    await tester.pumpAndSettle();
+    expect(find.text('녹음 화면'), findsOneWidget);
+  });
+
+  testWidgets('카메라가 열린 사이 화면을 떠나면 찍은 결과를 쓰지 않는다', (tester) async {
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg'])..gate = Completer();
+    final photos = FakeVisitPhotos();
+    final container = await _open(tester, camera, photos: photos);
+
+    await tester.tap(find.bySemanticsLabel('사진 찍기'));
+    await tester.pump();
+    // 화면을 내린다. 컨테이너는 그대로 둔다.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+
+    camera.gate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(container.read(visitPhotoProvider), isNull);
+    expect(photos.kept, isEmpty);
   });
 
   test('새 회차나 로그아웃으로 비워도 사진 파일은 남긴다', () async {

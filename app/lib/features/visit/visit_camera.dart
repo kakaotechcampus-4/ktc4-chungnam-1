@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -65,20 +67,48 @@ final visitCameraProvider = Provider<VisitCamera>((ref) => DeviceVisitCamera());
 /// invalidate 되지만 사진 파일은 지우지 않는다([VisitPhotos]). 다시 찍으면 앞
 /// 사진이 올리지 않은 것일 때만 지운다.
 class VisitPhotoNotifier extends Notifier<String?> {
+  /// 서버에 올리고 있는 사진. 그사이 다시 찍어도 이 파일은 바로 지우지 않는다.
+  final _sending = <String>{};
+
+  /// 올리는 중에 다시 찍어 밀려난 사진. 올리기가 끝나면 올리지 못한 것만 지운다.
+  final _replaced = <String>{};
+
   @override
   String? build() {
     ref.watch(visitPhotosProvider);
+    _sending.clear();
+    _replaced.clear();
     return null;
   }
 
   /// 카메라가 남긴 [capturedPath] 를 앱 전용 공간으로 옮겨 이번 사진으로 둔다.
+  ///
+  /// 옮기지 못하면 [FileSystemException] 이 그대로 나간다.
   Future<void> replace(String capturedPath) async {
     final photos = ref.read(visitPhotosProvider);
     final kept = await photos.keep(capturedPath);
     if (!ref.mounted) return;
     final previous = state;
     state = kept;
-    if (previous != null && previous != kept) await photos.discard(previous);
+    if (previous == null || previous == kept) return;
+    if (_sending.contains(previous)) {
+      _replaced.add(previous);
+    } else {
+      await photos.discard(previous);
+    }
+  }
+
+  /// [path] 를 서버에 올리기 시작했다.
+  void sending(String path) => _sending.add(path);
+
+  /// [path] 올리기를 마쳤다. 그사이 다시 찍어 밀려났으면 지운다. 올린 사진이면
+  /// [VisitPhotos.discard] 가 남긴다.
+  Future<void> sent(String path) async {
+    if (!ref.mounted) return;
+    _sending.remove(path);
+    if (_replaced.remove(path)) {
+      await ref.read(visitPhotosProvider).discard(path);
+    }
   }
 }
 

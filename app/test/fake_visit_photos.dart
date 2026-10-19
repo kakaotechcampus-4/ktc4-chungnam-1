@@ -13,8 +13,12 @@ class FakeVisitPhotos implements VisitPhotos {
   /// 탈퇴로 지운 계정.
   final forgottenAccounts = <String>[];
 
+  /// 있으면 [keep] 이 이 실패로 끝난다.
+  Object? keepFailure;
+
   @override
   Future<String> keep(String capturedPath) async {
+    if (keepFailure case final failure?) throw failure;
     kept[capturedPath] = null;
     return capturedPath;
   }
