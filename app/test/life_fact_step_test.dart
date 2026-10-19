@@ -510,6 +510,85 @@ void main() {
     });
   });
 
+  group('키보드', () {
+    testWidgets('글로 쓰는 동안에는 예시와 방법 바꾸기를 숨기고 입력칸을 지킨다', (tester) async {
+      _useReferenceScreen(tester);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+
+      await tester.tap(find.text('글로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byType(TextField));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 990);
+      await tester.pumpAndSettle();
+
+      expect(find.text(_step.question), findsOneWidget);
+      expect(find.text(_step.examples.first), findsNothing);
+      expect(find.text('말로 답할게요'), findsNothing);
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .widget
+            .focusNode
+            .hasFocus,
+        isTrue,
+        reason: '숨기는 동안 입력칸을 새로 만들면 키보드가 내려간다',
+      );
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+
+      expect(find.text(_step.examples.first), findsOneWidget);
+      expect(find.text('말로 답할게요'), findsOneWidget);
+    });
+
+    testWidgets('실패 안내는 쓰는 동안 숨기고 키보드를 내리면 다시 보인다', (tester) async {
+      _useReferenceScreen(tester);
+      addTearDown(tester.view.resetViewInsets);
+      const notice = '목소리를 잘 듣지 못했어요.\n글로 적어 보시겠어요?';
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await _speak(tester);
+      await _speak(tester);
+      expect(find.text(notice), findsOneWidget);
+
+      await tester.tap(find.byType(TextField));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 990);
+      await tester.pumpAndSettle();
+
+      expect(find.text(notice), findsNothing);
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .widget
+            .focusNode
+            .hasFocus,
+        isTrue,
+        reason: '안내가 빠져도 키보드가 내려가지 않는다',
+      );
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+
+      expect(find.text(notice), findsOneWidget);
+    });
+
+    testWidgets('음성 화면은 키보드와 상관없이 그대로다', (tester) async {
+      _useReferenceScreen(tester);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 990);
+      await tester.pumpAndSettle();
+
+      expect(find.text(_step.examples.first), findsOneWidget);
+    });
+  });
+
   group('서버 실패', () {
     const canResend = SpeechFailed(canResend: true);
     const cannotResend = SpeechFailed(canResend: false);

@@ -66,7 +66,8 @@ class LifeFactStepView extends ConsumerStatefulWidget {
   ConsumerState<LifeFactStepView> createState() => _LifeFactStepViewState();
 }
 
-class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
+class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
+    with WidgetsBindingObserver {
   _Phase _phase = _Phase.choosing;
 
   /// 알아들었는지 판정을 받은 녹음 수. 서버에 닿지 못한 실패는 세지 않는다.
@@ -111,6 +112,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 말로 얻은 답인지 글로 얻은 답인지는 남지 않는다. 어느 쪽이든 고칠 수 있게
     // 글 입력칸에 채운다. 값은 이미 저장본에 있으므로 다시 알리지 않는다.
     final saved = widget.initialText?.trim() ?? '';
@@ -120,8 +122,22 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
     }
   }
 
+  /// 키보드가 오르내리면 다시 그린다. [_keyboardOpen] 참고.
+  @override
+  void didChangeMetrics() {
+    if (mounted) setState(() {});
+  }
+
+  /// 키보드가 올라와 있다.
+  ///
+  /// 이 화면은 `Scaffold` 본문이라 [MediaQuery] 의 키보드 높이가 늘 0 이다.
+  /// `Scaffold` 가 본문 높이를 줄이며 그 값을 지운다. 그래서 창의 값을 직접
+  /// 읽고, 바뀔 때는 [didChangeMetrics] 로 다시 그린다.
+  bool get _keyboardOpen => View.of(context).viewInsets.bottom > 0;
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // 듣는 중이거나 보내지 못한 녹음이 있으면 화면을 벗어날 때 지운다.
     _recording?.cancel();
     _unsent?.cancel();
@@ -320,48 +336,64 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
   Widget build(BuildContext context) {
     final choosing = _phase == _Phase.choosing;
 
+    // 글로 쓰는 중 키보드가 올라오면 높이가 절반쯤으로 줄어 입력칸 아래
+    // 버튼이 화면 아래 고정된 `다음` 과 겹친다. 쓰는 동안에는 질문과 입력칸만
+    // 남기고 예시와 방법 바꾸기를 숨긴다. 키보드를 내리면 되돌린다.
+    final typing = _phase == _Phase.manualInput && _keyboardOpen;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Spacer(flex: 2),
+        if (typing)
+          const SizedBox(height: AppSpacing.xl)
+        else
+          const Spacer(flex: 2),
         Text(
           widget.step.question,
           style: AppTypography.screenTitle,
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          choosing ? '편한 방법으로 답해주세요.' : '자유롭게 말씀해주세요.',
-          style: AppTypography.sub,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.section),
-
-        AppSurfaceBox(
-          child: Column(
-            children: [
-              for (final example in widget.step.examples)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    example,
-                    style: AppTypography.sub.copyWith(
-                      color: AppColors.textDisabled,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-            ],
+        if (typing) const SizedBox(height: AppSpacing.section),
+        if (!typing) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            choosing ? '편한 방법으로 답해주세요.' : '자유롭게 말씀해주세요.',
+            style: AppTypography.sub,
+            textAlign: TextAlign.center,
           ),
-        ),
-        const Spacer(flex: 3),
+          const SizedBox(height: AppSpacing.section),
+
+          AppSurfaceBox(
+            child: Column(
+              children: [
+                for (final example in widget.step.examples)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      example,
+                      style: AppTypography.sub.copyWith(
+                        color: AppColors.textDisabled,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Spacer(flex: 3),
+        ],
 
         if (choosing)
           _InputMethodChoice(onVoice: _startVoice, onText: _startText)
         else if (_phase == _Phase.manualInput)
           _ManualInput(
+            // 키보드가 오르내리며 앞의 항목이 빠져도 입력칸을 새로 만들지 않게
+            // 한다. 새로 만들면 포커스를 잃고 키보드가 내려간다.
+            key: const ValueKey('manualInput'),
             controller: _manual,
-            notice: _manualNotice,
+            // 쓰기 시작하면 안내를 숨긴다. 키보드가 올라온 좁은 화면에서 안내가
+            // 입력칸을 밀어 일부가 가려졌다.
+            notice: typing ? null : _manualNotice,
             onChanged: (value) => value.trim().isEmpty
                 ? widget.onCleared()
                 : widget.onCaptured(value.trim()),
@@ -381,7 +413,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView> {
 
         // 방법을 바꾸는 길은 안내 문구에서 멀리 떼어 화면 아래에 둔다. 문구
         // 바로 밑에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지 않는다.
-        if (_phase == _Phase.manualInput && _voiceUnavailable)
+        if (typing || (_phase == _Phase.manualInput && _voiceUnavailable))
           const SizedBox.shrink()
         else if (_phase == _Phase.manualInput)
           _SwitchMethodButton(
@@ -731,6 +763,7 @@ class _HeardBoxState extends State<_HeardBox> {
 class _ManualInput extends StatelessWidget {
   const _ManualInput({
     required this.controller,
+    super.key,
     required this.notice,
     required this.onChanged,
   });
@@ -757,6 +790,9 @@ class _ManualInput extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
         ],
         TextField(
+          // 안내가 빠져도 입력칸을 새로 만들지 않게 한다. 포커스를 잃으면
+          // 키보드가 내려간다.
+          key: const ValueKey('manualField'),
           controller: controller,
           onChanged: onChanged,
           maxLines: 4,
