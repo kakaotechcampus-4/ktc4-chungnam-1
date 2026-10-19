@@ -495,7 +495,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 5-4 회차 목록. 최근 회차부터, `limit` 기본 20, 최대 100 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-1 보호자 평가 저장. `201` |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-4 보호자 평가 조회 |
-| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만 |
+| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만, 면회 사진 포함 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/report` | 7-2 리포트 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 7-3 변경 제안 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 7-4 변경 제안 확인 |
@@ -507,8 +507,10 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   `FOR UPDATE`로 잠가 동시 제출을 한 번만 받는다. 카드 평가는 `review_reaction`에 쓰고
   쓰지 않은 카드는 `notUsed`, 답하지 않은 카드는 `null`이다.
 - `mood`는 만족도로 계산하고(1~2 `hard`, 3 `normal`, 4~5 `good`), `visitDate`는
-  `started_at`의 한국 시간 날짜다. 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회 URL을
-  만든다.
+  `started_at`의 한국 시간 날짜다. 7-1과 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회
+  URL을 만든다. URL을 만들지 못하면 7-2는 503이지만, 7-1은 썸네일 때문에 목록이 열리지 않으면
+  안 되므로 그 항목만 `photo: null`로 담고 `report_list_photo_url_failed` 경고 로그를 요청마다
+  한 번 남긴다(실패 수와 `errorCode`만).
 - 7-4는 회차 행을 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고, 승인한 생애 정보
   제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
   `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면
