@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +10,7 @@ import '../../data/visit_api.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
 import 'visit_camera.dart';
+import 'visit_photos.dart';
 import 'visit_recorder.dart';
 
 /// 녹음이 뜻대로 되지 않은 경우다. 화면은 이 값으로 안내 문구를 고른다.
@@ -296,7 +298,8 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 찍어 둔 사진을 회차에 올린다(API 5-2). 사진이 없으면 아무것도 하지 않는다.
   ///
   /// [retryOnce] 면 다시 시도해도 되는 실패(연결 실패, 서버가 `retryable`
-  /// 로 알린 실패)에 한 번만 더 올린다. 올리면 기기의 사진 파일을 지운다.
+  /// 로 알린 실패)에 한 번만 더 올린다. 올려도 기기의 사진 파일은 남기고 올린
+  /// 회차만 적는다([VisitPhotos]).
   Future<void> _uploadPhoto({required bool retryOnce}) async {
     final sessionId = state.value?.sessionId;
     final photoPath = ref.read(visitPhotoProvider);
@@ -311,7 +314,13 @@ class VisitController extends AsyncNotifier<VisitState> {
         await api.uploadPhoto(sessionId, photoPath: photoPath);
         if (!ref.mounted) return;
         _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploaded));
-        ref.read(visitPhotoProvider.notifier).forget();
+        try {
+          await ref
+              .read(visitPhotosProvider)
+              .markUploaded(photoPath, sessionId);
+        } on FileSystemException {
+          // 기록을 못 적어도 사진은 올라갔다. 탈퇴 때는 기록 없는 파일로 지운다.
+        }
         return;
       } on ApiFailure catch (failure) {
         if (!ref.mounted) return;

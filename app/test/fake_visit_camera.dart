@@ -12,7 +12,6 @@ class FakeVisitCamera implements VisitCamera {
   FakeVisitCamera([List<Object?>? results]) : _results = results ?? [];
 
   final List<Object?> _results;
-  final discarded = <String>[];
   int captures = 0;
 
   /// 있으면 끝날 때까지 카메라가 열려 있는 것으로 친다.
@@ -27,7 +26,4 @@ class FakeVisitCamera implements VisitCamera {
     if (result is VisitCameraUnavailable) throw result;
     return result as String?;
   }
-
-  @override
-  Future<void> discard(String path) async => discarded.add(path);
 }

@@ -8,20 +8,26 @@ import 'package:saerok/app/routes.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/visit/visit_camera.dart';
 import 'package:saerok/features/visit/visit_photo_screen.dart';
+import 'package:saerok/features/visit/visit_photos.dart';
 
 import 'fake_visit_camera.dart';
+import 'fake_visit_photos.dart';
 
 Future<ProviderContainer> _open(
   WidgetTester tester,
-  FakeVisitCamera camera,
-) async {
+  FakeVisitCamera camera, {
+  FakeVisitPhotos? photos,
+}) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 
   final container = ProviderContainer(
-    overrides: [visitCameraProvider.overrideWithValue(camera)],
+    overrides: [
+      visitCameraProvider.overrideWithValue(camera),
+      visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+    ],
   );
   addTearDown(container.dispose);
 
@@ -96,28 +102,57 @@ void main() {
     expect(find.text('녹음 화면'), findsOneWidget);
   });
 
-  testWidgets('다시 찍으면 앞 사진 파일을 지운다', (tester) async {
+  testWidgets('찍으면 기기에 남겨 둔다', (tester) async {
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg']);
+    final photos = FakeVisitPhotos();
+    await _open(tester, camera, photos: photos);
+
+    await _tapShutter(tester);
+
+    expect(photos.kept, {'/fake/visit-1.jpg': null});
+  });
+
+  testWidgets('올리기 전에 다시 찍으면 앞 사진 파일을 지운다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
-    final container = await _open(tester, camera);
+    final photos = FakeVisitPhotos();
+    final container = await _open(tester, camera, photos: photos);
 
     await _tapShutter(tester);
     await _tapShutter(tester);
 
     expect(container.read(visitPhotoProvider), '/fake/visit-2.jpg');
     expect(_shownPhoto(tester), '/fake/visit-2.jpg');
-    expect(camera.discarded, ['/fake/visit-1.jpg']);
+    expect(photos.discarded, ['/fake/visit-1.jpg']);
+    expect(photos.kept.keys, ['/fake/visit-2.jpg']);
+  });
+
+  testWidgets('올린 뒤 다시 찍으면 앞 사진 파일을 남긴다', (tester) async {
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
+    final photos = FakeVisitPhotos();
+    await _open(tester, camera, photos: photos);
+
+    await _tapShutter(tester);
+    await photos.markUploaded('/fake/visit-1.jpg', 'session-1');
+    await _tapShutter(tester);
+
+    expect(photos.discarded, isEmpty);
+    expect(photos.kept, {
+      '/fake/visit-1.jpg': 'session-1',
+      '/fake/visit-2.jpg': null,
+    });
   });
 
   testWidgets('다시 찍다가 그만두면 앞 사진을 그대로 둔다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg', null]);
-    final container = await _open(tester, camera);
+    final photos = FakeVisitPhotos();
+    final container = await _open(tester, camera, photos: photos);
 
     await _tapShutter(tester);
     await _tapShutter(tester);
 
     expect(container.read(visitPhotoProvider), '/fake/visit-1.jpg');
     expect(_shownPhoto(tester), '/fake/visit-1.jpg');
-    expect(camera.discarded, isEmpty);
+    expect(photos.discarded, isEmpty);
   });
 
   testWidgets('카메라를 열지 못하면 안내하고 사진 없이 시작할 수 있다', (tester) async {
@@ -154,18 +189,23 @@ void main() {
     expect(_shownPhoto(tester), '/fake/visit-1.jpg');
   });
 
-  test('새 회차로 비우면 찍어 둔 사진 파일을 지운다', () {
-    final camera = FakeVisitCamera();
+  test('새 회차나 로그아웃으로 비워도 사진 파일은 남긴다', () async {
+    final photos = FakeVisitPhotos();
     final container = ProviderContainer(
-      overrides: [visitCameraProvider.overrideWithValue(camera)],
+      overrides: [
+        visitCameraProvider.overrideWithValue(FakeVisitCamera()),
+        visitPhotosProvider.overrideWithValue(photos),
+      ],
     );
     addTearDown(container.dispose);
 
-    container.read(visitPhotoProvider.notifier).replace('/fake/visit-1.jpg');
+    await container
+        .read(visitPhotoProvider.notifier)
+        .replace('/fake/visit-1.jpg');
     container.invalidate(visitPhotoProvider);
-    container.read(visitPhotoProvider);
 
-    expect(camera.discarded, ['/fake/visit-1.jpg']);
     expect(container.read(visitPhotoProvider), isNull);
+    expect(photos.discarded, isEmpty);
+    expect(photos.kept.keys, ['/fake/visit-1.jpg']);
   });
 }

@@ -1,8 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+
+import 'visit_photos.dart';
 
 /// 카메라를 열지 못했다. 화면은 사진 없이 시작하도록 안내한다.
 class VisitCameraUnavailable implements Exception {
@@ -22,11 +22,9 @@ class VisitCameraUnavailable implements Exception {
 abstract interface class VisitCamera {
   /// 카메라로 한 장 찍는다. 사용자가 찍지 않고 나오면 `null` 이다.
   ///
-  /// 카메라를 열지 못하면 [VisitCameraUnavailable] 을 던진다.
+  /// 카메라를 열지 못하면 [VisitCameraUnavailable] 을 던진다. 돌려준 경로는
+  /// 카메라 앱이 남긴 임시 파일이며 [VisitPhotos.keep] 으로 옮겨 둔다.
   Future<String?> capture();
-
-  /// 찍은 사진 파일을 기기에서 지운다. 파일이 없어도 실패하지 않는다.
-  Future<void> discard(String path);
 }
 
 /// `image_picker` 로 기기 카메라 앱을 연다.
@@ -57,51 +55,30 @@ class DeviceVisitCamera implements VisitCamera {
       throw VisitCameraUnavailable(e.code);
     }
   }
-
-  @override
-  Future<void> discard(String path) async {
-    try {
-      await File(path).delete();
-    } on FileSystemException {
-      // 이미 없으면 그대로 둔다.
-    }
-  }
 }
 
 final visitCameraProvider = Provider<VisitCamera>((ref) => DeviceVisitCamera());
 
 /// 이번 회차에 찍어 둔 면회 사진의 기기 안 경로다. 찍지 않았으면 `null` 이다.
 ///
-/// 앱이 켜져 있는 동안만 들고 있다. 다시 찍으면 앞 사진 파일을 지운다. 새
-/// 회차를 시작할 때 invalidate 되며 그때도 남은 파일을 지운다.
+/// 경로는 앱이 켜져 있는 동안만 들고 있다. 새 회차를 시작하거나 로그아웃할 때
+/// invalidate 되지만 사진 파일은 지우지 않는다([VisitPhotos]). 다시 찍으면 앞
+/// 사진이 올리지 않은 것일 때만 지운다.
 class VisitPhotoNotifier extends Notifier<String?> {
-  late VisitCamera _camera;
-
-  /// [state] 와 같은 값이다. 비울 때는 ref 와 state 를 쓸 수 없어 따로 둔다.
-  String? _path;
-
   @override
   String? build() {
-    _camera = ref.watch(visitCameraProvider);
-    _path = null;
-    ref.onDispose(() {
-      final path = _path;
-      if (path != null) _camera.discard(path);
-    });
+    ref.watch(visitPhotosProvider);
     return null;
   }
 
-  void replace(String path) {
-    final previous = _path;
-    state = _path = path;
-    if (previous != null && previous != path) _camera.discard(previous);
-  }
-
-  /// 서버에 올린 뒤 기기의 사진 파일을 지운다.
-  void forget() {
-    final path = _path;
-    state = _path = null;
-    if (path != null) _camera.discard(path);
+  /// 카메라가 남긴 [capturedPath] 를 앱 전용 공간으로 옮겨 이번 사진으로 둔다.
+  Future<void> replace(String capturedPath) async {
+    final photos = ref.read(visitPhotosProvider);
+    final kept = await photos.keep(capturedPath);
+    if (!ref.mounted) return;
+    final previous = state;
+    state = kept;
+    if (previous != null && previous != kept) await photos.discard(previous);
   }
 }
 

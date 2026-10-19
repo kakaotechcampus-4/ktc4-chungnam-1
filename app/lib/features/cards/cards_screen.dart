@@ -156,6 +156,7 @@ class _BodyState extends ConsumerState<_Body> {
           onPressed: state.canStart
               ? () {
                   // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
+                  // 사진 파일은 녹음처럼 기기에 남긴다(visit_photos.dart).
                   ref.invalidate(visitControllerProvider);
                   ref.invalidate(reviewControllerProvider);
                   ref.invalidate(visitPhotoProvider);

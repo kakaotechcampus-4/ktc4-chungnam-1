@@ -40,7 +40,9 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
     try {
       final path = await ref.read(visitCameraProvider).capture();
       // 찍지 않고 나오면 앞에 찍은 사진을 그대로 둔다.
-      if (path != null) ref.read(visitPhotoProvider.notifier).replace(path);
+      if (path != null) {
+        await ref.read(visitPhotoProvider.notifier).replace(path);
+      }
     } on VisitCameraUnavailable {
       if (mounted) setState(() => _cameraFailed = true);
     } finally {

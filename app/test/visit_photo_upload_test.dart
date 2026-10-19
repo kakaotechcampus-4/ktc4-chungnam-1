@@ -17,16 +17,17 @@ import 'package:saerok/features/visit/visit_recorder.dart';
 import 'fake_card_api.dart';
 import 'fake_visit_api.dart';
 import 'fake_visit_camera.dart';
+import 'fake_visit_photos.dart';
 import 'fake_visit_recorder.dart';
 
 const _photo = '/fake/visit-photo.jpg';
 
-ProviderContainer _container(FakeVisitApi api, FakeVisitCamera camera) {
+ProviderContainer _container(FakeVisitApi api, [FakeVisitPhotos? photos]) {
   final container = ProviderContainer(
     overrides: [
       visitRecorderProvider.overrideWithValue(FakeVisitRecorder()),
-      visitCameraProvider.overrideWithValue(camera),
-      ...mockCardsWith(visitApi: api),
+      visitCameraProvider.overrideWithValue(FakeVisitCamera()),
+      ...mockCardsWith(visitApi: api, visitPhotos: photos),
     ],
   );
   addTearDown(container.dispose);
@@ -42,7 +43,9 @@ Future<VisitController> _prepare(
   container
       .read(cardsControllerProvider.notifier)
       .toggleSelected(cards.cards.first.cardId);
-  if (photo != null) container.read(visitPhotoProvider.notifier).replace(photo);
+  if (photo != null) {
+    await container.read(visitPhotoProvider.notifier).replace(photo);
+  }
 
   await container.read(visitControllerProvider.future);
   return container.read(visitControllerProvider.notifier);
@@ -68,7 +71,7 @@ void main() {
 
   test('사진이 없으면 올리지 않는다', () async {
     final api = FakeVisitApi();
-    final container = _container(api, FakeVisitCamera());
+    final container = _container(api);
 
     await _start(container, photo: null);
 
@@ -77,10 +80,10 @@ void main() {
     expect(_read(container).recording, isTrue);
   });
 
-  test('회차를 만든 뒤 사진을 올리고 기기 파일을 지운다', () async {
+  test('회차를 만든 뒤 사진을 올리고 기기 파일은 남긴다', () async {
     final api = FakeVisitApi();
-    final camera = FakeVisitCamera();
-    final container = _container(api, camera);
+    final photos = FakeVisitPhotos();
+    final container = _container(api, photos);
 
     await _start(container);
 
@@ -91,13 +94,13 @@ void main() {
     ));
     expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
     expect(_read(container).recording, isTrue);
-    expect(container.read(visitPhotoProvider), isNull);
-    expect(camera.discarded, [_photo]);
+    expect(photos.discarded, isEmpty);
+    expect(photos.kept, {_photo: FakeVisitApi.sessionId});
   });
 
   test('연결이 끊기면 한 번 더 올린다', () async {
     final api = FakeVisitApi()..photoFailures.add(const ApiNetworkFailure());
-    final container = _container(api, FakeVisitCamera());
+    final container = _container(api);
 
     await _start(container);
 
@@ -115,21 +118,21 @@ void main() {
           retryable: true,
         ),
       ]);
-    final camera = FakeVisitCamera();
-    final container = _container(api, camera);
+    final photos = FakeVisitPhotos();
+    final container = _container(api, photos);
 
     final visit = await _start(container);
 
     expect(api.calls.where((c) => c == 'photo'), hasLength(2));
     expect(_read(container).photoUpload, VisitPhotoUpload.failed);
     expect(container.read(visitPhotoProvider), _photo, reason: '다시 올릴 파일');
-    expect(camera.discarded, isEmpty);
+    expect(photos.kept, {_photo: null});
 
     await visit.retryPhotoUpload();
 
     expect(api.calls.where((c) => c == 'photo'), hasLength(3));
     expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
-    expect(camera.discarded, [_photo]);
+    expect(photos.kept, {_photo: FakeVisitApi.sessionId});
   });
 
   test('다시 올려도 받지 않는 거절이면 다시 올리지 않는다', () async {
@@ -140,7 +143,7 @@ void main() {
           errorCode: 'INVALID_IMAGE_FORMAT',
         ),
       );
-    final container = _container(api, FakeVisitCamera());
+    final container = _container(api);
 
     final visit = await _start(container);
 
@@ -153,7 +156,7 @@ void main() {
 
   test('회차를 만들지 못하면 사진도 올리지 않는다', () async {
     final api = FakeVisitApi(failCreate: true);
-    final container = _container(api, FakeVisitCamera());
+    final container = _container(api);
 
     await _start(container);
 
@@ -194,7 +197,7 @@ void main() {
     }
 
     testWidgets('올렸으면 아무것도 알리지 않는다', (tester) async {
-      final container = _container(FakeVisitApi(), FakeVisitCamera());
+      final container = _container(FakeVisitApi());
       await openRecording(tester, container);
 
       expect(find.textContaining('사진을 올리지 못'), findsNothing);
@@ -206,7 +209,7 @@ void main() {
           const ApiNetworkFailure(),
           const ApiNetworkFailure(),
         ]);
-      final container = _container(api, FakeVisitCamera());
+      final container = _container(api);
       await openRecording(tester, container);
 
       // 알림 띠가 올라올 시간을 준다.
@@ -233,7 +236,7 @@ void main() {
           const ApiNetworkFailure(),
           const ApiNetworkFailure(),
         ]);
-      final container = _container(api, FakeVisitCamera());
+      final container = _container(api);
       await openRecording(tester, container);
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('사진 다시 올리기'), findsOneWidget);
@@ -254,7 +257,7 @@ void main() {
         ..photoFailures.add(
           const ApiServerFailure(statusCode: 413, errorCode: 'IMAGE_TOO_LARGE'),
         );
-      final container = _container(api, FakeVisitCamera());
+      final container = _container(api);
       await openRecording(tester, container);
 
       await tester.pump(const Duration(milliseconds: 500));
