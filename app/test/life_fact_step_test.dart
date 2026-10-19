@@ -717,6 +717,11 @@ void main() {
 
       expect(find.text('합성 문장입니다'), findsOneWidget);
       expect(find.textContaining('5분이 지나 녹음을 멈췄어요.'), findsOneWidget);
+      expect(
+        find.text('다시 녹음하기'),
+        findsNothing,
+        reason: '5분 말한 결과를 한 번에 버리지 않게 한다',
+      );
     });
 
     testWidgets('다 말했다고 알려 끝내면 최대 길이 안내는 없고 다시 녹음할 수 있다', (tester) async {
@@ -730,6 +735,37 @@ void main() {
       expect(find.textContaining('5분이 지나'), findsNothing);
       expect(find.text('다시 녹음하기'), findsOneWidget);
     });
+
+    // 한국어로 5분 말하면 1,000자를 넘는다. 상자가 없을 때는 500자에서 넘쳤다.
+    final longText = '합성 예시 문장입니다. ' * 120;
+
+    for (final atLimit in [false, true]) {
+      testWidgets('긴 문장도 화면을 넘치지 않고 상자 안에서 스크롤한다${atLimit ? ' (5분)' : ''}', (
+        tester,
+      ) async {
+        _useReferenceScreen(tester);
+        final speech = _FixedSpeech(SpeechHeard(longText), Duration.zero);
+        await tester.pumpWidget(
+          _wrap(outcome: const SpeechNotHeard(), speech: speech),
+        );
+
+        await tester.tap(find.text('말로 답하기'));
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.mic));
+        await tester.pumpAndSettle();
+        if (atLimit) {
+          speech.last!.limit.complete();
+        } else {
+          await tester.tap(find.text('다 말했어요'));
+        }
+        await tester.pumpAndSettle();
+
+        // 넘치면 그리는 중 오류가 나서 여기까지 오지 못한다.
+        expect(find.text(longText), findsOneWidget);
+        expect(find.byType(Scrollbar), findsOneWidget);
+        expect(find.text('글로 답할게요'), findsOneWidget);
+      });
+    }
 
     testWidgets('글로 바꾸면 알아들은 문장을 입력칸에 채우고 다시 비우지 않는다', (tester) async {
       _useReferenceScreen(tester);

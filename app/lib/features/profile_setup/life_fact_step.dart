@@ -566,9 +566,10 @@ class _MicArea extends StatelessWidget {
 
     return Column(
       children: [
+        // 알아들은 뒤에는 결과 상자를 둘 자리를 내려고 체크를 작게 그린다.
         SizedBox(
-          width: 120,
-          height: 120,
+          width: heard ? 64 : 120,
+          height: heard ? 64 : 120,
           child: heard
               ? Container(
                   decoration: const BoxDecoration(
@@ -577,7 +578,7 @@ class _MicArea extends StatelessWidget {
                   ),
                   child: const Icon(
                     Icons.check,
-                    size: 56,
+                    size: 32,
                     color: AppColors.background,
                   ),
                 )
@@ -650,23 +651,79 @@ class _MicArea extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
           ],
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: Text(
-              heardText ?? '',
-              style: AppTypography.body,
-              textAlign: TextAlign.center,
+          _HeardBox(text: heardText ?? ''),
+          // 5분을 말한 결과를 한 번에 버리지 않게 다시 녹음하기를 숨긴다. 다시
+          // 녹음하려면 글로 답할게요 → 말로 답할게요로 간다.
+          if (!stoppedAtLimit) ...[
+            const SizedBox(height: AppSpacing.sm),
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(foregroundColor: AppColors.textSub),
+              child: const Text('다시 녹음하기', style: AppTypography.sub),
             ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          TextButton(
-            onPressed: onRetry,
-            style: TextButton.styleFrom(foregroundColor: AppColors.textSub),
-            child: const Text('다시 녹음하기', style: AppTypography.sub),
-          ),
+          ],
         ] else
           const Text('마이크를 누르고 말씀해주세요', style: AppTypography.sub),
       ],
+    );
+  }
+}
+
+/// 알아들은 문장을 담는 상자.
+///
+/// 세부 정보 화면은 스크롤하지 않는다. 길게 말하면 문장이 화면을 넘치므로
+/// 상자 높이를 [_lines] 줄로 정하고 상자 안에서 스크롤한다. 뒤에 더 있다는
+/// 것을 알 수 있게 스크롤 막대를 늘 보인다. 대부분 4줄을 넘기므로 짧은
+/// 답에도 같은 높이를 둬 화면 모양이 답마다 달라지지 않게 한다.
+/// 위의 예시 문장 상자(회색)와 헷갈리지 않게 흰 바탕에 테두리를 둔다.
+class _HeardBox extends StatefulWidget {
+  const _HeardBox({required this.text});
+
+  final String text;
+
+  static const _lines = 4;
+
+  @override
+  State<_HeardBox> createState() => _HeardBoxState();
+}
+
+class _HeardBoxState extends State<_HeardBox> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const style = AppTypography.body;
+    final lineHeight =
+        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
+
+    return Container(
+      height: lineHeight * _HeardBox._lines + AppSpacing.md * 2,
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Scrollbar(
+        controller: _scroll,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _scroll,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(widget.text, style: style),
+          ),
+        ),
+      ),
     );
   }
 }
