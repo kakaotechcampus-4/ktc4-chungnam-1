@@ -83,7 +83,8 @@ uploading → queued → transcribing → sttCompleted
 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 리포트 저장과
 `completed`는 한 트랜잭션이며 끝난 작업의 상태는 다시 바꾸지 않는다(README 평가와 리포트 API).
 STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 와도 전사문을 남기지 않고 리포트
-생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다.
+생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다. 이때 worker는
+`speech_analysis_stopped` info 로그에 작업 ID(`analysis_id`)와 멈춘 단계(`stage`)만 남긴다.
 `--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
