@@ -67,10 +67,15 @@ async def list_reports(
     profile_id: UUID,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    storage: ImageStorageDep,
     limit: Limit = 20,
 ) -> ReportListResponse:
     items = await reports.list_reports(
-        connection, profile_id, account_id=account.account_id, limit=limit
+        connection,
+        profile_id,
+        account_id=account.account_id,
+        limit=limit,
+        storage=storage,
     )
     return ReportListResponse(reports=items)
 

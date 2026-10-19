@@ -21,11 +21,18 @@ class VisitSessionListResponse(ApiModel):
     sessions: list[VisitSession]
 
 
+class ReportPhoto(ApiModel):
+    photo_id: UUID = Field(alias="photoId")
+    image_url: str = Field(alias="imageUrl")
+    image_url_expires_at: datetime = Field(alias="imageUrlExpiresAt")
+
+
 class ReportSummary(ApiModel):
     session_id: UUID = Field(alias="sessionId")
     title: str
     visit_date: date = Field(alias="visitDate")
     mood: Mood
+    photo: ReportPhoto | None
 
 
 class ReportListResponse(ApiModel):
@@ -33,12 +40,6 @@ class ReportListResponse(ApiModel):
 
     schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
     reports: list[ReportSummary]
-
-
-class ReportPhoto(ApiModel):
-    photo_id: UUID = Field(alias="photoId")
-    image_url: str = Field(alias="imageUrl")
-    image_url_expires_at: datetime = Field(alias="imageUrlExpiresAt")
 
 
 class CardSummary(ApiModel):
