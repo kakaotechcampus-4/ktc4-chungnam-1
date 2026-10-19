@@ -905,6 +905,7 @@ void main() {
     testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
+      final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -920,6 +921,7 @@ void main() {
           store: store,
           session: _signedIn(),
           initialLocation: AppRoutes.profile,
+          photos: photos,
         ),
       );
 
@@ -931,6 +933,9 @@ void main() {
       expect(paths, ['POST /auth/logout']);
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
+      expect(photos.forgottenAccounts, isEmpty, reason: '로그아웃은 면회 사진을 지우지 않는다');
+      expect(photos.discarded, isEmpty);
+      expect(photos.kept.keys, ['/fake/visit-1.jpg']);
     });
   });
 
