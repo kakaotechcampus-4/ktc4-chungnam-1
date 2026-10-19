@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -20,6 +21,8 @@ from app.services.speech_analysis_jobs import (
     SpeechAnalysisStatus,
 )
 from app.workers.base import OpenConnection, Worker
+
+logger = logging.getLogger("saerok.speech_analysis")
 
 
 class ReportGenerator(Protocol):
@@ -233,10 +236,12 @@ class SpeechAnalysisProcessor:
             analysis_id=job.analysis_id,
             transcript=_transcript_for_report(speech),
         ):
+            _log_stopped(job, stage=SpeechAnalysisStatus.STT_COMPLETED)
             return
         if self._report_generator is None:
             return
         if not await jobs.mark_generating_report(analysis_id=job.analysis_id):
+            _log_stopped(job, stage=SpeechAnalysisStatus.GENERATING_REPORT)
             return
         await self._report_generator.generate(
             connection, session_id=job.session_id, speech=speech
@@ -308,6 +313,15 @@ async def _delete_audio(
             retryable=True,
         ) from error
     await jobs.mark_audio_deleted(analysis_id=job.analysis_id)
+
+
+def _log_stopped(job: SpeechAnalysisJob, *, stage: SpeechAnalysisStatus) -> None:
+    # 다른 처리(임대 만료 정리 등)가 먼저 끝낸 작업이라 후속 처리를 멈췄다. 정리 로그는
+    # 건수만 남기므로 작업 ID와 멈춘 단계를 여기서 남긴다. 예상된 중단이라 info다.
+    # 전사문, 객체 키와 음성 주소는 넣지 않는다.
+    logger.info(
+        "speech_analysis_stopped analysis_id=%s stage=%s", job.analysis_id, stage
+    )
 
 
 def _transcript_for_report(speech: SpeechAnalysisResult) -> dict[str, Any]:
