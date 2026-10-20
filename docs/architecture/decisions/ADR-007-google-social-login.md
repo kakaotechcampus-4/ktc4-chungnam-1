@@ -87,7 +87,7 @@
 - `docs/legal/README.md`, `consent-draft.md`와 `consent-mapping.md`에 수집 항목, 처리 목적, 보관 기간, 삭제 절차와 위 판단을 기록한다.
 - 이 문서는 `proposed`이며 BE 리더 단독으로 확정하지 않는다. ADR-006의 서버 중심 데이터 관리와 함께 읽고 PM, BE와 FE가 같은 검토에서 확정한다.
 - 로그인 구현과 개발 스키마는 이미 추가됐다. 미확정인 계정 저장 항목은 공동 검토 후 DB 연동에 반영하며, 문서가 `proposed`라는 이유로 이미 있는 코드나 스키마를 없는 것으로 취급하지 않는다.
-- 안드로이드 OAuth 클라이언트는 패키지명 `com.saelog.app`과 서명 인증서 SHA-1을 Google Cloud Console에 등록해야 동작한다. 디버그 키와 릴리스 키의 SHA-1이 다르므로 둘 다 등록한다.
+- 안드로이드 OAuth 클라이언트는 패키지명 `com.saerok.app`과 서명 인증서 SHA-1을 Google Cloud Console에 등록해야 동작한다. 디버그 키와 릴리스 키의 SHA-1이 다르므로 둘 다 등록한다.
 - 클라이언트 ID는 비밀이 아니지만 저장소에 자격증명 파일을 두지 않는다. `.gitignore`의 `client_secret_*.json`과 서비스 계정 키 규칙을 유지한다.
 
 ## 검증

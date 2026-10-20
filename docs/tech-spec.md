@@ -150,7 +150,7 @@
 
 ## 트레이드오프
 
-Android 우선 Flutter와 앱 식별자는 ADR-002, 상태 관리와 라우팅은 ADR-005, 동의와 원본 임시 처리는 ADR-001, STT와 VLM 실행 위치는 ADR-006을 따른다. [ADR 목록](architecture/decisions/README.md)에서 선택 이유와 이전 대안을 확인한다.
+Android 우선 Flutter와 앱 식별자는 ADR-009, 상태 관리와 라우팅은 ADR-005, 동의와 원본 임시 처리는 ADR-001, STT와 VLM 실행 위치는 ADR-006을 따른다. [ADR 목록](architecture/decisions/README.md)에서 선택 이유와 이전 대안을 확인한다.
 
 남은 비교는 서버 모델의 품질/지연/메모리, 화자 전환 탐지와 신원 식별 범위, 카드 및 리포트 생성 모델의 품질/비용이다. 온디바이스는 현재 MVP 범위에서 제외됐다.
 
