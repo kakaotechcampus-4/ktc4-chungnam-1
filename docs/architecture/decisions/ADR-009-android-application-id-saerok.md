@@ -31,7 +31,7 @@ Android 빌드 설정, 매니페스트, 테스트 패키지와 외부 서비스 
 
 - Android 빌드 설정(`namespace`, `applicationId`)과 Kotlin 패키지 경로
 - Google Cloud Console의 Android OAuth 클라이언트. `com.saerok.app`과 기존 디버그·릴리스 SHA-1로 다시 등록해야 구글 로그인이 동작한다. SHA-1은 서명 키에서 나오므로 값은 바뀌지 않는다
-- 웹 클라이언트 ID(`serverClientId`, 서버의 `SAEROK_GOOGLE_CLIENT_IDS`)는 Application ID와 관계없어 바뀌지 않는다
+- 웹 클라이언트 ID(`serverClientId`, 서버의 `SAEROK_GOOGLE_CLIENT_IDS`)는 Application ID와 관계없어 이 결정만으로는 바뀌지 않는다. 팀 전용 개발 계정의 Google 프로젝트로 옮기며 새로 발급되면 앱과 서버 값을 함께 바꾼다
 - 기존 `com.saelog.app` 빌드가 설치된 기기에서는 다른 앱으로 설치된다. 옛 앱의 앱 내부 저장소(`/data/user/0/com.saelog.app/...`)에 있던 파일은 옮겨지지 않는다
 - 앱 식별자를 안내하는 프로젝트 문서
 
