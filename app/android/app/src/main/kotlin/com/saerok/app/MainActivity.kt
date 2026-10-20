@@ -1,4 +1,4 @@
-package com.saelog.app
+package com.saerok.app
 
 import io.flutter.embedding.android.FlutterActivity
 
