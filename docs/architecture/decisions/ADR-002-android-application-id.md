@@ -10,7 +10,7 @@
 
 관련 Issue: #3
 
-현재 Application ID는 [ADR-009](ADR-009-android-application-id-saerok.md)의 `com.saerok.app`을 따른다. 아래는 당시 결정 기록이며 `com.saelog.app`은 현재 기준이 아니다.
+현재 Application ID는 [ADR-009](ADR-009-android-application-id-saerok.md)의 `app.saerok.android`를 따른다. 아래는 당시 결정 기록이며 `com.saelog.app`은 현재 기준이 아니다.
 
 ## 배경
 
