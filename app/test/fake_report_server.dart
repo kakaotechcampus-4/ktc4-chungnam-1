@@ -93,6 +93,7 @@ class FakeReportServer {
                 'title': r['title'],
                 'visitDate': r['visitDate'],
                 'mood': r['mood'],
+                'photo': r['photo'],
               },
         ],
       });
