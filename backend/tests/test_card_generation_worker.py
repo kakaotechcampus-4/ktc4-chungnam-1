@@ -3,8 +3,15 @@
 임시 DB에 최신 migration을 적용해 실행(`conftest.py`). 값은 모두 합성 데이터.
 """
 
+import json
+
 import card_generation as ai
+import card_generation.generate as card_generation_module
+import httpx
+import openai
 import pytest
+from common.llm import ENDPOINTS
+from langchain_core.exceptions import OutputParserException
 from psycopg.types.json import Jsonb
 
 from app.core.config import Settings
@@ -368,6 +375,64 @@ def test_card_generator_keeps_the_ai_failure_code(migrated_database_url, monkeyp
     card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
 
     assert (card_set["status"], card_set["error_code"]) == ("failed", "NOT_ENOUGH_TOPICS")
+    assert cards == []
+
+
+def test_card_generator_refuses_to_start_with_a_model_the_ai_package_cannot_call():
+    """4-1이 저장할 모델이 ENDPOINTS에 없으면 작업마다 실패하므로 worker를 시작하지 않는다."""
+    assert Settings(_env_file=None).card_generation_model in ENDPOINTS
+    with pytest.raises(RuntimeError, match="SAEROK_CARD_GENERATION_MODEL"):
+        card_generator(
+            Settings(_env_file=None, ml_api_key="synthetic-key", card_generation_model="synthetic-model")
+        )
+
+
+# ── 생성 오류 구분(#143) ─────────────────────────────────────
+# `ai/`의 실제 generate_cards 안에서 모델을 부르는 단계(recommend)에 예외를 넣는다.
+# _seed의 작업은 합성 모델 이름이라 ENDPOINTS에 있는 모델과 있는 판으로 바꿔 부른다.
+
+_SYNTHETIC_REQUEST = httpx.Request("POST", "https://synthetic.invalid/v1/responses")
+_CARD_CALL_ERRORS = {
+    "connection": (lambda: openai.APIConnectionError(request=_SYNTHETIC_REQUEST), "LLM_UNAVAILABLE"),
+    "timeout": (lambda: openai.APITimeoutError(request=_SYNTHETIC_REQUEST), "LLM_UNAVAILABLE"),
+    "bad_request": (
+        lambda: openai.BadRequestError(
+            "synthetic", response=httpx.Response(400, request=_SYNTHETIC_REQUEST), body=None
+        ),
+        "CARD_GENERATION_FAILED",
+    ),
+    "truncated_json": (
+        lambda: OutputParserException('synthetic {"cards": [{"cardTitle": "합성'),
+        "CARD_GENERATION_FAILED",
+    ),
+    "json_decode": (
+        lambda: json.JSONDecodeError("Unterminated string", '{"cards": [{"cardTitle": "합성', 10),
+        "CARD_GENERATION_FAILED",
+    ),
+    # 후보를 하나도 못 찾으면 카드 12장을 채울 수 없어 실패다(카드에는 0장 정상 완료가 없음).
+    "no_candidates": (lambda: card_generation_module.RecommendFailed("synthetic"), "NOT_ENOUGH_TOPICS"),
+}
+
+
+@pytest.mark.parametrize("case", list(_CARD_CALL_ERRORS))
+def test_card_model_call_errors_keep_the_ai_failure_code(migrated_database_url, monkeypatch, case):
+    make_error, error_code = _CARD_CALL_ERRORS[case]
+    called = []
+    real_generate_cards = ai.generate_cards
+
+    def fail(*args, **kwargs):
+        called.append(case)
+        raise make_error()
+
+    def generate_cards(request, *, api_key):
+        sent = request.model_copy(update={"model": next(iter(ENDPOINTS)), "prompt_version": 1})
+        return real_generate_cards(sent, api_key=api_key, time_limit=5)
+
+    monkeypatch.setattr(card_generation_module, "recommend", fail)
+    card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
+
+    assert called == [case]
+    assert (card_set["status"], card_set["error_code"]) == ("failed", error_code)
     assert cards == []
 
 
