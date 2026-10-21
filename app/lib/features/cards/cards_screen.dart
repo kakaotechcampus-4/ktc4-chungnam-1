@@ -17,6 +17,7 @@ import '../../widgets/app_surfaces.dart';
 import '../review/review_controller.dart';
 import '../visit/visit_camera.dart';
 import '../visit/visit_controller.dart';
+import '../visit/visit_photos.dart';
 import 'card_generation_controller.dart';
 import 'cards_controller.dart';
 
@@ -156,10 +157,17 @@ class _BodyState extends ConsumerState<_Body> {
           onPressed: state.canStart
               ? () {
                   // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
-                  // 사진 파일은 녹음처럼 기기에 남긴다(visit_photos.dart).
+                  // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
+                  // (visit_photos.dart). 못 지워도 면회는 시작한다.
                   ref.invalidate(visitControllerProvider);
                   ref.invalidate(reviewControllerProvider);
                   ref.invalidate(visitPhotoProvider);
+                  unawaited(
+                    ref
+                        .read(visitPhotosProvider)
+                        .tidy()
+                        .catchError((Object _) {}),
+                  );
                   context.push(AppRoutes.visitPhoto);
                 }
               : null,
