@@ -37,17 +37,21 @@ ProviderContainer _container(FakeVisitApi api, [FakeVisitPhotos? photos]) {
   return container;
 }
 
-/// 카드 한 장을 고르고, [photo] 가 있으면 찍어 둔다.
+/// 카드 한 장을 고르고, [photo] 가 있으면 찍어 둔다. [inGallery] 는 갤러리에
+/// 원본을 남겼는지다.
 Future<VisitController> _prepare(
   ProviderContainer container, {
   String? photo = _photo,
+  bool inGallery = true,
 }) async {
   final cards = await container.read(cardsControllerProvider.future);
   container
       .read(cardsControllerProvider.notifier)
       .toggleSelected(cards.cards.first.cardId);
   if (photo != null) {
-    await container.read(visitPhotoProvider.notifier).replace(photo);
+    await container
+        .read(visitPhotoProvider.notifier)
+        .replace(photo, inGallery: inGallery);
   }
 
   await container.read(visitControllerProvider.future);
@@ -58,8 +62,9 @@ Future<VisitController> _prepare(
 Future<VisitController> _start(
   ProviderContainer container, {
   String? photo = _photo,
+  bool inGallery = true,
 }) async {
-  final visit = await _prepare(container, photo: photo);
+  final visit = await _prepare(container, photo: photo, inGallery: inGallery);
   await visit.startRecording();
   // 사진은 녹음과 따로 올라가므로 끝날 때까지 기다린다.
   await pumpEventQueue();
@@ -83,7 +88,7 @@ void main() {
     expect(_read(container).recording, isTrue);
   });
 
-  test('회차를 만든 뒤 사진을 올리고 기기 파일은 남긴다', () async {
+  test('회차를 만든 뒤 사진을 올리고, 갤러리에 원본이 있으면 사본을 지운다', () async {
     final api = FakeVisitApi();
     final photos = FakeVisitPhotos();
     final container = _container(api, photos);
@@ -97,6 +102,18 @@ void main() {
     ));
     expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
     expect(_read(container).recording, isTrue);
+    expect(photos.discarded, [_photo]);
+    expect(photos.kept, isEmpty);
+  });
+
+  test('갤러리에 원본이 없으면 올린 뒤에도 사본을 남긴다', () async {
+    final api = FakeVisitApi();
+    final photos = FakeVisitPhotos();
+    final container = _container(api, photos);
+
+    await _start(container, inGallery: false);
+
+    expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
     expect(photos.discarded, isEmpty);
     expect(photos.kept, {_photo: FakeVisitApi.sessionId});
   });
@@ -135,7 +152,7 @@ void main() {
 
     expect(api.calls.where((c) => c == 'photo'), hasLength(3));
     expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
-    expect(photos.kept, {_photo: FakeVisitApi.sessionId});
+    expect(photos.discarded, [_photo]);
   });
 
   test('다시 올려도 받지 않는 거절이면 다시 올리지 않는다', () async {
@@ -181,7 +198,9 @@ void main() {
     await _start(container);
     expect(_read(container).photoUpload, VisitPhotoUpload.uploading);
 
-    await container.read(visitPhotoProvider.notifier).replace(retaken);
+    await container
+        .read(visitPhotoProvider.notifier)
+        .replace(retaken, inGallery: true);
     expect(photos.discarded, isEmpty, reason: '올리는 중인 사진은 지우지 않는다');
 
     api.photoGate!.complete();
@@ -190,14 +209,11 @@ void main() {
     expect(api.photos.map((p) => p.photoPath), [_photo, retaken]);
     expect(container.read(visitPhotoProvider), retaken);
     expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
-    expect(photos.discarded, isEmpty);
-    expect(photos.kept, {
-      _photo: FakeVisitApi.sessionId,
-      retaken: FakeVisitApi.sessionId,
-    });
+    expect(photos.discarded, [_photo, retaken], reason: '둘 다 갤러리에 있다');
+    expect(photos.kept, isEmpty);
   });
 
-  test('올리는 중에 다시 찍고 앞 사진이 실패하면 앞 사진만 지운다', () async {
+  test('올리는 중에 다시 찍고 앞 사진이 실패하면 앞 사진은 올리기가 끝난 뒤 지운다', () async {
     const retaken = '/fake/visit-photo-2.jpg';
     final api = FakeVisitApi()
       ..photoGate = Completer()
@@ -211,7 +227,11 @@ void main() {
     final container = _container(api, photos);
 
     await _start(container);
-    await container.read(visitPhotoProvider.notifier).replace(retaken);
+    // 새 사진은 갤러리에 남기지 못해 올린 뒤에도 사본을 남긴다.
+    await container
+        .read(visitPhotoProvider.notifier)
+        .replace(retaken, inGallery: false);
+    expect(photos.discarded, isEmpty, reason: '올리는 중인 사진은 지우지 않는다');
     api.photoGate!.complete();
     await pumpEventQueue();
 

@@ -8,16 +8,19 @@ import 'package:go_router/go_router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/visit/visit_camera.dart';
+import 'package:saerok/features/visit/visit_gallery.dart';
 import 'package:saerok/features/visit/visit_photo_screen.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
 
 import 'fake_visit_camera.dart';
+import 'fake_visit_gallery.dart';
 import 'fake_visit_photos.dart';
 
 Future<ProviderContainer> _open(
   WidgetTester tester,
   FakeVisitCamera camera, {
   FakeVisitPhotos? photos,
+  FakeVisitGallery? gallery,
 }) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
@@ -28,6 +31,7 @@ Future<ProviderContainer> _open(
     overrides: [
       visitCameraProvider.overrideWithValue(camera),
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      visitGalleryProvider.overrideWithValue(gallery ?? FakeVisitGallery()),
     ],
   );
   addTearDown(container.dispose);
@@ -103,44 +107,75 @@ void main() {
     expect(find.text('녹음 화면'), findsOneWidget);
   });
 
-  testWidgets('찍으면 기기에 남겨 둔다', (tester) async {
+  testWidgets('찍으면 갤러리에 원본을 남기고 사본을 둔다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg']);
     final photos = FakeVisitPhotos();
-    await _open(tester, camera, photos: photos);
+    final gallery = FakeVisitGallery();
+    await _open(tester, camera, photos: photos, gallery: gallery);
 
     await _tapShutter(tester);
 
+    expect(gallery.saved, ['/fake/visit-1.jpg']);
     expect(photos.kept, {'/fake/visit-1.jpg': null});
+    expect(photos.inGallery, {'/fake/visit-1.jpg'});
+    expect(find.textContaining('갤러리에 저장하지 못했어요'), findsNothing);
   });
 
-  testWidgets('올리기 전에 다시 찍으면 앞 사진 파일을 지운다', (tester) async {
+  testWidgets('다시 찍으면 앞 사진은 갤러리에 두고 사본만 지운다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
     final photos = FakeVisitPhotos();
-    final container = await _open(tester, camera, photos: photos);
+    final gallery = FakeVisitGallery();
+    final container = await _open(
+      tester,
+      camera,
+      photos: photos,
+      gallery: gallery,
+    );
 
     await _tapShutter(tester);
     await _tapShutter(tester);
 
     expect(container.read(visitPhotoProvider), '/fake/visit-2.jpg');
     expect(_shownPhoto(tester), '/fake/visit-2.jpg');
+    expect(gallery.saved, ['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
     expect(photos.discarded, ['/fake/visit-1.jpg']);
     expect(photos.kept.keys, ['/fake/visit-2.jpg']);
   });
 
-  testWidgets('올린 뒤 다시 찍으면 앞 사진 파일을 남긴다', (tester) async {
+  testWidgets('갤러리에 저장하지 못하면 안내하고 사진은 그대로 쓴다', (tester) async {
+    final camera = FakeVisitCamera(['/fake/visit-1.jpg']);
+    final photos = FakeVisitPhotos();
+    final container = await _open(
+      tester,
+      camera,
+      photos: photos,
+      gallery: FakeVisitGallery(fails: true),
+    );
+
+    await _tapShutter(tester);
+
+    expect(find.textContaining('갤러리에 저장하지 못했어요'), findsOneWidget);
+    expect(container.read(visitPhotoProvider), '/fake/visit-1.jpg');
+    expect(photos.inGallery, isEmpty);
+
+    await tester.tap(find.text('이 사진으로 시작하기'));
+    await tester.pumpAndSettle();
+    expect(find.text('녹음 화면'), findsOneWidget);
+  });
+
+  testWidgets('갤러리에 남기지 못한 사진은 다시 찍어도 사본을 남긴다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
     final photos = FakeVisitPhotos();
-    await _open(tester, camera, photos: photos);
+    final gallery = FakeVisitGallery(fails: true);
+    await _open(tester, camera, photos: photos, gallery: gallery);
 
     await _tapShutter(tester);
-    await photos.markUploaded('/fake/visit-1.jpg', 'session-1');
+    gallery.fails = false;
     await _tapShutter(tester);
 
-    expect(photos.discarded, isEmpty);
-    expect(photos.kept, {
-      '/fake/visit-1.jpg': 'session-1',
-      '/fake/visit-2.jpg': null,
-    });
+    expect(photos.discarded, isEmpty, reason: '사본이 하나뿐인 원본이다');
+    expect(photos.kept.keys, ['/fake/visit-1.jpg', '/fake/visit-2.jpg']);
+    expect(find.textContaining('갤러리에 저장하지 못했어요'), findsNothing);
   });
 
   testWidgets('다시 찍다가 그만두면 앞 사진을 그대로 둔다', (tester) async {
@@ -206,10 +241,16 @@ void main() {
     expect(find.text('녹음 화면'), findsOneWidget);
   });
 
-  testWidgets('카메라가 열린 사이 화면을 떠나면 찍은 결과를 쓰지 않는다', (tester) async {
+  testWidgets('카메라가 열린 사이 화면을 떠나면 갤러리에만 남기고 면회에 쓰지 않는다', (tester) async {
     final camera = FakeVisitCamera(['/fake/visit-1.jpg'])..gate = Completer();
     final photos = FakeVisitPhotos();
-    final container = await _open(tester, camera, photos: photos);
+    final gallery = FakeVisitGallery();
+    final container = await _open(
+      tester,
+      camera,
+      photos: photos,
+      gallery: gallery,
+    );
 
     await tester.tap(find.bySemanticsLabel('사진 찍기'));
     await tester.pump();
@@ -227,6 +268,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(container.read(visitPhotoProvider), isNull);
     expect(photos.kept, isEmpty);
+    expect(gallery.saved, ['/fake/visit-1.jpg']);
   });
 
   test('새 회차나 로그아웃으로 비워도 사진 파일은 남긴다', () async {
@@ -241,7 +283,7 @@ void main() {
 
     await container
         .read(visitPhotoProvider.notifier)
-        .replace('/fake/visit-1.jpg');
+        .replace('/fake/visit-1.jpg', inGallery: true);
     container.invalidate(visitPhotoProvider);
 
     expect(container.read(visitPhotoProvider), isNull);

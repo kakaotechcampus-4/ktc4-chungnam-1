@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'visit_gallery.dart';
 import 'visit_photos.dart';
 
 /// 카메라를 열지 못했다. 화면은 사진 없이 시작하도록 안내한다.
@@ -25,7 +26,8 @@ abstract interface class VisitCamera {
   /// 카메라로 한 장 찍는다. 사용자가 찍지 않고 나오면 `null` 이다.
   ///
   /// 카메라를 열지 못하면 [VisitCameraUnavailable] 을 던진다. 돌려준 경로는
-  /// 카메라 앱이 남긴 임시 파일이며 [VisitPhotos.keep] 으로 옮겨 둔다.
+  /// 카메라 앱이 남긴 임시 파일이다. 갤러리에 원본을 남기고
+  /// ([VisitGallery.save]) [VisitPhotos.keep] 으로 사본을 옮겨 둔다.
   Future<String?> capture();
 }
 
@@ -64,8 +66,8 @@ final visitCameraProvider = Provider<VisitCamera>((ref) => DeviceVisitCamera());
 /// 이번 회차에 찍어 둔 면회 사진의 기기 안 경로다. 찍지 않았으면 `null` 이다.
 ///
 /// 경로는 앱이 켜져 있는 동안만 들고 있다. 새 회차를 시작하거나 로그아웃할 때
-/// invalidate 되지만 사진 파일은 지우지 않는다([VisitPhotos]). 다시 찍으면 앞
-/// 사진이 올리지 않은 것일 때만 지운다.
+/// invalidate 된다. 사본을 언제 지우는지는 [VisitPhotos] 가 정한다. 다시 찍으면
+/// 앞 사진은 [VisitPhotos.discard] 에 넘긴다.
 class VisitPhotoNotifier extends Notifier<String?> {
   /// 서버에 올리고 있는 사진. 그사이 다시 찍어도 이 파일은 바로 지우지 않는다.
   final _sending = <String>{};
@@ -82,11 +84,12 @@ class VisitPhotoNotifier extends Notifier<String?> {
   }
 
   /// 카메라가 남긴 [capturedPath] 를 앱 전용 공간으로 옮겨 이번 사진으로 둔다.
+  /// [inGallery] 는 갤러리에 원본을 남겼는지다.
   ///
   /// 옮기지 못하면 [FileSystemException] 이 그대로 나간다.
-  Future<void> replace(String capturedPath) async {
+  Future<void> replace(String capturedPath, {required bool inGallery}) async {
     final photos = ref.read(visitPhotosProvider);
-    final kept = await photos.keep(capturedPath);
+    final kept = await photos.keep(capturedPath, inGallery: inGallery);
     if (!ref.mounted) return;
     final previous = state;
     state = kept;
@@ -101,8 +104,8 @@ class VisitPhotoNotifier extends Notifier<String?> {
   /// [path] 를 서버에 올리기 시작했다.
   void sending(String path) => _sending.add(path);
 
-  /// [path] 올리기를 마쳤다. 그사이 다시 찍어 밀려났으면 지운다. 올린 사진이면
-  /// [VisitPhotos.discard] 가 남긴다.
+  /// [path] 올리기를 마쳤다. 그사이 다시 찍어 밀려났으면 [VisitPhotos.discard]
+  /// 에 넘긴다.
   Future<void> sent(String path) async {
     if (!ref.mounted) return;
     _sending.remove(path);

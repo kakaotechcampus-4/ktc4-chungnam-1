@@ -318,8 +318,8 @@ class VisitController extends AsyncNotifier<VisitState> {
   Future<void> _uploadPhoto({required bool retryOnce}) =>
       _photoQueue = _photoQueue.then((_) => _sendPhoto(retryOnce: retryOnce));
 
-  /// 지금 사진을 올린다. 올려도 기기의 사진 파일은 남기고 올린 회차만 적는다
-  /// ([VisitPhotos]).
+  /// 지금 사진을 올린다. 올리면 갤러리에 원본이 있는 사본은 지우고, 없으면
+  /// 남긴 채 올린 회차만 적는다([VisitPhotos]).
   ///
   /// 올리는 사이 사진을 다시 찍었으면 결과를 화면 상태에 쓰지 않는다. 앞 사진의
   /// 결과이고, 새 사진은 [_photoQueue] 에서 뒤이어 올린다.

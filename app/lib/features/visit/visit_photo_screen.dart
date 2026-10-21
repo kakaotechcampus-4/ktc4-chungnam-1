@@ -9,12 +9,13 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import 'visit_camera.dart';
+import 'visit_gallery.dart';
 
 /// D-1 면회 전 사진 촬영.
 ///
-/// 사진은 선택이다. 남기지 않고도 면회를 시작할 수 있다. 찍은 사진은
-/// [visitPhotoProvider] 에 기기 안 경로로만 들고 있다. 서버 업로드(5-2)는
-/// 회차가 만들어진 뒤에 한다.
+/// 사진은 선택이다. 남기지 않고도 면회를 시작할 수 있다. 찍은 사진은 원본을
+/// 갤러리에 남기고([VisitGallery]), 사본을 [visitPhotoProvider] 에 기기 안
+/// 경로로 들고 있다. 서버 업로드(5-2)는 회차가 만들어진 뒤에 한다.
 class VisitPhotoScreen extends ConsumerStatefulWidget {
   const VisitPhotoScreen({super.key});
 
@@ -37,13 +38,22 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
       _capturing = true;
       _problem = null;
     });
+    // 카메라가 열린 사이 화면을 떠나도 찍은 사진을 갤러리에 남기도록 미리 잡아 둔다.
+    final gallery = ref.read(visitGalleryProvider);
     try {
       final path = await ref.read(visitCameraProvider).capture();
-      // 카메라가 열린 사이 화면을 떠났으면 결과를 쓰지 않는다.
-      if (!mounted) return;
       // 찍지 않고 나오면 앞에 찍은 사진을 그대로 둔다.
-      if (path != null) {
-        await ref.read(visitPhotoProvider.notifier).replace(path);
+      if (path == null) return;
+
+      // 원본을 먼저 갤러리에 남긴다. 화면을 떠났어도 보호자의 사진이다.
+      final inGallery = await gallery.save(path);
+      // 화면을 떠났으면 이번 면회에 쓰지 않는다.
+      if (!mounted) return;
+      await ref
+          .read(visitPhotoProvider.notifier)
+          .replace(path, inGallery: inGallery);
+      if (!inGallery && mounted) {
+        setState(() => _problem = '사진을 갤러리에 저장하지 못했어요.\n리포트에는 그대로 담아요.');
       }
     } on VisitCameraUnavailable {
       if (mounted) {

@@ -3,6 +3,11 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 면회 녹음. 사용자가 녹음을 시작할 때만 요청한다. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 9 이하에서만 필요하고
+         10 이상은 권한 없이 저장한다. 저장할 때만 요청한다. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
 
     <application
         android:label="새록"
