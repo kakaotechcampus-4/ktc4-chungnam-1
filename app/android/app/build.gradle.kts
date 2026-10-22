@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.saelog.app"
+    namespace = "app.saerok.android"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +15,8 @@ android {
     }
 
     defaultConfig {
-        // ADR-002 에서 확정한 Application ID
-        applicationId = "com.saelog.app"
+        // ADR-009 에서 확정한 Application ID
+        applicationId = "app.saerok.android"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26

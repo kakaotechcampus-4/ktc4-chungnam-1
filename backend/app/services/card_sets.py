@@ -200,6 +200,18 @@ async def _rows(connection: DbConnection, sql: str, profile_id: UUID) -> list[di
     return await cursor.fetchall()
 
 
+def _without_deleted_facts(
+    evidence: list[dict[str, str]], fact_ids: set[str]
+) -> list[dict[str, str]]:
+    """지금 없는 생애 정보를 가리키는 근거 항목을 뺌.
+
+    보호자가 일대기에서 지운 이야기(API 2-9)도 주제와 지난 카드의 근거에는 남아 있음(FK 없는
+    JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시 써서 결과 검증에서 실패함. 저장된 근거는
+    고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는 미정(작업 D 문서 미정 D3).
+    """
+    return [item for item in evidence if "factId" not in item or item["factId"] in fact_ids]
+
+
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
     """생성 함수에 넘길 context. 이름, 성별, 생년월일, 인지 상태, 증상 메모, 평가 메모,
     리포트 본문, 전사문, 승인 전 제안은 넣지 않음."""
@@ -256,6 +268,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         " ORDER BY v.started_at, c.position",
         profile_id,
     )
+    fact_ids = {str(row["fact_id"]) for row in facts}
     feedback_by_topic: dict[UUID, list[TopicFeedback]] = {}
     for row in feedback:
         feedback_by_topic.setdefault(row["topic_id"], []).append(
@@ -280,7 +293,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=row["evidence"],
+                evidence=_without_deleted_facts(row["evidence"], fact_ids),
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -298,7 +311,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 position=row["position"],
                 card_title=row["card_title"],
                 primary_question=row["primary_question"],
-                evidence=row["evidence"],
+                evidence=_without_deleted_facts(row["evidence"], fact_ids),
                 selected=row["selected"],
                 review_reaction=row["review_reaction"],
             )

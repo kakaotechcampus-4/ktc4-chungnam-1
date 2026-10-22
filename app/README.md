@@ -28,7 +28,7 @@
 | 항목 | 값 |
 | --- | --- |
 | 대상 / 프로젝트명 | Android 우선 / `saerok` |
-| Application ID | `com.saelog.app` |
+| Application ID | `app.saerok.android` |
 | Flutter / Dart | 3.44.8 stable / 3.12.2 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 26 |
 | JDK / Gradle | 21 (Android Studio 번들) / 9.1.0 |
@@ -107,7 +107,7 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 
 연결 실패와 서버 거절은 오류 안내와 `다시 시도`를 보여준다. 카드 provider는 Riverpod의 자동 재시도를 끈다. 다시 시도하면 4-1을 또 보내므로 버튼으로만 다시 한다. 목 묶음은 테스트에서만 쓰며(`test/fake_card_api.dart`), 서버에 저장한 프로필이 앱에 연결되기 전에는 실제 실행에서 카드를 받을 수 없다.
 
-H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `LifeFact`를 직접 보지 않고 표시용 `LifeStory`만 본다. 이야기는 세부 정보 네 항목(하시던 일→일, 고향, 취미, 가족)에서 만든 것과 목 이야기([life_story_mock.dart](lib/features/life_story/life_story_mock.dart))를 합친다. 분류와 기본 이미지 번호는 API 명세에 없는 FE 안이라 목 이야기는 아직 `assets/mock/profile.json`에 넣지 않았다. 정렬은 생애 시기 대신 담은 날짜순이며, 세부 정보 이야기는 날짜가 없어 목차 맨 앞에 두고 날짜를 표시하지 않는다. 기본 이미지는 분류마다 다섯 장(`assets/images/life-story-<분류>-<1~5>.webp`)이고 파일이 없으면 분류 아이콘과 `가족 3` 같은 이름으로 자리를 채운다. 세부 정보 이야기의 이미지 번호는 저장할 곳이 없어 어르신 ID와 항목 이름으로 계산한다(`detailImageNumber`). 서버 조회(2-3)는 아직 붙이지 않았다. 추가, 수정, 삭제한 이야기는 분류와 삭제 API가 없어 서버에 보내지 않고 어르신 목록처럼 **앱이 켜져 있는 동안만** 어르신별로 기억한다(`lifeStoryEditsProvider`). 로그아웃과 탈퇴 때 `forgetCareProfiles`가 함께 지운다.
+H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `LifeFact`를 직접 보지 않고 표시용 `LifeStory`만 본다. 이야기는 세부 정보 네 항목(하시던 일→일, 고향, 취미, 가족)에서 만든 것과 담은 이야기(`lifeFacts[]`)를 합친다. 담은 이야기는 로그인해 서버에 저장한 분이면 서버의 것(2-3, `serverLifeFactsProvider`)이고, 로그인하지 않은 목 모드면 `assets/mock/profile.json`의 합성 이야기 열 편이다. `LifeFact`는 `LifeStory.fromLifeFact` 한 곳에서 바꾸며, 모르는 분류는 `기타`에, 범위 밖 그림 번호는 1~5 안에 둔다. 분류(`storyCategory`)와 그림 번호(`imageNumber`)의 필드 이름은 임시다(api-spec 미정 사항 11). 정렬은 생애 시기 대신 담은 날짜순이며, 세부 정보 이야기는 날짜가 없어 목차 맨 앞에 두고 날짜를 표시하지 않는다. 기본 이미지는 분류마다 다섯 장(`assets/images/life-story-<분류>-<1~5>.webp`)이고 파일이 없으면 분류 아이콘과 `가족 3` 같은 이름으로 자리를 채운다. 세부 정보 이야기의 이미지 번호는 저장할 곳이 없어 어르신 ID와 항목 이름으로 계산한다(`detailImageNumber`). 추가, 수정, 삭제는 `lifeStoryStoreProvider` 한 곳을 거친다. 서버에 저장한 분이면 2-6, 2-7, 2-9로 보내고 응답으로 목록을 바로 고치며, 실패하면 안내하고 쓰던 내용과 이야기를 그대로 둔다. 서버가 없는 이야기(`LIFE_FACT_NOT_FOUND`)라고 답하면 목록을 다시 읽는다. 변경 사항 확인에서 이야기를 승인하면 서버가 일대기에 담지만 7-4 응답에 그 이야기가 없으므로, 승인이 성공하면 `LifeStoryStore.reload`로 다음에 일대기를 열 때 다시 읽게 한다. 지우기 확인창은 이 이야기로 이미 만든 대화 카드와 리포트가 그대로 남는다고 알린다(2-9는 이야기 행만 지운다). 목 모드에서는 어르신 목록처럼 **앱이 켜져 있는 동안만** 어르신별로 기억한다(`lifeStoryEditsProvider`). 로그아웃과 탈퇴 때 `forgetCareProfiles`가 함께 지운다.
 
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
@@ -151,8 +151,8 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
 | 홈 알림 | 5-4, 6-3 | 서버에 저장한 어르신을 처음 볼 때 가장 최근 회차를 묻는다. `processing`이면 `리포트를 만들고 있어요`를 띄우고 분석 작업(6-3)을 5초마다 물어 `completed`이면 도착, `failed`이면 `리포트를 만들지 못했어요`로 바꾼다. `completed` 회차는 도착, `failed` 회차는 실패로 띄운다. 앱을 다시 켜면 같은 회차를 다시 묻는다. 띄운 알림이 없을 때 묻지 못하면 `리포트 상태를 확인하지 못했어요`를 띄우고, 누르면 다시 묻는다 |
 | 면회 이어가기 | 5-4 | 앱을 떠난 사이 평가 전(`evaluationPending`)이면 `평가 이어서 하기`, 음성 접수 전(`audioPending`)이면 `음성 다시 보내기`를 띄운다. 누르면 `AppRoutes.visitReviewOf`(`/visit/review?session=회차ID`), `visitUploadOf`(`/visit/upload?session=회차ID`)로 간다. 회차 ID로 화면을 여는 일과 `/visit/upload` 화면은 면회 흐름이 맡는다 |
 | 리포트 | 7-2, 6-4, 5-4 | 회차 ID로 리포트와 카드별 답을 읽는다. 대화 카드별 반응에는 쓰고 평가한 카드의 요약만 보여주고(7-2의 `cardSummaries`), 쓰지 않았다고 답한 카드와 답하지 않은 카드는 `다루지 않은 카드 N장, 평가하지 않은 카드 N장`으로 장 수만 알린다. 고른 카드는 5-4에서, 답은 6-4에서 읽으며, 읽지 못한 쪽은 세지 않는다. 면회 사진은 서버 주소로 열고, 사진 없이 한 면회는 사진 자리를 두지 않는다 |
-| 리포트 기록 | 7-1 | 최근 면회부터 보여주고 회차 ID로 연다. 7-1에 면회 사진이 없어 썸네일 자리에는 사진 자리 아이콘만 둔다 |
-| 변경 사항 확인 | 7-3, 7-4 | 리포트의 `변경 사항 확인하기`는 확인 전(`pending`) 제안이 남았을 때만 둔다. 홈 알림과 리포트 기록 어디서 들어와도 같다. 제안을 읽지 못했으면 버튼을 두어 변경 사항 화면에서 다시 시도하게 한다. 서버의 제안을 보여주고 반영 결과를 보낸 뒤 알림을 지운다. 보내지 못하면 이유를 알리고 그 화면에 남는다 |
+| 리포트 기록 | 7-1 | 최근 면회부터 보여주고 회차 ID로 연다. 현재 앱 목록은 사진 자리 아이콘을 표시하며, 실제 사진 썸네일 연결은 PR #147에서 처리한다 |
+| 변경 사항 확인 | 7-3, 7-4 | 리포트의 `변경 사항 확인하기`는 확인 전(`pending`) 제안이 남았을 때만 둔다. 홈 알림과 리포트 기록 어디서 들어와도 같다. 제안을 읽지 못했으면 버튼을 두어 변경 사항 화면에서 다시 시도하게 한다. 서버의 제안을 보여주고 반영 결과를 보낸 뒤 알림을 지운다. 이야기를 하나라도 승인했으면 일대기 목록을 다시 읽게 한다. 보내지 못하면 이유를 알리고 그 화면에 남는다 |
 
 면회 흐름은 음성을 보낸(6-2) 뒤 `reportNoticeProvider.notifier.startGenerating(analysisId: ...)`를 부른다. 작업 ID를 넘기지 않으면 가장 최근 회차(5-4)에서 찾는다. 서버에 닿지 못하면 알림을 지어내지 않고, 만드는 중이었으면 잠시 뒤 다시 묻는다.
 
@@ -294,15 +294,13 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `SAEROK_API_BASE_URL` | `http://10.0.2.2:8000` | 에뮬레이터에서 호스트를 가리키는 주소. 실기기는 PC의 LAN 주소를 넘긴다 |
 
 `serverClientId`가 ID 토큰의 `aud`가 되므로 서버의 `SAEROK_GOOGLE_CLIENT_IDS`와 같아야 한다.
-Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
+Google Cloud Console에 Application ID `app.saerok.android`와 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
 
 개발 서버가 http라서 평문 통신을 디버그 빌드에서만 열어 두었다
 (`android/app/src/debug/AndroidManifest.xml`). 릴리스 빌드에는 들어가지 않는다.
 
 ### 확인이 필요한 것
 
-- **Application ID** — `backend/README.md`는 패키지명을 `com.saerok.app`으로 적었으나
-  ADR-002가 확정한 값은 `com.saelog.app`이다. Google Cloud Console에 등록하기 전에 맞춰야 한다.
 - **`Account` 계약** — 서버 응답에는 `loginId`가 없고 `email`이 `null`일 수 있어
   `lib/data/models.dart`의 `Account`와 형태가 다르다. 없는 값을 지어내지 않으려고
   `AuthAccount`를 따로 두었고, 계약이 합쳐지면 하나로 줄인다. PR #50 리뷰는 분리를
@@ -340,7 +338,7 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
 - 녹음 화면은 아래 카드 자리 때문에 안내를 둘 높이가 남지 않아 본문 대신 알림 띠로 알린다. 녹음 전 안내부터 지켜보므로 녹음 화면이 뜨기 전에 끝난 실패도 알린다. 만남을 끝내거나 화면을 떠나면 알림 띠를 닫는다.
 - 다시 올리기는 녹음 화면에서만 할 수 있다. 소감을 저장하면(6-1) 서버가 사진을 받지 않는다.
 
-리포트 상세의 사진은 서버가 7-2 응답의 `photo.imageUrl`로 내려준다(PR #115). 리포트 기록(7-1)은 면회 사진을 주지 않아 목록에는 사진 자리 아이콘만 둔다.
+리포트 상세의 사진은 서버가 7-2 응답의 `photo.imageUrl`로 내려준다(PR #115). 리포트 기록(7-1)도 서버가 면회 사진을 제공한다(PR #145). 현재 앱 목록은 사진 자리 아이콘을 표시하며, 실제 사진 썸네일 연결은 PR #147에서 처리한다.
 
 ### 보관
 
@@ -388,7 +386,7 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 다음과 같다.
 
 ```
-/data/user/0/com.saelog.app/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
+/data/user/0/app.saerok.android/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
 ```
 
 - 앱 전용 내부 저장소다. 다른 앱과 갤러리, 파일 관리자에 보이지 않고 USB로도
@@ -396,7 +394,7 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 - 외부 저장소를 쓰지 않으므로 `READ/WRITE_EXTERNAL_STORAGE` 권한이 필요 없다.
 - 파일 이름에는 시각만 넣는다. 어르신 이름이나 회차 정보처럼 사람을 알아볼 수
   있는 값은 파일 이름에 남기지 않는다.
-- 확인은 `adb exec-out run-as com.saelog.app ls app_flutter/visit_recordings`로 한다.
+- 확인은 `adb exec-out run-as app.saerok.android ls app_flutter/visit_recordings`로 한다.
   `run-as`는 디버그 빌드에서만 된다.
 
 같은 폴더에 녹음의 기록 `pending-uploads.json`을 둔다
@@ -458,7 +456,7 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
   파일은 재생되지 않으니 지우고 다시 녹음한다. 확인은 다음과 같이 한다.
 
   ```
-  adb exec-out run-as com.saelog.app cat app_flutter/visit_recordings/<파일> | head -c 4
+  adb exec-out run-as app.saerok.android cat app_flutter/visit_recordings/<파일> | head -c 4
   ```
 
   `RIFF`가 나오면 정상이다.

@@ -235,6 +235,69 @@ def test_failed_job_after_acceptance_is_not_submitted_again(migrated_database_ur
     assert existing.status == SpeechAnalysisStatus.FAILED
 
 
+def _generating(db: _Db, session_id: str) -> SpeechAnalysisJob:
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+    run(db.repository.mark_stt_completed(analysis_id=accepted.analysis_id, transcript=TRANSCRIPT))
+    run(db.repository.mark_generating_report(analysis_id=accepted.analysis_id))
+    return accepted
+
+
+def test_finished_jobs_are_not_overwritten(migrated_database_url):
+    """늦게 끝난 처리가 먼저 남은 완료나 실패를 덮지 않는다(#123)."""
+    db = _Db(migrated_database_url)
+    _, completed_session = db.seed_session()
+    completed = _generating(db, completed_session)
+    run(db.repository.mark_completed(analysis_id=completed.analysis_id))
+    _, failed_session = db.seed_session()
+    failed = _generating(db, failed_session)
+    run(db.repository.mark_failed(analysis_id=failed.analysis_id, error_code="WORKER_LEASE_EXPIRED"))
+
+    run(db.repository.mark_failed(analysis_id=completed.analysis_id, error_code="AI_SERVER_ERROR"))
+    run(db.repository.mark_completed(analysis_id=failed.analysis_id))
+    run(db.repository.mark_failed(analysis_id=failed.analysis_id, error_code="AI_SERVER_TIMEOUT"))
+
+    assert (db.job_row(completed.analysis_id)["status"], db.job_row(completed.analysis_id)["error_code"]) == (
+        "completed",
+        None,
+    )
+    assert (db.job_row(failed.analysis_id)["status"], db.job_row(failed.analysis_id)["error_code"]) == (
+        "failed",
+        "WORKER_LEASE_EXPIRED",
+    )
+
+
+def test_a_job_failed_during_stt_keeps_no_transcript(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+    run(db.repository.mark_failed(analysis_id=accepted.analysis_id, error_code="WORKER_LEASE_EXPIRED"))
+
+    stored = run(
+        db.repository.mark_stt_completed(analysis_id=accepted.analysis_id, transcript=TRANSCRIPT)
+    )
+    generating = run(db.repository.mark_generating_report(analysis_id=accepted.analysis_id))
+
+    row = db.job_row(accepted.analysis_id)
+    assert (stored, generating) == (False, False)
+    assert (row["status"], row["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
+    assert row["transcript"] is None
+    assert row["stt_completed_at"] is None
+
+
+def test_only_a_generating_job_is_completed(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+    run(db.repository.mark_stt_completed(analysis_id=accepted.analysis_id, transcript=TRANSCRIPT))
+
+    run(db.repository.mark_completed(analysis_id=accepted.analysis_id))
+
+    assert db.job_row(accepted.analysis_id)["status"] == "sttCompleted"
+
+
 def test_expired_transcript_is_deleted_and_the_job_fails(migrated_database_url):
     db = _Db(migrated_database_url)
     _, session_id = db.seed_session()

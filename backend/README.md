@@ -21,7 +21,7 @@ uv sync
 uv run python --version
 ```
 
-이후 명령은 `backend/`에서 실행한다. 의존성과 가상 환경은 `uv`, 테스트는 `pytest`로 관리한다.
+이후 명령은 `backend/`에서 실행한다. 의존성과 가상 환경은 `uv`, 테스트는 `pytest`로 관리한다. `uv sync`는 카드 생성 패키지(`../ai`)도 경로 의존성으로 함께 설치한다.
 
 실행 스크립트로 서버를 활성화한다.
 
@@ -281,14 +281,14 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 - **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 현재 스키마의 `users`는 구글 `sub`, 표시 이름과 가입 시각만 두고 이메일 컬럼이 없다. 표시 이름이 비어 있으면 `보호자`를 쓴다. 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
 - **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
-- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saelog.app` 과 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
+- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `app.saerok.android` 와 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
 ## 프로필과 생애 정보 API
 
-[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-8이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
+[API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-9이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
@@ -299,6 +299,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 | `DELETE` | `/api/v1/profiles/{profileId}` | 프로필 하나와 그 아래 기록 삭제. `204` |
 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 일대기에서 생애 정보 추가. `201` |
 | `PATCH` | `/api/v1/life-facts/{factId}` | 생애 정보 중 보낸 필드만 수정 |
+| `DELETE` | `/api/v1/life-facts/{factId}` | 일대기에서 생애 정보 삭제. `204` |
 
 - `setupStatus`는 저장하지 않고 `card_sets` 행이 있는지로 계산한다.
 - 계정당 프로필은 입력 중인 것을 포함해 3개까지다. DB 제약이 없으므로 같은 트랜잭션에서 계정 행을 `FOR UPDATE`로 잠근 뒤 세어, 동시 요청에도 넘지 않는다. 넘으면 `PROFILE_LIMIT_EXCEEDED`(409)다.
@@ -308,7 +309,9 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 코드는 아직 없다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
 - 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
 - 실제 사용자 사진을 받기 전에는 계정별 동의 확인과 철회 처리를 구현하고 검증한다(후속 3). 현재 업로드와 조회 테스트는 합성 사진과 메모리 저장소를 사용하며 실제 S3 업로드는 미검증이다.
-- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다.
+- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다. 7-4는 분류와 그림 번호를 보내지 않으므로 `other`와 서버가 고른 1~5 번호로 만든다.
+- 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름, 7-4의 분류와 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
+- 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_deleted_facts`).
 
 ## AI 음성 분석 연동
 
@@ -358,7 +361,8 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 입력으로 작업에 임시 저장하며, STT 완료 후 24시간 안에 리포트를 저장하지 못하면 지우고
 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. worker는 위의 공통 골격으로 동작하며,
 임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도와
-취소는 아직 없으며 실패를 숨겨 재실행하지 않는다.
+취소는 아직 없으며 실패를 숨겨 재실행하지 않는다. 리포트 생성의 시간 제한과 늦은 결과
+처리는 [평가와 리포트 API](#평가와-리포트-api)에 정리한다.
 
 API 서버와 별도 터미널에서 worker를 실행한다.
 
@@ -370,6 +374,15 @@ bash ./scripts/run_speech_worker.sh
 
 ```bash
 bash ./scripts/run_speech_worker.sh --once
+```
+
+기본 worker는 리포트 생성에 `SAEROK_ML_API_KEY`가 필요하며, 없으면 시작하지 않는다(키
+없이 전체 처리가 되는 것처럼 실행하지 않는다). 키 없이 STT만 확인할 때는
+`--stt-only`(development/test 환경에서만)를 쓴다. 리포트 생성기를 만들지 않고 작업은
+`sttCompleted`에서 멈추며 `completed`가 되지 않는다.
+
+```bash
+bash ./scripts/run_speech_worker.sh --stt-only --once
 ```
 
 ### 음성 분석 설정
@@ -385,8 +398,11 @@ bash ./scripts/run_speech_worker.sh --once
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 최대 86400초 |
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
-| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계와 리포트 생성 단계에서 각각 새로 잡음 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
+| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름 |
+| `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
+| `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음(`--stt-only`는 제외) |
 
 S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
@@ -479,7 +495,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 5-4 회차 목록. 최근 회차부터, `limit` 기본 20, 최대 100 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-1 보호자 평가 저장. `201` |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-4 보호자 평가 조회 |
-| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만 |
+| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만, 면회 사진 포함 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/report` | 7-2 리포트 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 7-3 변경 제안 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 7-4 변경 제안 확인 |
@@ -491,15 +507,40 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   `FOR UPDATE`로 잠가 동시 제출을 한 번만 받는다. 카드 평가는 `review_reaction`에 쓰고
   쓰지 않은 카드는 `notUsed`, 답하지 않은 카드는 `null`이다.
 - `mood`는 만족도로 계산하고(1~2 `hard`, 3 `normal`, 4~5 `good`), `visitDate`는
-  `started_at`의 한국 시간 날짜다. 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회 URL을
-  만든다.
+  `started_at`의 한국 시간 날짜다. 7-1과 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회
+  URL을 만든다. URL을 만들지 못하면 7-2는 503이지만, 7-1은 썸네일 때문에 목록이 열리지 않으면
+  안 되므로 그 항목만 `photo: null`로 담고 `report_list_photo_url_failed` 경고 로그를 요청마다
+  한 번 남긴다(실패 수와 `errorCode`만).
 - 7-4는 회차 행을 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고, 승인한 생애 정보
   제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
   `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면
   아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
-- 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → AI 서버 호출(트랜잭션 밖) →
-  응답 검증 → 리포트, 카드 요약, 변경 제안 저장(한 트랜잭션) 순서다. 검증에 걸리면 아무것도
-  저장하지 않고 작업을 `INVALID_AI_RESPONSE`로 실패시킨다.
+- 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → 생성 함수 호출(트랜잭션 밖,
+  별도 스레드) → 응답 검증 → 리포트, 카드 요약, 변경 제안 저장과 작업 `completed`(한
+  트랜잭션) 순서다. 검증에 걸리면 아무것도 저장하지 않고 작업을 `INVALID_AI_RESPONSE`로
+  실패시킨다.
+- 생성 함수는 AI 서버의 HTTP API가 아니라 `ai/`의 `report_generation.generate_report`와
+  `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로
+  합친다(`app/workers/speech_analysis.py`의 `report_generator`). 요청과 응답 JSON은 8-3과 같다.
+  함수 호출이어도 그 안에서 전사문을 포함한 요청을 외부 ML API(엘리스)로 보낸다.
+  생성 함수의 실패 코드는 기존 작업 실패 코드로 바꾼다: `LLM_UNAVAILABLE` →
+  `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST` → `AI_SERVER_ERROR`.
+- 전체 시간 제한: 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본
+  600초)를 넘으면 작업을 `AI_SERVER_TIMEOUT`으로 실패시킨다. 생성 함수의 호출당 timeout(300초)은
+  응답 대기 제한이라 스트리밍이 이어지면 전체 시간이 늘어나므로, BE가 전체 마감을 따로 둔다.
+  `generatingReport`로 바꿀 때 임대(기본 900초)를 새로 잡고, 제한 시간은 임대보다 60초 이상
+  짧아야 한다(저장과 완료 처리 여유). 생성 함수는 daemon 스레드에서 돌고 worker는 마감까지만
+  기다린다. 동기 함수라 스레드를 멈출 수는 없으므로, 리포트와 변경 제안 호출 직전마다 마감을
+  확인해 마감 뒤 새 외부 호출을 하지 않는다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있다.
+- 늦은 결과 저장 방지: 마감 뒤 도착한 결과는 아무도 읽지 않고, 생성 함수는 DB를 쓰지 않는다.
+  결과가 와도 저장 직전에 마감을 다시 확인한다. 저장 트랜잭션은 먼저 작업 행을
+  `FOR UPDATE`로 잠그고 `generatingReport`이며 `lease_expires_at > now()`일 때만 저장한다.
+  아니면(임대가 끝났거나 다른 worker가 실패 처리함) 아무것도 저장하지 않고
+  `WORKER_LEASE_EXPIRED`다. 리포트 저장과 작업 `completed`(전사문 삭제)는 같은 트랜잭션이라,
+  잠금을 잡은 동안 임대 만료 정리는 기다렸다가 끝난 작업을 건너뛴다.
+- 작업 상태는 끝나면(`completed`, `failed`) 다시 바꾸지 않는다. `completed`는
+  `generatingReport`에서만 바뀌고, 먼저 남은 실패 코드는 늦게 끝난 처리가 덮지 않는다.
+  자동 재시도는 없고, 실패한 회차의 6-2 재제출은 `409 ANALYSIS_ALREADY_FAILED`다.
 - 8-3 응답 검증의 보수적인 임시 정책(AI 담당자와 합의 필요): `reaction`이 `notUsed`이거나
   `null`인 카드에 `less`, `exclude`를 제안하면 응답 전체를 실패로 본다. PM 결정(2026-09-19)은
   그 사실"만으로" 제안하지 않는 것인데, 백엔드는 제안의 근거를 판별할 수 없기 때문이다.

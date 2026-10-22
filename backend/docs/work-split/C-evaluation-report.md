@@ -53,7 +53,7 @@
 
 - **제공** `load_visit_session(connection, session_id)`: `VisitSession` 응답과 `sessionStatus` 계산. B의 5-1, 5-3과 C의 5-4가 쓴다. 가장 먼저 만들어 공유한다.
 - **사용** A의 `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`: 7-4에서 쓴다.
-- **사용** `ImageStorageDep`(7-2 면회 사진의 `imageUrl`)
+- **사용** `ImageStorageDep`(7-1, 7-2 면회 사진의 `imageUrl`)
 
 `sessionStatus` 계산(5절 표를 DB 값으로 옮긴 것):
 
@@ -300,11 +300,19 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
       "sessionId": "00000000-0000-4000-8000-000000000201",
       "title": "재봉 일 이야기를 나눈 날",
       "visitDate": "2026-08-21",
-      "mood": "good"
+      "mood": "good",
+      "photo": {
+        "photoId": "00000000-0000-4000-8000-000000000221",
+        "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/visit.jpg?...",
+        "imageUrlExpiresAt": "2026-08-21T15:00:00+09:00"
+      }
     }
   ]
 }
 ```
+
+- `photo`: 면회 사진이 없으면 `null`. 형식은 [VisitReport](#visitreport)의 `photo`와 같다.
+- 면회 사진의 조회 URL을 만들지 못하면 목록 전체를 실패시키지 않고 그 항목만 `photo: null`로 담는다. 7-2는 같은 경우 `503`이다.
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -313,6 +321,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - `report_generated_at IS NOT NULL`인 회차만 `started_at DESC` 순으로 담는다. `mood`는 저장하지 않고 만족도로 계산한다(1~2 `hard`, 3 `normal`, 4~5 `good`). `visitDate`는 `(started_at AT TIME ZONE 'Asia/Seoul')::date`다.
+- `photo`는 `photos.session_id`로 붙인 면회 사진이며 URL은 7-2와 같이 `storage.create_download(object_key=...)`로 만든다. 만들지 못하면(`AppError`) 그 항목만 `null`로 두고, 요청마다 한 번 `report_list_photo_url_failed` 경고 로그(실패 수와 `errorCode`만, 객체 키와 회차 ID 제외)를 남긴다.
 
 <br>
 
@@ -553,9 +562,10 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 
 - `ReportGenerator`(`app/services/speech_analysis_pipeline.py`)를 구현해 `app/workers/speech_analysis.py`의 `report_generator=None` 자리에 넣는다. 형태는 `async def generate(connection, *, session_id, speech)`다. worker는 `sttCompleted` 뒤 `generatingReport`로 바꾸고 생성기를 부르며, 생성기가 끝나면 작업을 `completed`로 바꾸고 전사문을 지운다.
 - 생성기 안에서 8-3 호출은 트랜잭션 밖에서 하고, 리포트와 변경 제안 저장만 `async with connection.transaction():`으로 묶는다. 실패는 `AppError`로 올리면 대기열이 작업을 실패로 기록한다.
+- (PR #123) 8-3은 HTTP가 아니라 `ai/`의 리포트·변경 제안 생성 함수를 직접 부른다. 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본 600초, 임대보다 60초 이상 짧게)를 넘으면 `AI_SERVER_TIMEOUT`이다. 저장 트랜잭션은 작업 행을 잠가 `generatingReport`이고 임대가 남았을 때만 저장하며, 아니면 `WORKER_LEASE_EXPIRED`로 아무것도 저장하지 않는다. 자세한 내용은 [README 평가와 리포트 API](../../README.md#평가와-리포트-api).
 - 요청 조립: `visitDate`, `evaluation`(만족도, 반응, 메모), `cards`(선택 카드의 `cardId`, `cardTitle`, `topic`, `reaction = review_reaction`), `profileFacts`, `lifeFacts`, `transcript`. 이름, 성별, 생년월일은 넣지 않는다.
 - 응답 검증: `cardSummaries`는 `positive`, `neutral`, `negative` 카드만, `topicProposals`는 요청 `cards` 안에서 카드당 최대 1개다. 미사용과 미응답만으로 `less`, `exclude`를 제안하면 안 된다는 PM 결정을 어긴 응답을 실패로 볼지 그 제안만 뺄지는 AI 담당과 정한다.
-- 저장은 한 트랜잭션이다: `visit_sessions`의 `report_title`, `report_body`, `report_model`, `report_prompt_version`, `report_generated_at`(CHECK: 다섯 값은 함께, `evaluated_at` 필요), `conversation_cards.report_summary`(CHECK: 평가한 카드만), `life_fact_proposals`, `topic_proposals`(`topic_id`는 그 카드의 주제)를 넣는다. 작업의 `completed`와 전사문 삭제는 worker의 `mark_completed`가 한다.
+- 저장은 한 트랜잭션이다: `visit_sessions`의 `report_title`, `report_body`, `report_model`, `report_prompt_version`, `report_generated_at`(CHECK: 다섯 값은 함께, `evaluated_at` 필요), `conversation_cards.report_summary`(CHECK: 평가한 카드만), `life_fact_proposals`, `topic_proposals`(`topic_id`는 그 카드의 주제)를 넣는다. 작업의 `completed`와 전사문 삭제도 같은 트랜잭션에서 한다(PR #123, 늦은 결과 저장 방지). worker의 `mark_completed`는 이미 끝난 작업을 바꾸지 않는다.
 
 <br>
 
