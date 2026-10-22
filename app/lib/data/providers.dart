@@ -612,6 +612,8 @@ final reportHistoryProvider = FutureProvider.autoDispose<List<ReportListItem>>((
       title: report.title,
       visitDate: report.visitDate,
       mood: report.mood,
+      photoId: report.photoId,
+      photoUrl: report.photoUrl,
     ),
   ];
 });

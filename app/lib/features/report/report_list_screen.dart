@@ -85,23 +85,7 @@ class _ReportRow extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
         children: [
-          // 7-1 이 면회 사진을 주지 않아 사진 자리만 둔다. 사진이 있는 회차도
-          // 있으므로 '사진 없음' 이 아니라 사진 자리 모양으로 그린다.
-          ExcludeSemantics(
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.image),
-              ),
-              child: const Icon(
-                Icons.image_outlined,
-                size: 32,
-                color: AppColors.textDisabled,
-              ),
-            ),
-          ),
+          ExcludeSemantics(child: _Thumbnail(url: report.photoUrl)),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Column(
@@ -137,5 +121,71 @@ class _ReportRow extends StatelessWidget {
     final day = int.tryParse(parts[2]);
     if (year == null || month == null || day == null) return isoDate;
     return '$year년 $month월 $day일';
+  }
+}
+
+/// 리포트 기록 한 줄의 면회 사진.
+///
+/// 사진이 없거나 열지 못하면 사진 자리 아이콘을 둔다. 7-1 은 사진 주소를 만들지
+/// 못한 항목도 `photo: null` 로 주므로, 올리기 실패라고 알리지 않는다. 사진
+/// 주소는 수명이 짧아 목록을 오래 열어 두면 열지 못할 수 있다.
+class _Thumbnail extends StatelessWidget {
+  const _Thumbnail({required this.url});
+
+  final String? url;
+
+  static const _assetScheme = 'asset:';
+  static const _size = 72.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = this.url;
+    final Widget image;
+    if (url == null) {
+      image = const _PhotoPlaceholder();
+    } else if (url.startsWith(_assetScheme)) {
+      image = Image.asset(
+        url.substring(_assetScheme.length),
+        width: _size,
+        height: _size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => const _PhotoPlaceholder(),
+      );
+    } else {
+      image = Image.network(
+        url,
+        width: _size,
+        height: _size,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) =>
+            progress == null ? child : const _PhotoPlaceholder(),
+        errorBuilder: (context, error, stackTrace) => const _PhotoPlaceholder(),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.image),
+      child: image,
+    );
+  }
+}
+
+/// 사진이 없는 회차도, 사진을 열지 못한 회차도 있으므로 '사진 없음' 이 아니라
+/// 사진 자리 모양으로 그린다.
+class _PhotoPlaceholder extends StatelessWidget {
+  const _PhotoPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _Thumbnail._size,
+      height: _Thumbnail._size,
+      color: AppColors.surface,
+      child: const Icon(
+        Icons.image_outlined,
+        size: 32,
+        color: AppColors.textDisabled,
+      ),
+    );
   }
 }

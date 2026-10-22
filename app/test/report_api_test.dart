@@ -105,6 +105,41 @@ void main() {
     expect(items.single.mood, VisitMood.good);
   });
 
+  group('리포트 기록(7-1)의 면회 사진', () {
+    test('사진이 있으면 썸네일 주소를 읽는다', () async {
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+        },
+        reports: {
+          's1': FakeReportServer.report(
+            sessionId: 's1',
+            imageUrl: 'https://example.test/visit.jpg',
+          ),
+        },
+      );
+
+      final item = (await server.api.reports('p1')).single;
+
+      expect(item.photoId, 'visit-photo-1');
+      expect(item.photoUrl, 'https://example.test/visit.jpg');
+    });
+
+    test('사진이 null 이면 주소가 없다', () async {
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+        },
+        reports: {'s1': FakeReportServer.report(sessionId: 's1')},
+      );
+
+      final item = (await server.api.reports('p1')).single;
+
+      expect(item.photoId, isNull);
+      expect(item.photoUrl, isNull);
+    });
+  });
+
   group('리포트(7-2)', () {
     test('본문, 카드 제목과 사진을 화면이 쓰는 이름으로 읽는다', () async {
       final server = FakeReportServer(
