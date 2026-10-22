@@ -326,7 +326,7 @@ Google Cloud Console에 Application ID `com.saelog.app`과 디버그·릴리스 
 - 카메라가 열려 있는 동안에는 셔터와 시작 버튼을 막는다. 카메라를 열지 못하면 `카메라를 열지 못했어요. 사진 없이 시작해도 괜찮아요.`를 보여주고 사진 없이 시작할 수 있다.
 - 찍은 사진을 앱 폴더로 옮기지 못하면 `사진을 저장하지 못했어요. 다시 찍거나 사진 없이 시작해도 괜찮아요.`를 보여준다.
 - 카메라가 열린 사이 사진 화면을 떠났으면 찍은 사진을 갤러리에만 남기고 이번 면회에는 쓰지 않는다.
-- 안드로이드는 시스템 카메라 앱에 촬영을 맡기므로 카메라 권한을 받지 않는다. 매니페스트에 `CAMERA` 권한을 넣으면 실행 중 권한 요청이 필요해지므로 넣지 않는다. 갤러리 저장은 안드로이드 10 이상에서 권한 없이 하고, 9 이하에서만 저장할 때 `WRITE_EXTERNAL_STORAGE`(`maxSdkVersion` 28)를 묻는다. 저장소에 iOS 프로젝트가 없어 `Info.plist`의 카메라 사용 문구(`NSCameraUsageDescription`)와 사진 추가 문구(`NSPhotoLibraryAddUsageDescription`)는 iOS를 추가할 때 넣어야 한다.
+- 안드로이드는 시스템 카메라 앱에 촬영을 맡기므로 카메라 권한을 받지 않는다. 매니페스트에 `CAMERA` 권한을 넣으면 실행 중 권한 요청이 필요해지므로 넣지 않는다. 갤러리 저장은 안드로이드 11 이상에서 권한 없이 하고, 10 이하에서만 저장할 때 `WRITE_EXTERNAL_STORAGE`(`maxSdkVersion` 29)를 묻는다. 안드로이드 10은 앨범 폴더에 저장하려면 이전 저장소 방식이 필요해 `<application>`에 `requestLegacyExternalStorage`를 켰다. 이 값은 11 이상에서 무시된다([gal 2.3.3 안내](https://pub.dev/packages/gal/versions/2.3.3#android-setup)). 저장소에 iOS 프로젝트가 없어 `Info.plist`의 카메라 사용 문구(`NSCameraUsageDescription`)와 사진 추가 문구(`NSPhotoLibraryAddUsageDescription`)는 iOS를 추가할 때 넣어야 한다.
 
 ### 올리기
 

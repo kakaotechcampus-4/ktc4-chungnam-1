@@ -3,18 +3,19 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 면회 녹음. 사용자가 녹음을 시작할 때만 요청한다. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <!-- 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 9 이하에서만 필요하고
-         10 이상은 권한 없이 저장한다. 저장할 때만 요청한다. -->
+    <!-- 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 10 이하에서만 필요하고
+         11 이상은 권한 없이 저장한다. 저장할 때만 요청한다(gal 2.3.3 안내). -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"/>
+        android:maxSdkVersion="29"/>
 
     <application
         android:label="새록"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules">
+        android:fullBackupContent="@xml/backup_rules"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

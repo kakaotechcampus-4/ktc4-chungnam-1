@@ -21,7 +21,7 @@ abstract interface class VisitGallery {
 
 /// `gal` 로 갤러리의 '새록' 앨범에 남긴다. 앨범이 없으면 만든다.
 ///
-/// 안드로이드 10 이상은 권한 없이 저장한다. 9 이하는 저장할 때 저장소 권한을
+/// 안드로이드 11 이상은 권한 없이 저장한다. 10 이하는 저장할 때 저장소 권한을
 /// 묻는다(`AndroidManifest.xml`).
 class DeviceVisitGallery implements VisitGallery {
   const DeviceVisitGallery();
