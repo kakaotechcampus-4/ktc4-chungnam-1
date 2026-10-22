@@ -28,7 +28,7 @@
 | 항목 | 값 |
 | --- | --- |
 | 대상 / 프로젝트명 | Android 우선 / `saerok` |
-| Application ID | `com.saerok.app` |
+| Application ID | `app.saerok.android` |
 | Flutter / Dart | 3.44.8 stable / 3.12.2 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 26 |
 | JDK / Gradle | 21 (Android Studio 번들) / 9.1.0 |
@@ -293,7 +293,7 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `SAEROK_API_BASE_URL` | `http://10.0.2.2:8000` | 에뮬레이터에서 호스트를 가리키는 주소. 실기기는 PC의 LAN 주소를 넘긴다 |
 
 `serverClientId`가 ID 토큰의 `aud`가 되므로 서버의 `SAEROK_GOOGLE_CLIENT_IDS`와 같아야 한다.
-Google Cloud Console에 Application ID `com.saerok.app`과 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
+Google Cloud Console에 Application ID `app.saerok.android`와 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
 
 개발 서버가 http라서 평문 통신을 디버그 빌드에서만 열어 두었다
 (`android/app/src/debug/AndroidManifest.xml`). 릴리스 빌드에는 들어가지 않는다.
@@ -329,7 +329,7 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 다음과 같다.
 
 ```
-/data/user/0/com.saerok.app/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
+/data/user/0/app.saerok.android/app_flutter/visit_recordings/visit-2026-09-23T14-05-33-120.wav
 ```
 
 - 앱 전용 내부 저장소다. 다른 앱과 갤러리, 파일 관리자에 보이지 않고 USB로도
@@ -337,7 +337,7 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 - 외부 저장소를 쓰지 않으므로 `READ/WRITE_EXTERNAL_STORAGE` 권한이 필요 없다.
 - 파일 이름에는 시각만 넣는다. 어르신 이름이나 회차 정보처럼 사람을 알아볼 수
   있는 값은 파일 이름에 남기지 않는다.
-- 확인은 `adb exec-out run-as com.saerok.app ls app_flutter/visit_recordings`로 한다.
+- 확인은 `adb exec-out run-as app.saerok.android ls app_flutter/visit_recordings`로 한다.
   `run-as`는 디버그 빌드에서만 된다.
 
 같은 폴더에 녹음의 기록 `pending-uploads.json`을 둔다
@@ -399,7 +399,7 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
   파일은 재생되지 않으니 지우고 다시 녹음한다. 확인은 다음과 같이 한다.
 
   ```
-  adb exec-out run-as com.saerok.app cat app_flutter/visit_recordings/<파일> | head -c 4
+  adb exec-out run-as app.saerok.android cat app_flutter/visit_recordings/<파일> | head -c 4
   ```
 
   `RIFF`가 나오면 정상이다.
