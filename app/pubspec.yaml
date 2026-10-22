@@ -43,6 +43,10 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   record: ^7.1.1
   path_provider: ^2.1.6
+  # B-7 사진 올리기에서 기기 앨범을 연다. 안드로이드 시스템 사진 선택기를 써서 저장소 권한을 받지 않는다.
+  image_picker: ^1.2.3
+  # D-1 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 11 이상은 권한을 받지 않는다.
+  gal: ^2.3.3
 
 dev_dependencies:
   flutter_test:

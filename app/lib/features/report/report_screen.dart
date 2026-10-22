@@ -16,22 +16,19 @@ import 'report_text.dart';
 ///
 /// 일기 형식의 본문과 카드별 반응을 보여준다. 계약대로 의료적 해석과 대화 품질
 /// 점수를 만들지 않는다.
+///
+/// 로그인했으면 서버의 리포트(7-2)와 카드별 평가(6-4)를 [reportId] 회차로 읽는다.
+///
+/// `변경 사항 확인하기` 는 확인할 제안(7-3 의 `pending`)이 남았을 때만 둔다. 홈
+/// 알림에서 들어왔는지, 리포트 기록에서 들어왔는지는 보지 않는다.
 class ReportScreen extends ConsumerWidget {
-  const ReportScreen({
-    required this.reportId,
-    this.fromHistory = false,
-    super.key,
-  });
+  const ReportScreen({required this.reportId, super.key});
 
   final String reportId;
 
-  /// 리포트 기록에서 들어왔는지. 이미 반영을 마친 회차라 변경 사항을 다시
-  /// 묻지 않는다.
-  final bool fromHistory;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final report = ref.watch(visitReportProvider);
+    final report = ref.watch(reportProvider(reportId));
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -39,9 +36,9 @@ class ReportScreen extends ConsumerWidget {
         loading: () => const LoadingView(message: '리포트를 여는 중이에요'),
         error: (error, _) => ErrorStateView(
           message: '리포트를 불러오지 못했어요.',
-          onRetry: () => ref.invalidate(visitReportProvider),
+          onRetry: () => ref.invalidate(reportProvider(reportId)),
         ),
-        data: (data) => _Body(report: data, fromHistory: fromHistory),
+        data: (data) => _Body(report: data),
       ),
     );
   }
@@ -106,30 +103,71 @@ class _TypeSet {
 }
 
 class _Body extends ConsumerStatefulWidget {
-  const _Body({required this.report, required this.fromHistory});
+  const _Body({required this.report});
 
   final VisitReport report;
-  final bool fromHistory;
 
   @override
   ConsumerState<_Body> createState() => _BodyState();
 }
 
-/// 카드 한 장을 리포트에서 어떻게 보여줄지.
-enum _CardOutcome {
-  /// 보호자가 쓰고 평가했다. AI 가 쓴 요약을 보여준다.
-  summarized(''),
+/// 리포트의 대화 카드별 반응에 보여줄 것.
+///
+/// 리포트(7-2)의 `cardSummaries` 는 보호자가 쓰고 평가한 카드만 담는다. 쓰지
+/// 않았다고 답한 카드와 답하지 않은 카드는 제목을 받을 곳이 없어 장 수로만
+/// 알린다(PM 결정, 제목까지 보여주는 것은 후속 개발).
+class _CardSection {
+  const _CardSection({
+    required this.summaries,
+    required this.notUsed,
+    required this.unevaluated,
+  });
 
-  /// 쓰지 않았다고 답했다.
-  notUsed('이번 면회에서 다루지 않았어요'),
+  /// 보호자의 답을 보고 나눈다.
+  ///
+  /// 답을 아직 읽지 못했으면 요약을 그대로 두고 장 수를 세지 않는다. 읽지
+  /// 못했다는 이유로 평가하지 않았다고 적으면 보호자가 답을 했는데도 안 했다고
+  /// 말하게 된다. 고른 카드를 모르면 평가하지 않은 카드도 세지 않는다.
+  factory _CardSection.of(
+    List<CardSummary> summaries,
+    List<CardReview>? reviews,
+    List<String>? selectedCardIds,
+  ) {
+    if (reviews == null) {
+      return _CardSection(summaries: summaries, notUsed: 0, unevaluated: 0);
+    }
+    bool used(String cardId) =>
+        reviews.any((r) => r.cardId == cardId && r.wasUsed);
+    final answered = {for (final r in reviews) r.cardId};
+    return _CardSection(
+      // 쓰고 평가한 카드에만 요약을 붙인다.
+      summaries: [
+        for (final summary in summaries)
+          if (used(summary.cardId)) summary,
+      ],
+      notUsed: reviews.where((r) => !r.wasUsed).length,
+      unevaluated: selectedCardIds == null
+          ? 0
+          : selectedCardIds.where((id) => !answered.contains(id)).length,
+    );
+  }
 
-  /// 답하지 않고 넘어갔다.
-  unanswered('확인하지 못했어요');
+  final List<CardSummary> summaries;
 
-  const _CardOutcome(this.text);
+  /// 쓰지 않았다고 답한 카드 수.
+  final int notUsed;
 
-  /// 요약 자리에 대신 적을 말.
-  final String text;
+  /// 고른 카드 중 답하지 않은 카드 수.
+  final int unevaluated;
+
+  /// `다루지 않은 카드 1장, 평가하지 않은 카드 2장`. 둘 다 없으면 `null` 이다.
+  String? get countText {
+    final parts = [
+      if (notUsed > 0) '다루지 않은 카드 $notUsed장',
+      if (unevaluated > 0) '평가하지 않은 카드 $unevaluated장',
+    ];
+    return parts.isEmpty ? null : parts.join(', ');
+  }
 }
 
 class _BodyState extends ConsumerState<_Body> {
@@ -137,40 +175,39 @@ class _BodyState extends ConsumerState<_Body> {
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
 
-  /// 보호자 평가를 보고 카드 한 장을 어떻게 보여줄지 정한다.
-  ///
-  /// 평가를 아직 읽지 못했으면 AI 요약을 그대로 둔다. 읽지 못했다는 이유로
-  /// `확인하지 못했어요` 를 띄우면 보호자가 답을 했는데도 안 했다고 말하게 된다.
-  _CardOutcome _outcomeOf(String cardId, CaregiverEvaluation? evaluation) {
-    if (evaluation == null) return _CardOutcome.summarized;
-
-    final review = evaluation.cardReviews
-        .where((r) => r.cardId == cardId)
-        .firstOrNull;
-
-    if (review == null) return _CardOutcome.unanswered;
-    return review.wasUsed ? _CardOutcome.summarized : _CardOutcome.notUsed;
-  }
-
   @override
   Widget build(BuildContext context) {
     final report = widget.report;
     final set = _easy ? _TypeSet.easy : _TypeSet.normal;
     // 보호자가 무엇이라 답했는지에 따라 카드별 반응의 표시가 갈린다.
-    final evaluation = ref.watch(caregiverEvaluationProvider).value;
+    final reviews = ref.watch(reportCardReviewsProvider(report.reportId)).value;
+    final cards = _CardSection.of(
+      report.cardSummaries,
+      reviews,
+      ref.watch(reportSelectedCardIdsProvider(report.reportId)).value,
+    );
+    final countText = cards.countText;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
+    // 확인할 제안이 남았을 때만 변경 사항으로 보낸다. 읽는 중에는 두지 않고,
+    // 읽지 못했으면 둔다. 변경 사항 화면이 다시 시도를 보여준다. 실패한 요청을
+    // 다시 시도하는 동안에도 읽지 못한 것으로 본다.
+    final proposals = ref.watch(reportProposalsProvider(report.reportId));
+    final proposal = proposals.value;
+    final hasChanges = proposal != null
+        ? !proposal.nothingPending
+        : proposals.hasError;
+
     // ScreenBody 의 bottom 슬롯이 차지하는 높이다. 그 위에 버튼을 띄운다.
-    final slotHeight = widget.fromHistory
-        ? AppSpacing.xxl
-        : AppSpacing.lg + AppSizes.control + AppSpacing.xxl;
+    final slotHeight = hasChanges
+        ? AppSpacing.lg + AppSizes.control + AppSpacing.xxl
+        : AppSpacing.xxl;
 
     return Stack(
       children: [
         ScreenBody(
           scrollable: true,
-          // 이미 반영을 마친 회차에는 변경 사항을 다시 묻지 않는다.
-          bottom: widget.fromHistory
+          bottom: !hasChanges
               ? null
               : PrimaryButton(
                   label: '변경 사항 확인하기',
@@ -194,16 +231,11 @@ class _BodyState extends ConsumerState<_Body> {
               ),
               const SizedBox(height: AppSpacing.xl),
 
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.image),
-                child: Image.asset(
-                  'assets/images/visitation.webp',
-                  height: 240,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.section),
+              // 면회 사진 없이 시작한 회차에는 사진 자리를 두지 않는다.
+              if (report.photoUrl case final url?) ...[
+                _VisitPhoto(url: url),
+                const SizedBox(height: AppSpacing.section),
+              ],
 
               Text('오늘의 만남', style: set.section),
               const SizedBox(height: AppSpacing.lg),
@@ -216,20 +248,23 @@ class _BodyState extends ConsumerState<_Body> {
               Text('대화 카드별 반응', style: set.section),
               const SizedBox(height: AppSpacing.lg),
 
-              if (report.cardSummaries.isEmpty)
+              if (cards.summaries.isEmpty)
                 const EmptyStateView(
                   message: '이번 만남에서 다룬 카드가 없어요.',
                   icon: Icons.style_outlined,
                 )
               else
-                for (final summary in report.cardSummaries) ...[
-                  _CardSummaryTile(
-                    summary: summary,
-                    outcome: _outcomeOf(summary.cardId, evaluation),
-                    set: set,
-                  ),
+                for (final summary in cards.summaries) ...[
+                  _CardSummaryTile(summary: summary, set: set),
                   const SizedBox(height: AppSpacing.lg),
                 ],
+
+              if (countText != null) ...[
+                if (cards.summaries.isEmpty)
+                  const SizedBox(height: AppSpacing.lg),
+                Text(countText, style: set.sub),
+                const SizedBox(height: AppSpacing.lg),
+              ],
 
               // 떠 있는 버튼이 마지막 카드를 가리지 않게 자리를 비워 둔다.
               const SizedBox(
@@ -333,17 +368,12 @@ class _MetaLine extends StatelessWidget {
   }
 }
 
-/// 카드 하나의 반응. 글이 짧아도 상자 높이가 들쭉날쭉하지 않게 두 줄 자리를
-/// 확보한다. 글이 길면 그만큼 늘어난다.
+/// 쓰고 평가한 카드 하나의 반응. 글이 짧아도 상자 높이가 들쭉날쭉하지 않게 두
+/// 줄 자리를 확보한다. 글이 길면 그만큼 늘어난다.
 class _CardSummaryTile extends StatelessWidget {
-  const _CardSummaryTile({
-    required this.summary,
-    required this.outcome,
-    required this.set,
-  });
+  const _CardSummaryTile({required this.summary, required this.set});
 
   final CardSummary summary;
-  final _CardOutcome outcome;
   final _TypeSet set;
 
   @override
@@ -352,7 +382,6 @@ class _CardSummaryTile extends StatelessWidget {
     final lineHeight = style.fontSize! * style.height!;
     // 글자 크기를 키운 기기에서도 두 줄을 유지한다.
     final twoLines = MediaQuery.textScalerOf(context).scale(lineHeight) * 2;
-    final summarized = outcome == _CardOutcome.summarized;
 
     return AppCard(
       padding: EdgeInsets.all(set.cardPadding),
@@ -365,12 +394,7 @@ class _CardSummaryTile extends StatelessWidget {
             constraints: BoxConstraints(minHeight: twoLines),
             child: SizedBox(
               width: double.infinity,
-              // 다루지 않은 카드에는 분석 결과가 없다. 요약 자리에 그 사실을
-              // 대신 적는다.
-              child: Text(
-                summarized ? summary.summary : outcome.text,
-                style: style,
-              ),
+              child: Text(summary.summary, style: style),
             ),
           ),
         ],
@@ -429,6 +453,49 @@ class _EasyModeButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 면회 때 찍은 사진이다.
+///
+/// 서버 주소는 수명이 짧아(`imageUrlExpiresAt`) 열지 못할 수 있다. 그때는 다른
+/// 그림으로 채우지 않고 열지 못했다고 적는다. 목 데이터는 `asset:` 으로 앱 안의
+/// 그림을 가리킨다.
+class _VisitPhoto extends StatelessWidget {
+  const _VisitPhoto({required this.url});
+
+  final String url;
+
+  static const _assetScheme = 'asset:';
+  static const _height = 240.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = url.startsWith(_assetScheme)
+        ? Image.asset(
+            url.substring(_assetScheme.length),
+            height: _height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          )
+        : Image.network(
+            url,
+            height: _height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            semanticLabel: '면회 사진',
+            errorBuilder: (context, error, stackTrace) => Container(
+              height: _height,
+              color: AppColors.surface,
+              alignment: Alignment.center,
+              child: const Text('사진을 열지 못했어요', style: AppTypography.sub),
+            ),
+          );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.image),
+      child: image,
     );
   }
 }

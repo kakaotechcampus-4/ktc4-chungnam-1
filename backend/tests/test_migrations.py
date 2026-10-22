@@ -38,6 +38,7 @@ DOMAIN_TABLES = {
     "topic_proposals",
     "topic_feedback",
     "withdrawal_feedback",
+    "session_revocations",
 }
 
 
@@ -73,7 +74,7 @@ def test_upgrade_creates_all_tables_and_view(engine):
     inspector = sa.inspect(engine)
 
     assert DOMAIN_TABLES <= set(inspector.get_table_names())
-    assert len(DOMAIN_TABLES) == 15
+    assert len(DOMAIN_TABLES) == 16
     assert "current_consents" in inspector.get_view_names()
 
 
@@ -240,7 +241,7 @@ def test_deleting_card_set_removes_orphan_topic(engine):
                 "(set_id, profile_id, topic_id, card_title, position, description, "
                 " primary_question, follow_up_questions, evidence_source) "
                 "VALUES (:set_id, :profile_id, :topic_id, '합성 카드', 1, "
-                " '합성 카드 설명', '합성 질문?', ARRAY['합성 꼬리 질문?'], 'none')"
+                " '합성 카드 설명', '합성 질문?', ARRAY['하나?', '둘?', '셋?'], 'none')"
             ),
             {"set_id": set_id, "profile_id": profile_id, "topic_id": topic_id},
         )
@@ -259,6 +260,69 @@ def test_deleting_card_set_removes_orphan_topic(engine):
             {"topic_id": topic_id},
         ).scalar_one()
     assert remaining == 0
+
+
+@pytest.mark.parametrize(
+    "card_title, description, primary_question, follow_up_questions",
+    [
+        ("  ", "합성 설명", "합성 질문?", "{하나?,둘?,셋?}"),
+        ("합성 카드", "\t", "합성 질문?", "{하나?,둘?,셋?}"),
+        ("합성 카드", "합성 설명", " \n", "{하나?,둘?,셋?}"),
+        ("합성 카드", "합성 설명", "합성 질문?", "{하나?,둘?}"),
+        ("합성 카드", "합성 설명", "합성 질문?", '{하나?," ",셋?}'),
+        ("합성 카드", "합성 설명", "합성 질문?", "{하나?,NULL,셋?}"),
+    ],
+    ids=[
+        "blank-title",
+        "blank-description",
+        "blank-question",
+        "two-follow-ups",
+        "blank-follow-up",
+        "null-follow-up",
+    ],
+)
+def test_card_without_text_is_rejected(
+    engine, card_title, description, primary_question, follow_up_questions
+):
+    with engine.begin() as conn:
+        _, profile_id = _insert_profile(conn)
+        topic_id = conn.execute(
+            sa.text(
+                "INSERT INTO profile_topics (profile_id, title, description) "
+                "VALUES (:profile_id, '합성 주제', '합성 주제 설명') RETURNING topic_id"
+            ),
+            {"profile_id": profile_id},
+        ).scalar_one()
+        set_id = conn.execute(
+            sa.text(
+                "INSERT INTO card_sets "
+                "(profile_id, status, model, prompt_version, generation_log) "
+                "VALUES (:profile_id, 'completed', 'synthetic-model', 'card-v1', "
+                " '{\"input\": {}}') RETURNING set_id"
+            ),
+            {"profile_id": profile_id},
+        ).scalar_one()
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO conversation_cards "
+                    "(set_id, profile_id, topic_id, card_title, position, description, "
+                    " primary_question, follow_up_questions, evidence_source) "
+                    "VALUES (:set_id, :profile_id, :topic_id, :card_title, 1, "
+                    " :description, :primary_question, CAST(:follow_ups AS text[]), 'none')"
+                ),
+                {
+                    "set_id": set_id,
+                    "profile_id": profile_id,
+                    "topic_id": topic_id,
+                    "card_title": card_title,
+                    "description": description,
+                    "primary_question": primary_question,
+                    "follow_ups": follow_up_questions,
+                },
+            )
 
 
 def test_downgrade_removes_all_tables_then_upgrade_recreates_them(
@@ -285,3 +349,49 @@ def test_downgrade_removes_all_tables_then_upgrade_recreates_them(
         engine2.dispose()
 
     assert DOMAIN_TABLES <= table_names
+
+
+def test_life_fact_story_columns_fill_existing_rows_and_reject_bad_values(
+    alembic_config, test_database_url
+):
+    """일대기 분류와 그림 번호(b7e2c4a9d153). 기존 행은 `other`, 1로 채운다."""
+    command.upgrade(alembic_config, "d466bb108618")
+    engine = sa.create_engine(test_database_url)
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            fact_id = conn.execute(
+                sa.text(
+                    "INSERT INTO life_facts (profile_id, title, content) "
+                    "VALUES (:profile_id, '합성 제목', '합성 내용') RETURNING fact_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+
+        command.upgrade(alembic_config, "head")
+
+        with engine.begin() as conn:
+            row = conn.execute(
+                sa.text(
+                    "SELECT story_category, image_number FROM life_facts "
+                    "WHERE fact_id = :fact_id"
+                ),
+                {"fact_id": fact_id},
+            ).one()
+        assert (row.story_category, row.image_number) == ("other", 1)
+
+        for column, bad in (("story_category", "occupation"), ("image_number", 0), ("image_number", 6)):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    sa.text(f"UPDATE life_facts SET {column} = :bad WHERE fact_id = :fact_id"),
+                    {"bad": bad, "fact_id": fact_id},
+                )
+
+        command.downgrade(alembic_config, "d466bb108618")
+        with engine.begin() as conn:
+            columns = {
+                c["name"] for c in sa.inspect(conn).get_columns("life_facts")
+            }
+        assert {"story_category", "image_number"}.isdisjoint(columns)
+    finally:
+        engine.dispose()

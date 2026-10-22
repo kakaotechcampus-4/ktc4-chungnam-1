@@ -38,14 +38,43 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   /// `StateError` 를 던져 파일을 닫지 못한 채 화면만 사라진다.
   late final VisitController _controller;
 
+  /// 면회 사진을 올리지 못했다는 알림 띠. 화면을 떠나면 닫는다.
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _photoNotice;
+
   @override
   void initState() {
     super.initState();
     _controller = ref.read(visitControllerProvider.notifier);
   }
 
+  /// 사진 업로드 결과를 알린다. 녹음 화면이 뜨기 전에 끝나도 놓치지 않게
+  /// 녹음 전 안내부터 지켜본다. 만남을 끝내면(참여자 수 확인) 닫는다.
+  void _onPhotoUpload(
+    (VisitPhotoUpload?, bool)? previous,
+    (VisitPhotoUpload?, bool) next,
+  ) {
+    final (upload, stopped) = next;
+    _closePhotoNotice();
+    if (stopped) return;
+    if (upload == VisitPhotoUpload.failed ||
+        upload == VisitPhotoUpload.rejected ||
+        upload == VisitPhotoUpload.missing) {
+      _photoNotice = _showPhotoNotice(
+        context,
+        upload: upload!,
+        onRetry: _controller.retryPhotoUpload,
+      );
+    }
+  }
+
+  void _closePhotoNotice() {
+    _photoNotice?.close();
+    _photoNotice = null;
+  }
+
   @override
   void dispose() {
+    _closePhotoNotice();
     // 끝내기를 누르지 않고 뒤로 나간 경우다. 열린 파일을 닫지 않으면 WAV 헤더가
     // 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
     // 없으면 상태가 알아서 지나간다.
@@ -56,6 +85,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   @override
   Widget build(BuildContext context) {
     final visit = ref.watch(visitControllerProvider);
+    ref.listen(
+      visitControllerProvider.select(
+        (v) => (v.value?.photoUpload, v.value?.participantCount != null),
+      ),
+      _onPhotoUpload,
+    );
 
     return Scaffold(
       appBar: const AppTopBar(),
@@ -71,11 +106,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   }
 }
 
-/// E-1. 녹음 전 안내와 피보호자 동의 확인.
+/// E-1. 녹음 전 안내.
 ///
-/// 계약의 `VisitSession.consent.careRecipientConfirmation` 과
-/// `docs/legal/consent-draft.md` 의 필수 동의 항목에 해당한다. 가입 화면이 아니라
-/// 면회를 시작하는 이 자리에서 받는다.
+/// 회차마다 피보호자 동의를 확인하지 않는다. 녹음과 음성 처리 동의는 가입 때
+/// 보호자의 필수 동의로 받는다(`docs/architecture/data-contracts.md`). 녹음 전
+/// 동의 확인 체크는 팀 회의에서 빼기로 했다(2026-10-13 확인).
 class _Intro extends ConsumerWidget {
   const _Intro();
 
@@ -83,14 +118,13 @@ class _Intro extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(visitControllerProvider).value;
     final controller = ref.read(visitControllerProvider.notifier);
-    final confirmed = state?.careRecipientConfirmed ?? false;
     final problem = state?.problem;
 
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
         label: '네, 좋아요',
-        onPressed: confirmed ? controller.startRecording : null,
+        onPressed: controller.startRecording,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,52 +156,6 @@ class _Intro extends ConsumerWidget {
           ),
 
           const Spacer(flex: 2),
-
-          // 필수 확인이다. 체크해야 녹음을 시작할 수 있다.
-          InkWell(
-            onTap: () => controller.confirmCareRecipient(confirmed: !confirmed),
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    value: confirmed,
-                    onChanged: (value) => controller.confirmCareRecipient(
-                      confirmed: value ?? false,
-                    ),
-                    activeColor: AppColors.ink,
-                    side: const BorderSide(color: AppColors.line, width: 2),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '[필수] ',
-                            style: AppTypography.body.copyWith(
-                              color: AppColors.danger,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: '어르신께 녹음한다는 것을 알려드렸고 동의를 확인했어요.',
-                            style: AppTypography.body,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
 
           if (problem != null) ...[
             const SizedBox(height: AppSpacing.lg),
@@ -226,6 +214,8 @@ class _ProblemNotice extends StatelessWidget {
     VisitRecordingProblem.startFailed => '녹음을 시작하지 못했어요.\n잠시 후 다시 눌러주세요.',
     VisitRecordingProblem.saveFailed =>
       '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
+    VisitRecordingProblem.sessionFailed =>
+      '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
   };
 
   @override
@@ -256,6 +246,34 @@ class _ProblemNotice extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 면회 사진을 올리지 못했으면 화면 아래 알림 띠로 알린다(API 5-2).
+///
+/// 녹음 화면은 아래 카드 자리 때문에 안내를 둘 높이가 남지 않아, 본문에 두면
+/// 스크롤해야 보인다. 녹음은 그대로 이어지므로 녹음 실패보다 약하게 알린다.
+/// 다시 올릴 수 있는 실패는 버튼을 달아 닫을 때까지 남기고, 받지 않는 거절은
+/// 잠시 보여주고 사라진다. 사진 파일을 찾지 못했을 때도 다시 올릴 수 없다.
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
+  BuildContext context, {
+  required VisitPhotoUpload upload,
+  required VoidCallback onRetry,
+}) {
+  final retryable = upload == VisitPhotoUpload.failed;
+  return ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(switch (upload) {
+        VisitPhotoUpload.failed => '사진을 올리지 못했어요.\n녹음은 그대로 이어져요.',
+        VisitPhotoUpload.missing =>
+          '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.\n녹음은 그대로 이어져요.',
+        _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+      }),
+      action: retryable
+          ? SnackBarAction(label: '사진 다시 올리기', onPressed: onRetry)
+          : null,
+      showCloseIcon: retryable,
+    ),
+  );
 }
 
 /// E-2. 녹음 중.

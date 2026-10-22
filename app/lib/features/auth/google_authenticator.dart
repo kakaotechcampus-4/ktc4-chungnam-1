@@ -100,7 +100,7 @@ class GoogleSignInAuthenticator implements GoogleAuthenticator {
       await _initialize();
 
       // 웹의 FedCM 처럼 기다릴 Future 를 주지 않는 플랫폼이 있다. 그때는
-      // 복원을 포기하고 로그인 화면부터 시작한다.
+      // 복원을 포기하고 스플래시의 로그인 버튼부터 시작한다.
       final attempt = GoogleSignIn.instance.attemptLightweightAuthentication();
       if (attempt == null) return null;
 

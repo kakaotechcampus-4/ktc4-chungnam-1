@@ -1,4 +1,4 @@
-/// 회원가입 화면에서 받는 동의 항목이다.
+/// 구글 로그인 뒤 동의 화면과 프로필 설정에서 받는 동의 항목이다.
 ///
 /// 항목의 키는 `docs/architecture/data-contracts.md` 의 `Account.consent` 를,
 /// 문구는 `docs/legal/consent-draft.md` 를 그대로 따른다. **여기서 문구를 새로
@@ -10,8 +10,6 @@
 /// PR 에 남겨 두었다(`CONTRIBUTING.md` 의 검토 책임).
 ///
 /// 계약에 없는 동의 항목은 이 화면에서 받지 않는다.
-/// - 피보호자 동의 확인은 `VisitSession.consent.careRecipientConfirmation` 이라
-///   면회를 시작할 때 받는다.
 /// - 이미지 분석 동의는 기능을 이용하는 시점에 따로 받는다.
 library;
 

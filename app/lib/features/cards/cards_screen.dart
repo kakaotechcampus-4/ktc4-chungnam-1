@@ -5,14 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
+import '../../data/card_api.dart';
 import '../../data/models.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../review/review_controller.dart';
+import '../visit/visit_camera.dart';
 import '../visit/visit_controller.dart';
+import '../visit/visit_photos.dart';
+import 'card_generation_controller.dart';
 import 'cards_controller.dart';
 
 /// C 오늘의 대화 카드.
@@ -24,18 +30,61 @@ class CardsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cards = ref.watch(cardsControllerProvider);
+    final generation = ref.watch(cardGenerationProvider);
+    final controller = ref.read(cardGenerationProvider.notifier);
 
     return Scaffold(
       appBar: const AppTopBar(),
-      body: cards.when(
+      body: generation.when(
         loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
         error: (error, _) => ErrorStateView(
-          message: '대화 카드를 불러오지 못했어요.\n잠시 후 다시 시도해주세요.',
-          onRetry: () => ref.invalidate(cardsControllerProvider),
+          message: _failureMessage(error),
+          onRetry: controller.retry,
         ),
-        data: (state) => _Body(state: state),
+        data: (status) => switch (status) {
+          CardGenerationStatus.ready => const _Cards(),
+          // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
+          // 못하므로 공통 문구만 보여준다.
+          CardGenerationStatus.failed => ErrorStateView(
+            message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
+            onRetry: controller.retry,
+          ),
+          // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
+          CardGenerationStatus.inVisit => const EmptyStateView(
+            message: '아직 마치지 않은 면회가 있어요.',
+            icon: Icons.style_outlined,
+          ),
+          // 생성 흐름은 none 과 running 을 남기지 않는다. 기다리는 도중 화면을
+          // 떠난 경우뿐이라 기다리는 화면을 그대로 둔다.
+          CardGenerationStatus.none || CardGenerationStatus.running =>
+            const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
+        },
       ),
+    );
+  }
+}
+
+String _failureMessage(Object error) => switch (error) {
+  ApiNetworkFailure() => '서버에 연결하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 시도해주세요.',
+  _ => '대화 카드를 불러오지 못했어요.\n잠시 후 다시 시도해주세요.',
+};
+
+/// 쓸 묶음이 준비된 뒤의 카드 고르기.
+class _Cards extends ConsumerWidget {
+  const _Cards();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cards = ref.watch(cardsControllerProvider);
+
+    return cards.when(
+      loading: () => const LoadingView(message: '오늘의 대화 카드를 불러오고 있어요'),
+      error: (error, _) => ErrorStateView(
+        message: _failureMessage(error),
+        // 실패한 묶음 조회를 버려야 다시 받는다.
+        onRetry: () => ref.invalidate(currentCardSetProvider),
+      ),
+      data: (state) => _Body(state: state),
     );
   }
 }
@@ -107,9 +156,18 @@ class _BodyState extends ConsumerState<_Body> {
           // 한 장도 고르지 않으면 시작하지 않는다.
           onPressed: state.canStart
               ? () {
-                  // 지난 회차의 녹음 시간과 소감이 남아 있지 않게 비운다.
+                  // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
+                  // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
+                  // (visit_photos.dart). 못 지워도 면회는 시작한다.
                   ref.invalidate(visitControllerProvider);
                   ref.invalidate(reviewControllerProvider);
+                  ref.invalidate(visitPhotoProvider);
+                  unawaited(
+                    ref
+                        .read(visitPhotosProvider)
+                        .tidy()
+                        .catchError((Object _) {}),
+                  );
                   context.push(AppRoutes.visitPhoto);
                 }
               : null,
@@ -217,10 +275,11 @@ class _CardTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(card.topicTitle, style: AppTypography.bodyStrong),
+                    Text(card.cardTitle, style: AppTypography.bodyStrong),
                     const SizedBox(height: AppSpacing.sm),
-                    // 이 카드가 어떤 주제인지 알려주는 설명이다.
-                    Text(card.topicDescription, style: AppTypography.sub),
+                    // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는
+                    // 여러 면회에 걸친 묶음이라 고르는 화면에는 두지 않는다.
+                    Text(card.description, style: AppTypography.sub),
                   ],
                 ),
               ),

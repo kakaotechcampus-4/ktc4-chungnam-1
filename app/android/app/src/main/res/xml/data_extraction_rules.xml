@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12(API 31) 이상의 자동 백업과 기기 간 이전 규칙.
+
+  면회 녹음과 사진 폴더는 백업하지 않는다. 지운 녹음과 사진이 앱을 다시 설치할 때 되살아나지
+  않게 하려는 것이다(PR #117 리뷰). path_provider 의 문서 폴더는 Android 에서
+  `app_flutter/` 이다(lib/features/visit/visit_recorder.dart, visit_photos.dart).
+  Android 11 이하는 backup_rules.xml 을 쓴다. 두 파일을 함께 고친다.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="app_flutter/visit_recordings/" />
+        <exclude domain="root" path="app_flutter/visit_photos/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="app_flutter/visit_recordings/" />
+        <exclude domain="root" path="app_flutter/visit_photos/" />
+    </device-transfer>
+</data-extraction-rules>
