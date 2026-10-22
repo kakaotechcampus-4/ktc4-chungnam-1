@@ -1,11 +1,11 @@
 /// 일대기 화면이 쓰는 이야기 한 편과 책 한 권이다.
 ///
 /// 화면은 서버 형식(`LifeFact`)을 직접 보지 않고 여기의 [LifeStory] 만 본다.
-/// `LifeFact` 가 새 명세(`title`, `content`, `createdAt`)로 바뀌어도 바꾸는
-/// 곳을 한 군데로 모으려는 것이다.
+/// 서버 형식이 바뀌어도 고칠 곳을 [LifeStory.fromLifeFact] 한 군데로 모으려는
+/// 것이다.
 ///
-/// 분류([LifeStoryCategory])와 기본 이미지 번호는 API 명세에 없는 값이다.
-/// BE에 제안할 FE 안이며 서버에 생기기 전까지는 목 데이터에만 있다.
+/// 분류(`storyCategory`)와 기본 이미지 번호(`imageNumber`)의 필드 이름은
+/// 임시다(api-spec 미정 사항 11).
 library;
 
 import 'package:flutter/material.dart';
@@ -54,6 +54,21 @@ class LifeStory {
     this.createdAt,
     this.detailField,
   });
+
+  /// 일대기에 담긴 이야기를 화면용으로 바꾼다.
+  ///
+  /// 모르는 분류는 `기타` 에 둔다. 이야기를 숨기지 않고 보호자가 수정에서
+  /// 분류를 고를 수 있게 하려는 것이다. 범위 밖 그림 번호도 같은 이유로 1~5
+  /// 안으로 맞춘다.
+  factory LifeStory.fromLifeFact(LifeFact fact) => LifeStory(
+    id: fact.factId,
+    category:
+        LifeStoryCategory.parse(fact.storyCategory) ?? LifeStoryCategory.other,
+    title: fact.title,
+    content: fact.content,
+    imageNumber: fact.imageNumber.clamp(1, lifeStoryImageCount),
+    createdAt: DateTime.parse(fact.createdAt).toLocal(),
+  );
 
   final String id;
   final LifeStoryCategory category;
