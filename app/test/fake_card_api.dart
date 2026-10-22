@@ -11,9 +11,11 @@ import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/visit_api.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
+import 'package:saerok/features/visit/visit_photos.dart';
 
 import 'fake_pending_uploads.dart';
 import 'fake_visit_api.dart';
+import 'fake_visit_photos.dart';
 
 /// 4-2 가 차례로 돌려줄 상태를 정해 둔다. 마지막 값은 그 뒤로 계속 돌려준다.
 class FakeCardApi implements CardApi {
@@ -60,15 +62,18 @@ class FakeCardApi implements CardApi {
 final withMockCards = mockCardsWith();
 
 /// [withMockCards] 와 같다. 회차 요청을 확인하려면 [visitApi] 를 넘긴다.
-/// 기기에 남기는 녹음 기록을 확인하려면 [pendingUploads] 를 넘긴다.
+/// 기기에 남기는 녹음 기록을 확인하려면 [pendingUploads] 를, 면회 사진은
+/// [visitPhotos] 를 넘긴다.
 List<Override> mockCardsWith({
   FakeVisitApi? visitApi,
   FakePendingUploads? pendingUploads,
+  FakeVisitPhotos? visitPhotos,
 }) => [
   visitApiProvider.overrideWith((ref) => visitApi ?? FakeVisitApi()),
   pendingUploadsProvider.overrideWith(
     (ref) => pendingUploads ?? FakePendingUploads(),
   ),
+  visitPhotosProvider.overrideWith((ref) => visitPhotos ?? FakeVisitPhotos()),
   cardApiProvider.overrideWithValue(FakeCardApi()),
   currentCardSetProvider.overrideWith(
     (ref) => const MockRepository().loadCardSet(),

@@ -85,13 +85,21 @@ class _ReportRow extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.image),
-            child: Image.asset(
-              'assets/images/visitation.webp',
+          // 7-1 이 면회 사진을 주지 않아 사진 자리만 둔다. 사진이 있는 회차도
+          // 있으므로 '사진 없음' 이 아니라 사진 자리 모양으로 그린다.
+          ExcludeSemantics(
+            child: Container(
               width: 72,
               height: 72,
-              fit: BoxFit.cover,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.image),
+              ),
+              child: const Icon(
+                Icons.image_outlined,
+                size: 32,
+                color: AppColors.textDisabled,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.lg),

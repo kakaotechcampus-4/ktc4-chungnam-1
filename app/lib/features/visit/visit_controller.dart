@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +9,8 @@ import '../../data/providers.dart';
 import '../../data/visit_api.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
+import 'visit_camera.dart';
+import 'visit_photos.dart';
 import 'visit_recorder.dart';
 
 /// 녹음이 뜻대로 되지 않은 경우다. 화면은 이 값으로 안내 문구를 고른다.
@@ -27,6 +30,27 @@ enum VisitRecordingProblem {
   sessionFailed,
 }
 
+/// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
+///
+/// 사진은 녹음을 막지 않는다. 회차를 만든 뒤 녹음과 따로 올린다.
+enum VisitPhotoUpload {
+  /// 찍은 사진이 없거나 아직 회차가 없다.
+  none,
+  uploading,
+  uploaded,
+
+  /// 올리지 못했다. 다시 올리면 될 수 있다.
+  failed,
+
+  /// 올리지 못했고 다시 올려도 받지 않는다. 형식과 크기 거절, 평가가 끝난
+  /// 회차 등이다. 리포트에는 사진 없이 담긴다.
+  rejected,
+
+  /// 찍은 사진 파일을 찾거나 읽지 못했다. 다시 올려도 같아 리포트에는 사진
+  /// 없이 담긴다. 녹음은 그대로 이어진다.
+  missing,
+}
+
 /// 면회 한 회차의 진행 상태다.
 ///
 /// 녹음 장치는 [VisitRecorder] 가 맡는다. 여기서는 화면이 필요로 하는 상태와
@@ -44,6 +68,7 @@ class VisitState {
     this.recordingPath,
     this.problem,
     this.participantCount,
+    this.photoUpload = VisitPhotoUpload.none,
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -78,6 +103,8 @@ class VisitState {
   /// 녹음을 끝낼 때 보호자가 종료 모달에서 확인해 준 값이다. 앱이 목소리를
   /// 세어 짐작하지 않는다. 확인 전에는 `null` 이다.
   final int? participantCount;
+
+  final VisitPhotoUpload photoUpload;
 
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
@@ -115,6 +142,7 @@ class VisitState {
     String? recordingPath,
     VisitRecordingProblem? problem,
     int? participantCount,
+    VisitPhotoUpload? photoUpload,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -129,6 +157,7 @@ class VisitState {
     recordingPath: recordingPath ?? this.recordingPath,
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
+    photoUpload: photoUpload ?? this.photoUpload,
   );
 }
 
@@ -144,6 +173,9 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 회차를 만드는 중인지. 두 번 눌러 회차가 둘 생기지 않게 막는다.
   bool _creatingSession = false;
 
+  /// 사진 올리기를 차례로 잇는다([_uploadPhoto]).
+  Future<void> _photoQueue = Future.value();
+
   VisitRecorder get _recorder => ref.read(visitRecorderProvider);
 
   @override
@@ -158,7 +190,16 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _fileOpen = false;
     _creatingSession = false;
+    _photoQueue = Future.value();
     ref.onDispose(() => _ticker?.cancel());
+
+    // 회차를 만든 뒤 사진을 다시 찍었으면 새 사진을 올린다. 5-2 는 다시 올리면
+    // 앞 사진을 바꿔 끼운다.
+    ref.listen(visitPhotoProvider, (previous, next) {
+      if (next == null || next == previous) return;
+      if (state.value?.sessionId == null) return;
+      unawaited(_uploadPhoto(retryOnce: true));
+    });
 
     return VisitState(
       cards: chosen,
@@ -251,6 +292,8 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
 
       _update((now) => now.copyWith(sessionId: session.sessionId));
+      // 녹음은 사진을 기다리지 않는다.
+      unawaited(_uploadPhoto(retryOnce: true));
       return true;
     } on ApiFailure {
       _fail(VisitRecordingProblem.sessionFailed);
@@ -259,6 +302,86 @@ class VisitController extends AsyncNotifier<VisitState> {
       _creatingSession = false;
     }
   }
+
+  /// 올리지 못한 면회 사진을 다시 올린다. 녹음 화면의 버튼이 부른다.
+  ///
+  /// 소감을 저장하면(6-1) 서버가 받지 않으므로 녹음 화면에서만 부른다.
+  Future<void> retryPhotoUpload() async {
+    if (state.value?.photoUpload != VisitPhotoUpload.failed) return;
+    await _uploadPhoto(retryOnce: false);
+  }
+
+  /// 찍어 둔 사진을 회차에 올린다(API 5-2). 사진이 없으면 아무것도 하지 않는다.
+  ///
+  /// 올리기는 차례로 한다. 앞 사진을 올리는 중에 다시 찍었으면 앞 요청이 끝난
+  /// 뒤 새 사진을 올려, 늦게 닿은 앞 사진이 서버에서 새 사진을 덮지 않게 한다.
+  Future<void> _uploadPhoto({required bool retryOnce}) =>
+      _photoQueue = _photoQueue.then((_) => _sendPhoto(retryOnce: retryOnce));
+
+  /// 지금 사진을 올린다. 올리면 갤러리에 원본이 있는 사본은 지우고, 없으면
+  /// 남긴 채 올린 회차만 적는다([VisitPhotos]).
+  ///
+  /// 올리는 사이 사진을 다시 찍었으면 결과를 화면 상태에 쓰지 않는다. 앞 사진의
+  /// 결과이고, 새 사진은 [_photoQueue] 에서 뒤이어 올린다.
+  Future<void> _sendPhoto({required bool retryOnce}) async {
+    if (!ref.mounted) return;
+    final sessionId = state.value?.sessionId;
+    final photoPath = ref.read(visitPhotoProvider);
+    if (sessionId == null || photoPath == null) return;
+
+    final photos = ref.read(visitPhotosProvider);
+    final photo = ref.read(visitPhotoProvider.notifier)..sending(photoPath);
+    _update((now) => now.copyWith(photoUpload: VisitPhotoUpload.uploading));
+
+    final result = await _sendPhotoFile(
+      sessionId,
+      photoPath,
+      retryOnce: retryOnce,
+    );
+    if (result == VisitPhotoUpload.uploaded) {
+      try {
+        await photos.markUploaded(photoPath, sessionId);
+      } on FileSystemException {
+        // 기록을 못 적어도 사진은 올라갔다. 탈퇴 때는 기록 없는 파일로 지운다.
+      }
+    }
+    await photo.sent(photoPath);
+
+    if (!ref.mounted) return;
+    if (ref.read(visitPhotoProvider) != photoPath) return;
+    _update((now) => now.copyWith(photoUpload: result));
+  }
+
+  /// [retryOnce] 면 다시 시도해도 되는 실패(연결 실패, 서버가 `retryable`
+  /// 로 알린 실패)에 한 번만 더 올린다.
+  Future<VisitPhotoUpload> _sendPhotoFile(
+    String sessionId,
+    String photoPath, {
+    required bool retryOnce,
+  }) async {
+    final api = ref.read(visitApiProvider);
+    var attemptsLeft = retryOnce ? 2 : 1;
+    while (true) {
+      attemptsLeft--;
+      try {
+        await api.uploadPhoto(sessionId, photoPath: photoPath);
+        return VisitPhotoUpload.uploaded;
+      } on ApiFailure catch (failure) {
+        final retryable = _isRetryable(failure);
+        if (retryable && attemptsLeft > 0) continue;
+        return retryable ? VisitPhotoUpload.failed : VisitPhotoUpload.rejected;
+      } on FileSystemException {
+        // 사진 파일이 없거나 읽지 못했다. 다시 올려도 같다.
+        return VisitPhotoUpload.missing;
+      }
+    }
+  }
+
+  static bool _isRetryable(ApiFailure failure) => switch (failure) {
+    ApiNetworkFailure() => true,
+    ApiServerFailure(:final retryable) => retryable,
+    _ => false,
+  };
 
   Future<void> _resumeRecording() async {
     try {
