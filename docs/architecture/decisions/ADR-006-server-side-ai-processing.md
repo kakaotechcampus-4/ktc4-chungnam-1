@@ -14,7 +14,7 @@
 9월 14일의 온프레미스 일괄 처리 결정 뒤 논의한 변경이 문서에 빠져 있어 정정한다. 새 장비, 모델이나 데이터 전송을 승인하는 결정은 아니다.
 
 - STT는 GPU 서버에서 처리하고, 사진 설명과 카드 및 리포트 생성은 ML API를 활용한다. 10월 6일 BE 채널에서 이인성이 기존 회의 방향을 짚었고 김민혁이 확인했다.
-- 카드 생성은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)의 BE 생성 함수 호출안으로 연결한다. 리포트의 함수 호출과 HTTP 연결 차이는 [PR #110](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/110)에서 #106 담당자와 검토 중이며, 이 문서가 구체적인 연결 방식을 대신 결정하지 않는다.
+- 카드 생성은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)의 BE 생성 함수 호출안으로 연결한다. 리포트와 변경 제안도 BE가 `ai/`의 생성 함수([PR #110](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/110))를 직접 부르는 방식으로 연결한다([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123) 리뷰에서 정한 방향). AI 서버에 리포트 HTTP API가 없고 카드 생성과 같은 방식이기 때문이다. STT는 기존 GPU 서버 API 호출을 유지한다. 함수 호출이어도 생성 함수 안에서 외부 ML API로 요청을 보내므로, 외부 전송 조건은 아래 법률 문서를 그대로 따른다.
 - 사진 설명은 별도 승인 없이 카드 생성에 사용한다. 사용자가 원하면 앨범에서 확인하거나 수정한다. [PR #97의 기존 결정 확인](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/97#discussion_r4183313066)을 참고한다. 사진 설명을 승인된 생애 사실로 자동 저장하지 않는다.
 - 사진 메타데이터는 AI 분석과 주제 추천 입력에서 제외한다. 온디바이스 제외, 개발 GPU와 시연 장비의 구분, 서버 중심 데이터 관리 원칙은 유지한다.
 - 실제 사용자 자료의 외부 전송 조건과 동의 확인은 [법률 문서](../../legal/README.md)를 따른다. 공개 및 허가된 테스트 자료 사용과 실제 사용자 자료 처리를 구분한다.

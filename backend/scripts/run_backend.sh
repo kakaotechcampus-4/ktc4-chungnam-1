@@ -7,6 +7,7 @@ cd "$PROJECT_DIRECTORY"
 
 BACKEND_HOST="${SAEROK_BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${SAEROK_BACKEND_PORT:-8000}"
+export AWS_PROFILE=StudentDeveloper-009398924556
 
 exec uv run uvicorn app.main:app \
   --host "$BACKEND_HOST" \

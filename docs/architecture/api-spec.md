@@ -4,7 +4,7 @@
 
 2026-10-12 문서 정리: 사진 설명은 별도 승인 없이 카드 생성에 쓰고 앨범에서 선택적으로 수정한다(3-3). 카드 API와 요청 및 결과 형식은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)에 맞췄다. 프로필 저장(2-4) 후 카드 생성을 요청(4-1)하고, BE의 4-1 처리에서 생성 함수를 호출한다. 이전 2-5와 내부 8-2는 삭제했으며, 실제 AI 생성 함수 연결은 후속 작업이다.
 
-STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내부 HTTP 형식을 실제 GPU 실행 위치와 동일시하지 않는다. 특히 리포트의 함수 호출 전환은 [PR #110](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/110)에서 #106 담당자와 검토 중이다.
+STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내부 HTTP 형식을 실제 GPU 실행 위치와 동일시하지 않는다. 리포트(8-3)는 [PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)에서 BE가 `ai/`의 생성 함수를 직접 부르는 방식으로 연결한다. 요청과 응답 형식, BE 검증과 오류 코드는 그대로이며, 생성 함수 안에서 외부 ML API로 요청을 보낸다는 점도 같다.
 
 ## 공통
 
@@ -66,6 +66,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 2-6 | 생애 정보 추가 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 |
 | 2-7 | 생애 정보 수정 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 |
 | 2-8 | 어르신 목록 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 |
+| 2-9 | 일대기 이야기 삭제 | `DELETE` | `/api/v1/life-facts/{factId}` | 신규 |
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 앨범에서 사진 설명 수정 | | | 수정 API 미정, 필수 승인 없음 |
@@ -102,7 +103,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
     [평가]        6-1 → 6-2 → 6-3 폴링
     [리포트]      7-2, 6-4 → 7-3 → 7-4
-    [일대기]      2-3, 2-6, 2-7
+    [일대기]      2-3, 2-6, 2-7, 2-9
     [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
 <br>
@@ -358,12 +359,17 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 ```json
 {
+  "storyCategory": "work",
   "title": "단골손님",
-  "content": "수선집에 오래 다닌 단골손님이 많았어요."
+  "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+  "imageNumber": 3
 }
 ```
 
+- `storyCategory`: 일대기의 분류. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
 - `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `imageNumber`: 분류별 기본 그림 번호. 1~5 정수. 그림 파일은 앱에 있고 서버는 번호만 저장한다.
+- 네 필드 모두 필수다. `storyCategory`, `imageNumber`의 필드 이름은 임시다([미정 사항](#미정-사항) 11).
 
 응답 `201` — [LifeFact](#lifefact)
 
@@ -380,6 +386,9 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 ```json
 { "content": "수선집에 오래 다닌 단골손님이 많았고 시장 상인들과도 친하셨어요." }
 ```
+
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고 `null`로 지울 수 없다.
+- 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
 
 응답 `200` — [LifeFact](#lifefact)
 
@@ -401,6 +410,20 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+
+### 2-9. `DELETE /api/v1/life-facts/{factId}` — 신규
+
+일대기 이야기 한 편의 휴지통에서 확인 창을 거쳐 호출한다. 본문 없음.
+
+응답 `204`
+
+- 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 `context.lifeFacts`에서 빠지며, 주제와 지난 카드의 근거에 남은 그 `factId`도 4-1 입력을 만들 때 뺀다. 저장된 근거는 고치지 않는다.
+- 이미 만든 카드와 주제, 그 이야기를 출처로 한 변경 제안은 지우지 않는다. 지운 이야기를 근거로 한 카드와 주제의 처리는 미정([미정 사항](#미정-사항) 12)
+- 세부 정보 네 항목은 생애 정보가 아니므로 이 API로 지우지 않는다(2-4에서 `null`).
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `LIFE_FACT_NOT_FOUND` |
 
 <br>
 
@@ -465,6 +488,14 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 ---
 
 ## 4. 대화 카드
+
+### 사실 정정 후 카드 갱신 기준
+
+생성 시점은 [PM 기준](../pm/README.md#사실-정정과-다음-면회-카드-반영)을 따른다. 정정은 즉시 저장하고 영향받은 카드의 사용을 중지한다. 매번 재생성하지 않고 ‘다음 대화 준비’에서 누적 정정을 반영해 카드 묶음 전체를 한 번 재생성한다. 완료 후 카드 선택과 대화 시작을 허용한다.
+
+2026-10-16 [PM 기준](../pm/README.md#사실-정정과-다음-면회-카드-반영): 정정으로 사용 중지한 카드는 대화 평가의 미사용과 구분하며 추천 불이익을 주지 않는다.
+
+아래 상태 표와 `CARD_SET_READY`는 현재 계약이다. 기존 코드는 준비된 카드의 입력이 이후 수정됐는지 구분하지 않으므로 이 제품 기준을 충족하는 구현이 아니다. 2-4, 2-7과 7-4의 사실 저장, 4-1부터 4-3의 생성 및 조회, 5-1의 면회 시작 사이에서 정정 반영 여부를 맞춰야 한다. 반영 대기 저장 방식, 입력 변경 감지, 갱신 실패와 생성 중 해당 프로필 정정 저장 제한와 API 변경은 담당자가 설계한다. 이 문서 변경으로 기존 응답 enum이나 오류 코드를 임의로 바꾸지 않는다.
 
 카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
 
@@ -964,11 +995,19 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
       "sessionId": "00000000-0000-4000-8000-000000000201",
       "title": "재봉 일 이야기를 나눈 날",
       "visitDate": "2026-08-21",
-      "mood": "good"
+      "mood": "good",
+      "photo": {
+        "photoId": "00000000-0000-4000-8000-000000000221",
+        "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/visit.jpg?...",
+        "imageUrlExpiresAt": "2026-08-21T15:00:00+09:00"
+      }
     }
   ]
 }
 ```
+
+- `photo`: 면회 사진이 없으면 `null`. 형식은 [VisitReport](#visitreport)의 `photo`와 같다.
+- 면회 사진의 조회 URL을 만들지 못하면 목록 전체를 실패시키지 않고 그 항목만 `photo: null`로 담는다. 7-2는 같은 경우 `503`이다.
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -1050,7 +1089,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 백엔드 worker가 동기 호출한다. 앱은 호출하지 않는다. 원본 파일은 수명이 짧은 S3 Presigned GET URL로만 전달한다. 피보호자의 이름, 성별, 생년월일은 어떤 요청에도 넣지 않는다.
 
-AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다.
+AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다.
 
 8-3, 8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다. 카드 생성은 AI 서버를 거치지 않으며 4-1에 적는다(8-2 삭제).
 
@@ -1108,6 +1147,8 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 카드 생성 처리](#4-1-카드-생성-처리)).
 
 ### 8-3. `POST /internal/v1/visit-reports` — 신규
+
+전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
 
 요청
 
@@ -1291,11 +1332,15 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "schemaVersion": 1,
   "factId": "00000000-0000-4000-8000-000000000111",
   "profileId": "00000000-0000-4000-8000-000000000101",
+  "storyCategory": "work",
   "title": "단골손님",
   "content": "수선집에 오래 다닌 단골손님이 많았어요.",
+  "imageNumber": 3,
   "createdAt": "2026-08-21T12:10:00+09:00"
 }
 ```
+
+- `storyCategory`, `imageNumber`: 2-6과 같다. 7-4로 만든 생애 정보는 `other`이고 번호는 서버가 1~5 중에 고른다(분류 결정 방식은 [미정 사항](#미정-사항) 13).
 
 ### ProfilePhoto
 
@@ -1494,3 +1539,6 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |
+| 11 | 일대기 분류와 그림 번호의 필드 이름(`storyCategory`, `imageNumber`는 임시) | 2-3, 2-6, 2-7 | FE, BE. [작업 D 문서](../../backend/docs/work-split/D-life-story.md) D1, D2 |
+| 12 | 지운 이야기를 근거로 만든 카드와 주제의 처리, 카드 생성 기록(`generation_log`)에 남는 이야기 내용, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제 | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
+| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |

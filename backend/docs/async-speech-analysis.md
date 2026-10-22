@@ -76,8 +76,16 @@ uploading → queued → transcribing → sttCompleted
 | `failed` | 정상 결과를 만들지 못함 | 실패 안내 및 후속 동작 |
 
 기본 worker는 STT 뒤 리포트 생성기(8-3)를 부르고, 리포트와 변경 제안을 저장한 뒤에만
-`completed`로 바꾼다. AI 서버가 8-3(`POST /internal/v1/visit-reports`)에 응답하지 못하면
-작업은 `sttCompleted`를 지나 `failed`(`AI_SERVER_ERROR` 등)로 끝난다.
+`completed`로 바꾼다. 리포트 생성기는 `ai/`의 생성 함수를 직접 부르며, 생성에 실패하면
+작업은 `sttCompleted`를 지나 `failed`(`AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`,
+`INVALID_AI_RESPONSE` 등)로 끝난다. 리포트 생성 전체가 제한 시간
+(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초)을 넘으면 `AI_SERVER_TIMEOUT`,
+생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 리포트 저장과
+`completed`는 한 트랜잭션이며 끝난 작업의 상태는 다시 바꾸지 않는다(README 평가와 리포트 API).
+STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 와도 전사문을 남기지 않고 리포트
+생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다. 이때 worker는
+`speech_analysis_stopped` info 로그에 작업 ID(`analysis_id`)와 멈춘 단계(`stage`)만 남긴다.
+`--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
 
@@ -486,8 +494,17 @@ queued → transcribing → sttCompleted
 
 짧은 파일은 `transcribing` 상태를 조회하기 전에 끝날 수 있다. 최종
 `sttCompleted`와 `errorCode: null`을 확인한다. 기본 worker는 리포트 생성기(8-3)까지
-부르므로, Mock AI 서버가 8-3에 응답하지 않으면 그 뒤 `failed`(`AI_SERVER_ERROR`)가 된다.
-STT 경로만 확인할 때는 `stt_completed`와 `audio_deleted`로 판단한다.
+부르므로 `SAEROK_ML_API_KEY`가 필요하다. 리포트 생성 함수가 실패하면 그 뒤 `failed`가 된다.
+STT 경로만 확인할 때는 키 없이 `bash ./scripts/run_speech_worker.sh --stt-only --once`로
+실행하고 `stt_completed`와 `audio_deleted`로 판단한다.
+
+리포트까지 이어지는 흐름(6-1 → 6-2 → worker → 6-3, 7-x, 5-4)과 시간 제한, 늦은 결과는
+실제 모델 없이 합성 데이터 테스트로 확인한다(`SAEROK_TEST_DATABASE_URL` 필요).
+
+```bash
+uv run pytest tests/test_report_flow.py tests/test_visit_report_generator.py \
+  tests/test_speech_job_repository.py tests/test_speech_worker_options.py
+```
 
 ### 11.5 DB 확인
 
@@ -540,7 +557,9 @@ error_code = null
 | 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
-| AI 시간 초과 | 작업 `failed`, `AI_SERVER_TIMEOUT` |
+| AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
+| STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
+| 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | S3 삭제 실패 | 작업을 STT 완료로 표시하지 않음, Lifecycle 삭제 대상 |
@@ -567,7 +586,7 @@ accessToken         → Authorization Bearer
 - 업로드 실패 시 로컬 WAV를 유지해 사용자가 다시 제출할 수 있게 한다.
 - 앱이 활성화되거나 홈 화면이 보일 때 상태를 다시 조회한다.
 - `sttCompleted`는 리포트 준비 완료가 아니므로 완성된 리포트 타일로 바꾸지 않는다.
-- 리포트 생성 계약이 연결되기 전에는 `completed`를 기대하지 않는다.
+- `completed`는 리포트와 변경 제안을 저장한 뒤에만 온다. `--stt-only` worker로는 오지 않는다.
 
 ## 14. 현재 제한과 후속 작업
 
@@ -580,7 +599,10 @@ accessToken         → Authorization Bearer
 - worker가 멈춘 작업은 임대가 만료되면 정리한다. 업로드 중이던 작업은 지워 다시 제출할
   수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도,
   사용자 재시도와 취소는 아직 없다.
-- 리포트 생성 계약과 저장 구현은 없으며 기본 worker는 `sttCompleted`에서 멈춘다.
+- 기본 worker는 STT 뒤 리포트까지 만든다. `--stt-only`(development/test)는 `sttCompleted`에서
+  멈춘다. 리포트 생성 제한 시간이 지난 뒤에도 이미 시작한 ML API 호출 하나는 생성 함수 쪽에서
+  끊을 수 없어 끝날 때까지 남는다(결과는 저장하지 않음). 끊으려면 `ai/` 생성 함수가 마감을
+  받아야 한다(AI 담당 후속).
 - 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
   작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
   worker가 매 주기에 확인해 지운다.

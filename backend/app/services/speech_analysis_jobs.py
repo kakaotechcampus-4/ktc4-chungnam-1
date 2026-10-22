@@ -29,6 +29,10 @@ class SpeechAnalysisStatus(StrEnum):
     FAILED = "failed"
 
 
+# 끝난 작업은 다시 바꾸지 않는다. 늦게 끝난 처리가 먼저 남은 결과나 실패 코드를 덮지 않게 한다.
+_FINISHED = {SpeechAnalysisStatus.COMPLETED, SpeechAnalysisStatus.FAILED}
+
+
 @dataclass(frozen=True)
 class SpeechAnalysisJob:
     analysis_id: str
@@ -76,11 +80,15 @@ class SpeechAnalysisJobRepository(Protocol):
 
     async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None: ...
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None: ...
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        """끝나지 않은 작업을 `generatingReport`로 바꾼다. 바꿨으면 `True`."""
+        ...
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None: ...
+    ) -> bool:
+        """`transcribing` 작업만 `sttCompleted`로 바꾸고 전사문을 남긴다. 바꿨으면 `True`."""
+        ...
 
     async def mark_completed(self, *, analysis_id: str) -> None: ...
 
@@ -189,23 +197,33 @@ class InMemorySpeechAnalysisJobRepository:
             self._jobs[job.analysis_id] = claimed
             return claimed
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None:
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        if self._jobs[analysis_id].status in _FINISHED:
+            return False
         self._set_status(analysis_id, SpeechAnalysisStatus.GENERATING_REPORT)
+        return True
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None:
+    ) -> bool:
         del transcript
+        if self._jobs[analysis_id].status != SpeechAnalysisStatus.TRANSCRIBING:
+            return False
         self._jobs[analysis_id] = replace(
             self._jobs[analysis_id],
             status=SpeechAnalysisStatus.STT_COMPLETED,
             stt_completed_at=datetime.now(UTC),
         )
+        return True
 
     async def mark_completed(self, *, analysis_id: str) -> None:
+        if self._jobs[analysis_id].status != SpeechAnalysisStatus.GENERATING_REPORT:
+            return
         self._set_status(analysis_id, SpeechAnalysisStatus.COMPLETED)
 
     async def mark_failed(self, *, analysis_id: str, error_code: str) -> None:
+        if self._jobs[analysis_id].status in _FINISHED:
+            return
         self._jobs[analysis_id] = replace(
             self._jobs[analysis_id],
             status=SpeechAnalysisStatus.FAILED,
@@ -411,15 +429,15 @@ class PostgresSpeechAnalysisJobRepository:
         row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None:
-        await self._set_status(
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        return await self._set_status(
             analysis_id, SpeechAnalysisStatus.GENERATING_REPORT, None
         )
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None:
-        await self._connection.execute(
+    ) -> bool:
+        cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
                SET status = 'sttCompleted', stt_completed_at = now(),
@@ -434,9 +452,11 @@ class PostgresSpeechAnalysisJobRepository:
                 UUID(analysis_id),
             ),
         )
+        return cursor.rowcount > 0
 
     async def mark_completed(self, *, analysis_id: str) -> None:
-        await self._set_status(analysis_id, SpeechAnalysisStatus.COMPLETED, None)
+        # 리포트 생성기는 저장 트랜잭션에서 이미 완료 처리하므로 보통 바뀌는 행이 없다.
+        await complete_job(self._connection, analysis_id=analysis_id)
 
     async def mark_failed(self, *, analysis_id: str, error_code: str) -> None:
         await self._set_status(analysis_id, SpeechAnalysisStatus.FAILED, error_code)
@@ -446,39 +466,13 @@ class PostgresSpeechAnalysisJobRepository:
         analysis_id: str,
         status: SpeechAnalysisStatus,
         error_code: str | None,
-    ) -> None:
-        # 회차 상태는 저장하지 않고 작업 상태로 계산하므로 회차는 바꾸지 않는다.
-        # 리포트 생성 단계는 임대가 필요하고, 끝난 작업에는 전사문을 남기지 않는다.
-        await self._connection.execute(
-            """
-            UPDATE speech_analysis_jobs
-               SET status = %(status)s::text, error_code = %(error_code)s,
-                   lease_expires_at = CASE
-                       WHEN %(status)s::text = 'generatingReport'
-                       THEN now() + (%(lease_seconds)s * interval '1 second')
-                   END,
-                   transcript = CASE
-                       WHEN %(status)s::text IN ('completed', 'failed') THEN NULL
-                       ELSE transcript
-                   END,
-                   transcript_deleted_at = CASE
-                       WHEN %(status)s::text IN ('completed', 'failed')
-                            AND transcript IS NOT NULL THEN now()
-                       ELSE transcript_deleted_at
-                   END,
-                   completed_at = CASE
-                       WHEN %(status)s::text IN ('completed', 'failed') THEN now()
-                       ELSE completed_at
-                   END,
-                   updated_at = now()
-             WHERE analysis_id = %(analysis_id)s
-            """,
-            {
-                "status": status.value,
-                "error_code": error_code,
-                "lease_seconds": self._lease_seconds,
-                "analysis_id": UUID(analysis_id),
-            },
+    ) -> bool:
+        return await _update_status(
+            self._connection,
+            analysis_id=analysis_id,
+            status=status,
+            error_code=error_code,
+            lease_seconds=self._lease_seconds,
         )
 
     async def mark_audio_deleted(self, *, analysis_id: str) -> None:
@@ -550,6 +544,67 @@ class PostgresSpeechAnalysisJobRepository:
             audio_deleted_at=row["audio_deleted_at"],
             stt_completed_at=row["stt_completed_at"],
         )
+
+
+async def complete_job(connection: DbConnection, *, analysis_id: str) -> bool:
+    """`generatingReport` 작업만 `completed`로 바꾸고 전사문을 지운다. 바꿨으면 `True`.
+
+    리포트 생성기가 리포트 저장과 같은 트랜잭션에서 부른다.
+    """
+    return await _update_status(
+        connection,
+        analysis_id=analysis_id,
+        status=SpeechAnalysisStatus.COMPLETED,
+        error_code=None,
+        lease_seconds=0,
+    )
+
+
+async def _update_status(
+    connection: DbConnection,
+    *,
+    analysis_id: str,
+    status: SpeechAnalysisStatus,
+    error_code: str | None,
+    lease_seconds: int,
+) -> bool:
+    # 회차 상태는 저장하지 않고 작업 상태로 계산하므로 회차는 바꾸지 않는다.
+    # 리포트 생성 단계는 임대가 필요하고, 끝난 작업에는 전사문을 남기지 않는다.
+    # `completed`는 `generatingReport`에서만, 끝난 작업(`completed`, `failed`)은 바꾸지 않는다.
+    cursor = await connection.execute(
+        """
+        UPDATE speech_analysis_jobs
+           SET status = %(status)s::text, error_code = %(error_code)s,
+               lease_expires_at = CASE
+                   WHEN %(status)s::text = 'generatingReport'
+                   THEN now() + (%(lease_seconds)s * interval '1 second')
+               END,
+               transcript = CASE
+                   WHEN %(status)s::text IN ('completed', 'failed') THEN NULL
+                   ELSE transcript
+               END,
+               transcript_deleted_at = CASE
+                   WHEN %(status)s::text IN ('completed', 'failed')
+                        AND transcript IS NOT NULL THEN now()
+                   ELSE transcript_deleted_at
+               END,
+               completed_at = CASE
+                   WHEN %(status)s::text IN ('completed', 'failed') THEN now()
+                   ELSE completed_at
+               END,
+               updated_at = now()
+         WHERE analysis_id = %(analysis_id)s
+           AND status NOT IN ('completed', 'failed')
+           AND (%(status)s::text <> 'completed' OR status = 'generatingReport')
+        """,
+        {
+            "status": status.value,
+            "error_code": error_code,
+            "lease_seconds": lease_seconds,
+            "analysis_id": UUID(analysis_id),
+        },
+    )
+    return cursor.rowcount > 0
 
 
 def _session_not_found() -> AppError:

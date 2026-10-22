@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 from app.api.deps import get_current_account, get_image_storage
 from app.core.config import Settings, get_settings
 from app.core.database import connect
+from app.core.errors import AppError
 from app.main import create_app
 from app.services.accounts import Account
 from app.services.image_storage import ImageDownload
@@ -28,9 +29,18 @@ SHA256 = "a" * 64
 class FakeImageStorage:
     def __init__(self) -> None:
         self.downloads: list[str] = []
+        # 이 객체 키는 조회 URL을 만들지 못한다(S3 오류와 같은 503).
+        self.failing_keys: set[str] = set()
 
     async def create_download(self, *, object_key: str) -> ImageDownload:
         self.downloads.append(object_key)
+        if object_key in self.failing_keys:
+            raise AppError(
+                status_code=503,
+                error_code="IMAGE_STORAGE_UNAVAILABLE",
+                message="사진 저장소를 사용할 수 없습니다.",
+                retryable=True,
+            )
         return ImageDownload(
             url="https://bucket.s3.ap-northeast-2.amazonaws.com/synthetic.jpg",
             expires_at=datetime(2026, 8, 21, 6, 0, tzinfo=UTC),
@@ -191,9 +201,10 @@ class Records:
         participant_count: int = 2,
         accepted: bool = True,
         created_at: datetime | None = None,
+        analysis_id: UUID | None = None,
     ) -> UUID:
         """음성 분석 작업 하나. `accepted=False`면 업로드 단계의 작업이다."""
-        analysis_id = uuid4()
+        analysis_id = analysis_id or uuid4()
         uploaded = accepted and status != "uploading"
         leased = status in {"uploading", "transcribing", "generatingReport"}
         transcript = status in {"sttCompleted", "generatingReport"}

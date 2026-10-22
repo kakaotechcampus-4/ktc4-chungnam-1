@@ -57,8 +57,10 @@ def to_life_fact_response(fact: LifeFact) -> LifeFactResponse:
     return LifeFactResponse(
         fact_id=fact.fact_id,
         profile_id=fact.profile_id,
+        story_category=fact.story_category,
         title=fact.title,
         content=fact.content,
+        image_number=fact.image_number,
         created_at=fact.created_at,
     )
 
