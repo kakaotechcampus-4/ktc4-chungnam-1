@@ -51,7 +51,8 @@ final lifeStoryBookProvider = Provider<AsyncValue<LifeStoryBook?>>((ref) {
 ///
 /// 로그인하지 않은 목 모드거나 서버에 없는 분이면 `null` 이다. 이때 일대기는
 /// 목 이야기를 쓴다. 담고, 고치고, 지운 결과는 다시 읽지 않고 이 목록에 바로
-/// 반영한다([LifeStoryStore]).
+/// 반영한다([LifeStoryStore]). 일대기 밖에서 이야기가 생기면 다시 읽는다
+/// ([LifeStoryStore.reload]).
 final serverLifeFactsProvider =
     AsyncNotifierProvider<ServerLifeFactsNotifier, List<LifeFact>?>(
       ServerLifeFactsNotifier.new,
@@ -168,13 +169,20 @@ class LifeStoryStore {
     _server._remove(profileId, story.id);
   }
 
+  /// 일대기 밖에서 서버의 이야기가 바뀌었다. 다음에 일대기를 열 때 서버에서
+  /// 다시 읽는다.
+  ///
+  /// 변경 사항 확인에서 이야기를 승인하면(7-4) 서버가 이야기를 만들지만, 응답에
+  /// 만든 이야기가 없어 목록에 바로 넣지 못한다(PR #137 리뷰).
+  void reload() => _ref.invalidate(serverLifeFactsProvider);
+
   /// 없는 이야기라는 답이면 목록이 낡은 것이라 다시 읽게 한다.
   Future<T> _guard<T>(Future<T> Function() request) async {
     try {
       return await request();
     } on ApiServerFailure catch (failure) {
       if (failure.errorCode == 'LIFE_FACT_NOT_FOUND') {
-        _ref.invalidate(serverLifeFactsProvider);
+        reload();
       }
       rethrow;
     }

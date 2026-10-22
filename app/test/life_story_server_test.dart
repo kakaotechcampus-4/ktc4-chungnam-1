@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:saerok/app/router.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
@@ -52,12 +53,14 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
   await _settle(tester);
 }
 
-/// 로그인한 상태로 [location] 을 연다.
+/// 로그인한 상태로 [location] 을 연다. 리포트 서버를 확인하려면 [reports] 를
+/// 넘긴다.
 Future<ProviderContainer> _open(
   WidgetTester tester,
   FakeProfileServer server,
-  String location,
-) async {
+  String location, {
+  FakeReportServer? reports,
+}) async {
   tester.view.physicalSize = const Size(1236, 6000);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -71,7 +74,7 @@ Future<ProviderContainer> _open(
   final container = ProviderContainer(
     overrides: [
       server.override,
-      FakeReportServer().override,
+      (reports ?? FakeReportServer()).override,
       profileSampleProvider.overrideWith((ref) async => sample),
       accountProvider.overrideWith((ref) async => account),
     ],
@@ -264,4 +267,82 @@ void main() {
     expect(find.text('이야기를 찾지 못했어요. 이미 지운 이야기일 수 있어요.'), findsOneWidget);
     expect(find.text('이야기를 찾을 수 없어요.'), findsOneWidget);
   });
+
+  group('변경 사항 확인에서 이야기를 승인하면', () {
+    /// 일대기를 연 뒤 변경 사항 확인으로 간다. 승인한 이야기는 서버가
+    /// '기타'로 담는다(#132 D5 임시 안).
+    Future<(FakeProfileServer, FakeReportServer)> openChanges(
+      WidgetTester tester,
+    ) async {
+      final profiles = _server();
+      final reports = FakeReportServer(
+        proposals: {'s1': FakeReportServer.proposal('s1')},
+      );
+      reports.onReview = (sessionId, body) {
+        final review = (body as Map)['lifeFacts'] as List;
+        for (final r in review.cast<Map<String, Object?>>()) {
+          if (r['reviewStatus'] != 'accepted') continue;
+          final profile = profiles.profiles.single;
+          profiles.profiles[0] = {
+            ...profile,
+            'lifeFacts': [
+              ...profile['lifeFacts'] as List,
+              FakeProfileServer.lifeFact(
+                id: 'f-${r['proposalId']}',
+                profileId: 'p1',
+                storyCategory: 'other',
+                title: r['title'] as String,
+                content: r['content'] as String,
+                imageNumber: 1,
+              ),
+            ],
+          };
+        }
+      };
+      await _open(
+        tester,
+        profiles,
+        AppRoutes.albumCategoryOf('other'),
+        reports: reports,
+      );
+      expect(find.text('한복'), findsNothing, reason: '승인 전');
+
+      _router(tester).go(AppRoutes.reportChangesOf('s1'));
+      await _settle(tester);
+      return (profiles, reports);
+    }
+
+    testWidgets('일대기를 다시 열면 담은 이야기가 보인다', (tester) async {
+      await openChanges(tester);
+
+      await _tap(tester, find.text('이대로 반영하기'));
+      _router(tester).go(AppRoutes.albumCategoryOf('other'));
+      await _settle(tester);
+
+      expect(find.text('한복'), findsOneWidget);
+    });
+
+    testWidgets('이야기를 모두 빼면 일대기를 다시 읽지 않는다', (tester) async {
+      final (profiles, _) = await openChanges(tester);
+      final reads = profiles.requests
+          .where((r) => r.method == 'GET' && r.path == '/api/v1/profiles/p1')
+          .length;
+
+      await tester.tap(find.byTooltip('이 제안 지우기'));
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('반영하지 않고 마치기'));
+      _router(tester).go(AppRoutes.albumCategoryOf('other'));
+      await _settle(tester);
+
+      expect(
+        profiles.requests
+            .where((r) => r.method == 'GET' && r.path == '/api/v1/profiles/p1')
+            .length,
+        reads,
+      );
+    });
+  });
 }
+
+GoRouter _router(WidgetTester tester) =>
+    GoRouter.of(tester.element(find.byType(Scaffold).first));
