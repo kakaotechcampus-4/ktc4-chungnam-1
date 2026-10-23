@@ -23,6 +23,19 @@
 
 기존 검증 기록: 2026-09-06, Windows 11과 Galaxy S23+ (SM S916N), Android 15 (API 35), arm64 실기기에서 위 명령과 앱 실행을 확인했다.
 
+### Play 업로드용 빌드
+
+Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스 담당자만 가지며, 키 파일과 비밀번호는 저장소와 메신저에 두지 않는다. 담당자가 키를 저장소 밖에 두고 `android/key.properties`에 위치를 적는다. 두 파일 모두 `.gitignore` 대상이다.
+
+    storePassword=<키스토어 비밀번호>
+    keyPassword=<키 비밀번호>
+    keyAlias=upload
+    storeFile=<키 파일의 절대 경로, 예: C:/Users/<사용자>/keys/saerok-upload.jks>
+
+    flutter build appbundle --release --dart-define-from-file=.env
+
+`key.properties`가 없으면 release도 디버그 키로 서명되며, 그 결과물은 Play에 올릴 수 없다. `.env`의 `SAEROK_API_BASE_URL`은 https여야 한다. 릴리스 빌드는 평문 통신을 막는다. 구글 로그인을 하려면 업로드 키의 SHA-1과 Play App Signing의 앱 서명 키 SHA-1을 Google Cloud Console에 등록해야 한다. 버전은 `pubspec.yaml`의 `version`(`이름+versionCode`)을 따르며, 올릴 때마다 versionCode를 올린다.
+
 ## 기술과 화면 기준
 
 | 항목 | 값 |
