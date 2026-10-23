@@ -1,10 +1,17 @@
 # 새록 백엔드 실행 구성. 사용법은 docs/deployment.md를 따른다.
 # - api: 기본으로 실행한다.
 # - card-worker: 카드 생성(4-1) 작업을 처리한다. api와 함께 기본으로 실행한다.
-# - speech-worker: AI 서버 연결 경로가 정해진 뒤 `--profile workers`로 켠다.
+# - speech-worker, stt-tunnel: 음성 분석 worker와 GPU STT 서버로 가는 SSH 터널. `--profile workers`로 켠다.
 # - db: RDS 같은 외부 DB를 쓰지 않을 때 `--profile local-db`로 켠다.
 # - caddy: 개발 서버에서 HTTPS로 api를 공개할 때 `--profile https`로 켠다.
 name: saerok
+
+# 기본 json-file 로그는 크기 제한이 없어 오래 띄워 두면 디스크를 채운다. 서비스마다 30MB까지만 남긴다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   api:
@@ -20,6 +27,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test:
         - CMD
@@ -43,6 +51,7 @@ services:
     # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
     init: true
     restart: unless-stopped
+    logging: *default-logging
 
   speech-worker:
     build:
@@ -57,6 +66,48 @@ services:
     # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
     init: true
     restart: unless-stopped
+    logging: *default-logging
+
+  # 온프레미스 GPU의 STT 서버(127.0.0.1:8001에만 열림)를 SSH 터널로 끌어온다.
+  # speech-worker는 SAEROK_AI_SERVER_URL=http://stt-tunnel:8001로 붙는다. 포트를 호스트에 열지 않는다.
+  # 접속 정보는 .env에만 둔다. 키는 GPU 서버에서 이 터널(127.0.0.1:8001)만 허용하도록 등록한다.
+  stt-tunnel:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM alpine:3.22
+        RUN apk add --no-cache openssh-client
+    image: saerok-stt-tunnel
+    profiles: ["workers"]
+    command:
+      - ssh
+      - -N
+      - -i
+      - /tunnel/id_ed25519
+      - -p
+      - ${SAEROK_STT_SSH_PORT:-22}
+      - -o
+      - UserKnownHostsFile=/tunnel/known_hosts
+      # 호스트 키는 EC2에서 처음 접속할 때 지문을 확인해 known_hosts에 남긴 것만 믿는다.
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - ExitOnForwardFailure=yes
+      # 끊긴 연결을 90초 안에 알아채고 종료한다. 재연결은 restart가 맡는다.
+      - -o
+      - ServerAliveInterval=30
+      - -o
+      - ServerAliveCountMax=3
+      - -L
+      - 0.0.0.0:8001:127.0.0.1:8001
+      - ${SAEROK_STT_SSH_USER:-}@${SAEROK_STT_SSH_HOST:-}
+    volumes:
+      - ${SAEROK_STT_SSH_KEY_FILE:-~/.ssh/saerok_stt_tunnel}:/tunnel/id_ed25519:ro
+      - ${SAEROK_STT_SSH_KNOWN_HOSTS:-~/.ssh/known_hosts}:/tunnel/known_hosts:ro
+    read_only: true
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
 
   db:
     image: postgres:17
@@ -71,6 +122,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "saerok", "-d", "saerok"]
       interval: 10s
@@ -92,6 +144,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   postgres-data:
