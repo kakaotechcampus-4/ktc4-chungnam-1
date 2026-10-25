@@ -110,6 +110,14 @@ docker compose up -d api card-worker
 
 상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
 
+### worker 종료와 유예 시간
+
+`docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.
+
+- 유예 시간은 `card-worker`와 `speech-worker` 모두 `stop_grace_period: 180s`다. 2026-10-18 [통합 검증](../../docs/pm/integration-verification-20261018.md)에서 작업 생성부터 리포트 준비까지 약 38초(준비된 모델, 단일 실행)였고, 그 3~5배 범위의 상한에 맞췄다. 카드 생성은 실측이 없어 설정 주석의 1~2분을 덮는 같은 값을 쓴다.
+- 유예 시간을 넘기면 Docker가 SIGKILL로 끝낸다. 처리 중이던 작업은 임대(음성 900초, 카드 300초)가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다. 코드가 허용하는 처리 시간(STT 응답 대기 600초, 리포트 생성 600초)보다 짧으므로 긴 녹음은 이렇게 끊길 수 있다. 녹음 길이별 처리 시간을 측정한 뒤 다시 정한다.
+- 기다리지 않고 바로 끝내야 하면 `docker compose kill <서비스>`를 쓴다. 로컬에서 직접 실행한 worker는 Ctrl+C를 두 번 누르면 바로 끝난다.
+
 ### 앱 연결
 
 앱의 `app/.env`에 `SAEROK_API_BASE_URL=https://<SAEROK_PUBLIC_HOST>`를 넣는다. HTTPS이므로 release 빌드에서도 연결된다. 이 주소는 공개 저장소의 `app/.env.example`과 문서에 적지 않는다.
