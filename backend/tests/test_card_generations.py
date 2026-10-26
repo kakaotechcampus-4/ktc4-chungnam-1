@@ -331,3 +331,59 @@ def test_current_of_other_accounts_profile_is_not_found(migrated_database_url):
 
     res = _current(migrated_database_url, other_user, profile_id)
     assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"
+
+
+# ── 4-4 ──────────────────────────────────────────────
+def _session_set(database_url, user_id, session_id):
+    app = make_app(database_url, user_id)
+    return request(app, "GET", f"/api/v1/visit-sessions/{session_id}/card-set")
+
+
+@pytest.mark.parametrize("evaluated", [False, True])
+def test_session_set_is_returned_before_and_after_evaluation(migrated_database_url, evaluated):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=evaluated)
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true WHERE card_id = %s", (cards[1],)
+        )
+        return user_id, set_id, session_id
+
+    user_id, set_id, session_id = with_db(migrated_database_url, build)
+
+    body = _session_set(migrated_database_url, user_id, session_id).json()
+
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "cards"}
+    assert body["setId"] == str(set_id) and body["usedBySessionId"] == str(session_id)
+    assert [card["position"] for card in body["cards"]] == list(range(1, 13))
+    assert [card["selected"] for card in body["cards"][:3]] == [False, True, False]
+
+
+def test_session_set_stays_after_a_newer_set_is_made(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        old_set, _ = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, old_set, evaluated=True)
+        await completed_card_set(connection, profile_id)
+        return user_id, old_set, session_id
+
+    user_id, old_set, session_id = with_db(migrated_database_url, build)
+
+    body = _session_set(migrated_database_url, user_id, session_id).json()
+
+    assert body["setId"] == str(old_set)
+
+
+def test_session_set_of_other_accounts_session_is_not_found(migrated_database_url):
+    async def build(connection):
+        _, profile_id = await user_and_profile(connection)
+        set_id, _ = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=True)
+        other_user, _ = await user_and_profile(connection)
+        return other_user, session_id
+
+    other_user, session_id = with_db(migrated_database_url, build)
+
+    res = _session_set(migrated_database_url, other_user, session_id)
+    assert res.status_code == 404 and res.json()["errorCode"] == "VISIT_SESSION_NOT_FOUND"
