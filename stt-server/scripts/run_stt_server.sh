@@ -7,4 +7,8 @@ PYTHON_SITE_PACKAGES="$(uv run python -c 'import sysconfig; print(sysconfig.get_
 
 export LD_LIBRARY_PATH="$PYTHON_SITE_PACKAGES/nvidia/cublas/lib:$PYTHON_SITE_PACKAGES/nvidia/cudnn/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-exec uv run stt-server
+exec uv run uvicorn stt_server.main:app \
+  --host "${SAEROK_STT_HOST:-0.0.0.0}" \
+  --port "${SAEROK_STT_PORT:-8001}" \
+  --workers 1 \
+  --no-access-log
