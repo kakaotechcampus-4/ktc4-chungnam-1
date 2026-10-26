@@ -23,6 +23,8 @@ class CardGenerationStatus(CamelModel):
 
     schema_version: Literal[1] = 1
     status: Literal["none", "running", "ready", "inVisit", "failed"]
+    # 카드를 받은 뒤 프로필이나 일대기를 고쳐서 새로 만들어야 하면 true. 이 묶음으로는 면회를 시작할 수 없음
+    needs_refresh: bool = False
 
 
 class CardTopic(CamelModel):
@@ -50,6 +52,7 @@ class CardSet(CamelModel):
     schema_version: Literal[1] = 1
     set_id: UUID
     used_by_session_id: UUID | None
+    needs_refresh: bool
     cards: list[Card]
 
 

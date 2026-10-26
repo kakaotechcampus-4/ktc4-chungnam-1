@@ -1,6 +1,7 @@
 """카드 묶음(`card_sets`)의 상태 계산, 조회, 생성 요청과 생성 처리.
 
 - 상태: 저장하지 않음. 가장 최근 묶음의 `status`, `session_id`, 그 회차의 `evaluated_at`으로 계산(API 명세 4절)
+- 새로 만들어야 하는 묶음: 카드를 받은 뒤 프로필이나 일대기를 고치면 아직 면회에 안 쓴 묶음에 `stale_at`을 찍음(#158)
 - 4-1 처리: worker가 임대한 작업 하나를 처리. 생성 함수는 밖에서 받음
 
       context 조립 → 생성 함수(트랜잭션 밖, 별도 스레드) → 결과 검증 → 저장(한 트랜잭션)
@@ -21,6 +22,7 @@ from app.schemas.card_generation import (
     CardContext,
     CardGenerationRequest,
     CardGenerationResult,
+    CardGenerationStatus,
     CardSet,
     CardTopic,
     LifeFact,
@@ -46,7 +48,7 @@ EVIDENCE_SOURCE = {
 
 async def _latest(connection: DbConnection, profile_id: UUID) -> dict[str, Any] | None:
     cursor = await connection.execute(
-        "SELECT s.set_id, s.status, s.session_id, v.evaluated_at "
+        "SELECT s.set_id, s.status, s.session_id, s.stale_at, v.evaluated_at "
         "  FROM card_sets s LEFT JOIN visit_sessions v ON v.session_id = s.session_id "
         " WHERE s.profile_id = %s ORDER BY s.created_at DESC, s.set_id LIMIT 1",
         (profile_id,),
@@ -64,10 +66,17 @@ def _status(latest: dict[str, Any] | None) -> str:
     return "inVisit" if latest["evaluated_at"] is None else "none"
 
 
+def _needs_refresh(latest: dict[str, Any] | None) -> bool:
+    return _status(latest) == "ready" and latest["stale_at"] is not None
+
+
 async def generation_status(
     connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
-) -> str:
-    """`none`, `running`, `ready`, `inVisit`, `failed`.
+) -> CardGenerationStatus:
+    """`status`는 `none`, `running`, `ready`, `inVisit`, `failed`.
+
+    카드를 받은 뒤 프로필이나 일대기를 고친 묶음도 `status`는 `ready`이고 `needsRefresh`로 구분함.
+    지금 앱은 모르는 `status` 값을 오류로 처리함.
 
     더는 끝나지 않을 `running`을 먼저 실패로 정리함(`CardGenerationQueue.expire_stuck`).
     정리하지 않으면 worker가 없을 때 앱이 `running`만 보고 다시 요청할 수 없음.
@@ -75,7 +84,8 @@ async def generation_status(
     await CardGenerationQueue().expire_stuck(
         connection, profile_id, start_timeout_seconds=start_timeout_seconds
     )
-    return _status(await _latest(connection, profile_id))
+    latest = await _latest(connection, profile_id)
+    return CardGenerationStatus(status=_status(latest), needs_refresh=_needs_refresh(latest))
 
 
 async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSet:
@@ -112,11 +122,17 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
         )
         for row in await cursor.fetchall()
     ]
-    return CardSet(set_id=latest["set_id"], used_by_session_id=latest["session_id"], cards=cards)
+    return CardSet(
+        set_id=latest["set_id"],
+        used_by_session_id=latest["session_id"],
+        needs_refresh=_needs_refresh(latest),
+        cards=cards,
+    )
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1과 5-1이 같은 프로필에서 차례로 실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 2-4, 2-7, 2-9의 정정이 같은 프로필에서 차례로
+    실행되게 함.
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """
@@ -136,7 +152,8 @@ async def start_card_generation(
     """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
 
     `ready`도 거절해서 아직 안 쓴 완료 묶음은 늘 최신 묶음 하나뿐이게 함. 그래서 5-1이 받는
-    묶음이 4-2, 4-3이 보는 최신 묶음과 같음.
+    묶음이 4-2, 4-3이 보는 최신 묶음과 같음. 단 `needsRefresh`이면 새 묶음을 만듦. 예전 묶음은
+    5-1이 받지 않으므로 면회에 쓸 수 있는 묶음은 여전히 하나뿐임.
 
     끝나지 않을 `running`은 상태를 보기 전에 실패로 정리하므로, 그 뒤 요청은 새 작업을 만듦.
 
@@ -145,16 +162,17 @@ async def start_card_generation(
     """
     async with connection.transaction():
         await lock_profile(connection, profile_id)
-        status = await generation_status(
+        current = await generation_status(
             connection, profile_id, start_timeout_seconds=start_timeout_seconds
         )
+        status = current.status
         if status == "inVisit":
             raise AppError(
                 status_code=409,
                 error_code="VISIT_IN_PROGRESS",
                 message="평가를 마치지 않은 면회가 있습니다.",
             )
-        if status == "ready":
+        if status == "ready" and not current.needs_refresh:
             raise AppError(
                 status_code=409,
                 error_code="CARD_SET_READY",
@@ -166,6 +184,33 @@ async def start_card_generation(
             "ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING",
             (profile_id, model, str(prompt_version)),
         )
+
+
+async def mark_stale(
+    connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
+) -> None:
+    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9가 카드 생성에 쓰는
+    값을 고칠 때 같은 트랜잭션 안에서 부름.
+
+    면회에 쓴 묶음은 지난 기록이라 찍지 않음.
+    카드를 만드는 중이면 409로 거절함. 고치기 전 내용으로 새 묶음이 만들어질 수 있음.
+    """
+    await lock_profile(connection, profile_id)
+    current = await generation_status(
+        connection, profile_id, start_timeout_seconds=start_timeout_seconds
+    )
+    if current.status == "running":
+        raise AppError(
+            status_code=409,
+            error_code="CARD_GENERATION_IN_PROGRESS",
+            message="카드를 만드는 중에는 고칠 수 없습니다.",
+        )
+    await connection.execute(
+        "UPDATE card_sets SET stale_at = now()"
+        " WHERE profile_id = %s AND status = 'completed' AND session_id IS NULL"
+        "   AND stale_at IS NULL",
+        (profile_id,),
+    )
 
 
 # ── 4-1 처리 ──────────────────────────────────────────
