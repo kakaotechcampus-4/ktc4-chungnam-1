@@ -394,7 +394,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 
 ## 대화 카드 묶음 (CardSet)
 
-지금 쓸 카드 묶음과 그 카드 12장이다. [API 4-3](api-spec.md#4-3-get-apiv1profilesprofileidcard-generationscurrent--신규)의 응답이다.
+카드 묶음과 그 카드 12장이다. 지금 쓸 묶음은 [API 4-3](api-spec.md#4-3-get-apiv1profilesprofileidcard-generationscurrent--신규), 회차에 쓴 묶음은 [API 4-4](api-spec.md#4-4-get-apiv1visit-sessionssessionidcard-set--신규)의 응답이다.
 
 ```json
 {
@@ -427,9 +427,9 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 ```
 
 - 카드 생성은 비동기 작업이다([API 4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규)). 프로필마다 만드는 중인 작업은 하나뿐이다. 변경 제안이 없는 리포트 뒤의 생성 시점은 아직 정하지 않았다.
-- 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 이 객체는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다.
+- 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 4-3으로는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다. 평가가 끝난 회차의 묶음은 4-4로 읽기만 하며 면회에 다시 쓰지 않는다.
 - `setId`는 녹음을 시작할 때 [API 5-1](api-spec.md#5-1-post-apiv1visit-sessions--신규)에 보낸다.
-- `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
 - `cards`는 12장이다. `cardId`는 BE가 부여한다. `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
 - `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `topic.description`과 `description`은 보호자에게 주제와 카드를 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.
