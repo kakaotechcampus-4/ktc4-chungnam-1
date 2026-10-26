@@ -114,8 +114,10 @@ STT 서버는 AI 담당자의 온프레미스 GPU에서 `127.0.0.1:8001`에만 �
 2. AI 담당자가 GPU 서버의 터널용 계정 `~/.ssh/authorized_keys`에 공개키(`saerok_stt_tunnel.pub`)를 다음 제한과 함께 등록한다. 이 키로는 셸과 명령 실행이 안 되고 `127.0.0.1:8001`로 가는 터널만 열린다. GPU 서버 sshd의 `AllowTcpForwarding`이 `no`이면 터널이 거절되므로 확인한다.
 
    ```
-   restrict,port-forwarding,permitopen="127.0.0.1:8001" ssh-ed25519 AAAA... saerok-ec2-stt-tunnel
+   command="/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:8001" ssh-ed25519 AAAA... saerok-ec2-stt-tunnel
    ```
+
+   restrict는 포워딩과 PTY를 끄지만 명령 실행은 막지 않으므로 command="/bin/false"로 어떤 명령을 보내도 바로 끝나게 한다. 터널 컨테이너는 명령 없이(-N) 접속하므로 127.0.0.1:8001로 가는 터널만 열린다.
 
 3. EC2에서 한 번 직접 접속해 호스트 키를 `~/.ssh/known_hosts`에 남긴다. `yes`를 누르기 전에 AI 담당자가 GPU 서버에서 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`로 본 지문과 같은지 확인한다. 터널 컨테이너는 이 파일에 있는 호스트 키만 믿는다(`StrictHostKeyChecking=yes`).
 
