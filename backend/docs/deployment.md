@@ -10,7 +10,8 @@
 | --- | --- | --- |
 | `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 개발 서버는 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 둔다 |
 | `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 연결 설정이 필요하며, 설정이 없으면 시작하지 않는다. 카드 생성 요청의 실제 처리는 이 worker가 맡는다 |
-| `speech-worker` | `--profile workers` | 음성 STT worker. AI 서버 연결 경로가 정해진 뒤 켠다 |
+| `speech-worker` | `--profile workers` | 음성 STT와 리포트 생성 worker. `stt-tunnel`을 거쳐 GPU의 STT 서버를 부른다 |
+| `stt-tunnel` | `--profile workers` | 온프레미스 GPU의 STT 서버(`127.0.0.1:8001`)를 SSH 터널로 끌어온다. compose 네트워크 안에서만 `stt-tunnel:8001`로 보이고 호스트에는 열지 않는다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
 | `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |
 
@@ -57,7 +58,7 @@ uv run pytest
    | 80 | 전체 | 인증서 발급과 갱신 확인. 확인 요청의 출발지 IP는 정해져 있지 않다 |
    | 443 | 전체 또는 팀원 IP | 앱의 HTTPS 요청 |
 
-4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다.
+4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다. 컨테이너는 인스턴스 메타데이터(IMDSv2)까지 네트워크를 한 단계 더 거치므로, 인스턴스의 메타데이터 응답 홉 제한이 1이면 `api`와 `speech-worker`가 역할 자격증명을 받지 못해 S3 업로드가 실패한다. 인스턴스 설정의 메타데이터 옵션에서 홉 제한을 2로 둔다(`aws ec2 modify-instance-metadata-options --instance-id <인스턴스 ID> --http-put-response-hop-limit 2 --http-endpoint enabled`).
 5. 저장소를 받고 develop을 쓴다.
 
    ```bash
@@ -80,7 +81,8 @@ uv run pytest
    | `SAEROK_SESSION_SECRET` | `openssl rand -base64 48`로 만든 값. 로컬 개발의 값과 다르게 둔다 |
    | `SAEROK_PUBLIC_HOST` | Elastic IP의 점을 하이픈으로 바꾼 `<IP>.sslip.io`. 예: `203.0.113.10`이면 `203-0-113-10.sslip.io` |
    | `SAEROK_GOOGLE_CLIENT_IDS` | FE가 쓰는 클라이언트 ID([README](../README.md)의 `aud` 설명). 앱의 `SAEROK_GOOGLE_SERVER_CLIENT_ID`와 같아야 한다 |
-   | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. AI 서버 연결 경로가 정해진 뒤 채운다 |
+   | `SAEROK_AI_SERVER_URL` | `http://stt-tunnel:8001`. 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이고, GPU의 IP를 직접 넣으면 STT 서버가 `127.0.0.1`에만 열려 있어 닿지 않는다 |
+   | `SAEROK_STT_SSH_HOST`, `SAEROK_STT_SSH_PORT`, `SAEROK_STT_SSH_USER` | GPU 서버의 SSH 접속 주소, 포트와 터널용 계정. [음성 분석 연결](#음성-분석-연결)을 따른다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
    | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
 
@@ -97,6 +99,46 @@ uv run pytest
 
    인증서 발급 결과는 `docker compose logs caddy`로 본다. 인스턴스 밖에서 `https://<SAEROK_PUBLIC_HOST>/health/live`가 응답하면 끝이다.
 
+### 음성 분석 연결
+
+STT 서버는 AI 담당자의 온프레미스 GPU에서 `127.0.0.1:8001`에만 열려 있다([STT 서버](../../stt-server/README.md)). EC2가 GPU 서버에 SSH로 접속해 그 포트를 끌어오고, `speech-worker`는 터널을 거쳐 부른다. 인증이 없는 STT API를 인터넷에 열지 않기 위한 구성이다. GPU 서버는 음성을 S3 Presigned URL로 직접 받으므로 S3로 나가는 인터넷 연결이 필요하다.
+
+1. EC2에서 `docker compose`를 실행하는 계정으로 터널 전용 키를 만든다. 비밀키는 EC2 밖으로 옮기지 않는다.
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/saerok_stt_tunnel -N "" -C "saerok-ec2-stt-tunnel"
+   ```
+
+   재연결을 사람 없이 해야 해서 암호를 두지 않는다. 대신 다음 단계의 제한으로 이 키가 할 수 있는 일을 터널 하나로 막는다.
+
+2. AI 담당자가 GPU 서버의 터널용 계정 `~/.ssh/authorized_keys`에 공개키(`saerok_stt_tunnel.pub`)를 다음 제한과 함께 등록한다. 이 키로는 셸과 명령 실행이 안 되고 `127.0.0.1:8001`로 가는 터널만 열린다. GPU 서버 sshd의 `AllowTcpForwarding`이 `no`이면 터널이 거절되므로 확인한다.
+
+   ```
+   command="/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:8001" ssh-ed25519 AAAA... saerok-ec2-stt-tunnel
+   ```
+
+   restrict는 포워딩과 PTY를 끄지만 명령 실행은 막지 않으므로 command="/bin/false"로 어떤 명령을 보내도 바로 끝나게 한다. 터널 컨테이너는 명령 없이(-N) 접속하므로 127.0.0.1:8001로 가는 터널만 열린다.
+
+3. EC2에서 한 번 직접 접속해 호스트 키를 `~/.ssh/known_hosts`에 남긴다. `yes`를 누르기 전에 AI 담당자가 GPU 서버에서 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`로 본 지문과 같은지 확인한다. 터널 컨테이너는 이 파일에 있는 호스트 키만 믿는다(`StrictHostKeyChecking=yes`).
+
+   ```bash
+   ssh -i ~/.ssh/saerok_stt_tunnel -p <SSH 포트> -N -L 127.0.0.1:8001:127.0.0.1:8001 <계정>@<GPU 주소>
+   # 다른 터미널에서
+   curl http://127.0.0.1:8001/health/live
+   ```
+
+4. `.env`에 `SAEROK_STT_SSH_HOST`, `SAEROK_STT_SSH_PORT`, `SAEROK_STT_SSH_USER`를 채우고 `SAEROK_AI_SERVER_URL=http://stt-tunnel:8001`로 둔다. 키와 known_hosts가 `~/.ssh/saerok_stt_tunnel`, `~/.ssh/known_hosts`가 아니면 `SAEROK_STT_SSH_KEY_FILE`, `SAEROK_STT_SSH_KNOWN_HOSTS`로 경로를 준다.
+
+5. 터널과 음성 worker를 띄우고 컨테이너 안에서 STT 서버가 보이는지 확인한다.
+
+   ```bash
+   docker compose --profile workers build stt-tunnel
+   docker compose --profile workers up -d stt-tunnel speech-worker
+   docker compose run --rm api python -c "import urllib.request; print(urllib.request.urlopen('http://stt-tunnel:8001/health/live', timeout=5).read())"
+   ```
+
+터널이 끊기면 ssh가 90초 안에 끝나고 compose가 다시 띄운다. GPU 서버가 꺼져 있는 동안 들어온 음성 작업은 `AI_SERVER_UNAVAILABLE`로 실패하며 자동으로 다시 시도하지 않는다. 터널 상태는 `docker compose logs stt-tunnel`로 본다.
+
 ### 갱신
 
 develop에 병합된 뒤 실행한다. migration은 이 단계에서만 적용한다.
@@ -106,9 +148,11 @@ git pull
 docker compose build
 docker compose run --rm api alembic upgrade head
 docker compose up -d api card-worker
+# 음성 분석을 켜 둔 서버면
+docker compose --profile workers up -d stt-tunnel speech-worker
 ```
 
-상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
+상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
 
 ### worker 종료와 유예 시간
 
@@ -128,6 +172,6 @@ docker compose up -d api card-worker
 
 - **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS이며, 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
 - **sslip.io와 인증서 발급처.** sslip.io는 이름을 IP로 바꿔 주는 DNS만 제공하고, 요청과 응답은 거치지 않고 EC2로 바로 간다. 인증서 발급처는 호스트 이름만 받는다. 둘 다 외부 무료 서비스라 장애나 발급 한도의 영향을 받을 수 있으므로 최종 배포 주소로 쓸지는 따로 정한다.
-- **AI 서버 연결.** AI 서버는 온프레미스 GPU에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). EC2에서 닿는 경로, 또는 백엔드를 GPU 장비 옆에 둘지는 정하지 않았다. 정하기 전에는 `speech-worker`를 켜지 않는다.
+- **AI 서버 연결.** AI 서버는 온프레미스 GPU에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). 개발 서버는 [SSH 터널](#음성-분석-연결)로 연결한다. GPU 장비가 가정용 회선의 PC라 꺼지거나 IP가 바뀌면 음성 분석이 멈춘다. 운영 배포의 연결 경로와 백엔드를 GPU 장비 옆에 둘지는 정하지 않았다.
 - **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지, 백업 여부는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다.
 - **배포 자동화.** 지금은 위의 수동 절차다. GitHub Actions로 옮길 때 `.github/workflows/`는 카테캠 운영진이 제공하는 디렉터리이므로 먼저 확인한다.
