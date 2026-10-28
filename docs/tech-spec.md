@@ -81,7 +81,7 @@
 
 ## 아키텍처 설계
 
-목표 흐름과 실행 위치는 [아키텍처 기준](architecture/README.md)에 모았다. STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 기존 온프레미스 일괄 처리 기록과 후속 방향은 [ADR-006](architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)에 구분한다. RTX 3060 Ti는 개발용이며 시연 사양은 실험 후 정한다. 함수와 HTTP 중 구체적인 연결 방식이나 실제 사용자 자료 전송 승인을 이 문서로 확정하지 않는다.
+목표 흐름과 실행 위치는 [아키텍처 기준](architecture/README.md)에 모았다. STT는 엘리스 클라우드 런박스의 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 기존 온프레미스 일괄 처리 기록과 후속 방향은 [ADR-006](architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)에 구분한다. 현재 STT 장비는 A100 MIG `1g.10gb`이며 ADR-006의 2026-10-26 변경을 따른다. 처리 성능은 실측 후 판단한다. 함수와 HTTP 중 구체적인 연결 방식이나 실제 사용자 자료 전송 승인을 이 문서로 확정하지 않는다.
 
 [ADR-006](architecture/decisions/ADR-006-server-side-ai-processing.md)이 실행 위치와 데이터 관리 방향의 결정 근거다. 원본 임시 보관 제한은 NFR-002를 유지하며 카드와 리포트 생성 모델은 별도로 검증한다.
 

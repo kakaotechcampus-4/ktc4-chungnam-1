@@ -1,12 +1,19 @@
 # 새록 STT 서버
 
-온프레미스 GPU 환경에서 STT 파이프라인을 실행하기 위한 FastAPI 서버다.
+엘리스 클라우드 런박스의 GPU에서 STT 파이프라인을 실행하는 FastAPI 서버다.
+현재 배포 기준은 [ADR-006의 2026-10-26 변경](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#stt-실행-환경-변경-2026-10-26)을 따른다.
 
 현재 구현 범위는 S3 Presigned GET URL 또는 허가된 로컬 WAV 파일을 입력으로 받아 Whisper ASR과
 pyannote 화자 분리를 순서대로 실행하고, 두 결과를 시간축으로 결합하여 반환하는 흐름까지다.
 
 음성 입력은 Provider로 분리되어 있으며 S3와 로컬 입력 모두 같은 STT 서비스와 모델 실행 로직을
 사용한다. 운영 요청은 WAV/PCM 16-bit/16kHz/mono 규격만 받는다.
+
+## 엘리스 클라우드 운영
+
+현재 기본 STT 장비는 엘리스 런박스 A100 MIG `1g.10gb`, CPU 2 vCore, RAM 24GiB,
+디스크 128GiB다. 개인 데스크탑을 기본 서버로 사용하지 않는다.
+
 
 ## 백엔드 연동
 
@@ -77,16 +84,17 @@ chmod +x scripts/run_stt_server.sh
 ./scripts/run_stt_server.sh
 ```
 
-혹은
-
-```bash
-uv run stt-server
-```
-
-기본 주소는 `http://127.0.0.1:8001`이다.
+기본 주소는 `http://127.0.0.1:8001`이며 서버 내부에서만 접속할 수 있다.
 
 ```bash
 curl http://127.0.0.1:8001/health/live
+```
+
+엘리스 HTTP 터널 등 외부 연결을 받을 때는 접속 주소를 명시한다.
+공개 연결에는 별도로 인증 또는 접근 제한을 구성해야 한다.
+
+```bash
+SAEROK_STT_HOST=0.0.0.0 ./scripts/run_stt_server.sh
 ```
 
 ## 진행 로그
@@ -106,6 +114,7 @@ SAEROK_STT_LOG_LEVEL=ERROR ./scripts/run_stt_server.sh
 ```
 
 허용 레벨은 `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`이다.
+`SAEROK_STT_PORT`로 포트를 지정할 수 있으며 기본값은 `8001`이다.
 
 ## 테스트
 

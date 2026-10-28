@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 개발 서버는 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 둔다 |
 | `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 연결 설정이 필요하며, 설정이 없으면 시작하지 않는다. 카드 생성 요청의 실제 처리는 이 worker가 맡는다 |
-| `speech-worker` | `--profile workers` | 음성 STT worker. AI 서버 연결 경로가 정해진 뒤 켠다 |
+| `speech-worker` | `--profile workers` | 음성 STT worker. 엘리스 STT 주소·접근 제한·AWS 인증을 확인한 뒤 켠다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
 | `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |
 
@@ -80,7 +80,7 @@ uv run pytest
    | `SAEROK_SESSION_SECRET` | `openssl rand -base64 48`로 만든 값. 로컬 개발의 값과 다르게 둔다 |
    | `SAEROK_PUBLIC_HOST` | Elastic IP의 점을 하이픈으로 바꾼 `<IP>.sslip.io`. 예: `203.0.113.10`이면 `203-0-113-10.sslip.io` |
    | `SAEROK_GOOGLE_CLIENT_IDS` | FE가 쓰는 클라이언트 ID([README](../README.md)의 `aud` 설명). 앱의 `SAEROK_GOOGLE_SERVER_CLIENT_ID`와 같아야 한다 |
-   | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. AI 서버 연결 경로가 정해진 뒤 채운다 |
+   | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. 엘리스 HTTP 연결에서 발급받은 HTTPS 기본 주소를 넣는다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
    | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
 
@@ -128,6 +128,6 @@ docker compose up -d api card-worker
 
 - **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS이며, 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
 - **sslip.io와 인증서 발급처.** sslip.io는 이름을 IP로 바꿔 주는 DNS만 제공하고, 요청과 응답은 거치지 않고 EC2로 바로 간다. 인증서 발급처는 호스트 이름만 받는다. 둘 다 외부 무료 서비스라 장애나 발급 한도의 영향을 받을 수 있으므로 최종 배포 주소로 쓸지는 따로 정한다.
-- **AI 서버 연결.** AI 서버는 온프레미스 GPU에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). EC2에서 닿는 경로, 또는 백엔드를 GPU 장비 옆에 둘지는 정하지 않았다. 정하기 전에는 `speech-worker`를 켜지 않는다.
+- **AI 서버 연결.** STT 서버는 엘리스 클라우드 런박스에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). EC2 → 엘리스 HTTP 터널 → STT `8001` 경로의 상태 확인은 성공했다. `SAEROK_AI_SERVER_URL`을 실제 HTTPS 기본 주소로 설정하고 API와 worker 컨테이너를 재생성한다. 분석 API 접근 제한과 worker의 AWS 인증을 확인한 뒤 합성 자료로 음성 POST를 검증한다. 실제 처리 성능과 터널 시간 제한은 아직 확인하지 않았다.
 - **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지, 백업 여부는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다.
 - **배포 자동화.** 지금은 위의 수동 절차다. GitHub Actions로 옮길 때 `.github/workflows/`는 카테캠 운영진이 제공하는 디렉터리이므로 먼저 확인한다.
