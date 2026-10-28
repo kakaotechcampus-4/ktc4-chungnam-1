@@ -4,6 +4,10 @@ from pathlib import Path
 from fastapi import FastAPI
 import uvicorn
 
+from stt_server.progress import configure_logging, progress
+
+configure_logging()
+
 from stt_server.api.router import api_router
 from stt_server.audio.providers import (
     DEFAULT_LOCAL_AUDIO_DIRECTORY,
@@ -34,8 +38,8 @@ def _get_asr_runtime() -> AsrRuntime:
     global asr_runtime
 
     if asr_runtime is None:
-        asr_runtime = AsrRuntime()
-        print("Whisper model loaded successfully.")
+        with progress("asr_model_load"):
+            asr_runtime = AsrRuntime()
 
     return asr_runtime
 
@@ -47,15 +51,12 @@ def _get_diarization_pipeline() -> Pipeline:
 
     global diarization_pipeline
     if diarization_pipeline is None:
-        diarization_pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-community-1",
-        )
-        print("Diarization pipeline loaded successfully.")
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
-
-        diarization_pipeline.to(device)
+        with progress("diarization_model_load"):
+            diarization_pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-community-1",
+            )
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            diarization_pipeline.to(device)
 
     return diarization_pipeline
 
