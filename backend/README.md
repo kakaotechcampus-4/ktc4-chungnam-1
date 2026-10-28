@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
-STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. RTX 3060 Ti는 개발용이며 시연 장비 사양은 실험 후 정한다. 실제 사용자 자료의 외부 전송 조건은 별도 확인한다.
+STT는 엘리스 클라우드 런박스의 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 STT 장비는 A100 MIG `1g.10gb`이며 처리 성능은 RTF 0.1346이다. 
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -48,7 +48,7 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
-컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, 공개 범위와 AI 서버 연결은 정하지 않았다.
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, BE 공개 범위는 별도 검토하며, STT는 엘리스 HTTP 터널의 HTTPS 주소로 연결한다.
 
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
@@ -131,7 +131,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
 | 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | 개발용 RTX 3060 Ti에서 AI와 처리 조건을 측정하고 PM과 시연 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 운영 | 엘리스 A100 MIG `1g.10gb`에서 STT 처리 시간·메모리와 동시 처리 조건 측정. PM과 운영 방식 확인. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
