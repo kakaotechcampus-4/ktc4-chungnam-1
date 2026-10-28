@@ -97,6 +97,23 @@ curl http://127.0.0.1:8001/health/live
 SAEROK_STT_HOST=0.0.0.0 ./scripts/run_stt_server.sh
 ```
 
+## 진행 로그
+
+기본 실행에서는 INFO 단계 로그를 표준 오류(stderr)로 출력한다. 모델 로딩과 요청별
+`pipeline`, `audio_prepare`(입력 준비·WAV 검증), `inference_wait`(모델 실행 대기),
+`asr`, `diarization`, `alignment`의 시작·완료·실패 및 소요 시간을 확인할 수 있다.
+마지막 `status=started` 단계가 현재 처리 중인 단계이며 모델 내부 진행률은 제공하지 않는다.
+`trace`는 서버가 생성한 임의 번호로, 같은 요청의 로그를 연결한다.
+요청 ID, 파일명, URL, 음성·전사 내용과 예외 메시지는 진행 로그에 기록하지 않는다.
+HTTP 접근 로그는 계속 비활성화한다.
+
+```bash
+SAEROK_STT_LOG_LEVEL=INFO uv run stt-server
+# 실패 로그만 표시
+SAEROK_STT_LOG_LEVEL=ERROR ./scripts/run_stt_server.sh
+```
+
+허용 레벨은 `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`이다.
 `SAEROK_STT_PORT`로 포트를 지정할 수 있으며 기본값은 `8001`이다.
 
 ## 테스트
