@@ -2,7 +2,18 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
-import uvicorn
+import uvicorn, warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r"TensorFloat-32 \(TF32\) has been disabled.*",
+    module=r"pyannote\.audio\.utils\.reproducibility",
+)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"std\(\): degrees of freedom is <= 0.*",
+    module=r"pyannote\.audio\.models\.blocks\.pooling",
+)
 
 from stt_server.progress import configure_logging, progress
 
