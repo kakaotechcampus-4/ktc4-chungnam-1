@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../../data/visit_api.dart';
 import '../cards/cards_controller.dart';
+import 'pending_uploads.dart';
 import 'visit_recorder.dart';
 
 /// 녹음이 뜻대로 되지 않은 경우다. 화면은 이 값으로 안내 문구를 고른다.
@@ -19,6 +22,9 @@ enum VisitRecordingProblem {
 
   /// 녹음은 했는데 파일을 마무리하지 못했다.
   saveFailed,
+
+  /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
+  sessionFailed,
 }
 
 /// 면회 한 회차의 진행 상태다.
@@ -34,7 +40,7 @@ class VisitState {
     required this.started,
     required this.recording,
     required this.elapsed,
-    required this.careRecipientConfirmed,
+    this.sessionId,
     this.recordingPath,
     this.problem,
     this.participantCount,
@@ -54,9 +60,10 @@ class VisitState {
   final bool recording;
   final Duration elapsed;
 
-  /// 피보호자에게 안내하고 동의를 확인했는지.
-  /// 계약의 `VisitSession.consent.careRecipientConfirmation` 에 해당한다.
-  final bool careRecipientConfirmed;
+  /// 서버가 만든 회차(API 5-1). 녹음을 처음 시작할 때 생긴다.
+  ///
+  /// 앱이 켜져 있는 동안만 들고 있다. 소감 저장과 녹음 제출이 이 값을 쓴다.
+  final String? sessionId;
 
   /// 이 회차의 녹음이 쌓이는 기기 안의 파일이다.
   ///
@@ -104,7 +111,7 @@ class VisitState {
     bool? started,
     bool? recording,
     Duration? elapsed,
-    bool? careRecipientConfirmed,
+    String? sessionId,
     String? recordingPath,
     VisitRecordingProblem? problem,
     int? participantCount,
@@ -118,8 +125,7 @@ class VisitState {
     started: started ?? this.started,
     recording: recording ?? this.recording,
     elapsed: elapsed ?? this.elapsed,
-    careRecipientConfirmed:
-        careRecipientConfirmed ?? this.careRecipientConfirmed,
+    sessionId: sessionId ?? this.sessionId,
     recordingPath: recordingPath ?? this.recordingPath,
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
@@ -135,6 +141,9 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 이미 닫은 뒤에 한 번 더 닫으려 들어 실패로 잘못 표시된다.
   bool _fileOpen = false;
 
+  /// 회차를 만드는 중인지. 두 번 눌러 회차가 둘 생기지 않게 막는다.
+  bool _creatingSession = false;
+
   VisitRecorder get _recorder => ref.read(visitRecorderProvider);
 
   @override
@@ -148,6 +157,7 @@ class VisitController extends AsyncNotifier<VisitState> {
         .toList();
 
     _fileOpen = false;
+    _creatingSession = false;
     ref.onDispose(() => _ticker?.cancel());
 
     return VisitState(
@@ -157,24 +167,22 @@ class VisitController extends AsyncNotifier<VisitState> {
       started: false,
       recording: false,
       elapsed: Duration.zero,
-      careRecipientConfirmed: false,
     );
-  }
-
-  void confirmCareRecipient({required bool confirmed}) {
-    final current = state.value;
-    if (current == null) return;
-    state = AsyncData(current.copyWith(careRecipientConfirmed: confirmed));
   }
 
   /// 녹음을 시작하거나, 잠시 멈춘 녹음을 이어 간다.
   ///
-  /// 처음이면 마이크 권한을 먼저 확인하고 새 파일을 연다. 권한이 없거나 장치가
-  /// 열리지 않으면 상태만 바꾸고 조용히 돌아간다. 화면이 [VisitState.problem]
-  /// 을 보고 안내한다.
+  /// 처음이면 마이크 권한 → 회차 만들기(API 5-1) → 새 파일 열기 순서다.
+  /// 권한을 먼저 보는 것은, 회차를 만든 뒤 권한을 거부하면 녹음 없는 회차가
+  /// 남고 카드 묶음이 면회 중으로 묶이기 때문이다.
+  ///
+  /// 권한이 없거나 회차를 만들지 못했거나 장치가 열리지 않으면 상태만 바꾸고
+  /// 조용히 돌아간다. 화면이 [VisitState.problem] 을 보고 안내한다. 회차를
+  /// 만든 뒤 장치가 열리지 않았으면 회차는 그대로 두고, 다시 누를 때 같은
+  /// 회차로 녹음만 다시 시작한다.
   Future<void> startRecording() async {
     final current = state.value;
-    if (current == null || current.recording) return;
+    if (current == null || current.recording || _creatingSession) return;
 
     if (current.started) {
       return _resumeRecording();
@@ -191,6 +199,8 @@ class VisitController extends AsyncNotifier<VisitState> {
       _fail(VisitRecordingProblem.permissionDenied);
       return;
     }
+
+    if (current.sessionId == null && !await _createSession()) return;
 
     final VisitRecording recording;
     try {
@@ -210,6 +220,44 @@ class VisitController extends AsyncNotifier<VisitState> {
       ),
     );
     _startTicker();
+  }
+
+  /// 고른 카드로 회차를 만든다. 성공하면 `true` 다.
+  ///
+  /// 5-1 은 선택 화면의 카드(`position` 1~9)만 받는다. 녹음 전에 보충 카드를
+  /// 더했다면 회차를 만든 뒤 5-3 으로 따로 더한다.
+  Future<bool> _createSession() async {
+    _creatingSession = true;
+    try {
+      final cards = state.value?.cards ?? const <ConversationCard>[];
+      final set = await ref.read(currentCardSetProvider.future);
+      final api = ref.read(visitApiProvider);
+      bool chosen(ConversationCard c) =>
+          c.position <= CardRules.selectableCount;
+
+      final session = await api.createSession(
+        setId: set.setId,
+        selectedCardIds: [
+          for (final c in cards)
+            if (chosen(c)) c.cardId,
+        ],
+      );
+      final supplements = [
+        for (final c in cards)
+          if (!chosen(c)) c.cardId,
+      ];
+      if (supplements.isNotEmpty) {
+        await api.addCards(session.sessionId, supplements);
+      }
+
+      _update((now) => now.copyWith(sessionId: session.sessionId));
+      return true;
+    } on ApiFailure {
+      _fail(VisitRecordingProblem.sessionFailed);
+      return false;
+    } finally {
+      _creatingSession = false;
+    }
   }
 
   Future<void> _resumeRecording() async {
@@ -261,6 +309,7 @@ class VisitController extends AsyncNotifier<VisitState> {
           participantCount: participantCount,
         ),
       );
+      await _rememberUpload();
       return;
     }
     _fileOpen = false;
@@ -283,6 +332,34 @@ class VisitController extends AsyncNotifier<VisitState> {
         clearProblem: problem == null,
       ),
     );
+    await _rememberUpload();
+  }
+
+  /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수
+  /// 있게 하려는 것이다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+  ///
+  /// 적지 못해도 면회는 막지 않는다. 앱이 켜져 있는 동안은 이 상태가 파일과
+  /// 참여자 수를 들고 있다.
+  Future<void> _rememberUpload() async {
+    final now = state.value;
+    final sessionId = now?.sessionId;
+    final path = now?.recordingPath;
+    final count = now?.participantCount;
+    if (sessionId == null || path == null || count == null) return;
+
+    try {
+      await ref
+          .read(pendingUploadsProvider)
+          .save(
+            PendingUpload(
+              sessionId: sessionId,
+              audioPath: path,
+              participantCount: count,
+            ),
+          );
+    } on Exception {
+      // 기록이 없으면 앱을 다시 켠 뒤 다시 보내기만 못 한다.
+    }
   }
 
   void _startTicker() {
@@ -333,16 +410,37 @@ class VisitController extends AsyncNotifier<VisitState> {
     );
   }
 
-  /// 면회 중 보충 카드를 더한다.
+  /// 면회 중 보충 카드를 더한다. 더했으면 `true` 다.
   ///
-  /// 계약대로 고른 카드만 회차에 추가한다.
-  void addCards(Iterable<ConversationCard> cards) {
+  /// 계약대로 고른 카드만 회차에 추가한다. 회차가 있으면 서버(API 5-3)에 먼저
+  /// 알리고, 받아들여진 뒤에 화면에 더한다. 서버에 없는 카드를 면회 기록처럼
+  /// 보여주지 않으려는 것이다. 회차가 아직 없으면 회차를 만들 때 함께 보낸다.
+  Future<bool> addCards(Iterable<ConversationCard> cards) async {
     final current = state.value;
-    if (current == null) return;
+    if (current == null) return false;
 
     final existing = current.cards.map((c) => c.cardId).toSet();
-    final added = cards.where((c) => !existing.contains(c.cardId));
-    state = AsyncData(current.copyWith(cards: [...current.cards, ...added]));
+    final added = cards.where((c) => !existing.contains(c.cardId)).toList();
+    if (added.isEmpty) return true;
+
+    final sessionId = current.sessionId;
+    if (sessionId != null) {
+      try {
+        await ref.read(visitApiProvider).addCards(sessionId, [
+          for (final c in added) c.cardId,
+        ]);
+      } on ApiFailure {
+        return false;
+      }
+    }
+
+    _update((now) {
+      final have = now.cards.map((c) => c.cardId).toSet();
+      return now.copyWith(
+        cards: [...now.cards, ...added.where((c) => !have.contains(c.cardId))],
+      );
+    });
+    return true;
   }
 }
 

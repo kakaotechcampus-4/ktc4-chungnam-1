@@ -1,4 +1,4 @@
-/// 환자 정보 최초 입력(B-2 ~ B-8)의 단계 정의다.
+/// 환자 정보 최초 입력(B-2 ~ B-7)의 단계 정의다.
 ///
 /// 생애 정보 항목은 `docs/architecture/data-contracts.md` 의 `LifeFact.category`
 /// 와 `LifeFactCollectionState` 를 따른다. 계약에 없는 항목을 만들지 않는다.
@@ -8,12 +8,16 @@ library;
 class LifeFactStep {
   const LifeFactStep({
     required this.category,
+    required this.label,
     required this.question,
     required this.examples,
   });
 
-  /// `LifeFact.category` 값.
+  /// `LifeFact.category` 값. `Profile` 의 세부 정보 필드 이름과 같다.
   final String category;
+
+  /// 프로필 설정에서 보여주는 짧은 항목 이름.
+  final String label;
 
   /// 화면 제목으로 쓰는 질문.
   final String question;
@@ -25,6 +29,7 @@ class LifeFactStep {
 const lifeFactSteps = <LifeFactStep>[
   LifeFactStep(
     category: 'occupation',
+    label: '하시던 일',
     question: '어르신은 예전에\n어떤 일을 하셨나요?',
     examples: [
       '"30년 동안 초등학교 선생님을 하셨어요."',
@@ -33,6 +38,7 @@ const lifeFactSteps = <LifeFactStep>[
   ),
   LifeFactStep(
     category: 'hometown',
+    label: '고향',
     question: '고향이나 사셨던\n동네는 어디인가요?',
     examples: [
       '"태어나신 곳은 부산 영도구예요."',
@@ -41,6 +47,7 @@ const lifeFactSteps = <LifeFactStep>[
   ),
   LifeFactStep(
     category: 'hobby',
+    label: '취미',
     question: '즐겨 하셨던 취미나\n관심사는 무엇인가요?',
     examples: [
       '"주말마다 등산을 즐겨 하셨어요."',
@@ -49,6 +56,7 @@ const lifeFactSteps = <LifeFactStep>[
   ),
   LifeFactStep(
     category: 'family',
+    label: '가족',
     question: '가족들에 대해 자세히\n이야기해 주세요.',
     examples: [
       '"자녀는 2남 1녀를 두셨어요."',
@@ -61,9 +69,8 @@ const lifeFactSteps = <LifeFactStep>[
 enum SetupStage {
   basicInfo,
   lifeFacts,
-  photo,
-  photoTags;
+  photo;
 
   /// 진행 표시에 쓰는 전체 단계 수. 생애 정보는 항목마다 한 단계씩 센다.
-  static int get total => 2 + lifeFactSteps.length + 1;
+  static int get total => 2 + lifeFactSteps.length;
 }

@@ -29,10 +29,11 @@
 | 2-4 | `PATCH` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
 | 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 신규 | 바로 |
 | 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 신규 | 바로 |
-| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 | 사진 동의 설계 후(미정 3) |
-| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 | 3-1과 함께 |
-| 3-3 | | 사진 설명 확인 | 미정 | 미정 1 결정 후 |
-| 8-4 | `POST` | (내부) `/internal/v1/image-analyses` | 신규 | 사진 동의 설계 후(미정 3). 대기열 `PhotoAnalysisQueue`는 준비됨 |
+| 2-8 | `DELETE` | `/api/v1/profiles/{profileId}` | 신규 | 바로 |
+| 3-1 | `POST` | `/api/v1/profiles/{profileId}/photos` | 구현 완료 | 합성 자료로 검증. 실제 S3 업로드와 실제 사용자 사진 수집 전 동의 연결 검증은 남음(후속 3) |
+| 3-2 | `GET` | `/api/v1/profile-photos/{photoId}` | 구현 완료 | 메모리 저장소로 검증. 실제 S3 조회는 미검증 |
+| 3-3 | | 앨범에서 사진 설명 수정 | 수정 API 미정 | 별도 승인 절차는 두지 않음 |
+| 8-4 | `POST` | (내부) `/internal/v1/image-analyses` | 신규 | 테스트 자료로 연결 진행. 대기열 `PhotoAnalysisQueue`는 준비됨. 실제 사용자 사진 분석 전 동의 검사 검증(후속 3) |
 
 ## 테이블 쓰기 소유권
 
@@ -42,7 +43,8 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
-| `profiles` | 2-2 생성, 2-4 수정 | B가 2-5에서 세부 정보 네 항목을 쓴다(카드 작업 생성과 같은 트랜잭션이어야 해서) |
+| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다 |
+| `profiles` | 2-2 생성, 2-4 세부 정보 저장과 수정, 2-8 삭제 | B는 4-1 카드 생성 요청에서 저장된 프로필을 읽는다. 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
 
@@ -57,11 +59,11 @@
 ## 작업 순서
 
 1. `create_life_fact`를 만들어 C에게 공유한다.
-2. 2-2, 2-1, 2-3, 2-4로 프로필 흐름을 만든다. 사진은 3-1 전까지 항상 빈 배열이다.
+2. 2-2, 2-1, 2-3, 2-4, 2-8로 프로필 흐름을 만든다. 사진을 등록하지 않은 프로필은 `photos`가 빈 배열이며, 등록한 프로필은 3-1, 3-2에서 사용하는 사진 응답을 담는다.
 3. 2-6, 2-7
 4. 1-6, 1-5 탈퇴 이유
-5. 사진 동의 설계 후 3-1, 3-2와 2-3의 사진 URL. 설계 전에는 시작하지 않는다([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분))
-6. 사진 동의 설계 후 8-4 처리 함수와 worker 실행 진입점
+5. 3-1, 3-2와 2-3의 사진 URL은 구현했다. 합성 사진과 메모리 저장소로 검증했으며 실제 S3 연동은 추가 확인한다. 가입 시 계정별 동의 저장 방향은 [ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따르고, 남은 검토 때문에 구현 전체를 보류하지 않는다.
+6. 테스트 자료로 8-4 처리 함수와 worker 실행 진입점을 연결한다. 실제 사용자 사진을 받기 전에는 보관 및 분석 동의 검사, 철회와 삭제 처리를 검증한다.
 
 ## 장별 공통 규칙
 
@@ -75,7 +77,7 @@
 
 피보호자의 이름, 성별, 생년월일은 서버의 `profiles`에 저장한다. 내부 API(8절) 요청에는 넣지 않고 BE가 생년월일로 계산한 연령대만 보낸다.
 
-프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 2-5가 세부 정보 저장과 첫 카드 생성 작업을 한 트랜잭션에서 만들므로, 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다.
+프로필 입력 상태(`setupStatus`)는 저장하지 않는다. 온보딩의 `마치기`에서 세부 정보를 2-4로 저장한 뒤 4-1로 첫 카드 생성을 요청한다. 카드 생성 작업(`card_sets`)이 하나라도 있으면 `completed`, 없으면 `inProgress`다. 프로필 저장과 카드 생성 요청은 별도 API이며, 이전 2-5 API는 사용하지 않는다.
 
 ### 3. 프로필 사진
 
@@ -101,7 +103,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- 공통 기반 이전에 병합된 `feature/backend-account-management`에 구현돼 있다. 세션 폐기 목록은 아직 메모리이며 DB로 옮기는 일은 보류했다.
+- 공통 기반 이전에 병합된 `feature/backend-account-management`에 구현돼 있다. 세션 폐기 기록은 #129에서 `session_revocations` 테이블로 옮겼다.
 
 <br>
 
@@ -167,7 +169,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 ### 2-1. `GET /api/v1/profiles` — 신규
 
-현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정한다.
+현재 계정의 프로필 목록이다. 로그인 직후 온보딩과 홈 중 어디로 갈지 정하고, 어르신 목록과 홈의 어르신 표시에 쓴다.
 
 응답 `200`
 
@@ -177,6 +179,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
   "profiles": [
     {
       "profileId": "00000000-0000-4000-8000-000000000101",
+      "name": "김○○",
+      "gender": "female",
       "setupStatus": "completed"
     }
   ]
@@ -184,11 +188,14 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 ```
 
 - `setupStatus`: `inProgress`, `completed`
-- 목록이 비었으면 기본 정보 입력부터, `inProgress`이면 그 `profileId`로 세부 정보 입력부터 이어서, `completed`이면 홈으로 간다.
+- 입력 중(`inProgress`)인 프로필도 담는다. 만든 순서(`created_at`)대로 반환한다.
+- 목록이 비었으면 홈으로 간다. 입력을 마친(`completed`) 프로필이 생길 때까지 앱은 대화 카드, 면회와 리포트처럼 프로필이 필요한 기능을 막는다.
+- `completed`인 프로필이 있으면 홈으로 간다. `inProgress`인 프로필만 있을 때 어디로 갈지는 미정([미정 사항](#미정-사항) 9)
 
 **구현 메모**
 
 - `setupStatus`는 `EXISTS (SELECT 1 FROM card_sets WHERE profile_id = ...)`로 계산한다.
+- `name`, `gender`는 `profiles`에서 읽는다. 순서는 `ORDER BY created_at`이며 `idx_profiles_user(user_id, created_at)`를 탄다.
 
 <br>
 
@@ -217,15 +224,15 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 응답 `201` — [Profile](#profile), `setupStatus`는 `inProgress`
 
-- 계정당 1개다. DB에 유일 제약이 없으므로 서버가 확인한다.
+- 계정당 최대 3개다. 입력 중(`inProgress`)인 프로필도 센다. DB에 개수 제약이 없으므로 서버가 확인한다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
-| 409 | `PROFILE_ALREADY_EXISTS` | 계정에 이미 프로필이 있음 |
+| 409 | `PROFILE_LIMIT_EXCEEDED` | 계정에 이미 프로필이 3개 있음 |
 
 **구현 메모**
 
-- 계정당 1개는 DB 유일 제약이 없다. 같은 트랜잭션에서 `SELECT 1 FROM users WHERE user_id = %s FOR UPDATE`로 계정 행을 잠근 뒤 확인하고 넣는다. 동시 요청에도 하나만 생긴다.
+- 계정당 3개는 DB 제약이 없다. 같은 트랜잭션에서 `SELECT 1 FROM users WHERE user_id = %s FOR UPDATE`로 계정 행을 잠근 뒤 `profiles` 개수를 세고 넣는다. 동시 요청에도 3개를 넘지 않는다.
 - `condition.stage`는 `condition_stage`, `condition.symptomNote`는 `symptom_note`다.
 
 <br>
@@ -263,6 +270,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
+- `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
 
 응답 `200` — [Profile](#profile)
 
@@ -273,12 +281,13 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - 보낸 필드만 바꾼다(pydantic `model_fields_set`로 구분). 세부 정보 네 항목은 `null`이면 지운다. 빈 문자열은 422이며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
+- `condition.symptomNote`도 `condition.model_fields_set`로 구분해, 뺐으면 `symptom_note`를 바꾸지 않는다.
 
 <br>
 
 ### 2-6. `POST /api/v1/profiles/{profileId}/life-facts` — 신규
 
-마이페이지에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
+일대기에서 세부 정보 네 항목 밖의 생애 정보를 추가한다.
 
 요청
 
@@ -321,6 +330,28 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 <br>
 
+### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
+
+어르신 목록에서 프로필 하나를 지운다. 그 프로필의 생애 정보, 사진, 주제와 대화 카드, 면회 기록(평가, 음성 분석 작업, 리포트, 변경 제안)을 함께 삭제한다. 계정과 다른 프로필은 남는다. 사진과 음성 원본은 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣어 지운다.
+
+본문 없음.
+
+응답 `204`
+
+- 마지막 프로필도 지울 수 있다. 지운 뒤 2-1은 빈 목록을 돌려준다.
+- 카드 생성이나 음성 분석이 처리 중인 프로필의 삭제는 미정([미정 사항](#미정-사항) 8)
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_NOT_FOUND` |
+
+**구현 메모**
+
+- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- 카드와 주제가 있는 프로필을 지우는 테스트를 더한다. `conversation_cards`의 `profile_topics` 참조에는 `ON DELETE`가 없어 같은 삭제 안의 CASCADE 순서에 기대며, 1-5에도 아직 이 경우의 테스트가 없다.
+
+<br>
+
 ### 3-1. `POST /api/v1/profiles/{profileId}/photos` — 신규
 
 온보딩의 사진 첨부와 마이페이지의 갤러리 추가에서 호출한다.
@@ -348,8 +379,11 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 프로필 사진(`session_id IS NULL`)이 이미 5장이면 409다. 동시 업로드로 5장을 넘지 않게 프로필 행을 `FOR UPDATE`로 잠그고 센다.
 - 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장. 행을 저장하지 못하면 `storage.delete`로 올린 객체를 지운다.
-- 행을 넣으면 8-4 worker가 다음 주기에 분석한다. 별도 호출은 없다.
-- **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001 사진 보관 개정안](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의의 저장 위치와 분석하지 않는 사진의 상태가 정해지기 전에는 구현을 시작하지 않는다(미정 3).
+- 8-4 worker를 연결하면 대기열에서 사진을 가져가 분석한다. 현재 worker는 미연결이라 업로드만으로 분석이 시작되지는 않는다(8-4 구현 메모).
+- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 구현: [routes/profile_photos.py](../../app/api/routes/profile_photos.py), [services/profile_photos.py](../../app/services/profile_photos.py), 테스트 [test_profile_photos.py](../../tests/test_profile_photos.py)
+- 실제 사용자 사진은 **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의는 가입 시 받아 기존 계정 동의 이력에 저장한다. 필드와 분석하지 않는 사진의 상태는 후속 계약으로 맞추되, 테스트 자료를 사용하는 업로드와 분석 구현은 먼저 진행한다. 테스트 가정은 기록하고 실제 사용자 처리에 그대로 적용하지 않는다(후속 3).
+- 현재 3-1 코드에는 사진 보관 동의 검사가 없고 모든 등록 사진을 `pending`으로 저장한다. 위 정책을 구현한 상태가 아니므로 실제 사용자 사진 수집 전 동의 검사와 분석 대상 구분을 추가한다.
 
 <br>
 
@@ -372,11 +406,13 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 <br>
 
-### 3-3. 사진 설명 확인 — 미정
+<a id="3-3-사진-설명-확인--미정"></a>
 
-AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생성에 쓰면 저장소 공통 규칙("AI 제안을 사용자 확인 없이 프로필과 스토리북에 반영하지 않는다", "확인되지 않은 생애 정보를 생성하지 않는다")과 충돌한다. 보호자가 설명을 확인하거나 고치는 방식과 확인 여부의 저장 위치는 PM 확인 후 정한다.
+### 3-3. 앨범에서 사진 설명 수정 — API 미정
 
-정해지기 전에는 8-2 요청에 사진 설명을 넣지 않는다.
+AI 사진 설명은 별도 승인 없이 카드 생성에 사용하고, 사용자가 원할 때 앨범에서 확인하거나 수정한다. 9월 23일 회의와 10월 6일 BE 논의의 기존 방향이다. 사진 등록과 카드 선택에 필수 확인 단계를 추가하지 않는다.
+
+카드 입력에 사진 설명을 쓰는 것과 `life_facts`에 승인된 이야기를 저장하는 것은 다르다. 후자의 보호자 확인과 사진 분석 동의는 유지한다. 정본은 [API 3-3](../../../docs/architecture/api-spec.md#3-3-앨범에서-사진-설명-수정--api-미정)이며, 남은 것은 수정 API와 분석 중 수정의 처리다. 새 승인 컬럼을 필수 조건으로 가정하지 않는다.
 
 <br>
 
@@ -410,11 +446,11 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 }
 ```
 
-- `description`은 3-3이 정해질 때까지 카드 생성에 쓰지 않는다.
+- `description`은 별도 승인 없이 카드 생성에 사용한다. 3-3은 앨범의 선택적 수정 API이며 카드 생성의 선행 승인 절차가 아니다.
 
 **구현 메모**
 
-- **분석 동의를 확인한 사진만 분석한다.** 지금 `PhotoAnalysisQueue`는 `pending`인 프로필 사진을 모두 가져오므로, 동의 설계가 정해지면 그 조건을 가져오기 조건에 더한 뒤 worker에 연결한다(미정 3).
+- **실제 사용자 사진은 분석 동의를 확인한 경우에만 분석한다.** 지금 `PhotoAnalysisQueue`는 `pending`인 프로필 사진을 모두 가져온다. 테스트 자료만 있는 개발 환경에서 worker 연결을 먼저 검증하고, 실제 사용자 사진을 처리하기 전에는 유효한 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 중단 처리를 구현하고 검증한다(후속 3).
 - BE는 사진 사본을 만들지 않고 등록 사진의 Presigned GET URL만 넘긴다. AI 서버가 내려받은 파일이 분석용 임시 사본이며 처리 후 즉시, 늦어도 최초 생성부터 24시간 안에 지운다. 재시도로 기한이 늘지 않도록 작업마다 고정한 마감 시각을 8-4 요청에 넣는 방안을 AI와 정한다(지금 8-4 요청에는 해당 필드가 없다).
 - `PhotoAnalysisQueue`가 `pending`인 프로필 사진을 `processing`으로 임대해 `PhotoAnalysisJob(photo_id, profile_id, s3_object_key, attempt_count)`을 넘긴다. 면회 사진은 가져오지 않는다. 실패 기록과 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다.
 - 처리 함수: `storage.create_download(object_key=job.s3_object_key)`로 `downloadUrl`을 만들어 8-4를 호출하고, 응답의 `photoId`가 작업과 같은지 검증한 뒤 저장한다. 실패는 `AppError`(예: `AI_SERVER_TIMEOUT`, `INVALID_AI_RESPONSE`)로 올리면 대기열이 기록한다.
@@ -474,7 +510,7 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 }
 ```
 
-- `occupation`, `hometown`, `hobby`, `family`: 세부 정보 네 항목. 건너뛰었거나 2-5 전이면 `null`
+- `occupation`, `hometown`, `hobby`, `family`: 세부 정보 네 항목. 건너뛰었거나 2-4로 저장하기 전이면 `null`. 카드 생성 여부와 별개로 2-4에서 저장하거나 수정한다.
 
 ### LifeFact
 
@@ -511,10 +547,12 @@ AI가 만든 사진 설명(`description`)을 보호자 확인 없이 카드 생�
 
 ## 미정 사항
 
-아래 항목은 정해지기 전에 구현으로 먼저 정하지 않는다. 번호는 API 명세의 미정 사항 번호다.
+아래에는 미정 정책과 후속 구현 항목이 함께 있다. 미정 정책을 구현으로 확정하지 않되, 테스트 가정을 명시하고 기능 개발과 검증은 진행한다. 개인정보 검토가 남은 항목은 실제 사용자 자료 사용 전에 확인하며 기능 전체를 보류하지 않는다. 번호는 API 명세의 미정 사항 번호다.
 
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
-| 1 | 사진 설명을 보호자가 확인하는 방식과 확인 여부의 저장 위치 | 3-3, 8-2, 8-4 | PM. 저장소 공통 규칙과 충돌 |
-| 3 | PR #92의 PM 수정안은 사진 보관과 분석 동의를 구분함. 기존 자동 분석 제안에 동의 확인, 분석하지 않는 사진의 상태와 철회 경로를 반영해야 함 | 3-1, 8-4 | PM, FE, BE, AI |
+| 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음 | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
+| 3 | 2026-10-14 PM 결정: 사진 보관과 AI 분석은 가입 시 별도 선택 동의로 받고 기존 계정 동의 이력에 저장. 테스트 자료로 개발을 진행하며, 동의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 실제 사용자 사진 처리 전 구현 및 검증 | 3-1, 5-2, 8-4 | FE, BE, AI. 남은 개인정보 검토는 PM |
 | 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
+| 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
+| 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |

@@ -14,6 +14,8 @@ import '../../widgets/profile_avatar.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_terms.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_steps.dart';
+import 'profile_gallery.dart';
 
 /// 프로필 설정.
 ///
@@ -140,6 +142,8 @@ class _BodyState extends State<_Body> {
     );
   }
 
+  void _editBasic() => context.push(AppRoutes.profileEditBasic);
+
   /// 지금 보고 있는 어르신의 사진, 기본 정보, 세부 정보와 갤러리다.
   List<Widget> _elderSections(ProfileBundle bundle) {
     final profile = bundle.profile;
@@ -152,12 +156,21 @@ class _BodyState extends State<_Body> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('${profile.name} 어르신', style: AppTypography.sectionTitle),
-                const SizedBox(width: AppSpacing.sm),
-                const Icon(
-                  Icons.edit_outlined,
-                  size: 18,
-                  color: AppColors.textSub,
+                Flexible(
+                  child: Text(
+                    '${profile.name} 어르신',
+                    style: AppTypography.sectionTitle,
+                  ),
+                ),
+                // 이름도 기본 정보 수정에서 고친다.
+                IconButton(
+                  onPressed: _editBasic,
+                  tooltip: '이름 수정',
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                    color: AppColors.textSub,
+                  ),
                 ),
               ],
             ),
@@ -168,7 +181,7 @@ class _BodyState extends State<_Body> {
 
       _Section(
         title: '기본 정보',
-        onEdit: () {},
+        onEdit: _editBasic,
         child: Column(
           children: [
             _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
@@ -187,31 +200,16 @@ class _BodyState extends State<_Body> {
 
       _Section(
         title: '세부 정보',
-        onEdit: () {},
-        child: bundle.lifeFacts.isEmpty
-            ? const EmptyStateView(
-                message: '아직 담긴 이야기가 없어요.',
-                icon: Icons.notes_outlined,
-              )
-            : Column(
-                children: [
-                  for (final fact in bundle.lifeFacts)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                      child: _FactRow(fact: fact),
-                    ),
-                ],
-              ),
+        onEdit: () => context.push(AppRoutes.profileEditDetails),
+        child: _Details(profile: profile),
       ),
-      const SizedBox(height: AppSpacing.lg),
-
-      SecondaryButton(label: '내용 추가하기', onPressed: () {}),
+      // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
       const SizedBox(height: AppSpacing.section),
 
       _Section(
         title: '갤러리',
         onEdit: () {},
-        child: _Gallery(tags: bundle.photo.acceptedTags),
+        child: ProfileGallery(photos: bundle.photos),
       ),
       const SizedBox(height: AppSpacing.section),
     ];
@@ -338,7 +336,7 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
     await ref.read(sessionProvider.notifier).signOut();
     if (!mounted) return;
     forgetCareProfiles(ref);
-    context.go(AppRoutes.login);
+    context.go(AppRoutes.signIn);
   }
 
   @override
@@ -408,10 +406,42 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _FactRow extends StatelessWidget {
-  const _FactRow({required this.fact});
+/// 세부 정보 네 항목 중 적어 둔 것만 보여준다. 하나도 없으면 비어 있다고 알린다.
+class _Details extends StatelessWidget {
+  const _Details({required this.profile});
 
-  final LifeFact fact;
+  final Profile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = [
+      for (final step in lifeFactSteps)
+        if (profile.detailOf(step.category) case final text?)
+          (label: step.label, text: text),
+    ];
+    if (filled.isEmpty) {
+      return const EmptyStateView(
+        message: '아직 담긴 이야기가 없어요.',
+        icon: Icons.notes_outlined,
+      );
+    }
+    return Column(
+      children: [
+        for (final detail in filled)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _DetailRow(label: detail.label, text: detail.text),
+          ),
+      ],
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.text});
+
+  final String label;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -419,139 +449,16 @@ class _FactRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppChip(_categoryLabel(fact.category), tone: ChipTone.weak),
+          AppChip(label, tone: ChipTone.weak),
           const SizedBox(height: AppSpacing.md),
-          Text(fact.text, style: AppTypography.body),
+          Text(text, style: AppTypography.body),
         ],
       ),
     );
   }
-
-  /// `LifeFact.category` 값. 계약의 수집 항목과 같다.
-  static String _categoryLabel(String raw) => switch (raw) {
-    'occupation' => '하시던 일',
-    'hometown' => '고향',
-    'hobby' => '취미',
-    'family' => '가족',
-    _ => raw,
-  };
 }
 
-/// 사진을 누르면 그 사진 아래에 이야기 소재 태그를 보여준다.
-///
-/// 태그는 사용자가 수락한 것만 담긴다(`ProfilePhoto.acceptedTags`).
-class _Gallery extends StatefulWidget {
-  const _Gallery({required this.tags});
-
-  final List<String> tags;
-
-  @override
-  State<_Gallery> createState() => _GalleryState();
-}
-
-class _GalleryState extends State<_Gallery> {
-  bool _showTags = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: InkWell(
-                  onTap: () => setState(() => _showTags = !_showTags),
-                  borderRadius: BorderRadius.circular(AppRadius.image),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.image),
-                        child: Image.asset(
-                          'assets/images/family.webp',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      if (_showTags)
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(
-                              AppRadius.image,
-                            ),
-                            border: Border.all(color: AppColors.ink, width: 2),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            for (var i = 0; i < 2; i++) ...[
-              Expanded(
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(AppRadius.image),
-                    ),
-                    child: const Icon(Icons.add, color: AppColors.textDisabled),
-                  ),
-                ),
-              ),
-              if (i == 0) const SizedBox(width: AppSpacing.md),
-            ],
-          ],
-        ),
-
-        if (_showTags) ...[
-          const SizedBox(height: AppSpacing.md),
-          if (widget.tags.isEmpty)
-            Text(
-              '이 사진에서 담은 이야기 소재가 없어요.',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            )
-          else
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [for (final tag in widget.tags) _SmallTag(tag)],
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-/// 사진 아래에 붙는 작은 태그다.
-class _SmallTag extends StatelessWidget {
-  const _SmallTag(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Text(label, style: AppTypography.caption),
-    );
-  }
-}
-
-/// 동의 항목 한 줄이다. `signup_screen.dart` 의 것과 같은 모양이다.
+/// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.
 class _ConsentRow extends StatelessWidget {
   const _ConsentRow({
     required this.term,

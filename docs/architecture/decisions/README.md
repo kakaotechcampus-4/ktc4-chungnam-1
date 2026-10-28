@@ -6,10 +6,10 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 
 | 문서 | 상태 | 결정 |
 | --- | --- | --- |
-| [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted, 사진 개정안은 PR #92 검토 중 | 동의 구조와 녹음 원본의 최대 24시간 제한. 등록 사진과 AI 임시 사본의 보관 구분 검토 |
+| [ADR-001](ADR-001-consent-and-temporary-processing.md) | accepted, 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장은 2026-10-14 PM 확정 | 가입 화면에서 두 동의를 각각 받고 기존 계정 이력에 저장. 유효한 동의는 반복 요청하지 않으며 미동의자는 기능 사용 시 요청. 피보호자별 확인과 휴대폰 접근은 별도. 구현과 삭제 검증은 후속 작업 |
 | [ADR-002](ADR-002-android-application-id.md) | accepted | Android Application ID는 `com.saelog.app` |
 | [ADR-005](ADR-005-flutter-state-management-and-routing.md) | accepted | Riverpod 상태 관리와 go_router 화면 이동 |
-| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted | STT와 VLM은 온프레미스 GPU 1대에서 처리, 데이터 관리는 서버 중심으로 전환. 세부 저장 계약은 미정 |
+| [ADR-006](ADR-006-server-side-ai-processing.md) | accepted, 후속 방향 정정 | STT는 GPU 서버, 사진 설명과 카드 및 리포트는 ML API 활용. 9월 14일 일괄 GPU 결정은 과거 기록으로 구분. 실제 사용자 자료 전송 조건 별도 확인 |
 | [ADR-007](ADR-007-google-social-login.md) | proposed | 구글 로그인과 백엔드 ID 토큰 직접 검증, ADR-006의 인증과 계정 저장 부분을 구체화. 저장 항목 등 공동 검토 필요 |
 | [ADR-008](ADR-008-stt-pipeline.md) | proposed | 면회 WAV 접수 후 PostgreSQL 작업 상태와 worker를 사용하는 비동기 STT·리포트 처리. 재시도와 리포트 계약 공동 검토 필요 |
 

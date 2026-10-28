@@ -10,7 +10,8 @@
 앱을 다시 실행할 때는 저장한 세션으로 `GET /auth/me` 를 호출해 두 단계를 건너뛴다.
 
 로그아웃(`POST /auth/logout`)은 그 세션을 폐기하고, 탈퇴(`DELETE /auth/me`)는 계정과
-동의 이력을 지운 뒤 그 세션을 폐기한다.
+동의 이력을 지운 뒤 그 세션을 폐기한다. 탈퇴 이유를 고르면 계정과 연결하지 않고 함께
+저장한다. 선택 동의는 `PATCH /auth/me/consents` 로 바꾼다.
 """
 
 import logging
@@ -30,16 +31,19 @@ from app.schemas.auth import (
     AccountConsentResponse,
     AccountResponse,
     AuthenticatedResponse,
+    ConsentChangeRequest,
     ConsentItemResponse,
     ConsentRequest,
     ConsentRequiredResponse,
     GoogleLoginRequest,
     LoginResponse,
+    WithdrawalRequest,
 )
 from app.services.accounts import (
     OPTIONAL_CONSENTS,
     REQUIRED_CONSENTS,
     Account,
+    Withdrawal,
 )
 from app.schemas.common import ErrorResponse
 from app.services.session_tokens import TokenIssuer
@@ -59,7 +63,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
         401: "인증 실패",
         404: "계정 없음",
         409: "동의 버전 불일치",
-        422: "요청 형식 오류 또는 필수 동의 누락",
+        422: "요청 형식 오류, 필수 동의 누락 또는 필수 동의 변경",
         503: "로그인 또는 DB 설정 미완료, 구글 인증 서버 확인 실패",
     }
     return {
@@ -103,6 +107,7 @@ def _authenticated(account: Account, issuer: TokenIssuer) -> AuthenticatedRespon
 
 @router.post(
     "/google",
+    summary="구글 로그인",
     response_model=LoginResponse,
     responses=_errors(401, 422, 503),
 )
@@ -113,6 +118,11 @@ async def google_login(
     issuer: TokenIssuerDep,
     settings: SettingsDep,
 ) -> AuthenticatedResponse | ConsentRequiredResponse:
+    """구글 ID 토큰 검증. 계정이 있으면 세션(`authenticated`)을, 없으면 계정을 만들지 않고 동의 요청(`consentRequired`)을 줌.
+
+    API 명세 1-1
+    """
+
     identity = await verifier.verify(payload.id_token)
 
     account = await accounts.find(provider="google", social_id=identity.subject)
@@ -139,6 +149,7 @@ async def google_login(
 
 @router.post(
     "/consent",
+    summary="가입 동의 제출",
     response_model=AuthenticatedResponse,
     responses=_errors(401, 409, 422, 503),
 )
@@ -147,6 +158,11 @@ async def submit_consent(
     accounts: AccountServiceDep,
     issuer: TokenIssuerDep,
 ) -> AuthenticatedResponse:
+    """필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션 발급. 같은 등록 토큰으로 다시 보내면 계정을 덧만들지 않고 세션만 줌.
+
+    API 명세 1-2
+    """
+
     claims = issuer.read_registration(payload.registration_token)
 
     existing = await accounts.find(
@@ -171,21 +187,57 @@ async def submit_consent(
 
 @router.get(
     "/me",
+    summary="내 계정 조회",
     response_model=AccountResponse,
     responses=_errors(401, 404, 503),
 )
 async def read_current_account(account: CurrentAccountDep) -> AccountResponse:
+    """앱을 다시 실행할 때 저장한 세션으로 현재 계정과 동의 상태 조회.
+
+    API 명세 1-3
+    """
+
     return _to_account_response(account)
+
+
+@router.patch(
+    "/me/consents",
+    summary="선택 동의 변경",
+    response_model=AccountResponse,
+    responses=_errors(401, 404, 422, 503),
+)
+async def change_optional_consents(
+    payload: ConsentChangeRequest,
+    account: CurrentAccountDep,
+    accounts: AccountServiceDep,
+) -> AccountResponse:
+    """선택 동의 중 보낸 항목만 변경. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 거절함.
+
+    API 명세 1-6
+    """
+
+    # 직전 동의 이력을 복사해 보낸 선택 동의만 바꾼 이력을 더한다. 필수 동의는 바꿀 수 없다.
+    updated = await accounts.change_optional_consents(
+        account.account_id, payload.submitted()
+    )
+    logger.info("optional_consents_changed")
+    return _to_account_response(updated)
 
 
 @router.post(
     "/logout",
+    summary="로그아웃",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_errors(401, 503),
 )
 async def logout(
     session: CurrentSessionDep, revocations: SessionRevocationsDep
 ) -> None:
+    """요청에 쓴 세션 폐기. 본문 없음.
+
+    API 명세 1-4
+    """
+
     # 계정이 이미 없어도 세션은 폐기한다. 로그아웃은 이 세션을 끝내는 일이다.
     await revocations.revoke(session)
     logger.info("session_revoked", extra={"reason": "logout"})
@@ -193,16 +245,29 @@ async def logout(
 
 @router.delete(
     "/me",
+    summary="회원 탈퇴",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_errors(401, 404, 503),
+    responses=_errors(401, 404, 422, 503),
 )
 async def delete_current_account(
     session: CurrentSessionDep,
     account: CurrentAccountDep,
     accounts: AccountServiceDep,
     revocations: SessionRevocationsDep,
+    # 탈퇴 이유를 고르지 않았으면 본문 없이 보낸다.
+    payload: WithdrawalRequest | None = None,
 ) -> None:
-    await accounts.delete(account.account_id)
+    """계정과 그 아래 기록을 지우고 요청에 쓴 세션 폐기. 탈퇴 이유는 계정과 연결하지 않고 저장함.
+
+    API 명세 1-5
+    """
+
+    withdrawal = (
+        Withdrawal(reasons=tuple(payload.reasons), other_text=payload.other_text)
+        if payload is not None
+        else None
+    )
+    await accounts.delete(account.account_id, withdrawal=withdrawal)
     # 계정이 지워졌으므로 같은 계정의 다른 세션은 `ACCOUNT_NOT_FOUND` 로 거절된다.
     # 요청에 쓴 세션은 여기서 폐기해 단말에 남더라도 다시 통과하지 않게 한다.
     await revocations.revoke(session)
