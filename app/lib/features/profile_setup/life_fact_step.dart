@@ -288,9 +288,13 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     widget.onCleared();
   }
 
+  /// 알아들은 뒤 다시 녹음한다. 새로 말하는 것이라 못 알아들은 횟수도 처음부터
+  /// 센다. 알아들은 녹음까지 세면 다음에 한 번만 못 알아들어도 직접 입력으로
+  /// 넘어갔다.
   void _retry() {
     setState(() {
       _phase = _Phase.idle;
+      _attempt = 0;
       _heardText = null;
       _stoppedAtLimit = false;
     });

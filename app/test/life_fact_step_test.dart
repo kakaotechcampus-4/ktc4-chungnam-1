@@ -436,6 +436,41 @@ void main() {
       expect(find.text('말로 답하기'), findsNothing);
     });
 
+    testWidgets('알아들은 뒤 다시 녹음해 한 번 못 알아들으면 아직 직접 입력이 아니다', (
+      tester,
+    ) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: _FixedSpeech(
+            const SpeechNotHeard(),
+            Duration.zero,
+            queued: [const SpeechHeard('합성 문장입니다')],
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await _speak(tester);
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+
+      await tester.tap(find.text('다시 녹음하기'));
+      await tester.pump();
+      await _speak(tester);
+
+      expect(find.text('마이크를 눌러 다시 말씀해주세요.'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+
+      await _speak(tester);
+      expect(
+        find.text('목소리를 잘 듣지 못했어요.\n글로 적어 보시겠어요?'),
+        findsOneWidget,
+        reason: '다시 녹음한 뒤 두 번 못 알아들으면 넘어간다',
+      );
+    });
+
     testWidgets('알아들으면 들은 문장을 보여주고 넘긴다', (tester) async {
       _useReferenceScreen(tester);
       String? captured;
