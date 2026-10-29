@@ -151,7 +151,9 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
 
 **로그인 세션이 있으면 어르신 목록은 서버가 기준이다**([profile_api.dart](lib/data/profile_api.dart), `api-spec.md` 2절). 세션이 생기면 2-1로 목록을, 2-3으로 한 분씩 기본 정보와 세부 정보를 불러온다. 서버의 `inProgress`(첫 카드 생성 전)는 `입력 중` 슬롯으로 두고, 누르면 서버 값으로 채워 세부 정보부터 이어서 입력한다. 프로필 입력은 기본 정보의 `다음`에서 2-2로 만들고(다시 오면 2-4로 고침), `마치기`에서 세부 정보 네 항목을 2-4로 저장한다. 프로필 설정의 수정은 2-4, 함께하는 소중한 분의 지우기는 2-8로 먼저 저장한 뒤 화면에 반영한다. 저장하는 동안 버튼을 막고, 실패하면 이유(연결 실패, 3분 초과, 프로필 없음, 로그인 풀림)를 알리고 그대로 둔다. 목록을 불러오는 동안과 실패했을 때 홈, 프로필 설정, 함께하는 소중한 분과 어르신이 필요한 화면은 등록 안내 대신 로딩과 다시 시도를 보여준다(`CareProfilesLoading`). 슬롯 순서는 서버에 저장하지 않아 다시 불러오면 만든 순서로 돌아간다. 카드 생성(4-1)은 서버 `profileId`(`Profile.profileId`, 서버에 저장한 분은 `CareProfileEntry.remoteId`)를 쓴다.
 
-로그인 세션이 없으면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기) 서버를 부르지 않고 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 어느 쪽이든 단말 저장소에 쓰지 않는다. 로그아웃 또는 탈퇴하면 목록을 비운다(`forgetCareProfiles`). 세부 정보는 `Profile`의 `occupation`, `hometown`, `hobby`, `family`로 다루며 건너뛴 항목은 `null`이다. 등록을 마친 분의 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
+로그인 세션이 없으면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기) 서버를 부르지 않고 **앱이 켜져 있는 동안만 기억한다.** 단말 보관 범위가 정해지지 않아(이슈 18) 어느 쪽이든 목록은 단말 저장소에 쓰지 않는다. 로그아웃 또는 탈퇴하면 목록을 비운다(`forgetCareProfiles`).
+
+**마지막으로 고른 어르신은 계정마다 단말에 기억한다**(이슈 144, [selected_profile_store.dart](lib/data/selected_profile_store.dart)). 앱을 다시 켜면 첫 분으로 돌아가 모르고 다른 어르신으로 면회를 기록할 수 있어서다. 보관하는 값은 계정 ID를 키로 한 서버 프로필 ID 하나이며 세션과 같은 보안 저장소에 둔다. 서버 목록과 기억한 분을 모두 읽은 뒤에 목록을 내보내 첫 분이 잠깐 골라지지 않게 한다. 기억한 분이 지워졌거나 입력 중이면 고를 수 있는 첫 분으로 열고, 남은 분이 없으면 기억을 지운다. 목록을 불러오는 중이거나 실패했을 때는 기억을 건드리지 않는다. 다른 계정의 기억은 읽지 않고, 로그아웃해도 남겨 다시 로그인하면 그 분으로 연다. 탈퇴하면 그 계정의 기억을 지운다. 로그인 없이 들어온 경우는 기억하지 않는다. 단말에 프로필 ID를 두는 것은 개발과 테스트를 위한 가정이며 단말 보관 범위를 확정한 것이 아니다. 세부 정보는 `Profile`의 `occupation`, `hometown`, `hobby`, `family`로 다루며 건너뛴 항목은 `null`이다. 등록을 마친 분의 사진은 목 데이터를 쓰고, 입력 화면의 음성 예시는 `profileSampleProvider`로 목 데이터를 읽는다. 코드는 [providers.dart](lib/data/providers.dart)의 `careProfilesProvider`와 [setup_controller.dart](lib/features/profile_setup/setup_controller.dart)의 `pendingSetupsProvider`다.
 
 홈 리포트 알림은 계정과 어르신마다 따로 둔다. 로그아웃해도 지우지 않으며, 다른 계정으로 들어오면 보이지 않고 원래 계정으로 다시 들어오면 다시 보인다. 로그아웃한 사이 도착한 리포트도 기다리던 계정에 남는다. 탈퇴하면 그 계정의 알림만 지운다. 이 알림도 앱이 켜져 있는 동안만 기억한다. 로그인한 계정은 다시 들어오면 서버에서 같은 어르신을 불러오므로 알림도 다시 보인다. 로그인 없이 들어온 경우는 로그아웃하면 어르신 목록이 비어 알림을 띄울 어르신이 없다.
 
@@ -194,7 +196,7 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
 
 - BE: 최대 3분 허용(2-2의 `PROFILE_LIMIT_EXCEEDED`), 프로필 삭제(2-8), 2-1 목록 응답의 이름과 성별은 PR #104로 명세에 들어갔다. 앱은 아직 이 API를 붙이지 않았다. 푸시 알림의 `profileId`는 합의 전이다.
 - BE: 입력 중인 분만 있을 때 로그인 직후 어디로 갈지는 정하지 않았다(`api-spec.md` 미정 사항 9).
-- BE: 로그인 후 마지막에 본 어르신을 여는 기능은 단말 보관 범위와 함께 정한 뒤 붙인다. 지금은 첫 분으로 연다.
+- BE, PM: 마지막으로 고른 어르신의 서버 프로필 ID를 단말에 두는 것은 테스트 가정이다. 단말 보관 범위를 정할 때 함께 확인한다(`docs/legal/README.md`의 실제 사용자 자료 사용 전 확인).
 - PM: 화면 문구는 FE 초안이다. 다른 어르신의 리포트가 도착했을 때 알리는 방식도 정하지 않았다.
 
 ## 구글 로그인
