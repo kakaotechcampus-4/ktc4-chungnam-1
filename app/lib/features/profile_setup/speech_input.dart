@@ -123,7 +123,7 @@ class ServerSpeechInput implements SpeechInput {
     try {
       await recorder.start();
     } on Exception {
-      await recorder.discard(null);
+      await recorder.discard();
       throw const SpeechStartFailure(SpeechStartProblem.unavailable);
     }
     return _ServerRecording(recorder, api, maxDuration);
@@ -145,12 +145,16 @@ class _ServerRecording implements SpeechRecording {
   /// 다 녹음한 파일. 녹음 중이거나 지운 뒤에는 없다.
   String? _path;
 
+  /// [finish] 로 녹음을 끝냈다. 그 뒤로는 장치를 다른 녹음이 쓸 수 있다.
+  bool _stopped = false;
+
   @override
   Future<void> get limitReached => _limit.future;
 
   @override
   Future<SpeechOutcome> finish() async {
     _timer.cancel();
+    _stopped = true;
     String? path;
     try {
       path = await _recorder.stop();
@@ -158,7 +162,7 @@ class _ServerRecording implements SpeechRecording {
       path = null;
     }
     if (path == null) {
-      await _recorder.discard(null);
+      await _recorder.discard();
       return const SpeechFailed(canResend: false);
     }
     _path = path;
@@ -177,7 +181,14 @@ class _ServerRecording implements SpeechRecording {
     _timer.cancel();
     final path = _path;
     _path = null;
-    await _recorder.discard(path);
+    // 끝낸 녹음은 자기 파일만 지운다. 장치를 멈추면 그사이 다음 항목에서
+    // 시작한 녹음까지 끊긴다.
+    if (_stopped) {
+      if (path != null) await _recorder.delete(path);
+    } else {
+      _stopped = true;
+      await _recorder.discard();
+    }
   }
 
   Future<SpeechOutcome> _send(String path) async {

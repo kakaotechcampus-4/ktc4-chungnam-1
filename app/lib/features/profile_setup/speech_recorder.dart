@@ -5,7 +5,7 @@
 ///
 /// 면회 녹음([VisitRecorder])과 달리 파일을 남기지 않는다. 글로 옮기면 쓸 곳이
 /// 없고, 서버도 전사가 끝나면 바로 지운다(이슈 #138). 그래서 앱 전용 임시
-/// 폴더에 두고, 결과를 받거나 버리면 [SpeechRecorder.discard] 로 지운다.
+/// 폴더에 두고, 결과를 받거나 버리면 [SpeechRecorder.delete] 로 지운다.
 library;
 
 import 'dart:io';
@@ -25,13 +25,22 @@ abstract interface class SpeechRecorder {
   Future<bool> hasPermission();
 
   /// 새 파일에 녹음을 시작한다. 지난번에 지우지 못한 파일은 먼저 지운다.
+  /// 아직 보내는 중이거나 다시 보낼 파일은 남긴다.
   Future<void> start();
 
   /// 녹음을 끝내고 파일 경로를 돌려준다. 파일이 없으면 `null` 이다.
   Future<String?> stop();
 
-  /// 녹음 중이면 멈추고 파일을 지운다. 없는 파일을 지워도 실패하지 않는다.
-  Future<void> discard(String? path);
+  /// 녹음 중이면 멈추고 그 파일을 지운다. 녹음 중이 아니면 아무것도 하지
+  /// 않는다.
+  Future<void> discard();
+
+  /// [stop] 으로 받은 파일 하나만 지운다. 장치는 건드리지 않는다.
+  ///
+  /// 장치는 화면들이 함께 쓴다. 앞 항목의 전사가 늦게 끝나 파일을 지울 때
+  /// 다음 항목에서 시작한 녹음을 멈추면 안 된다. 없는 파일을 지워도 실패하지
+  /// 않는다.
+  Future<void> delete(String path);
 
   /// 장치를 놓아준다.
   Future<void> dispose();
@@ -42,13 +51,26 @@ abstract interface class SpeechRecorder {
 /// 형식은 면회 녹음과 같은 WAV, 16kHz, 16-bit, mono 다. BE 의 짧은 음성
 /// 전사 API 가 받는 형식이다(이슈 #138).
 class DeviceSpeechRecorder implements SpeechRecorder {
-  DeviceSpeechRecorder({AudioRecorder? recorder})
-    : _recorder = recorder ?? AudioRecorder();
+  DeviceSpeechRecorder({
+    AudioRecorder? recorder,
+    Future<Directory> Function()? directory,
+  }) : _recorder = recorder ?? AudioRecorder(),
+       _directoryOf = directory ?? _temporaryDirectory;
 
   final AudioRecorder _recorder;
 
-  /// 임시 폴더 아래 녹음 폴더 이름. 이 폴더에는 지금 녹음 하나만 둔다.
+  /// 녹음 폴더를 돌려준다. 테스트에서 임시 폴더로 바꾼다.
+  final Future<Directory> Function() _directoryOf;
+
+  /// 임시 폴더 아래 녹음 폴더 이름.
   static const directoryName = 'speech_inputs';
+
+  /// 녹음을 마쳤지만 아직 지우지 않은 파일의 이름. 보내는 중이거나 다시
+  /// 보낼 파일이라 새 녹음을 시작할 때 지우지 않는다. 앱이 꺼지면 비므로,
+  /// 그때 남은 파일은 다음 녹음을 시작할 때 지운다.
+  ///
+  /// 경로 대신 이름을 둔다. 폴더를 훑어 얻은 경로와 구분자가 다를 수 있다.
+  final Set<String> _finished = {};
 
   @override
   Future<bool> hasPermission() => _recorder.hasPermission();
@@ -58,6 +80,7 @@ class DeviceSpeechRecorder implements SpeechRecorder {
     final directory = await _directory();
     // 앱이 꺼져 지우지 못한 파일이 있으면 여기서 지운다.
     await for (final entity in directory.list()) {
+      if (_finished.contains(_nameOf(entity.path))) continue;
       await _deleteQuietly(entity.path);
     }
 
@@ -76,26 +99,38 @@ class DeviceSpeechRecorder implements SpeechRecorder {
   Future<String?> stop() async {
     final path = await _recorder.stop();
     if (path == null || !await File(path).exists()) return null;
+    _finished.add(_nameOf(path));
     return path;
   }
 
   @override
-  Future<void> discard(String? path) async {
+  Future<void> discard() async {
     if (await _recorder.isRecording() || await _recorder.isPaused()) {
       final stopped = await _recorder.stop();
       if (stopped != null) await _deleteQuietly(stopped);
     }
-    if (path != null) await _deleteQuietly(path);
   }
+
+  @override
+  Future<void> delete(String path) async {
+    _finished.remove(_nameOf(path));
+    await _deleteQuietly(path);
+  }
+
+  static String _nameOf(String path) => File(path).uri.pathSegments.last;
 
   @override
   Future<void> dispose() => _recorder.dispose();
 
   /// 캐시 폴더는 Android 자동 백업에 들어가지 않는다. 지운 녹음이 다시 설치할
   /// 때 되살아나지 않는다.
-  Future<Directory> _directory() async {
+  static Future<Directory> _temporaryDirectory() async {
     final temporary = await getTemporaryDirectory();
-    final directory = Directory('${temporary.path}/$directoryName');
+    return Directory('${temporary.path}/$directoryName');
+  }
+
+  Future<Directory> _directory() async {
+    final directory = await _directoryOf();
     await directory.create(recursive: true);
     return directory;
   }
