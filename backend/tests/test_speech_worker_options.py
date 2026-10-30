@@ -48,6 +48,21 @@ def test_report_time_limit_must_fit_in_the_lease(monkeypatch):
     assert entry.create_worker(fits)['report_generator'] is not None
 
 
+def test_report_model_must_be_one_the_ai_package_can_call(monkeypatch):
+    monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
+    monkeypatch.setattr(entry, 'create_speech_worker', lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url='postgresql://synthetic',
+        speech_audio_s3_bucket='synthetic', ml_api_key='synthetic-key',
+        report_generation_model='synthetic-model',
+    )
+    # 작업마다 INVALID_REQUEST로 실패하는 대신 시작하지 않는다.
+    with pytest.raises(RuntimeError, match='SAEROK_REPORT_GENERATION_MODEL'):
+        entry.create_worker(settings)
+    # STT만 돌릴 때는 리포트 모델을 보지 않는다.
+    assert entry.create_worker(settings, stt_only=True)['report_generator'] is None
+
+
 def test_production_rejects_stt_only():
     with pytest.raises(RuntimeError, match='development/test'):
         entry.create_worker(Settings(environment='production'), stt_only=True)

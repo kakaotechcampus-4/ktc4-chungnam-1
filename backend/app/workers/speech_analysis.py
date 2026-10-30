@@ -5,6 +5,7 @@ import argparse
 import proposal_generation
 import report_generation
 from common import visit_report as ai
+from common.llm import ENDPOINTS
 from pydantic import ValidationError
 
 from app.clients.ai_server import AiServerClient
@@ -94,6 +95,11 @@ def report_generator(settings: Settings) -> GenerateReport:
     if not api_key:
         raise RuntimeError("리포트 생성에는 SAEROK_ML_API_KEY가 필요합니다.")
     model = settings.report_generation_model
+    # ENDPOINTS에 없는 모델은 작업마다 INVALID_REQUEST로 실패하므로 시작할 때 막는다.
+    if model not in ENDPOINTS:
+        raise RuntimeError(
+            f"SAEROK_REPORT_GENERATION_MODEL({model})은 ai/common/llm.py의 ENDPOINTS에 있어야 합니다."
+        )
 
     def generate(request: VisitReportRequest, deadline: ReportDeadline) -> VisitReportResult:
         # 두 쪽 형식은 JSON 이름이 같음. UUID는 JSON에서 문자열로 바뀜
