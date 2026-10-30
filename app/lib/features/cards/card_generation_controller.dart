@@ -18,7 +18,11 @@ final cardPollIntervalProvider = Provider<Duration>(
 /// 상태가
 /// - `none`, `failed` 면 4-1 로 생성을 요청하고,
 /// - `running` 이면 [cardPollIntervalProvider] 마다 4-2 로 다시 묻고,
-/// - `ready`, `inVisit` 이면 그 상태로 끝낸다.
+/// - `ready`, `inVisit`, `needsRefresh` 면 그 상태로 끝낸다.
+///
+/// `needsRefresh` 는 들어올 때 다시 만들지 않는다. 고칠 때마다 만들지 않고
+/// 보호자가 `다음 대화 준비하기` 를 눌렀을 때 모아서 만든다([refresh], PM 기준
+/// 사실 정정과 다음 면회 카드 반영).
 ///
 /// 묻는 동안은 loading 이다. 화면을 떠나면 provider 가 사라지므로 더 묻지
 /// 않는다. 서버의 생성은 그대로 이어지고, 다시 들어오면 처음부터 확인한다.
@@ -32,33 +36,56 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus> {
     if (profileId == null) throw StateError('고른 어르신이 없다');
     final api = ref.watch(cardApiProvider);
 
-    var status = await api.status(profileId);
-    var waited = false;
+    final status = await api.status(profileId);
+    return switch (status) {
+      CardGenerationStatus.none ||
+      CardGenerationStatus.failed => _generate(api, profileId),
+      CardGenerationStatus.running => _wait(api, profileId, status),
+      _ => status,
+    };
+  }
 
-    if (status == CardGenerationStatus.none ||
-        status == CardGenerationStatus.failed) {
-      status = await api.requestGeneration(profileId);
-      waited = true;
-    }
+  /// 실패 화면의 다시 받기. 상태를 처음부터 다시 확인한다.
+  void retry() => ref.invalidateSelf();
 
+  /// `다음 대화 준비하기`. 받은 뒤 고친 묶음을 버리고 새로 만든다.
+  ///
+  /// 4-1 을 부르면 서버는 예전 묶음을 더는 주지 않는다. 만드는 동안은 loading
+  /// 이고, 실패하면 `failed` 로 끝나 실패 화면의 다시 받기로 이어진다.
+  Future<void> refresh() async {
+    if (state.value != CardGenerationStatus.needsRefresh) return;
+    final profileId = await ref.read(serverProfileIdProvider.future);
+    if (profileId == null || !ref.mounted) return;
+    final api = ref.read(cardApiProvider);
+
+    state = const AsyncLoading();
+    final next = await AsyncValue.guard(() => _generate(api, profileId));
+    if (ref.mounted) state = next;
+  }
+
+  /// 4-1 로 만들어 달라고 한 뒤 다 될 때까지 기다린다.
+  Future<CardGenerationStatus> _generate(CardApi api, String profileId) async =>
+      _wait(api, profileId, await api.requestGeneration(profileId));
+
+  /// `running` 이 끝날 때까지 4-2 로 다시 묻는다.
+  Future<CardGenerationStatus> _wait(
+    CardApi api,
+    String profileId,
+    CardGenerationStatus status,
+  ) async {
     while (status == CardGenerationStatus.running) {
-      waited = true;
       await Future<void>.delayed(ref.read(cardPollIntervalProvider));
       if (!ref.mounted) return status;
       status = await api.status(profileId);
     }
 
     // 새로 만든 묶음이다. 앞서 받아 둔 묶음이나 실패를 버리고 다시 받는다.
-    if (waited &&
-        (status == CardGenerationStatus.ready ||
-            status == CardGenerationStatus.inVisit)) {
+    if (status == CardGenerationStatus.ready ||
+        status == CardGenerationStatus.inVisit) {
       ref.invalidate(currentCardSetProvider);
     }
     return status;
   }
-
-  /// 실패 화면의 다시 받기. 상태를 처음부터 다시 확인한다.
-  void retry() => ref.invalidateSelf();
 }
 
 /// 자동 재시도는 끈다. 다시 시도하면 4-1 을 또 보내므로 버튼으로만 한다.

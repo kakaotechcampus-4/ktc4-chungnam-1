@@ -234,6 +234,10 @@ String profileFailureMessage(ApiFailure failure) => switch (failure) {
     '어르신 정보를 찾지 못했어요. 목록을 다시 불러와 주세요.',
   ApiServerFailure(errorCode: 'LIFE_FACT_NOT_FOUND') =>
     '이야기를 찾지 못했어요. 이미 지운 이야기일 수 있어요.',
+  // 카드를 만드는 동안 카드에 쓰는 정보를 고치거나 지우면 거절된다(2-4, 2-7,
+  // 2-9). 다 만들면 다시 고칠 수 있다.
+  ApiServerFailure(errorCode: 'CARD_GENERATION_IN_PROGRESS') =>
+    '대화 카드를 만드는 중이라 지금은 바꿀 수 없어요. 카드가 준비된 뒤 다시 시도해주세요.',
   ApiServerFailure(statusCode: 401) || ApiSignedOutFailure() =>
     '로그인이 풀렸어요. 다시 로그인해주세요.',
   ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
