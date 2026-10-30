@@ -50,7 +50,14 @@ void main() {
     final bundle = await repository.loadProfile();
 
     expect(bundle.profile.stage, ConditionStage.mildCognitiveImpairment);
-    expect(bundle.lifeFacts, hasLength(3));
+    // 일대기 이야기는 일곱 분류에 열 편이다.
+    expect(bundle.lifeFacts, hasLength(10));
+    expect(bundle.lifeFacts.map((f) => f.storyCategory).toSet(), hasLength(7));
+    expect(
+      bundle.profile.lifeFactIds,
+      bundle.lifeFacts.map((f) => f.factId),
+      reason: '프로필이 가리키는 이야기와 이야기 목록이 같아야 한다',
+    );
     // 사진은 분석 완료, 분석 중, 실패를 한 장씩 담는다.
     expect(bundle.photos.map((p) => p.analysisStatus), [
       PhotoAnalysisStatus.completed,

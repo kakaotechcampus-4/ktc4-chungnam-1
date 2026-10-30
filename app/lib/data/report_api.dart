@@ -88,20 +88,35 @@ class ReportListItem {
     required this.title,
     required this.visitDate,
     required this.mood,
+    this.photoId,
+    this.photoUrl,
   });
 
-  factory ReportListItem.fromJson(Map<String, dynamic> json) => ReportListItem(
-    reportId: json['sessionId'] as String,
-    title: json['title'] as String,
-    visitDate: json['visitDate'] as String,
-    mood: VisitMood.parse(json['mood'] as String),
-  );
+  factory ReportListItem.fromJson(Map<String, dynamic> json) {
+    final photo = json['photo'] as Map<String, dynamic>?;
+    return ReportListItem(
+      reportId: json['sessionId'] as String,
+      title: json['title'] as String,
+      visitDate: json['visitDate'] as String,
+      mood: VisitMood.parse(json['mood'] as String),
+      photoId: photo?['photoId'] as String?,
+      photoUrl: photo?['imageUrl'] as String?,
+    );
+  }
 
   /// 리포트를 여는 ID. 서버의 리포트는 회차 ID 로 연다(7-2).
   final String reportId;
   final String title;
   final String visitDate;
   final VisitMood? mood;
+  final String? photoId;
+
+  /// 썸네일로 쓰는 면회 사진 주소. 서버(7-1)의 `photo.imageUrl` 이며 수명이
+  /// 짧다. 목 데이터는 [VisitReport.photoUrl] 처럼 `asset:` 을 쓴다.
+  ///
+  /// 사진이 없으면 `null` 이다. 서버가 사진 주소를 만들지 못한 항목도 `null`
+  /// 로 오므로, 이 값만으로 올리기 실패를 알 수는 없다.
+  final String? photoUrl;
 }
 
 /// 회차 상태와 리포트 API 를 부른다. 실패는 [ApiFailure] 로 던진다.

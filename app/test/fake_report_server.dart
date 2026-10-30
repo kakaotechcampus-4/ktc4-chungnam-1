@@ -50,6 +50,10 @@ class FakeReportServer {
   /// 연결이 끊긴 것처럼 모든 요청을 실패시킨다.
   bool offline = false;
 
+  /// 변경 제안 검토(7-4)를 받으면 부른다. 승인한 이야기를 프로필 서버에
+  /// 담는 것처럼 할 때 쓴다.
+  void Function(String sessionId, Object? body)? onReview;
+
   ReportApi get api => ReportApi(
     ApiClient(
       authorization: () => 'Bearer fake-token',
@@ -93,6 +97,7 @@ class FakeReportServer {
                 'title': r['title'],
                 'visitDate': r['visitDate'],
                 'mood': r['mood'],
+                'photo': r['photo'],
               },
         ],
       });
@@ -135,6 +140,7 @@ class FakeReportServer {
               : _json(proposal);
         case 'proposals/review':
           final proposal = proposals[sessionId]!;
+          onReview?.call(sessionId, body);
           return _json(proposal);
       }
     }

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 개발 서버는 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 둔다 |
 | `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 연결 설정이 필요하며, 설정이 없으면 시작하지 않는다. 카드 생성 요청의 실제 처리는 이 worker가 맡는다 |
-| `speech-worker` | `--profile workers` | 음성 STT worker. AI 서버 연결 경로가 정해진 뒤 켠다 |
+| `speech-worker` | `--profile workers` | 음성 STT worker. 엘리스 STT 주소·접근 제한·AWS 인증을 확인한 뒤 켠다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
 | `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |
 
@@ -80,7 +80,7 @@ uv run pytest
    | `SAEROK_SESSION_SECRET` | `openssl rand -base64 48`로 만든 값. 로컬 개발의 값과 다르게 둔다 |
    | `SAEROK_PUBLIC_HOST` | Elastic IP의 점을 하이픈으로 바꾼 `<IP>.sslip.io`. 예: `203.0.113.10`이면 `203-0-113-10.sslip.io` |
    | `SAEROK_GOOGLE_CLIENT_IDS` | FE가 쓰는 클라이언트 ID([README](../README.md)의 `aud` 설명). 앱의 `SAEROK_GOOGLE_SERVER_CLIENT_ID`와 같아야 한다 |
-   | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. AI 서버 연결 경로가 정해진 뒤 채운다 |
+   | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. 엘리스 HTTP 연결에서 발급받은 HTTPS 기본 주소를 넣는다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
    | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
 
@@ -110,6 +110,14 @@ docker compose up -d api card-worker
 
 상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
 
+### worker 종료와 유예 시간
+
+`docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.
+
+- 유예 시간은 `card-worker`와 `speech-worker` 모두 `stop_grace_period: 180s`다. 2026-10-18 [통합 검증](../../docs/pm/integration-verification-20261018.md)에서 작업 생성부터 리포트 준비까지 약 38초(준비된 모델, 단일 실행)였고, 그 3~5배 범위의 상한에 맞췄다. 카드 생성은 실측이 없어 설정 주석의 1~2분을 덮는 같은 값을 쓴다.
+- 유예 시간을 넘기면 Docker가 SIGKILL로 끝낸다. 처리 중이던 작업은 임대(음성 900초, 카드 300초)가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다. 코드가 허용하는 처리 시간(STT 응답 대기 600초, 리포트 생성 600초)보다 짧으므로 긴 녹음은 이렇게 끊길 수 있다. 녹음 길이별 처리 시간을 측정한 뒤 다시 정한다.
+- 기다리지 않고 바로 끝내야 하면 `docker compose kill <서비스>`를 쓴다. 로컬에서 직접 실행한 worker는 Ctrl+C를 두 번 누르면 바로 끝난다.
+
 ### 앱 연결
 
 앱의 `app/.env`에 `SAEROK_API_BASE_URL=https://<SAEROK_PUBLIC_HOST>`를 넣는다. HTTPS이므로 release 빌드에서도 연결된다. 이 주소는 공개 저장소의 `app/.env.example`과 문서에 적지 않는다.
@@ -120,6 +128,6 @@ docker compose up -d api card-worker
 
 - **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS이며, 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
 - **sslip.io와 인증서 발급처.** sslip.io는 이름을 IP로 바꿔 주는 DNS만 제공하고, 요청과 응답은 거치지 않고 EC2로 바로 간다. 인증서 발급처는 호스트 이름만 받는다. 둘 다 외부 무료 서비스라 장애나 발급 한도의 영향을 받을 수 있으므로 최종 배포 주소로 쓸지는 따로 정한다.
-- **AI 서버 연결.** AI 서버는 온프레미스 GPU에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). EC2에서 닿는 경로, 또는 백엔드를 GPU 장비 옆에 둘지는 정하지 않았다. 정하기 전에는 `speech-worker`를 켜지 않는다.
+- **AI 서버 연결.** STT 서버는 엘리스 클라우드 런박스에 있다([ADR-006](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)). EC2 → 엘리스 HTTP 터널 → STT `8001` 경로의 상태 확인은 성공했다. `SAEROK_AI_SERVER_URL`을 실제 HTTPS 기본 주소로 설정하고 API와 worker 컨테이너를 재생성한다. 분석 API 접근 제한과 worker의 AWS 인증을 확인한 뒤 합성 자료로 음성 POST를 검증한다. 실제 처리 성능과 터널 시간 제한은 아직 확인하지 않았다.
 - **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지, 백업 여부는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다.
 - **배포 자동화.** 지금은 위의 수동 절차다. GitHub Actions로 옮길 때 `.github/workflows/`는 카테캠 운영진이 제공하는 디렉터리이므로 먼저 확인한다.

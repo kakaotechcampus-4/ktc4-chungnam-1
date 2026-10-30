@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -29,10 +30,13 @@ import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
+import 'package:saerok/features/visit/visit_photos.dart';
 
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
+import 'fake_selected_profile_store.dart';
+import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
 
 // ── 가짜 구글 SDK ───────────────────────────────────
@@ -198,6 +202,8 @@ Widget _app({
   AuthSession? session,
   bool skipGoogleLogin = false,
   PendingUploads? uploads,
+  VisitPhotos? photos,
+  SelectedProfileStore? selectedProfile,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -257,6 +263,10 @@ Widget _app({
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
       // 기기의 녹음 폴더를 건드리지 않는다.
       pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
+      visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      selectedProfileStoreProvider.overrideWithValue(
+        selectedProfile ?? FakeSelectedProfileStore(),
+      ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
     ],
@@ -901,6 +911,7 @@ void main() {
     testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
+      final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -916,6 +927,7 @@ void main() {
           store: store,
           session: _signedIn(),
           initialLocation: AppRoutes.profile,
+          photos: photos,
         ),
       );
 
@@ -927,6 +939,9 @@ void main() {
       expect(paths, ['POST /auth/logout']);
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
+      expect(photos.forgottenAccounts, isEmpty, reason: '로그아웃은 면회 사진을 지우지 않는다');
+      expect(photos.discarded, isEmpty);
+      expect(photos.kept.keys, ['/fake/visit-1.jpg']);
     });
   });
 
@@ -1004,6 +1019,10 @@ void main() {
     testWidgets('탈퇴하기를 누르면 계정을 지우고 로그인 화면으로 간다', (tester) async {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
+      final photos = FakeVisitPhotos();
+      final selectedProfile = FakeSelectedProfileStore()
+        ..values[_signedIn().account.accountId] = 'p-remembered'
+        ..values['account-other'] = 'p-other';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1020,6 +1039,8 @@ void main() {
           session: _signedIn(),
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
+          photos: photos,
+          selectedProfile: selectedProfile,
         ),
       );
 
@@ -1030,6 +1051,12 @@ void main() {
       expect(uploads.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 녹음과 재전송 기록을 지운다');
+      expect(photos.forgottenAccounts, [
+        _signedIn().account.accountId,
+      ], reason: '탈퇴한 계정의 면회 사진을 지운다');
+      expect(selectedProfile.values, {
+        'account-other': 'p-other',
+      }, reason: '탈퇴한 계정이 고른 어르신 기억만 지운다');
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);

@@ -215,17 +215,21 @@ void main() {
   group('enum 이 아닌 상태 문자열은 아직 걸러지지 않는다', () {
     // 계약이 값을 정해 둔 자리인데 String 으로 남아 무엇이든 통과한다.
     // 변경 제안의 changeType 과 direction 은 계약에서 빠지고 TopicAction 으로
-    // 바뀌었다. 아래 하나가 남았다. 범위 밖이라 현재 동작만 적어 둔다.
-    test('sourceType 은 계약에 없는 값도 통과한다', () {
+    // 바뀌었다. LifeFact 의 sourceType 은 응답에서 빠졌다. 아래 하나가 남았다.
+    // 분류는 필드 이름부터 임시라 모델은 받은 문자열을 그대로 두고, 일대기
+    // 화면으로 바꿀 때(`LifeStory.fromLifeFact`) 다룬다.
+    test('storyCategory 는 계약에 없는 값도 통과한다', () {
       final fact = LifeFact.fromJson({
         'factId': 'fact_001',
-        'category': 'hobby',
-        'text': '낚시를 좋아하셨다',
-        'sourceType': 'importedFromSomewhere',
+        'storyCategory': 'school',
+        'title': '낚시',
+        'content': '낚시를 좋아하셨다',
+        'imageNumber': 1,
+        'createdAt': '2026-09-01T10:00:00+09:00',
       });
 
-      // 계약의 값은 caregiverVoiceInput, caregiverTextInput, visitConfirmed 다.
-      expect(fact.sourceType, 'importedFromSomewhere');
+      // 계약의 값은 family, hobby, work, hometown, friend, travel, other 다.
+      expect(fact.storyCategory, 'school');
     });
   });
 }

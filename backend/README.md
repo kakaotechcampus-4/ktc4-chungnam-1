@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
-STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. RTX 3060 Ti는 개발용이며 시연 장비 사양은 실험 후 정한다. 실제 사용자 자료의 외부 전송 조건은 별도 확인한다.
+STT는 엘리스 클라우드 런박스의 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 STT 장비는 A100 MIG `1g.10gb`이며 처리 성능은 RTF 0.1346이다. 
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -48,7 +48,7 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
-컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, 공개 범위와 AI 서버 연결은 정하지 않았다.
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, BE 공개 범위는 별도 검토하며, STT는 엘리스 HTTP 터널의 HTTPS 주소로 연결한다.
 
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
@@ -117,6 +117,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
+- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
 - **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
@@ -130,7 +131,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
 | 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | 개발용 RTX 3060 Ti에서 AI와 처리 조건을 측정하고 PM과 시연 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 운영 | 엘리스 A100 MIG `1g.10gb`에서 STT 처리 시간·메모리와 동시 처리 조건 측정. PM과 운영 방식 확인. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
@@ -281,7 +282,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 - **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 현재 스키마의 `users`는 구글 `sub`, 표시 이름과 가입 시각만 두고 이메일 컬럼이 없다. 표시 이름이 비어 있으면 `보호자`를 쓴다. 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
 - **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
-- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `com.saelog.app` 과 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
+- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `app.saerok.android` 와 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
@@ -495,7 +496,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `GET` | `/api/v1/profiles/{profileId}/visit-sessions` | 5-4 회차 목록. 최근 회차부터, `limit` 기본 20, 최대 100 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-1 보호자 평가 저장. `201` |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 6-4 보호자 평가 조회 |
-| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만 |
+| `GET` | `/api/v1/profiles/{profileId}/reports` | 7-1 리포트 기록. 리포트가 저장된 회차만, 면회 사진 포함 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/report` | 7-2 리포트 |
 | `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 7-3 변경 제안 |
 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 7-4 변경 제안 확인 |
@@ -507,8 +508,10 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   `FOR UPDATE`로 잠가 동시 제출을 한 번만 받는다. 카드 평가는 `review_reaction`에 쓰고
   쓰지 않은 카드는 `notUsed`, 답하지 않은 카드는 `null`이다.
 - `mood`는 만족도로 계산하고(1~2 `hard`, 3 `normal`, 4~5 `good`), `visitDate`는
-  `started_at`의 한국 시간 날짜다. 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회 URL을
-  만든다.
+  `started_at`의 한국 시간 날짜다. 7-1과 7-2는 면회 사진이 있을 때만 사진 저장소에서 조회
+  URL을 만든다. URL을 만들지 못하면 7-2는 503이지만, 7-1은 썸네일 때문에 목록이 열리지 않으면
+  안 되므로 그 항목만 `photo: null`로 담고 `report_list_photo_url_failed` 경고 로그를 요청마다
+  한 번 남긴다(실패 수와 `errorCode`만).
 - 7-4는 회차 행을 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고, 승인한 생애 정보
   제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
   `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면

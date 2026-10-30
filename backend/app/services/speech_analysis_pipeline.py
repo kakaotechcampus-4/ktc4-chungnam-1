@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -20,6 +21,8 @@ from app.services.speech_analysis_jobs import (
     SpeechAnalysisStatus,
 )
 from app.workers.base import OpenConnection, Worker
+
+logger = logging.getLogger("saerok.speech_analysis")
 
 
 class ReportGenerator(Protocol):
@@ -227,13 +230,19 @@ class SpeechAnalysisProcessor:
         jobs = self._jobs_for(connection)
         speech = await self._transcribe(job)
         await _delete_audio(jobs, self._audio_storage, job)
-        await jobs.mark_stt_completed(
+        # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
+        # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
+        if not await jobs.mark_stt_completed(
             analysis_id=job.analysis_id,
             transcript=_transcript_for_report(speech),
-        )
+        ):
+            _log_stopped(job, stage=SpeechAnalysisStatus.STT_COMPLETED)
+            return
         if self._report_generator is None:
             return
-        await jobs.mark_generating_report(analysis_id=job.analysis_id)
+        if not await jobs.mark_generating_report(analysis_id=job.analysis_id):
+            _log_stopped(job, stage=SpeechAnalysisStatus.GENERATING_REPORT)
+            return
         await self._report_generator.generate(
             connection, session_id=job.session_id, speech=speech
         )
@@ -304,6 +313,15 @@ async def _delete_audio(
             retryable=True,
         ) from error
     await jobs.mark_audio_deleted(analysis_id=job.analysis_id)
+
+
+def _log_stopped(job: SpeechAnalysisJob, *, stage: SpeechAnalysisStatus) -> None:
+    # 다른 처리(임대 만료 정리 등)가 먼저 끝낸 작업이라 후속 처리를 멈췄다. 정리 로그는
+    # 건수만 남기므로 작업 ID와 멈춘 단계를 여기서 남긴다. 예상된 중단이라 info다.
+    # 전사문, 객체 키와 음성 주소는 넣지 않는다.
+    logger.info(
+        "speech_analysis_stopped analysis_id=%s stage=%s", job.analysis_id, stage
+    )
 
 
 def _transcript_for_report(speech: SpeechAnalysisResult) -> dict[str, Any]:

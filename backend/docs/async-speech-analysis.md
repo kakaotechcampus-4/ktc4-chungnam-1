@@ -82,6 +82,9 @@ uploading → queued → transcribing → sttCompleted
 (`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초)을 넘으면 `AI_SERVER_TIMEOUT`,
 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 리포트 저장과
 `completed`는 한 트랜잭션이며 끝난 작업의 상태는 다시 바꾸지 않는다(README 평가와 리포트 API).
+STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 와도 전사문을 남기지 않고 리포트
+생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다. 이때 worker는
+`speech_analysis_stopped` info 로그에 작업 ID(`analysis_id`)와 멈춘 단계(`stage`)만 남긴다.
 `--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
@@ -352,7 +355,7 @@ uv run alembic upgrade head
 
 현재 AI 구현의 Whisper 실행 장치는 CUDA로 고정되어 있다. GPU가 없는 BE 개발 PC에 AI
 브랜치를 체크아웃하고 `uv sync`하는 것만으로는 실제 STT를 실행할 수 없다. 실제 통합
-테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 내부 주소를
+테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 엘리스 HTTPS 주소를
 공유한다. 원격 GPU 서버를 사용할 때 BE 개발 PC에는 AI 의존성을 설치할 필요가 없다.
 
 AI 서버가 제공하는 실제 API는 다음과 같다.
@@ -368,8 +371,8 @@ http://127.0.0.1:8001/internal/v1/speech-analyses
 SAEROK_AI_SERVER_URL=http://127.0.0.1:8001
 ```
 
-AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 내부 IP 또는 내부
-도메인을 사용한다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
+AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 엘리스 HTTP 터널의 HTTPS 기본 주소를 사용한다. 현재 배포 절차는
+[STT 운영 안내](../../stt-server/README.md#엘리스-클라우드-운영)를 따른다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
 AI 서비스로 보내지 않는다. worker를 실행하기 전에 다음 생존 확인이 성공해야 한다.
 
 ```powershell
@@ -555,6 +558,7 @@ error_code = null
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
 | AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
+| STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
