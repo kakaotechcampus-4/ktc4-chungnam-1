@@ -117,6 +117,9 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | `ready` | 4-3으로 묶음을 받아 카드 고르기 |
 | 기다리다 `failed` | `대화 카드를 만들지 못했어요.` + 다시 시도. 4-2가 실패 이유를 주지 않아 정보 부족과 그 밖의 실패를 가르지 못한다 |
 | `inVisit` | `아직 마치지 않은 면회가 있어요.` 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다 |
+| `ready` + `needsRefresh` | 카드는 보여주되 고르거나 시작하지 못하게 하고 `카드를 받은 뒤 어르신 정보가 바뀌었어요.` 안내와 `다음 대화 준비하기`를 둔다. 누르면 4-1로 다시 만들고 `running`과 같이 기다린다. 4-3 묶음의 `needsRefresh`가 `true`여도 같다 |
+
+`needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고친 묶음이다(BE #161). 앱은 [card_api.dart](lib/data/card_api.dart)에서 `ready`와 따로 `CardGenerationStatus.needsRefresh`로 받고, 값이 없으면 `false`로 본다. 들어올 때 자동으로 다시 만들지 않고 보호자가 버튼을 누를 때 만든다(PM 기준 사실 정정과 다음 면회 카드 반영). 카드 화면을 연 뒤 고쳐서 5-1이 `CARD_SET_NEEDS_REFRESH`로 거절하면 녹음 안내 화면에 카드 화면으로 돌아가 다시 준비하라고 알리고, 뒤의 카드 화면은 상태를 다시 물어 `다음 대화 준비하기`를 보여준다. 카드를 만드는 중에 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절하면 `profileFailureMessage`가 카드가 준비된 뒤 다시 하라고 안내한다. 고친 정보를 근거로 한 카드만 표시하거나 다시 만드는 것은 PM과 BE가 정하는 중이라 넣지 않았다.
 
 연결 실패와 서버 거절은 오류 안내와 `다시 시도`를 보여준다. 카드 provider는 Riverpod의 자동 재시도를 끈다. 다시 시도하면 4-1을 또 보내므로 버튼으로만 다시 한다. 목 묶음은 테스트에서만 쓰며(`test/fake_card_api.dart`), 서버에 저장한 프로필이 앱에 연결되기 전에는 실제 실행에서 카드를 받을 수 없다.
 
@@ -513,7 +516,7 @@ API별 요청은 이 틀 위에 따로 둔다.
 
 | 파일 | API |
 | --- | --- |
-| [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다 |
+| [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다. 4-2의 `ready`에 `needsRefresh: true`가 붙으면 `needsRefresh` 상태로 받는다 |
 | [visit_api.dart](lib/data/visit_api.dart) | 5-1 회차 만들기, 5-3 보충 카드 더하기, 6-1 보호자 평가 저장, 6-2 녹음 제출(multipart). 6-1이 `EVALUATION_ALREADY_SUBMITTED`로 거절되면 이미 저장한 것으로 본다 |
 
 세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 쓰는 도중 세션이 만료되면 서버의 `401`을 그대로 돌려주며, 자동 재인증은 아직 붙이지 않았다(위 "사용 중 세션 만료"). 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
