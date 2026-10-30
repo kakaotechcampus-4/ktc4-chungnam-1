@@ -205,7 +205,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 일대기에서 내용을 고칠 수 있다([API 2-7](api-spec.md#2-7-patch-apiv1life-factsfactid--신규)).
 - `storyCategory`는 일대기의 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`), `imageNumber`는 분류별 기본 그림 번호(1~5)다. 그림 파일은 앱에 있다. 필드 이름은 임시다([API 미정 사항](api-spec.md#미정-사항) 11).
-- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 이미 만든 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
+- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 되고, 지난 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
 
 <br>
 
@@ -401,6 +401,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
   "usedBySessionId": null,
+  "needsRefresh": false,
   "cards": [
     {
       "cardId": "00000000-0000-4000-8000-000000000501",
@@ -430,6 +431,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 이 객체는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다.
 - `setId`는 녹음을 시작할 때 [API 5-1](api-spec.md#5-1-post-apiv1visit-sessions--신규)에 보낸다.
 - `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고쳐서 다시 만들어야 하는 묶음이면 `true`다. 볼 수는 있지만 이 묶음으로 면회를 시작할 수 없다. 4-2 응답에도 같은 값이 있다([API 4절](api-spec.md#4-대화-카드)).
 - `cards`는 12장이다. `cardId`는 BE가 부여한다. `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
 - `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `topic.description`과 `description`은 보호자에게 주제와 카드를 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.

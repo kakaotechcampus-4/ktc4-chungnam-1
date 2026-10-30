@@ -33,7 +33,7 @@ async def create_card_generation(
     """카드 생성 작업 생성. 이미 만드는 중이면 새로 만들지 않음.
 
     평가 전 회차가 묶음을 쓰는 중(`inVisit`)이면 거절함. 새 묶음이 생기면 4-3이 면회 중인 카드를 못 줌.
-    아직 안 쓴 묶음이 있어도(`ready`) 거절함.
+    아직 안 쓴 묶음이 있어도(`ready`) 거절함. 단 `needsRefresh`이면 거절하지 않고 새 묶음을 만듦.
 
     API 명세 4-1
     """
@@ -76,12 +76,10 @@ async def get_card_generation_status(
     """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
-    return CardGenerationStatus(
-        status=await generation_status(
-            connection,
-            profile_id,
-            start_timeout_seconds=settings.card_generation_start_timeout_seconds,
-        )
+    return await generation_status(
+        connection,
+        profile_id,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
 
 

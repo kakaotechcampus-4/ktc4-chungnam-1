@@ -123,13 +123,17 @@ CREATE TABLE card_sets (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
     lease_expires_at TIMESTAMPTZ,
     attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    -- 카드 묶음을 받은 뒤 프로필이나 일대기를 고친 시각. 값이 있으면 이 묶음으로 면회를 시작할 수 없다.
+    stale_at         TIMESTAMPTZ,
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     UNIQUE (set_id, profile_id),
     CHECK ((status = 'failed') = (error_code IS NOT NULL)),
     CHECK ((status = 'running') = (generation_log IS NULL)),
     CHECK (session_id IS NULL OR status = 'completed'),
-    CONSTRAINT card_sets_lease_check CHECK (lease_expires_at IS NULL OR status = 'running')
+    CONSTRAINT card_sets_lease_check CHECK (lease_expires_at IS NULL OR status = 'running'),
+    CONSTRAINT card_sets_stale_check
+        CHECK (stale_at IS NULL OR (status = 'completed' AND session_id IS NULL))
 );
 CREATE INDEX idx_card_sets_profile ON card_sets(profile_id, created_at DESC);
 

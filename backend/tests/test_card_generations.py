@@ -40,7 +40,7 @@ def test_request_creates_one_running_set(migrated_database_url):
     again = _request_cards(migrated_database_url, user_id, profile_id)
 
     assert first.status_code == 202
-    assert first.json() == {"schemaVersion": 1, "status": "running"}
+    assert first.json() == {"schemaVersion": 1, "status": "running", "needsRefresh": False}
     assert again.status_code == 202 and again.json()["status"] == "running"
     assert _sets(migrated_database_url, profile_id) == [
         {"status": "running", "model": "gpt-5.6-luna", "prompt_version": "1"}
@@ -179,7 +179,11 @@ def test_status_is_none_without_any_card_set(migrated_database_url):
 
     res = _status(migrated_database_url, user_id, profile_id)
 
-    assert res.status_code == 200 and res.json() == {"schemaVersion": 1, "status": "none"}
+    assert res.status_code == 200 and res.json() == {
+        "schemaVersion": 1,
+        "status": "none",
+        "needsRefresh": False,
+    }
 
 
 @pytest.mark.parametrize("status", ["running", "failed"])
@@ -275,7 +279,7 @@ def test_ready_set_is_current(migrated_database_url):
 
     body = _current(migrated_database_url, user_id, profile_id).json()
 
-    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "cards"}
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "needsRefresh", "cards"}
     assert body["setId"] == str(set_id) and body["usedBySessionId"] is None
     assert [card["position"] for card in body["cards"]] == list(range(1, 13))
     first = body["cards"][0]
