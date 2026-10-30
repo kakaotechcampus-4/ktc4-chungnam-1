@@ -16,6 +16,7 @@ import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
 import 'report_api.dart';
+import 'selected_profile_store.dart';
 
 final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
@@ -204,7 +205,11 @@ class CareProfiles {
 ///
 /// 로그인 세션 없이 들어오면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기)
 /// 서버를 부르지 않고 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지
-/// 않았으므로(`data-contracts.md`, 이슈 18) 단말 저장소에는 쓰지 않는다.
+/// 않았으므로(`data-contracts.md`, 이슈 18) 목록은 단말 저장소에 쓰지 않는다.
+///
+/// 고른 분의 서버 ID 하나만 계정마다 단말에 기억해(이슈 144) 앱을 다시 켜면
+/// 그 분으로 연다([SelectedProfileStore]). 서버 목록을 불러온 뒤에만 기억하고,
+/// 불러오는 중이거나 실패했을 때는 건드리지 않는다.
 class CareProfilesNotifier extends Notifier<CareProfiles> {
   int _nextId = 0;
 
@@ -219,6 +224,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     if (accountId == null) {
       return const CareProfiles(entries: [], selectedId: null);
     }
+    listenSelf((previous, next) => _remember(accountId, previous, next));
     // build 안에서는 상태를 바꿀 수 없어 다음 차례에 불러온다.
     Future.microtask(reload);
     return const CareProfiles(
@@ -229,6 +235,10 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   }
 
   /// 서버에서 목록을 다시 불러온다(2-1, 2-3). 고른 분은 남아 있으면 그대로 둔다.
+  /// 고른 분이 없으면(앱을 막 켰을 때) 이 계정이 마지막으로 고른 분을 연다.
+  ///
+  /// 기억한 분을 읽은 뒤에 목록을 내보낸다. 첫 분이 잠깐 골라졌다가 바뀌면 그
+  /// 사이에 다른 어르신으로 면회를 시작할 수 있다.
   ///
   /// 서버의 `inProgress` 는 첫 카드 생성 전이라는 뜻이라 `입력 중` 으로 둔다.
   Future<void> reload() async {
@@ -236,11 +246,17 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final previous = state.selectedId;
     state = state.copyWith(load: CareProfilesLoad.loading);
     final api = ref.read(profileApiProvider);
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    // 서버를 기다리는 동안 함께 읽는다. 저장소는 실패해도 `null` 을 준다.
+    final remembered = previous == null && accountId != null
+        ? ref.read(selectedProfileStoreProvider).read(accountId)
+        : Future<String?>.value();
     try {
       final summaries = await api.list();
       final profiles = await Future.wait([
         for (final summary in summaries) api.get(summary.profileId),
       ]);
+      final rememberedId = await remembered;
       if (!ref.mounted || round != _loadRound) return;
       final entries = [
         for (final profile in profiles)
@@ -252,11 +268,12 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
             pending: profile.setupStatus != SetupStatus.completed,
           ),
       ];
+      String? readyId(String? id) =>
+          entries.where((e) => e.id == id && !e.pending).firstOrNull?.id;
+      // 기억한 분이 지워졌거나 입력 중이면 첫 분으로 연다.
       state = CareProfiles(
         entries: entries,
-        selectedId: entries.any((e) => e.id == previous && !e.pending)
-            ? previous
-            : null,
+        selectedId: readyId(previous) ?? readyId(rememberedId),
         load: CareProfilesLoad.loaded,
       );
     } on ApiFailure {
@@ -398,6 +415,26 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
       ],
       selectedId: select ? entry.id : null,
     );
+  }
+
+  /// 고른 분이 바뀌면 단말에 기억한다. 남은 분이 없으면 기억을 지운다.
+  ///
+  /// 서버 목록을 불러온 상태에서만 쓴다. 불러오는 중이거나 실패하면 고른 분이
+  /// 비어 보이지만, 그건 지운 게 아니므로 기억을 남긴다.
+  void _remember(String accountId, CareProfiles? previous, CareProfiles next) {
+    if (next.load != CareProfilesLoad.loaded) return;
+    final wasLoaded = previous?.load == CareProfilesLoad.loaded;
+    final before = wasLoaded ? previous?.selected : null;
+    final selected = next.selected;
+    final store = ref.read(selectedProfileStoreProvider);
+    if (selected == null) {
+      if (!wasLoaded || before != null) store.clear(accountId);
+      return;
+    }
+    // 서버에 저장하기 전인 분은 다시 켜면 목록에 없으므로 기억하지 않는다.
+    final remoteId = selected.remoteId;
+    if (remoteId == null || remoteId == before?.remoteId) return;
+    store.write(accountId, remoteId);
   }
 
   String _newId() => 'local-${_nextId++}';
