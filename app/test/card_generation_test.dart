@@ -20,6 +20,7 @@ const _running = CardGenerationStatus.running;
 const _ready = CardGenerationStatus.ready;
 const _inVisit = CardGenerationStatus.inVisit;
 const _failed = CardGenerationStatus.failed;
+const _needsRefresh = CardGenerationStatus.needsRefresh;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -96,6 +97,48 @@ void main() {
     final container = makeContainer(api);
 
     expect(await container.read(cardGenerationProvider.future), _inVisit);
+    expect(api.calls, ['status']);
+  });
+
+  test('받은 뒤 정보를 고친 묶음이면 들어올 때 다시 만들지 않는다', () async {
+    final api = FakeCardApi(statuses: [_needsRefresh]);
+    final container = makeContainer(api);
+
+    expect(await container.read(cardGenerationProvider.future), _needsRefresh);
+    expect(api.calls, ['status'], reason: '보호자가 다음 대화 준비를 누를 때 만든다');
+  });
+
+  test('다음 대화 준비를 누르면 새로 만들고 받아 둔 묶음을 버린다', () async {
+    final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
+    final container = makeContainer(api);
+    await container.read(currentCardSetProvider.future);
+    expect(await container.read(cardGenerationProvider.future), _needsRefresh);
+
+    await container.read(cardGenerationProvider.notifier).refresh();
+
+    expect(container.read(cardGenerationProvider).value, _ready);
+    expect(api.calls.where((c) => c == 'request'), hasLength(1));
+    await container.read(currentCardSetProvider.future);
+    expect(api.calls.where((c) => c == 'current'), hasLength(2));
+  });
+
+  test('다시 만들다 실패하면 실패로 끝난다', () async {
+    final api = FakeCardApi(statuses: [_needsRefresh, _failed]);
+    final container = makeContainer(api);
+    await container.read(cardGenerationProvider.future);
+
+    await container.read(cardGenerationProvider.notifier).refresh();
+
+    expect(container.read(cardGenerationProvider).value, _failed);
+  });
+
+  test('다시 만들 묶음이 아니면 다음 대화 준비는 아무것도 하지 않는다', () async {
+    final api = FakeCardApi(statuses: [_ready]);
+    final container = makeContainer(api);
+    await container.read(cardGenerationProvider.future);
+
+    await container.read(cardGenerationProvider.notifier).refresh();
+
     expect(api.calls, ['status']);
   });
 
