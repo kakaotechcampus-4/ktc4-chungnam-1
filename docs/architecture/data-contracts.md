@@ -420,7 +420,8 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
       ],
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
-      "selected": false
+      "selected": false,
+      "liked": false
     }
   ]
 }
@@ -436,6 +437,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - `followUpQuestions`는 카드마다 3개다.
 - `evidenceSource` 값은 `lifeFact`, `photo`, `profile`, `none`이다. `none`이면 `evidence`는 빈 배열이고, 나머지는 같은 종류의 근거 항목이 하나 이상이다. 항목은 `lifeFact`면 `{"factId": ...}`, `photo`면 `{"photoId": ...}`, `profile`이면 `{"profileField": "occupation" | "hometown" | "hobby" | "family"}`다.
 - `selected`는 회차를 만들 때 고른 카드와 면회 중 보충 화면에서 추가한 카드가 `true`다. 선택하지 않은 카드도 삭제하지 않는다.
+- `liked`는 보호자가 원하는 카드에만 남기는 "좋았어요" 표시다([API 4-5](api-spec.md#4-5-put-apiv1cardscardidlike--신규), [4-6](api-spec.md#4-6-delete-apiv1cardscardidlike--신규)). 보호자 평가(6-1)의 카드 반응과 따로 저장하고, 평가를 마친 뒤에도 켜고 끌 수 있다. 다음 카드 생성 입력에는 아직 넣지 않는다.
 
 **없어도 되는 값** — `usedBySessionId`
 

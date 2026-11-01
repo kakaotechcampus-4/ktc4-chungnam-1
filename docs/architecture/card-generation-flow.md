@@ -256,13 +256,14 @@ flowchart TD
 
 ### 평가, AI 제안과 보호자 선택
 
-다음 세 값을 한 가지 점수로 취급하지 않는다.
+다음 값들을 한 가지 점수로 취급하지 않는다.
 
 | 단계 | 필드 | 의미 |
 | --- | --- | --- |
 | 이번 카드 평가 | `conversation_cards.review_reaction` | `positive`, `neutral`, `negative`, `notUsed`. 응답하지 않았으면 `NULL` |
 | AI 조정 제안 | `topic_proposals.suggested_action`, `reason` | AI가 제안한 `more`, `less`, `exclude`와 그 이유 |
 | 보호자의 최종 선택 | `topic_feedback.action`, `decided_at`, `topic_id` | 어느 주제에 어떤 행동을 선택했는지와 선택 시각 |
+| 보호자의 좋았어요 표시 | `conversation_cards.liked_at` | 보호자가 지난 카드 중 원하는 카드에만 남긴 표시와 시각([API 4-5](api-spec.md#4-5-put-apiv1cardscardidlike--신규)). 표시하지 않으면 `NULL` |
 
 보호자는 AI 제안을 그대로 승인하거나, 다른 행동을 선택한 뒤 확인하거나, 제안을 반영하지 않을 수 있어야 한다. 행동을 바꿨다면 AI가 처음 제안한 값이 아닌 보호자의 최종 값을 저장하는 흐름으로 맞춘다.
 
@@ -271,6 +272,7 @@ flowchart TD
 - `exclude`: 보호자가 명시적으로 확인한 주제를 추천에서 제외한다.
 - 조정 제안 거절: 그 제안을 반영하지 않는다. 기존 추천 선택을 자동으로 취소하지 않는다.
 - 미사용 또는 미응답: 부정 평가로 바꾸거나 `less`, `exclude`의 근거로 삼지 않는다.
+- 좋았어요 표시: 평가와 달리 회차가 끝난 뒤에도 켜고 끌 수 있고, 고르지 않은 카드에도 남길 수 있다. 표시하지 않은 카드를 부정 평가로 보지 않는다. 다음 카드 생성 입력에 넣는 형식과 추천 반영 방식은 AI 담당과 정한다.
 
 회차 전체 만족도를 그 회차의 모든 주제에 대한 같은 평가로 복사하지 않는다. 한 번의 부정 반응만으로 주제를 영구 제외하지 않는다.
 
@@ -320,6 +322,7 @@ DB에는 `action`과 `decided_at`의 선택 이력을 유지한다. 이전 PR #7
 | 질문 카드 | `conversation_cards.topic_id/primary_question/follow_up_questions/evidence_source/evidence` | 질문과 그 근거를 연결한다. |
 | 면회 소감 | `visit_sessions.evaluation_satisfaction/evaluation_reaction/evaluation_note` | 면회 전체에 대한 보호자의 기록이다. |
 | 카드별 평가 | `conversation_cards.review_reaction` | 사용 여부와 개별 카드에 대한 평가를 구분한다. |
+| 좋았어요 표시 | `conversation_cards.liked_at` | 보호자가 원하는 카드에만 선택적으로 남긴다. 카드 생성 입력 연결은 후속 작업이다. |
 | 이야기와 주제 후보 | `life_fact_proposals`, `topic_proposals` | 보호자 확인 전의 제안과 이유를 보관한다. |
 | 추천 선택 | `topic_feedback.topic_id/action/decided_at/feedback_id` | 주제별 최종 선택 이력을 유지한다. `feedback_id`는 식별자이며 점수가 아니다. |
 

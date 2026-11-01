@@ -74,6 +74,8 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 |
 | 4-3 | 대화 카드 선택 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 |
 | 4-4 | 지난 대화 카드 보기 | `GET` | `/api/v1/visit-sessions/{sessionId}/card-set` | 신규 |
+| 4-5 | 지난 대화 카드 보기 | `PUT` | `/api/v1/cards/{cardId}/like` | 신규 |
+| 4-6 | 지난 대화 카드 보기 | `DELETE` | `/api/v1/cards/{cardId}/like` | 신규 |
 | 5-1 | 녹음 시작 | `POST` | `/api/v1/visit-sessions` | 신규 |
 | 5-2 | 면회 사진 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 |
 | 5-3 | 대화 카드 보충 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
@@ -103,7 +105,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
     [카드 선택]   4-3 → 면회 사진 촬영(단말)
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
     [평가]        6-1 → 6-2 → 6-3 폴링
-    [리포트]      7-2, 6-4 → 7-3 → 7-4. 회차의 카드 전체 보기: 4-4
+    [리포트]      7-2, 6-4 → 7-3 → 7-4. 회차의 카드 전체 보기: 4-4, 좋았어요 표시: 4-5, 4-6
     [일대기]      2-3, 2-6, 2-7, 2-9
     [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
@@ -737,6 +739,34 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `CARD_GENERATION_NOT_FOUND`(회차에 쓴 묶음이 없음) |
+
+### 4-5. `PUT /api/v1/cards/{cardId}/like` — 신규
+
+보호자가 지난 카드를 다시 보며 마음에 드는 카드에 "좋았어요"를 표시한다. 모든 카드를 평가하게 하지 않고 원하는 카드에만 선택적으로 남긴다. 본문 없음.
+
+응답 `204`
+
+- 보호자 평가(6-1)와 따로 저장한다(`conversation_cards.liked_at`). 6-1의 `cardReviews`, 리포트(7-2)와 회차 상태는 바꾸지 않는다. 평가를 마친 뒤에도 표시할 수 있다.
+- 회차에서 고르지 않은 카드에도 표시할 수 있다. 서버는 카드의 회차 상태로 막지 않으며, 표시 버튼을 어느 화면에 둘지는 FE와 PM이 정한다.
+- 이미 표시한 카드면 아무것도 바꾸지 않고 `204`다. 처음 표시한 시각을 유지한다.
+- 표시는 [CardSet](#cardset)의 `liked`로 확인한다.
+- 다음 카드 생성(4-1)의 `context`에는 아직 넣지 않는다. 대화 주제 추천에 반영하는 방식은 AI 담당과 정한 뒤 별도 작업으로 연결한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `CARD_NOT_FOUND` |
+
+### 4-6. `DELETE /api/v1/cards/{cardId}/like` — 신규
+
+4-5의 표시를 지운다. 본문 없음.
+
+응답 `204`
+
+- 표시하지 않은 카드여도 `204`다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `CARD_NOT_FOUND` |
 
 <br>
 
@@ -1405,7 +1435,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
       ],
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
-      "selected": false
+      "selected": false,
+      "liked": false
     }
   ]
 }
@@ -1414,6 +1445,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
 - `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
+- `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
 ### VisitSession
