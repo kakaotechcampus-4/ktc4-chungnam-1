@@ -13,7 +13,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from app.api.deps import CurrentAccountDep, DbConnectionDep, ImageStorageDep
+from app.api.deps import (
+    CurrentAccountDep,
+    DbConnectionDep,
+    ImageStorageDep,
+    SettingsDep,
+)
 from app.schemas.common import ErrorResponse
 from app.schemas.profiles import (
     Condition,
@@ -42,7 +47,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필 또는 계정 없음",
-        409: "계정당 프로필 수 초과",
+        409: "계정당 프로필 수 초과, 또는 카드를 만드는 중이라 고칠 수 없음",
         422: "요청 형식 오류",
         503: "DB 설정 미완료 또는 사진 저장소 사용 불가",
     }
@@ -198,7 +203,7 @@ async def read_profile(
     "/{profile_id}",
     summary="프로필 수정",
     response_model=ProfileResponse,
-    responses=_errors(401, 404, 422, 503),
+    responses=_errors(401, 404, 409, 422, 503),
 )
 async def update_profile(
     profile_id: UUID,
@@ -206,6 +211,7 @@ async def update_profile(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
     storage: ImageStorageDep,
+    settings: SettingsDep,
 ) -> ProfileResponse:
     """기본 정보와 세부 정보 네 항목 중 보낸 필드만 수정. 세부 정보는 `null`을 보내면 지움.
 
@@ -217,6 +223,7 @@ async def update_profile(
         profile_id,
         account_id=account.account_id,
         changes=payload.column_changes(),
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
     return await to_profile_response(profile, storage)
 
