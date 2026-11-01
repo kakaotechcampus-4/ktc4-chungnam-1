@@ -33,7 +33,9 @@ class ServerSpeechApi implements SpeechApi {
   Future<String> transcribe(String audioPath) async {
     final body = await _client.postMultipart(
       '/api/v1/speech-transcriptions',
-      files: [await http.MultipartFile.fromPath('audio', audioPath)],
+      files: () async => [
+        await http.MultipartFile.fromPath('audio', audioPath),
+      ],
       limit: speechTranscriptionTimeout,
     );
     final text = body['text'];

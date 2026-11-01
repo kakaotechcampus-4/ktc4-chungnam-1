@@ -6,6 +6,10 @@
 ///
 /// 로그인 전 API(`/auth/google`, `/auth/consent`)는 [AuthApi] 가 따로 맡는다.
 /// 접근 토큰은 헤더에만 쓰고 로그와 화면에 내보내지 않는다(`CLAUDE.md`).
+///
+/// 세션은 1시간이면 만료된다. 곧 만료될 세션은 보내기 전에 새로 받고, 그래도
+/// 서버가 401 로 거절하면 세션을 새로 받아 같은 요청을 한 번만 다시 보낸다
+/// ([SessionRefresher]).
 library;
 
 import 'dart:async';
@@ -16,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../features/auth/auth_providers.dart';
+import '../features/auth/session_refresher.dart';
 import 'auth_api.dart' show apiBaseUrl;
 
 // ── 실패 ────────────────────────────────────────────
@@ -78,6 +83,8 @@ final class ApiSignedOutFailure extends ApiFailure {
 class ApiClient {
   ApiClient({
     required this.authorization,
+    this.beforeRequest,
+    this.reauthenticate,
     String baseUrl = apiBaseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
@@ -90,6 +97,13 @@ class ApiClient {
   ///
   /// 값을 붙잡아 두지 않으므로 다시 로그인해도 새 세션으로 보낸다.
   final String? Function() authorization;
+
+  /// 요청을 보내기 전에 부른다. 곧 만료될 세션을 미리 새로 받는 자리다.
+  final Future<void> Function()? beforeRequest;
+
+  /// 서버가 401 로 거절하면 부른다. 세션을 새로 받았으면 `true` 이고, 같은
+  /// 요청을 한 번만 다시 보낸다. 없으면 401 을 그대로 실패로 돌려준다.
+  final Future<bool> Function()? reauthenticate;
 
   final String _baseUrl;
   final http.Client _client;
@@ -131,18 +145,21 @@ class ApiClient {
 
   /// `multipart/form-data` 로 파일을 올린다. 명세는 파일 업로드에만 이 형식을 쓴다.
   ///
+  /// 파일은 한 번 보내면 다시 읽을 수 없어 [files] 는 보낼 때마다 새로 만든다.
+  /// 세션이 만료돼 다시 보낼 때도 같은 파일을 처음부터 올린다.
+  ///
   /// [limit] 를 주지 않으면 [uploadTimeout] 이다. 결과를 화면에서 기다리는
   /// 요청은 더 짧게 준다.
   Future<Map<String, dynamic>> postMultipart(
     String path, {
     Map<String, String> fields = const {},
-    required List<http.MultipartFile> files,
+    required Future<List<http.MultipartFile>> Function() files,
     Duration? limit,
   }) => _json(() async {
     final request = http.MultipartRequest('POST', _uri(path))
       ..headers.addAll(_headers())
       ..fields.addAll(fields)
-      ..files.addAll(files);
+      ..files.addAll(await files());
     return http.Response.fromStream(await _client.send(request));
   }, limit ?? uploadTimeout);
 
@@ -184,19 +201,21 @@ class ApiClient {
   }
 
   /// 요청을 보내고 연결 실패와 서버의 거절을 [ApiFailure] 로 옮긴다.
+  ///
+  /// 401 이면 세션을 새로 받아 한 번만 다시 보낸다. 요청은 보낼 때마다 헤더를
+  /// 새로 읽으므로 다시 보내는 요청은 새 세션으로 나간다. 다시 보내도 401 이면
+  /// 더 반복하지 않고 실패로 돌려준다.
   Future<http.Response> _send(
     Future<http.Response> Function() request,
     Duration limit,
   ) async {
-    final http.Response response;
-    try {
-      response = await request().timeout(limit);
-    } on TimeoutException {
-      throw const ApiNetworkFailure();
-    } on http.ClientException {
-      throw const ApiNetworkFailure();
-    } on SocketException {
-      throw const ApiNetworkFailure();
+    await beforeRequest?.call();
+    var response = await _attempt(request, limit);
+    if (response.statusCode == 401) {
+      final reauthenticate = this.reauthenticate;
+      if (reauthenticate != null && await reauthenticate()) {
+        response = await _attempt(request, limit);
+      }
     }
 
     if (response.statusCode >= 400) {
@@ -210,6 +229,22 @@ class ApiClient {
           : ApiServerFailure(statusCode: response.statusCode);
     }
     return response;
+  }
+
+  /// 한 번 보낸다. 연결 실패와 시간 초과는 [ApiNetworkFailure] 다.
+  Future<http.Response> _attempt(
+    Future<http.Response> Function() request,
+    Duration limit,
+  ) async {
+    try {
+      return await request().timeout(limit);
+    } on TimeoutException {
+      throw const ApiNetworkFailure();
+    } on http.ClientException {
+      throw const ApiNetworkFailure();
+    } on SocketException {
+      throw const ApiNetworkFailure();
+    }
   }
 
   static Object? _decode(http.Response response) {
@@ -226,10 +261,14 @@ class ApiClient {
 
 /// 지금 로그인한 세션으로 요청하는 클라이언트.
 ///
+/// 세션이 곧 만료되거나 401 을 받으면 [sessionRefresherProvider] 로 새로 받는다.
 /// 테스트는 이 provider 를 override 해 가짜 `http.Client` 를 넣는다(`ADR-005`).
 final apiClientProvider = Provider<ApiClient>((ref) {
+  final refresher = ref.read(sessionRefresherProvider);
   final api = ApiClient(
     authorization: () => ref.read(sessionProvider)?.authorizationHeader,
+    beforeRequest: refresher.refreshIfExpiring,
+    reauthenticate: refresher.refresh,
   );
   ref.onDispose(api.close);
   return api;
