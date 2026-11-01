@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/account_api.dart';
+import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -55,7 +57,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatefulWidget {
+class _Body extends ConsumerStatefulWidget {
   const _Body({required this.bundle, required this.account});
 
   /// 등록한 어르신이 없으면 `null` 이다.
@@ -63,10 +65,10 @@ class _Body extends StatefulWidget {
   final Account account;
 
   @override
-  State<_Body> createState() => _BodyState();
+  ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<_Body> {
+class _BodyState extends ConsumerState<_Body> {
   /// 지금 화면에서 동의한 항목의 키. `widget.account.consent` 에서 시작해
   /// 수정하기 전까지는 회원가입 때 고른 값과 같다.
   late final Set<String> _agreed;
@@ -85,6 +87,49 @@ class _BodyState extends State<_Body> {
       .every((term) => _agreed.contains(term.key));
 
   bool get _allAgreed => _agreed.length == consentTerms.length;
+
+  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
+  bool _saving = false;
+
+  /// 처음 값과 달라진 선택 동의. 필수 동의는 1-6 으로 바꿀 수 없어 담지 않는다.
+  Map<String, bool> get _changedOptional => {
+    for (final term in consentTerms)
+      if (!term.required &&
+          _agreed.contains(term.key) !=
+              (widget.account.consent[term.key]?.granted ?? false))
+        term.key: _agreed.contains(term.key),
+  };
+
+  /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 바꾼 것이 없거나
+  /// 로그인하지 않았으면 그대로 닫는다. 저장하지 못하면 알리고 화면에 남는다.
+  Future<void> _save() async {
+    final changes = _changedOptional;
+    final online = ref.read(sessionProvider) != null;
+    if (!online || changes.isEmpty) {
+      await Navigator.maybePop(context);
+      return;
+    }
+
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(accountApiProvider).updateConsents(changes);
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
+      return;
+    }
+    if (!mounted) return;
+    // 다음에 열 때 서버의 새 동의 이력을 읽는다.
+    ref.invalidate(accountProvider);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('동의를 저장했어요.')));
+    await Navigator.maybePop(context);
+  }
 
   void _toggleAll(bool? value) {
     setState(() {
@@ -272,11 +317,9 @@ class _BodyState extends State<_Body> {
           const SizedBox(height: AppSpacing.section),
 
           PrimaryButton(
-            label: '저장하기',
+            label: _saving ? '저장하는 중이에요' : '저장하기',
             // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
-            onPressed: _requiredAgreed
-                ? () => Navigator.maybePop(context)
-                : null,
+            onPressed: _requiredAgreed && !_saving ? _save : null,
           ),
           const SizedBox(height: AppSpacing.lg),
 
