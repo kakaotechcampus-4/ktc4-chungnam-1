@@ -307,6 +307,7 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `lib/features/auth/auth_session.dart` | 세션 값과 보관 형태 |
 | `lib/features/auth/session_store.dart` | 단말 보안 저장소 |
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
+| `lib/features/auth/session_refresher.dart` | 쓰는 도중 세션 만료 시 무음 재인증과 로그인 화면 이동 신호 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
 | `lib/features/auth/consent_form.dart` | 동의 항목 UI |
 | `lib/features/auth/splash_screen.dart` | 스플래시. 복원 확인 뒤 로그인 버튼을 띄운다 |
@@ -344,9 +345,14 @@ Google Cloud Console에 Application ID `app.saerok.android`와 디버그·릴리
 - **약관의 서버 관리** — 필수 여부는 서버 목록을 따르도록 고쳤으나 문구는 아직
   `consent_terms.dart`에 있다. 문구만 바뀌어도 앱 업데이트가 필요하고, 약관 버전이 다르면
   가입을 막는다. 서버가 약관 본문을 내려주는 방법이 정해져야 고칠 수 있다(PR #50 리뷰).
-- **사용 중 세션 만료** — 앱을 켤 때만 자동 재인증을 한다. 쓰는 도중 세션이 만료된 뒤
-  탈퇴하기를 누르면 "로그인이 풀렸어요"를 띄우고 로그인부터 다시 하게 한다. 서버 호출마다
-  무음 재인증을 붙일지는 녹음 업로드 연결과 함께 정한다.
+- **사용 중 세션 만료** — 세션은 1시간이면 만료된다. 공개 API(`ApiClient`)는 세션이 1분 안에
+  만료되면 보내기 전에, 그래도 401을 받으면 그 자리에서 구글 무음 로그인 → `POST /auth/google`로
+  새 세션을 받아 같은 요청을 한 번만 다시 보낸다(`session_refresher.dart`). 여러 요청이 함께
+  401을 받아도 재인증은 한 번이다. 파일 업로드는 파일을 새로 만들어 다시 올린다. 무음 로그인이나
+  서버가 거절하면 세션을 지우고 로그인 화면으로, 계정이 사라졌으면(`consentRequired`) 동의
+  화면으로 보낸다(`main.dart`). 서버에 닿지 못했으면 세션을 지우지 않는다. 로그아웃과 탈퇴 같은
+  `AuthApi` 요청은 여기에 해당하지 않아, 만료 뒤 탈퇴하기를 누르면 "로그인이 풀렸어요"를 띄우고
+  로그인부터 다시 하게 한다. 1시간 뒤 실기기 확인은 아직이다.
 
 ## 면회 사진
 
@@ -540,7 +546,7 @@ API별 요청은 이 틀 위에 따로 둔다.
 | [visit_api.dart](lib/data/visit_api.dart) | 5-1 회차 만들기, 5-3 보충 카드 더하기, 6-1 보호자 평가 저장, 6-2 녹음 제출(multipart). 6-1이 `EVALUATION_ALREADY_SUBMITTED`로 거절되면 이미 저장한 것으로 본다 |
 | [speech_api.dart](lib/data/speech_api.dart) | 세부 정보 음성의 짧은 전사 `POST /api/v1/speech-transcriptions`(multipart `audio`, 이슈 #138). 명세 반영 전이며 결과를 2분까지 기다린다 |
 
-세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 쓰는 도중 세션이 만료되면 서버의 `401`을 그대로 돌려주며, 자동 재인증은 아직 붙이지 않았다(위 "사용 중 세션 만료"). 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
+세션은 요청할 때마다 `sessionProvider`에서 새로 읽는다. 세션이 곧 만료되거나 `401`을 받으면 새로 받아 한 번만 다시 보내고, 새로 받지 못하면 `401`을 그대로 돌려준다(위 "사용 중 세션 만료"). 파일 업로드(`postMultipart`)는 다시 보낼 수 있도록 파일을 만드는 함수를 받는다. 테스트는 `apiClientProvider`를 override하고, 확인 내용은 `test/api_client_test.dart`에 있다.
 
 ## 담당과 남은 연동
 
