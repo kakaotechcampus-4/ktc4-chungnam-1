@@ -25,12 +25,23 @@ import 'sample_profile.dart';
 late CardSet _mockSet;
 
 class _PreloadedCardApi extends FakeCardApi {
-  _PreloadedCardApi({required super.statuses});
+  _PreloadedCardApi({required super.statuses, this.firstSetOutdated = false});
+
+  /// 처음 받는 묶음(4-3)이 `needsRefresh` 다. 4-2 는 `ready` 라고 했지만 그
+  /// 사이에 정보를 고친 경우다. 다시 만든 뒤에는 고치지 않은 묶음을 준다.
+  bool firstSetOutdated;
 
   @override
   Future<CardSet> current(String profileId) async {
     calls.add('current');
-    return _mockSet;
+    if (!firstSetOutdated) return _mockSet;
+    firstSetOutdated = false;
+    return CardSet(
+      setId: _mockSet.setId,
+      usedBySessionId: _mockSet.usedBySessionId,
+      cards: _mockSet.cards,
+      needsRefresh: true,
+    );
   }
 }
 
@@ -113,6 +124,34 @@ void main() {
     ]);
     expect(find.text('대화 시작하기'), findsOneWidget);
     expect(find.text('아직 고르지 않았어요'), findsOneWidget);
+    expect(find.textContaining('어르신 정보가 바뀌었어요'), findsNothing);
+  });
+
+  testWidgets('상태는 ready 였어도 받은 묶음이 고친 묶음이면 다음 대화 준비로 새로 만든다', (tester) async {
+    final api = _PreloadedCardApi(
+      statuses: [
+        CardGenerationStatus.ready,
+        CardGenerationStatus.running,
+        CardGenerationStatus.ready,
+      ],
+      firstSetOutdated: true,
+    );
+    await _open(tester, api);
+
+    expect(find.text('다음 대화 준비하기'), findsOneWidget);
+
+    await tester.tap(find.text('다음 대화 준비하기'));
+    await tester.pumpAndSettle();
+
+    expect(api.calls, [
+      'status',
+      'current',
+      'request',
+      'status',
+      'status',
+      'current',
+    ], reason: '4-1 로 생성을 요청한다');
+    expect(find.text('대화 시작하기'), findsOneWidget);
     expect(find.textContaining('어르신 정보가 바뀌었어요'), findsNothing);
   });
 }
