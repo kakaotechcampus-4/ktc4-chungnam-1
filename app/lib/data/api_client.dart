@@ -130,17 +130,21 @@ class ApiClient {
       );
 
   /// `multipart/form-data` 로 파일을 올린다. 명세는 파일 업로드에만 이 형식을 쓴다.
+  ///
+  /// [limit] 를 주지 않으면 [uploadTimeout] 이다. 결과를 화면에서 기다리는
+  /// 요청은 더 짧게 준다.
   Future<Map<String, dynamic>> postMultipart(
     String path, {
     Map<String, String> fields = const {},
     required List<http.MultipartFile> files,
+    Duration? limit,
   }) => _json(() async {
     final request = http.MultipartRequest('POST', _uri(path))
       ..headers.addAll(_headers())
       ..fields.addAll(fields)
       ..files.addAll(files);
     return http.Response.fromStream(await _client.send(request));
-  }, uploadTimeout);
+  }, limit ?? uploadTimeout);
 
   /// 본문 없이 지운다. 성공 응답은 빈 `204` 이므로 아무것도 돌려주지 않는다.
   Future<void> delete(String path) => _send(

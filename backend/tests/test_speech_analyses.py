@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 import json
+import logging
 import struct
 import wave
 
@@ -326,6 +327,85 @@ def test_worker_maps_participant_count_and_completes_after_report() -> None:
     assert ai.payloads[0].speaker_count == 2
     assert reports.sessions == [SESSION_ID]
     assert storage.objects == {}
+
+
+class LeaseLosingAiServer(FakeAiServer):
+    """STT 도중 임대 정리가 작업을 실패로 끝낸 상황을 만든다."""
+
+    def __init__(self, jobs: InMemorySpeechAnalysisJobRepository) -> None:
+        super().__init__()
+        self._jobs = jobs
+
+    async def analyze_speech(self, payload):
+        await self._jobs.mark_failed(
+            analysis_id=payload.analysis_id, error_code="WORKER_LEASE_EXPIRED"
+        )
+        return await super().analyze_speech(payload)
+
+
+def capture_stops(caplog) -> None:
+    # create_app이 루트 로그 핸들러를 지우므로 앱을 만든 뒤 caplog 핸들러를 다시 단다.
+    logging.getLogger().addHandler(caplog.handler)
+    caplog.set_level(logging.INFO, logger="saerok.speech_analysis")
+
+
+def stopped_logs(caplog) -> list[str]:
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "saerok.speech_analysis" and record.levelno == logging.INFO
+    ]
+
+
+def test_worker_does_not_generate_a_report_for_a_job_that_lost_its_lease(caplog) -> None:
+    application, jobs, storage, _ = harness()
+    capture_stops(caplog)
+    accepted = submit(application).json()
+    reports = FakeReportGenerator()
+    worker = speech_worker(jobs, storage, LeaseLosingAiServer(jobs), reports)
+
+    run(worker.run_once())
+
+    job = asyncio.run(
+        jobs.get_for_account(
+            analysis_id=accepted["analysisId"], account_id=ACCOUNT.account_id
+        )
+    )
+    assert job is not None
+    assert job.status == SpeechAnalysisStatus.FAILED
+    assert job.error_code == "WORKER_LEASE_EXPIRED"
+    assert job.stt_completed_at is None
+    assert job.audio_deleted_at is not None
+    assert reports.sessions == []
+    # 작업 ID와 멈춘 단계만 남기고 전사문과 객체 키는 남기지 않는다.
+    assert stopped_logs(caplog) == [
+        f"speech_analysis_stopped analysis_id={job.analysis_id} stage=sttCompleted"
+    ]
+    assert "합성 전사 결과" not in caplog.text
+    assert job.object_key not in caplog.text
+
+
+def test_worker_stops_before_report_when_the_job_fails_after_stt(caplog) -> None:
+    application, jobs, storage, _ = harness()
+    capture_stops(caplog)
+    accepted = submit(application).json()
+    stt_completed = jobs.mark_stt_completed
+
+    async def fail_after_stt(*, analysis_id, transcript):
+        stored = await stt_completed(analysis_id=analysis_id, transcript=transcript)
+        await jobs.mark_failed(analysis_id=analysis_id, error_code="TRANSCRIPT_EXPIRED")
+        return stored
+
+    jobs.mark_stt_completed = fail_after_stt
+    reports = FakeReportGenerator()
+
+    run(speech_worker(jobs, storage, FakeAiServer(), reports).run_once())
+
+    assert reports.sessions == []
+    assert stopped_logs(caplog) == [
+        f"speech_analysis_stopped analysis_id={accepted['analysisId']} "
+        "stage=generatingReport"
+    ]
 
 
 def test_worker_finishes_stt_without_claiming_report_completion() -> None:

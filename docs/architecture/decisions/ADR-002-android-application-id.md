@@ -1,12 +1,16 @@
 # ADR-002: Android Application ID 통일
 
-상태: accepted
+상태: superseded by ADR-009
 
 담당: PM, FE
 
 결정일: 2026-08-22
 
+대체 결정일: 2026-10-20 (ADR-009)
+
 관련 Issue: #3
+
+현재 Application ID는 [ADR-009](ADR-009-android-application-id-saerok.md)의 `app.saerok.android`를 따른다. 아래는 당시 결정 기록이며 `com.saelog.app`은 현재 기준이 아니다.
 
 ## 배경
 

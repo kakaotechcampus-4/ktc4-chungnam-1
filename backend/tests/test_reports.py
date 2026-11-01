@@ -5,6 +5,7 @@
 실행한다(`conftest.py`). 값은 모두 합성 데이터다.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from app.api.deps import get_current_account
@@ -17,6 +18,14 @@ def _reported(records: Records, profile_id, **evaluate) -> Visit:
     records.evaluate(visit, **evaluate)
     records.report(visit)
     return visit
+
+
+def _visit_photo(records: Records, profile_id, visit: Visit, object_key: str):
+    return records.scalar(
+        "INSERT INTO photos (profile_id, session_id, s3_object_key) "
+        "VALUES (%s, %s, %s) RETURNING photo_id",
+        (profile_id, visit.session_id, object_key),
+    )
 
 
 def _review_path(visit: Visit) -> str:
@@ -49,10 +58,67 @@ def test_report_list_has_reported_sessions_with_mood_and_korean_date(
         "title": "합성 리포트 제목",
         "visitDate": "2026-08-21",
         "mood": "hard",
+        "photo": None,
     }
+    assert records.storage.downloads == []
     assert str(unreported.session_id) not in [r["sessionId"] for r in reports]
     limited = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}/reports?limit=2")
     assert len(limited.json()["reports"]) == 2
+
+
+def test_report_list_has_visit_photo_like_the_report(migrated_database_url):
+    records = Records(migrated_database_url)
+    user_id, profile_id = records.account()
+    visit = _reported(records, profile_id)
+    photo_id = _visit_photo(records, profile_id, visit, "synthetic/visit.jpg")
+
+    response = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}/reports")
+
+    assert response.status_code == 200
+    assert response.json()["reports"][0]["photo"] == {
+        "photoId": str(photo_id),
+        "imageUrl": "https://bucket.s3.ap-northeast-2.amazonaws.com/synthetic.jpg",
+        "imageUrlExpiresAt": "2026-08-21T06:00:00Z",
+    }
+    assert records.storage.downloads == ["synthetic/visit.jpg"]
+
+
+def test_report_list_leaves_out_only_the_photo_without_a_url(
+    migrated_database_url, caplog
+):
+    """사진 조회 URL을 만들지 못한 항목만 `photo: null`이고 목록은 200이다. 7-2는 503이다."""
+    records = Records(migrated_database_url)
+    user_id, profile_id = records.account()
+    started = datetime(2026, 8, 21, 5, tzinfo=UTC)
+    broken = records.visit(profile_id, started_at=started)
+    records.evaluate(broken)
+    records.report(broken)
+    _visit_photo(records, profile_id, broken, "synthetic/broken.jpg")
+    working = records.visit(profile_id, started_at=started - timedelta(days=1))
+    records.evaluate(working)
+    records.report(working)
+    working_photo = _visit_photo(records, profile_id, working, "synthetic/visit.jpg")
+    records.storage.failing_keys.add("synthetic/broken.jpg")
+
+    # create_app이 루트 로그 핸들러를 지우므로 앱을 만든 뒤 caplog 핸들러를 다시 단다.
+    logging.getLogger().addHandler(caplog.handler)
+    caplog.set_level(logging.WARNING, logger="saerok.reports")
+    response = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}/reports")
+
+    assert response.status_code == 200
+    photos = {r["sessionId"]: r["photo"] for r in response.json()["reports"]}
+    assert photos[str(broken.session_id)] is None
+    assert photos[str(working.session_id)]["photoId"] == str(working_photo)
+    [record] = [r for r in caplog.records if r.name == "saerok.reports"]
+    assert record.getMessage() == "report_list_photo_url_failed"
+    assert record.failed_count == 1
+    assert record.error_codes == ["IMAGE_STORAGE_UNAVAILABLE"]
+    assert "synthetic/broken.jpg" not in caplog.text
+    assert str(broken.session_id) not in caplog.text
+
+    report = records.call(user_id, "GET", f"/api/v1/visit-sessions/{broken.session_id}/report")
+    assert report.status_code == 503
+    assert report.json()["errorCode"] == "IMAGE_STORAGE_UNAVAILABLE"
 
 
 def test_report_contract_with_photo_and_card_summaries(migrated_database_url):
@@ -62,11 +128,7 @@ def test_report_contract_with_photo_and_card_summaries(migrated_database_url):
     first, second = visit.selected
     records.evaluate(visit, reactions={first: "positive", second: "notUsed"})
     records.report(visit, summaries={first: "합성 카드 요약"})
-    photo_id = records.scalar(
-        "INSERT INTO photos (profile_id, session_id, s3_object_key) "
-        "VALUES (%s, %s, 'synthetic/visit.jpg') RETURNING photo_id",
-        (profile_id, visit.session_id),
-    )
+    photo_id = _visit_photo(records, profile_id, visit, "synthetic/visit.jpg")
 
     response = records.call(user_id, "GET", f"/api/v1/visit-sessions/{visit.session_id}/report")
 

@@ -19,6 +19,7 @@ from typing import BinaryIO, Protocol
 from uuid import UUID
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.errors import AppError
@@ -60,7 +61,13 @@ class S3ImageStorage:
         self._prefix = prefix.strip("/")
         self._presigned_ttl_seconds = presigned_ttl_seconds
         self._server_side_encryption = server_side_encryption
-        self._client = client or boto3.client("s3", region_name=region)
+        # 리전 없는 전역 주소로 서명하면 S3가 us-east-1로 보내 Presigned URL이 403이 된다.
+        self._client = client or boto3.client(
+            "s3",
+            region_name=region,
+            endpoint_url=f"https://s3.{region}.amazonaws.com",
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        )
 
     def object_key(self, *, photo_id: UUID, image: ValidatedImage) -> str:
         return f"{self._prefix}/{photo_id}.{image.extension}"

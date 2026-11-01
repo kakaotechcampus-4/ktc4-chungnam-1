@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android 11(API 30) 이하의 자동 백업 규칙. 면회 녹음 폴더를 백업하지 않는다.
+  Android 11(API 30) 이하의 자동 백업 규칙. 면회 녹음과 사진 폴더를 백업하지 않는다.
   Android 12 이상은 data_extraction_rules.xml 을 쓴다. 두 파일을 함께 고친다.
 -->
 <full-backup-content>
     <exclude domain="root" path="app_flutter/visit_recordings/" />
+    <exclude domain="root" path="app_flutter/visit_photos/" />
 </full-backup-content>

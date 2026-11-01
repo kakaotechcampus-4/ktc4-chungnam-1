@@ -267,6 +267,25 @@ def test_finished_jobs_are_not_overwritten(migrated_database_url):
     )
 
 
+def test_a_job_failed_during_stt_keeps_no_transcript(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+    run(db.repository.mark_failed(analysis_id=accepted.analysis_id, error_code="WORKER_LEASE_EXPIRED"))
+
+    stored = run(
+        db.repository.mark_stt_completed(analysis_id=accepted.analysis_id, transcript=TRANSCRIPT)
+    )
+    generating = run(db.repository.mark_generating_report(analysis_id=accepted.analysis_id))
+
+    row = db.job_row(accepted.analysis_id)
+    assert (stored, generating) == (False, False)
+    assert (row["status"], row["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
+    assert row["transcript"] is None
+    assert row["stt_completed_at"] is None
+
+
 def test_only_a_generating_job_is_completed(migrated_database_url):
     db = _Db(migrated_database_url)
     _, session_id = db.seed_session()

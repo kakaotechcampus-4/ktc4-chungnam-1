@@ -80,11 +80,15 @@ class SpeechAnalysisJobRepository(Protocol):
 
     async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None: ...
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None: ...
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        """끝나지 않은 작업을 `generatingReport`로 바꾼다. 바꿨으면 `True`."""
+        ...
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None: ...
+    ) -> bool:
+        """`transcribing` 작업만 `sttCompleted`로 바꾸고 전사문을 남긴다. 바꿨으면 `True`."""
+        ...
 
     async def mark_completed(self, *, analysis_id: str) -> None: ...
 
@@ -193,18 +197,24 @@ class InMemorySpeechAnalysisJobRepository:
             self._jobs[job.analysis_id] = claimed
             return claimed
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None:
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        if self._jobs[analysis_id].status in _FINISHED:
+            return False
         self._set_status(analysis_id, SpeechAnalysisStatus.GENERATING_REPORT)
+        return True
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None:
+    ) -> bool:
         del transcript
+        if self._jobs[analysis_id].status != SpeechAnalysisStatus.TRANSCRIBING:
+            return False
         self._jobs[analysis_id] = replace(
             self._jobs[analysis_id],
             status=SpeechAnalysisStatus.STT_COMPLETED,
             stt_completed_at=datetime.now(UTC),
         )
+        return True
 
     async def mark_completed(self, *, analysis_id: str) -> None:
         if self._jobs[analysis_id].status != SpeechAnalysisStatus.GENERATING_REPORT:
@@ -419,15 +429,15 @@ class PostgresSpeechAnalysisJobRepository:
         row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
 
-    async def mark_generating_report(self, *, analysis_id: str) -> None:
-        await self._set_status(
+    async def mark_generating_report(self, *, analysis_id: str) -> bool:
+        return await self._set_status(
             analysis_id, SpeechAnalysisStatus.GENERATING_REPORT, None
         )
 
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
-    ) -> None:
-        await self._connection.execute(
+    ) -> bool:
+        cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
                SET status = 'sttCompleted', stt_completed_at = now(),
@@ -442,6 +452,7 @@ class PostgresSpeechAnalysisJobRepository:
                 UUID(analysis_id),
             ),
         )
+        return cursor.rowcount > 0
 
     async def mark_completed(self, *, analysis_id: str) -> None:
         # 리포트 생성기는 저장 트랜잭션에서 이미 완료 처리하므로 보통 바뀌는 행이 없다.
@@ -455,8 +466,8 @@ class PostgresSpeechAnalysisJobRepository:
         analysis_id: str,
         status: SpeechAnalysisStatus,
         error_code: str | None,
-    ) -> None:
-        await _update_status(
+    ) -> bool:
+        return await _update_status(
             self._connection,
             analysis_id=analysis_id,
             status=status,

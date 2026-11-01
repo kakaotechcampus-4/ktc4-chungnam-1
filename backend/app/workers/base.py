@@ -10,6 +10,9 @@
 골격은 한 번 돌 때 임대 만료 정리 → 작업 가져오기 → 처리 순서로 실행한다. 처리 함수가
 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을
 실패시킨다. 자동 재시도는 하지 않는다.
+
+종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업은 끝까지
+처리한 뒤 끝낸다. 같은 신호를 한 번 더 받으면 기다리지 않고 바로 끝낸다.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import signal
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Generic, Protocol, TypeVar
@@ -71,6 +75,14 @@ class Worker(Generic[JobT]):
         self._process = process
         self._open_connection = open_connection
         self._lease_seconds = lease_seconds
+        self._stopping = asyncio.Event()
+
+    def request_stop(self) -> None:
+        """새 작업을 더 가져오지 않게 한다. 처리 중인 작업은 끝까지 처리한다."""
+        if self._stopping.is_set():
+            return
+        logger.info("worker_stopping queue=%s", self._queue.name)
+        self._stopping.set()
 
     async def run_once(self) -> bool:
         """작업을 하나 처리했으면 `True`, 대기 작업이 없었으면 `False`다."""
@@ -80,6 +92,9 @@ class Worker(Generic[JobT]):
                 logger.warning(
                     "worker_leases_expired queue=%s count=%s", self._queue.name, expired
                 )
+            # 임대 만료 정리 중에 종료 요청이 왔으면 작업을 가져가지 않는다.
+            if self._stopping.is_set():
+                return False
             job = await self._queue.claim(connection, lease_seconds=self._lease_seconds)
             if job is None:
                 return False
@@ -109,7 +124,7 @@ class Worker(Generic[JobT]):
             )
             return
         logger.info("worker_started queue=%s", self._queue.name)
-        while True:
+        while not self._stopping.is_set():
             try:
                 processed = await self.run_once()
             except Exception as error:
@@ -120,7 +135,30 @@ class Worker(Generic[JobT]):
                 )
                 processed = False
             if not processed:
-                await asyncio.sleep(poll_seconds)
+                # 대기 중에 종료 요청이 오면 조회 간격을 다 채우지 않고 바로 깬다.
+                try:
+                    await asyncio.wait_for(self._stopping.wait(), timeout=poll_seconds)
+                except TimeoutError:
+                    pass
+        logger.info("worker_stopped queue=%s", self._queue.name)
+
+
+def install_stop_handlers(worker: Worker) -> None:
+    """SIGTERM, SIGINT를 받으면 `worker.request_stop()`을 부르게 한다.
+
+    Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 모든 환경에서
+    `signal.signal`을 쓰고, 처리기에서는 이벤트 루프에 요청만 넘긴다. 처리기는 첫 신호에서
+    기본 동작으로 되돌려 두므로, 같은 신호를 한 번 더 받으면 기다리지 않고 바로 끝난다.
+    """
+    loop = asyncio.get_running_loop()
+
+    def handle(signum: int, frame: object) -> None:
+        default = signal.default_int_handler if signum == signal.SIGINT else signal.SIG_DFL
+        signal.signal(signum, default)
+        loop.call_soon_threadsafe(worker.request_stop)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, handle)
 
 
 def run_worker_main(
@@ -144,6 +182,7 @@ def run_worker_main(
         settings = get_settings()
         configure_logging(settings.log_level)
         worker = create_worker(settings)
+        install_stop_handlers(worker)
         await worker.run(poll_seconds=poll_seconds(settings), once=args.once)
 
     # psycopg 비동기 연결은 Windows 기본 루프(ProactorEventLoop)에서 동작하지 않는다.

@@ -1,8 +1,10 @@
 """사진 업로드 검증과 S3 사진 저장소 검증. 값은 모두 합성 데이터다."""
 
 from io import BytesIO
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
+import boto3
 import pytest
 from botocore.exceptions import ClientError
 from fastapi import UploadFile
@@ -118,6 +120,34 @@ def test_s3_photo_is_private_encrypted_and_keyed_without_personal_data():
     assert download.url.startswith("https://")
     assert download.expires_at is not None
     assert client.delete == ("synthetic-bucket", key)
+
+
+def test_download_url_uses_regional_endpoint_without_network(monkeypatch):
+    # 전역 주소(s3.amazonaws.com)면 us-east-1로 가서 403이 되므로 서울 리전 주소여야 한다.
+    create_client = boto3.client
+
+    def client_with_synthetic_credentials(*args, **kwargs):
+        return create_client(
+            *args, **kwargs,
+            aws_access_key_id="synthetic", aws_secret_access_key="synthetic",
+        )
+
+    monkeypatch.setattr(boto3, "client", client_with_synthetic_credentials)
+    storage = S3ImageStorage(
+        bucket="synthetic-bucket",
+        region="ap-northeast-2",
+        prefix="photos/",
+        presigned_ttl_seconds=900,
+    )
+
+    download = run(storage.create_download(object_key=f"photos/{PHOTO_ID}.jpg"))
+
+    parsed = urlsplit(download.url)
+    assert parsed.hostname == "synthetic-bucket.s3.ap-northeast-2.amazonaws.com"
+    assert parsed.path == f"/photos/{PHOTO_ID}.jpg"
+    query = parse_qs(parsed.query)
+    assert query["X-Amz-Algorithm"] == ["AWS4-HMAC-SHA256"]
+    assert "/ap-northeast-2/s3/aws4_request" in query["X-Amz-Credential"][0]
 
 
 def test_s3_failures_become_a_retryable_storage_error():

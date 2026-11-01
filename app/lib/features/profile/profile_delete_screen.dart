@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
 import '../../data/providers.dart';
+import '../../data/selected_profile_store.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -14,6 +15,7 @@ import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
 import '../profile_setup/setup_controller.dart';
 import '../visit/pending_uploads.dart';
+import '../visit/visit_photos.dart';
 
 /// 회원 탈퇴 확인. 프로필 설정의 `회원탈퇴`를 누르면 뜬다(피그마 설계 없음).
 ///
@@ -78,6 +80,8 @@ class _BodyState extends ConsumerState<_Body> {
     // 탈퇴가 끝나면 세션이 비므로 지울 계정을 먼저 붙잡아 둔다.
     final accountId = ref.read(sessionProvider)?.account.accountId;
     final uploads = ref.read(pendingUploadsProvider);
+    final photos = ref.read(visitPhotosProvider);
+    final selectedProfile = ref.read(selectedProfileStoreProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -90,14 +94,21 @@ class _BodyState extends ConsumerState<_Body> {
       return;
     }
 
-    // 계정이 없어졌으니 그 계정의 면회 녹음과 재전송 기록도 지운다. 앱을 지우지
-    // 않는 한 기기에 남기 때문이다. 화면을 떠났어도 지운다.
+    // 계정이 없어졌으니 그 계정의 면회 녹음, 재전송 기록과 면회 사진도 지운다.
+    // 앱을 지우지 않는 한 기기에 남기 때문이다. 화면을 떠났어도 지운다.
     if (accountId != null) {
       try {
         await uploads.forgetAccount(accountId);
       } on Exception {
         // 탈퇴는 끝났다. 남은 녹음은 다른 계정이 찾거나 보내지 못한다.
       }
+      try {
+        await photos.forgetAccount(accountId);
+      } on Exception {
+        // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
+      }
+      // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
+      await selectedProfile.clear(accountId);
     }
 
     if (!mounted) return;

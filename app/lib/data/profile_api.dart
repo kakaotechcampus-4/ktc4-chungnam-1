@@ -1,8 +1,8 @@
 /// 프로필 API(`docs/architecture/api-spec.md` 2절)를 부른다.
 ///
 /// 요청은 [ApiClient] 가 보내고, 이 파일은 경로, 본문과 응답 모양만 맡는다.
-/// 생애 정보(`lifeFacts`)와 사진(`photos`)은 일대기와 갤러리 작업에서 다루므로
-/// 여기서 읽지 않는다.
+/// 일대기 이야기(`lifeFacts`)도 2절이라 여기서 읽고 담는다(2-3, 2-6, 2-7, 2-9).
+/// 사진(`photos`)은 갤러리 작업에서 다루므로 여기서 읽지 않는다.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,6 +54,7 @@ class RemoteProfile {
     required this.setupStatus,
     required this.basicInfo,
     required this.details,
+    required this.lifeFacts,
     this.symptomNote,
   });
 
@@ -79,6 +80,10 @@ class RemoteProfile {
         hobby: json['hobby'] as String?,
         family: json['family'] as String?,
       ),
+      lifeFacts: [
+        for (final item in json['lifeFacts'] as List)
+          LifeFact.fromJson(item as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -90,6 +95,10 @@ class RemoteProfile {
   final EnteredBasicInfo basicInfo;
   final EnteredDetails details;
   final String? symptomNote;
+
+  /// 일대기에 담긴 이야기. 먼저 담은 것부터다. 일대기 전용 목록 API 는 없어
+  /// 2-3 의 이 목록으로 일대기를 그린다.
+  final List<LifeFact> lifeFacts;
 }
 
 /// 프로필 API 를 부른다. 실패는 [ApiFailure] 로 던진다.
@@ -99,6 +108,7 @@ class ProfileApi {
   final ApiClient _client;
 
   static const _base = '/api/v1/profiles';
+  static const _lifeFactBase = '/api/v1/life-facts';
 
   /// 2-1 현재 계정의 프로필 목록. 만든 순서대로다.
   Future<List<ProfileSummary>> list() async {
@@ -156,6 +166,45 @@ class ProfileApi {
   /// 2-8 프로필 하나를 지운다.
   Future<void> delete(String profileId) => _client.delete('$_base/$profileId');
 
+  /// 2-6 일대기에 이야기를 담는다. 서버가 만든 `factId` 를 돌려받는다.
+  Future<LifeFact> createLifeFact(
+    String profileId, {
+    required String storyCategory,
+    required String title,
+    required String content,
+    required int imageNumber,
+  }) async {
+    final body = await _client.post('$_base/$profileId/life-facts', {
+      'storyCategory': storyCategory,
+      'title': title,
+      'content': content,
+      'imageNumber': imageNumber,
+    });
+    return _read(() => LifeFact.fromJson(body));
+  }
+
+  /// 2-7 담은 이야기를 고친다. 수정 화면은 네 항목을 모두 보낸다.
+  /// 담은 날짜(`createdAt`)는 바뀌지 않는다.
+  Future<LifeFact> updateLifeFact(
+    String factId, {
+    required String storyCategory,
+    required String title,
+    required String content,
+    required int imageNumber,
+  }) async {
+    final body = await _client.patch('$_lifeFactBase/$factId', {
+      'storyCategory': storyCategory,
+      'title': title,
+      'content': content,
+      'imageNumber': imageNumber,
+    });
+    return _read(() => LifeFact.fromJson(body));
+  }
+
+  /// 2-9 담은 이야기를 지운다. 되돌릴 수 없다.
+  Future<void> deleteLifeFact(String factId) =>
+      _client.delete('$_lifeFactBase/$factId');
+
   static Map<String, Object?> _basicBody(EnteredBasicInfo info) => {
     'name': info.name,
     'gender': info.gender,
@@ -183,6 +232,8 @@ String profileFailureMessage(ApiFailure failure) => switch (failure) {
     '어르신은 세 분까지 등록할 수 있어요.',
   ApiServerFailure(errorCode: 'PROFILE_NOT_FOUND') =>
     '어르신 정보를 찾지 못했어요. 목록을 다시 불러와 주세요.',
+  ApiServerFailure(errorCode: 'LIFE_FACT_NOT_FOUND') =>
+    '이야기를 찾지 못했어요. 이미 지운 이야기일 수 있어요.',
   ApiServerFailure(statusCode: 401) || ApiSignedOutFailure() =>
     '로그인이 풀렸어요. 다시 로그인해주세요.',
   ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',

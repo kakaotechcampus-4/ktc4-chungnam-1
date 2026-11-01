@@ -56,6 +56,7 @@ class SecondaryButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.expand = true,
+    this.icon,
     super.key,
   });
 
@@ -63,8 +64,12 @@ class SecondaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool expand;
 
+  /// 글자 앞에 둘 아이콘. 없으면 글자만 둔다.
+  final IconData? icon;
+
   @override
   Widget build(BuildContext context) {
+    final text = Text(label, style: AppTypography.button);
     final button = SizedBox(
       height: AppSizes.control,
       child: OutlinedButton(
@@ -79,7 +84,16 @@ class SecondaryButton extends StatelessWidget {
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
         ),
-        child: Text(label, style: AppTypography.button),
+        child: icon == null
+            ? text
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 20),
+                  const SizedBox(width: AppSpacing.sm),
+                  text,
+                ],
+              ),
       ),
     );
     return expand ? SizedBox(width: double.infinity, child: button) : button;

@@ -40,8 +40,10 @@ services:
     image: saerok-backend
     command: ["python", "-m", "app.workers.card_generation"]
     env_file: .env
-    # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
+    # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
+    # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
+    stop_grace_period: 180s
     restart: unless-stopped
 
   speech-worker:
@@ -54,8 +56,10 @@ services:
     profiles: ["workers"]
     command: ["python", "-m", "app.workers.speech_analysis"]
     env_file: .env
-    # worker는 SIGTERM 처리기가 없어 PID 1이면 종료 신호를 받지 못한다.
+    # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
+    # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
+    stop_grace_period: 180s
     restart: unless-stopped
 
   db:

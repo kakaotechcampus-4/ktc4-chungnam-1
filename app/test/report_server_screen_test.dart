@@ -205,6 +205,37 @@ void main() {
     expect(find.text('변경 사항 확인하기'), findsOneWidget);
   });
 
+  group('리포트 기록의 면회 사진', () {
+    const url = 'https://example.test/visit.jpg';
+    final thumbnail = find.byWidgetPredicate(
+      (w) => w is Image && w.image is NetworkImage,
+    );
+    final placeholder = find.byIcon(Icons.image_outlined);
+
+    testWidgets('사진이 있으면 그 주소의 사진을 썸네일로 연다', (tester) async {
+      await _open(tester, _completed(imageUrl: url), AppRoutes.reports);
+
+      final image = tester.widget<Image>(thumbnail);
+      expect((image.image as NetworkImage).url, url);
+    });
+
+    testWidgets('사진이 없으면 사진 자리만 두고 실패라고 알리지 않는다', (tester) async {
+      await _open(tester, _completed(), AppRoutes.reports);
+
+      expect(thumbnail, findsNothing);
+      expect(placeholder, findsOneWidget);
+      expect(find.textContaining('실패'), findsNothing);
+    });
+
+    testWidgets('사진을 열지 못하면 사진 자리로 바꾼다', (tester) async {
+      // 테스트의 네트워크 요청은 모두 실패하므로 주소가 만료된 것과 같다.
+      await _open(tester, _completed(imageUrl: url), AppRoutes.reports);
+
+      expect(placeholder, findsOneWidget);
+      expect(find.text('재봉 일 이야기를 나눈 날'), findsOneWidget);
+    });
+  });
+
   testWidgets('확인을 마친 리포트에는 변경 사항 버튼을 두지 않는다', (tester) async {
     final server = _completed();
     final proposal = server.proposals['s1']!;

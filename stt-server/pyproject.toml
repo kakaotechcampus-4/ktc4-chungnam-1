@@ -3,17 +3,20 @@ name = "saerok-stt-server"
 version = "0.1.0"
 description = "On-premise STT server for Saerok"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi>=0.141.1",
     "faster-whisper>=1.2.1",
     "huggingface-hub>=1.31.0",
     "httpx>=0.28.1",
-    "nvidia-cublas-cu12>=12.9.2.10",
+    "nvidia-cublas-cu12==12.6.4.1",
     "nvidia-cudnn-cu12==9.*",
     "pydantic>=2.12.5",
     "uvicorn>=0.53.0",
     "pyannote-audio>=4,<5",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchcodec==0.7.0",
 ]
 
 [project.scripts]
@@ -25,3 +28,18 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "stt_server"
+
+[tool.uv.sources]
+torch = { index = "pytorch", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+torchaudio = { index = "pytorch", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+torchcodec = { index = "pytorch-cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

@@ -995,11 +995,19 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
       "sessionId": "00000000-0000-4000-8000-000000000201",
       "title": "재봉 일 이야기를 나눈 날",
       "visitDate": "2026-08-21",
-      "mood": "good"
+      "mood": "good",
+      "photo": {
+        "photoId": "00000000-0000-4000-8000-000000000221",
+        "imageUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/visit.jpg?...",
+        "imageUrlExpiresAt": "2026-08-21T15:00:00+09:00"
+      }
     }
   ]
 }
 ```
+
+- `photo`: 면회 사진이 없으면 `null`. 형식은 [VisitReport](#visitreport)의 `photo`와 같다.
+- 면회 사진의 조회 URL을 만들지 못하면 목록 전체를 실패시키지 않고 그 항목만 `photo: null`로 담는다. 7-2는 같은 경우 `503`이다.
 
 | HTTP | `errorCode` |
 | --- | --- |
