@@ -42,6 +42,7 @@ class Card(CamelModel):
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: list[dict[str, str]]
     selected: bool
+    liked: bool  # 보호자의 "좋았어요" 표시(4-5, 4-6)
 
 
 class CardSet(CamelModel):

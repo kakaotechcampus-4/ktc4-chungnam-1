@@ -166,6 +166,7 @@ CREATE TABLE conversation_cards (
     selected            BOOLEAN  NOT NULL DEFAULT false,
     review_reaction     VARCHAR(10) CHECK (review_reaction IN ('positive', 'neutral', 'negative', 'notUsed')),
     report_summary      TEXT     CHECK (length(btrim(report_summary)) > 0),
+    liked_at            TIMESTAMPTZ,
     FOREIGN KEY (set_id, profile_id)
         REFERENCES card_sets(set_id, profile_id) ON DELETE CASCADE,
     FOREIGN KEY (topic_id, profile_id)
