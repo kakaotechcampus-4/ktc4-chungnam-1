@@ -50,10 +50,23 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus> {
 
   /// `다음 대화 준비하기`. 받은 뒤 고친 묶음을 버리고 새로 만든다.
   ///
+  /// 4-2 가 `ready` 였어도 이어서 받은 묶음(4-3)이 `needsRefresh` 면 다시
+  /// 만든다. 상태를 물은 뒤 묶음을 받기 전에 정보를 고친 경우다. 화면도 두 값
+  /// 중 하나라도 `needsRefresh` 면 이 버튼을 보여준다.
+  ///
   /// 4-1 을 부르면 서버는 예전 묶음을 더는 주지 않는다. 만드는 동안은 loading
-  /// 이고, 실패하면 `failed` 로 끝나 실패 화면의 다시 받기로 이어진다.
+  /// 이고, 실패하면 `failed` 로 끝나 실패 화면의 다시 받기로 이어진다. 만드는
+  /// 중에 다시 누르면 무시한다.
   Future<void> refresh() async {
-    if (state.value != CardGenerationStatus.needsRefresh) return;
+    if (state.isLoading) return;
+    // 묶음을 아직 받지 않았으면 여기서 받으러 가지 않는다.
+    final setOutdated =
+        ref.exists(currentCardSetProvider) &&
+        (ref.read(currentCardSetProvider).value?.needsRefresh ?? false);
+    final outdated =
+        state.value == CardGenerationStatus.needsRefresh ||
+        (state.value == CardGenerationStatus.ready && setOutdated);
+    if (!outdated) return;
     final profileId = await ref.read(serverProfileIdProvider.future);
     if (profileId == null || !ref.mounted) return;
     final api = ref.read(cardApiProvider);
