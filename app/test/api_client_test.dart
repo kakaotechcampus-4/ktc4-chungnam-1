@@ -96,7 +96,7 @@ void main() {
     final body = await api.postMultipart(
       '/api/v1/visit-sessions/s1/speech-analyses',
       fields: {'participantCount': '2'},
-      files: [
+      files: () async => [
         http.MultipartFile.fromBytes('audio', [1, 2, 3], filename: 'a.wav'),
       ],
     );
@@ -238,5 +238,112 @@ void main() {
     await api.get('/x');
 
     expect(seen, ['Bearer first', 'Bearer second']);
+  });
+
+  group('세션 만료', () {
+    /// 첫 요청은 401 로, 새 세션으로 다시 보낸 요청은 성공으로 답하는 서버다.
+    ///
+    /// [rejectAgain] 이면 다시 보낸 요청도 401 이다.
+    ({ApiClient api, List<http.Request> sent, List<int> reauths}) expired({
+      bool reauthenticated = true,
+      bool rejectAgain = false,
+    }) {
+      var token = 'Bearer old';
+      final sent = <http.Request>[];
+      final reauths = <int>[];
+      final api = ApiClient(
+        authorization: () => token,
+        reauthenticate: () async {
+          reauths.add(reauths.length + 1);
+          if (reauthenticated) token = 'Bearer new';
+          return reauthenticated;
+        },
+        baseUrl: 'http://api.test',
+        client: MockClient((request) async {
+          sent.add(request);
+          final rejected =
+              request.headers['Authorization'] == 'Bearer old' || rejectAgain;
+          return rejected
+              ? _json({
+                  'schemaVersion': 1,
+                  'errorCode': 'SESSION_EXPIRED',
+                  'message': '테스트',
+                  'requestId': 'r',
+                  'retryable': false,
+                }, 401)
+              : _json({'schemaVersion': 1, 'status': 'ready'}, 200);
+        }),
+      );
+      return (api: api, sent: sent, reauths: reauths);
+    }
+
+    test('401 이면 세션을 새로 받아 같은 요청을 새 세션으로 다시 보낸다', () async {
+      final server = expired();
+
+      final body = await server.api.post('/api/v1/x', {'a': 1});
+
+      expect(body['status'], 'ready');
+      expect(server.reauths, [1]);
+      expect(server.sent, hasLength(2));
+      expect(server.sent.last.headers['Authorization'], 'Bearer new');
+      expect(server.sent.last.body, server.sent.first.body, reason: '같은 요청이다');
+    });
+
+    test('세션을 새로 받지 못하면 다시 보내지 않고 401 을 돌려준다', () async {
+      final server = expired(reauthenticated: false);
+
+      await expectLater(
+        server.api.get('/api/v1/x'),
+        throwsA(
+          isA<ApiServerFailure>().having((f) => f.statusCode, 'status', 401),
+        ),
+      );
+      expect(server.sent, hasLength(1));
+    });
+
+    test('다시 보내도 401 이면 더 반복하지 않는다', () async {
+      final server = expired(rejectAgain: true);
+
+      await expectLater(
+        server.api.get('/api/v1/x'),
+        throwsA(isA<ApiServerFailure>()),
+      );
+      expect(server.reauths, [1]);
+      expect(server.sent, hasLength(2));
+    });
+
+    test('파일 업로드도 파일을 새로 만들어 다시 보낸다', () async {
+      final server = expired();
+      var built = 0;
+
+      await server.api.postMultipart(
+        '/api/v1/visit-sessions/s1/speech-analyses',
+        fields: {'participantCount': '2'},
+        files: () async {
+          built++;
+          return [
+            http.MultipartFile.fromBytes('audio', [1, 2, 3], filename: 'a.wav'),
+          ];
+        },
+      );
+
+      expect(built, 2);
+      expect(server.sent.last.body, contains('name="audio"; filename="a.wav"'));
+    });
+
+    test('보내기 전에 매번 곧 만료될 세션을 확인한다', () async {
+      var checked = 0;
+      final api = ApiClient(
+        authorization: () => _auth,
+        beforeRequest: () async => checked++,
+        baseUrl: 'http://api.test',
+        client: MockClient((_) async => _json({'schemaVersion': 1}, 200)),
+      );
+
+      await api.get('/x');
+      await api.delete('/y');
+
+      expect(checked, 2);
+    });
   });
 }
