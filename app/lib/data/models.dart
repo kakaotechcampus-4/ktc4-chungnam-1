@@ -344,11 +344,14 @@ class CardSet {
     required this.setId,
     required this.usedBySessionId,
     required this.cards,
+    this.needsRefresh = false,
   });
 
   factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
     setId: json['setId'] as String,
     usedBySessionId: json['usedBySessionId'] as String?,
+    // 이 값을 주기 전의 서버와 목 묶음은 다시 만들 일이 없는 묶음이다.
+    needsRefresh: json['needsRefresh'] as bool? ?? false,
     cards:
         (json['cards'] as List)
             .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
@@ -363,6 +366,10 @@ class CardSet {
 
   /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
   final String? usedBySessionId;
+
+  /// 받은 뒤 프로필이나 일대기를 고쳤는지. `true` 면 볼 수만 있고 이 묶음으로
+  /// 면회를 시작할 수 없다(API 4절).
+  final bool needsRefresh;
 
   /// 12장. [ConversationCard.position] 순서다.
   final List<ConversationCard> cards;
