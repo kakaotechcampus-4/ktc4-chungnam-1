@@ -127,6 +127,34 @@ void main() {
       );
     });
 
+    for (final (status, errorCode, message) in [
+      (422, 'INVALID_IMAGE_FORMAT', 'JPEG나 PNG 사진만 올릴 수 있어요. 이 사진은 빼주세요.'),
+      (409, 'PHOTO_LIMIT_EXCEEDED', '사진은 5장까지만 올릴 수 있어요.'),
+    ]) {
+      test('$status $errorCode 는 다시 올리지 않고 그 이유를 알린다', () async {
+        final server =
+            FakeProfileServer(profiles: [FakeProfileServer.profile(id: 'p1')])
+              ..failures['POST /api/v1/profiles/p1/photos'] = (
+                status: status,
+                errorCode: errorCode,
+              );
+
+        final PhotoUploadFailure failure;
+        try {
+          await ServerPhotoUploader(
+            server.api,
+          ).upload(await _syntheticPhoto(), profileId: 'p1');
+          fail('실패해야 한다');
+        } on PhotoUploadFailure catch (caught) {
+          failure = caught;
+        }
+
+        expect(failure.errorCode, errorCode);
+        expect(failure.retryable, isFalse);
+        expect(photoUploadFailureMessage(failure), message);
+      });
+    }
+
     test('서버가 다시 시도해도 된다고 하거나 닿지 못하면 다시 올릴 수 있다', () async {
       final server =
           FakeProfileServer(profiles: [FakeProfileServer.profile(id: 'p1')])
