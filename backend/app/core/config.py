@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # 60초 이상 짧아야 하며, 아니면 음성 worker가 시작하지 않음.
     report_generation_time_limit_seconds: int = Field(default=600, ge=10)
 
-    # 프로필 사진과 면회 사진은 계속 보관하므로 음성 버킷(24시간 Lifecycle)과 다른
+    # 프로필 사진과 면회 사진은 별도 보관 정책을 쓰므로 임시 녹음 버킷과 다른
     # 비공개 버킷에 저장한다. 비어 있으면 사진 업로드와 조회 URL 생성을 거절한다.
     image_s3_bucket: str = ""
     image_s3_region: str = "ap-northeast-2"
