@@ -20,7 +20,11 @@ Flutter 3.44.8, Python 3.12와 uv 0.11.26을 사용한다. Python과 Dart 의존
 
 STT 테스트는 CPU 실행기에서 모델 호출을 대역으로 처리한다. 모델 다운로드를 막도록
 `HF_HUB_OFFLINE=1`을 지정한다. 현재 테스트가 실제 pyannote 결과 타입을 사용하므로
-프로젝트 lockfile의 PyTorch와 pyannote 의존성도 설치하며 TorchCodec 로딩용 FFmpeg를 설치한다.
+프로젝트 lockfile의 PyTorch와 pyannote 의존성도 설치하며 TorchCodec 로딩용 FFmpeg와
+Python 공유 라이브러리를 설치한다. 단위 검사 전에 160개 표본의 합성 무음 WAV를
+TorchCodec으로 직접 읽고 채널 수, 표본 수와 16kHz를 확인한다. import 경고만 남긴 채
+오디오 디코딩이 고장난 환경이 통과하지 않도록 하는 검사다. 실제 ASR이나 화자 분리
+모델을 호출하지 않으며 무음에 리포트를 생성하지 않는다.
 의존성 설치 용량과 시간이 크지만 운영 모델 파일이나 GPU, Hugging Face 토큰은 필요하지 않다.
 검사 통과가 Whisper 인식 정확도나 실제 화자 분리 품질을 의미하지 않는다.
 

@@ -131,6 +131,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: stt-server/uv.lock
       - name: Install FFmpeg for TorchCodec imports
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg libpython3.12t64
       - run: uv sync --locked
+      - name: Decode synthetic WAV without model calls
+        run: |
+          uv run --locked python - <<'PY'
+          from torchcodec.decoders import AudioDecoder
+          from tests.support import make_synthetic_wav_bytes
+
+          audio = AudioDecoder(make_synthetic_wav_bytes()).get_all_samples()
+          assert tuple(audio.data.shape) == (1, 160)
+          assert audio.sample_rate == 16000
+          PY
       - run: uv run --locked python -m unittest discover -s tests -v
