@@ -481,6 +481,8 @@ Android에서 이 값은 `context.getDir("flutter", MODE_PRIVATE)`이므로 실�
 
 기기 녹음은 재요청 후에도 남긴다. 6-2를 받았다는 표시가 있어도 분석 복구에서만 다시 찾을 수 있으며, 다른 계정의 파일은 찾지 않는다. [서버 복구 기준](../backend/docs/speech-recovery.md)을 함께 따른다.
 
+기기 파일을 성공이나 경과 시간만으로 지우지 않는 것은 기존 동작이다. 이번에는 이미 전송한 파일을 복구할 때 다시 찾는 경로를 추가했다. 서버의 24시간 보관 기준을 기기 파일에 적용하지 않는다. 탈퇴 시 `forgetAccount`로 삭제를 시도하지만 파일 삭제 예외를 넘기며 영속 재시도는 없다. 보관 안내와 이 삭제 실패 처리는 [동의안의 로컬 수정안](../docs/legal/consent-draft.md#녹음과-임시-전사-보관-문구-수정안)에서 운영 적용 전 확인 항목으로 남긴다.
+
 ### 음성 형식
 
 WAV / PCM 16비트 / 16kHz / 모노다. BE [PR #71](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/71)과

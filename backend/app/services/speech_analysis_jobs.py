@@ -15,7 +15,10 @@ from app.core.errors import AppError
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업에 임시 저장한다.
-# 리포트를 저장하면 지우고, 늦어도 STT 완료 후 이 시간이 지나면 지운다(API 8-1).
+# 최초 STT 저장 시 만료 시각을 정하며 실패나 리포트 재요청으로 기한을 연장하지 않는다.
+# 완료 시 즉시 지우며, 실패 시에는 남은 기한 동안만 재처리에 쓴다(PM 운영 승인 대기).
+# 만료분의 실제 삭제는 expire_transcripts 또는 상태 전이에서 실행된다. worker가
+# 중단되거나 다른 작업을 처리 중이면 정리가 늦어질 수 있어 별도 삭제 지연 감시가 필요하다.
 TRANSCRIPT_RETENTION_SECONDS = 24 * 60 * 60
 
 
@@ -622,8 +625,8 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def expire_transcripts(self) -> int:
-        # 리포트를 저장하기 전에 보관 기한이 지났다. 전사문 없이는 리포트를 만들 수
-        # 없으므로 작업을 실패로 끝낸다.
+        # 이미 failed인 작업도 포함한다. 재시도하지 않고 남겨 둔 전사가 누락되면 안 된다.
+        # worker가 작업을 가져오기 전에 호출한다. DB 자체 TTL이나 상시 타이머는 아니다.
         cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
