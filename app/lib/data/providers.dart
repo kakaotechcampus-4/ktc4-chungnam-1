@@ -566,7 +566,8 @@ class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
     if (!online || remoteId == null) return null;
 
     final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
-    if (photos.any(_analyzing)) {
+    // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
+    if (!_stale(round) && photos.any(_analyzing)) {
       // 상태를 돌려준 뒤에 묻기 시작한다.
       Future<void>(() => _poll(round));
     }
@@ -581,6 +582,7 @@ class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
   bool _stale(int round) => !ref.mounted || round != _round;
 
   Future<void> _poll(int round) async {
+    if (_stale(round)) return;
     final interval = ref.read(photoAnalysisPollIntervalProvider);
     final api = ref.read(profileApiProvider);
     while (true) {
