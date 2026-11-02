@@ -279,6 +279,63 @@ void main() {
     });
   });
 
+  group('요청을 보낸 뒤 늦게 온 401', () {
+    test('보낸 뒤 로그아웃했으면 다시 받지도, 다시 보내지도 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      final sent = h.session!.authorizationHeader;
+
+      await h.container.read(sessionProvider.notifier).discard();
+
+      expect(await h.refresher.retryAfterUnauthorized(sent), isFalse);
+      expect(h.google.silentCalls, 0, reason: '자동 재로그인을 시작하지 않는다');
+      expect(h.session, isNull, reason: '로그아웃한 뒤 다시 로그인되지 않는다');
+      expect(h.loss, isNull);
+    });
+
+    test('보낸 뒤 다른 계정으로 로그인했으면 그 계정으로 다시 보내지 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      final sent = h.session!.authorizationHeader;
+
+      final other = AuthSession.fromResult(
+        AuthenticatedResult.fromJson(
+          _authenticated('b-token', accountId: 'acc_other'),
+        ),
+      );
+      h.container.read(sessionProvider.notifier).restore(other);
+
+      expect(await h.refresher.retryAfterUnauthorized(sent), isFalse);
+      expect(h.google.silentCalls, 0);
+      expect(h.session!.account.accountId, 'acc_other', reason: 'B 계정은 그대로다');
+    });
+
+    test('같은 계정을 그 사이 이미 새로 받았으면 받지 않고 새 세션으로 다시 보낸다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      final sent = h.session!.authorizationHeader;
+      // 먼저 401 을 받은 다른 요청이 새로 받았다.
+      expect(await h.refresher.refresh(), isTrue);
+
+      expect(await h.refresher.retryAfterUnauthorized(sent), isTrue);
+      expect(h.google.silentCalls, 1, reason: '같은 계정을 두 번 받지 않는다');
+      expect(h.session!.accessToken, 'new-token');
+    });
+
+    test('보낸 세션 그대로면 새로 받는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+
+      expect(
+        await h.refresher.retryAfterUnauthorized(
+          h.session!.authorizationHeader,
+        ),
+        isTrue,
+      );
+      expect(h.session!.accessToken, 'new-token');
+    });
+  });
+
   group('곧 만료될 세션', () {
     test('1분 안에 만료되면 보내기 전에 새로 받는다', () async {
       final h = _Harness(

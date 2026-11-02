@@ -244,17 +244,18 @@ void main() {
     /// 첫 요청은 401 로, 새 세션으로 다시 보낸 요청은 성공으로 답하는 서버다.
     ///
     /// [rejectAgain] 이면 다시 보낸 요청도 401 이다.
-    ({ApiClient api, List<http.Request> sent, List<int> reauths}) expired({
+    ({ApiClient api, List<http.Request> sent, List<String?> reauths}) expired({
       bool reauthenticated = true,
       bool rejectAgain = false,
     }) {
       var token = 'Bearer old';
       final sent = <http.Request>[];
-      final reauths = <int>[];
+      // 다시 받을 때 넘겨받은, 요청에 실었던 세션.
+      final reauths = <String?>[];
       final api = ApiClient(
         authorization: () => token,
-        reauthenticate: () async {
-          reauths.add(reauths.length + 1);
+        reauthenticate: (sentAuthorization) async {
+          reauths.add(sentAuthorization);
           if (reauthenticated) token = 'Bearer new';
           return reauthenticated;
         },
@@ -283,7 +284,7 @@ void main() {
       final body = await server.api.post('/api/v1/x', {'a': 1});
 
       expect(body['status'], 'ready');
-      expect(server.reauths, [1]);
+      expect(server.reauths, ['Bearer old']);
       expect(server.sent, hasLength(2));
       expect(server.sent.last.headers['Authorization'], 'Bearer new');
       expect(server.sent.last.body, server.sent.first.body, reason: '같은 요청이다');
@@ -308,7 +309,7 @@ void main() {
         server.api.get('/api/v1/x'),
         throwsA(isA<ApiServerFailure>()),
       );
-      expect(server.reauths, [1]);
+      expect(server.reauths, ['Bearer old']);
       expect(server.sent, hasLength(2));
     });
 
