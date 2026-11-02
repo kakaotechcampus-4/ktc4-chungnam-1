@@ -392,6 +392,8 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | --- | --- |
 | `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
 | `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_AI_SERVER_BACKUP_URL` | 선택한 예비 STT 주소. 기본은 비어 있어 기존 단일 서버 동작을 유지 |
+| `SAEROK_AI_SERVER_FAILOVER_CONNECT_TIMEOUT_SECONDS` | 예비 주소를 설정한 경우 서버별 연결 제한. 기본 5초, 0초 초과 30초 이하 |
 | `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
 | `SAEROK_SPEECH_AUDIO_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
 | `SAEROK_SPEECH_AUDIO_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사 |
@@ -409,6 +411,17 @@ S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
 STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
 오류 응답에 남기지 않는다.
+
+### STT 예비 서버 전환
+
+기본 서버의 연결 실패(`ConnectError`, `ConnectTimeout`)에만 예비 서버를 한 번 호출한다.
+응답 대기나 전송 도중 오류, HTTP 오류와 잘못된 응답은 이미 처리 중일 수 있어 재전송하지 않는다.
+두 시도는 기존 전체 STT 제한 시간을 공유하고 같은 작업 ID, 입력과 삭제 기한을 사용한다.
+다음 작업은 다시 기본 서버부터 시작한다. 종료된 실패 작업을 다시 여는 기능은 아니다.
+
+현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
+주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
+[연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
 
 ## 사진 저장 (S3)
 
