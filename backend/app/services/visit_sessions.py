@@ -63,7 +63,8 @@ async def create_visit_session(
     async with connection.transaction():
         await lock_profile(connection, profile_id)
         cursor = await connection.execute(
-            "SELECT profile_id, status, session_id FROM card_sets WHERE set_id = %s FOR UPDATE",
+            "SELECT profile_id, status, session_id, stale_at FROM card_sets"
+            " WHERE set_id = %s FOR UPDATE",
             (set_id,),
         )
         card_set = await cursor.fetchone()
@@ -75,6 +76,13 @@ async def create_visit_session(
             )
         if card_set["session_id"] is not None:
             raise _already_used()
+        if card_set["stale_at"] is not None:
+            # 카드를 받은 뒤 프로필이나 일대기를 고친 묶음. 4-1로 새로 만든 묶음으로만 시작할 수 있음
+            raise AppError(
+                status_code=409,
+                error_code="CARD_SET_NEEDS_REFRESH",
+                message="고친 내용으로 카드를 다시 만들어야 합니다.",
+            )
         cursor = await connection.execute(
             "SELECT count(*) AS n FROM conversation_cards"
             " WHERE set_id = %s AND card_id = ANY(%s) AND position BETWEEN 1 AND 9",
