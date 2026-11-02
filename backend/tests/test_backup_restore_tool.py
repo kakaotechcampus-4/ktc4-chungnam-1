@@ -22,14 +22,21 @@ def test_restore_failure_keeps_archive_and_failure_manifest(
     tmp_path, monkeypatch, cleanup_fails
 ):
     label = ""
+    ready_checks = 0
 
     def fake_command(args, **kwargs):
-        nonlocal label
+        nonlocal label, ready_checks
         if "pg_dump" in args:
             kwargs["stdout"].write(b"synthetic-dump")
         elif "run" in args:
             label = args[args.index("--label") + 1].split("=", 1)[1]
+        elif "pg_isready" in args:
+            assert args[args.index("-h") + 1] == "127.0.0.1"
+            ready_checks += 1
+            if ready_checks == 1:
+                raise backup.BackupError("COMMAND_FAILED")
         elif "pg_restore" in args:
+            assert ready_checks == 2
             raise backup.BackupError("COMMAND_FAILED")
         elif "inspect" in args:
             return label.encode()
@@ -39,6 +46,7 @@ def test_restore_failure_keeps_archive_and_failure_manifest(
 
     monkeypatch.setattr(backup, "sql", lambda *args: "170000")
     monkeypatch.setattr(backup, "command", fake_command)
+    monkeypatch.setattr(backup.time, "sleep", lambda _: None)
     with pytest.raises(backup.BackupError):
         verify_backup(
             source_container="synthetic-db",
@@ -48,6 +56,8 @@ def test_restore_failure_keeps_archive_and_failure_manifest(
         )
     manifest = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
     assert manifest["restoreVerified"] is False
+    assert manifest["stage"] == "restore"
+    assert manifest["errorCode"] == "COMMAND_FAILED"
     assert manifest["restoredContainerRemoved"] is not cleanup_fails
     assert (tmp_path / manifest["archive"]).read_bytes() == b"synthetic-dump"
 

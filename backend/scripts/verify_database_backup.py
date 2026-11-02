@@ -95,6 +95,7 @@ def verify_backup(
         "restoreVerified": False,
         "sourceModified": False,
         "restoredContainerRemoved": False,
+        "stage": "backup",
     }
     try:
         with os.fdopen(
@@ -123,6 +124,7 @@ def verify_backup(
         record["sizeBytes"] = archive.stat().st_size
         # run이 컨테이너 생성 뒤 실패한 경우도 이름과 라벨을 확인해 정리 대상으로 남긴다.
         started = True
+        record["stage"] = "start_isolated_database"
         command(
             [
                 "docker",
@@ -153,6 +155,10 @@ def verify_backup(
                         "exec",
                         restore_container,
                         "pg_isready",
+                        # Initialization uses a socket-only temporary server, which
+                        # restarts before the final server accepts TCP connections.
+                        "-h",
+                        "127.0.0.1",
                         "-U",
                         "restore_check",
                         "-d",
@@ -166,6 +172,7 @@ def verify_backup(
         else:
             raise BackupError("RESTORE_DATABASE_NOT_READY")
         with archive.open("rb") as data:
+            record["stage"] = "restore"
             command(
                 [
                     "docker",
@@ -184,6 +191,7 @@ def verify_backup(
                 stdin=data,
             )
         # 복원 대상은 이 실행에서 새로 만든 컨테이너뿐이다. 기존 DB에 --clean을 쓰지 않는다.
+        record["stage"] = "verify_restored_schema"
         revision = sql(
             restore_container,
             "restore_check",
@@ -213,7 +221,11 @@ def verify_backup(
             restoreVerified=True,
             restoredRevisions=revision.splitlines(),
             restoredRowCounts=counts,
+            stage="complete",
         )
+    except BackupError as error:
+        record["errorCode"] = str(error)
+        raise
     finally:
         cleanup_error = None
         try:
