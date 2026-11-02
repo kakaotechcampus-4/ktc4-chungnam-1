@@ -1,0 +1,110 @@
+name: Product tests
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+      - run: flutter test
+
+  backend:
+    name: Backend and PostgreSQL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saelog_ci
+          POSTGRES_PASSWORD: isolated_ci_database
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saelog_ci -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONUTF8: '1'
+      SAEROK_TEST_DATABASE_URL: postgresql://saelog_ci:isolated_ci_database@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            ai/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked pytest -ra
+
+  ai:
+    name: AI tests and PostgreSQL (no model calls)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ai
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saelog_ci
+          POSTGRES_PASSWORD: isolated_ci_database
+          POSTGRES_DB: saelog_ai_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saelog_ci -d saelog_ai_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONUTF8: '1'
+      TOPIC_REC_TEST_DATABASE_URL: postgresql://saelog_ci:isolated_ci_database@127.0.0.1:5432/saelog_ai_ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: ai/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked pytest -ra
