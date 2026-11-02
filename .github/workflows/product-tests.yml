@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: '0.11.26'
           python-version: '3.12'
@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: '0.11.26'
           python-version: '3.12'
@@ -108,3 +108,29 @@ jobs:
           cache-dependency-glob: ai/uv.lock
       - run: uv sync --locked
       - run: uv run --locked pytest -ra
+
+  stt:
+    name: STT contracts and pipeline tests (no model calls)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: stt-server
+    env:
+      PYTHONUTF8: '1'
+      PYTHONPATH: src
+      HF_HUB_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: stt-server/uv.lock
+      - name: Install FFmpeg for TorchCodec imports
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+      - run: uv sync --locked
+      - run: uv run --locked python -m unittest discover -s tests -v
