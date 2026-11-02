@@ -60,6 +60,11 @@ class SessionRefresher {
   /// 서버에 닿지 못해 받지 못했으면 세션을 지우지 않고 `false` 다. 지금 닿지
   /// 못했을 뿐 세션이 죽었다고 단정하지 않는다. 그 밖에 받지 못하면 세션을
   /// 지우고 [sessionLossProvider] 로 알린 뒤 `false` 다.
+  ///
+  /// 받는 동안 로그아웃하거나 세션이 바뀌었으면 늦게 온 결과를 버리고
+  /// `false` 다. 계정 선택 창에서 원래와 다른 계정을 골랐으면 그 계정으로
+  /// 바꾸지 않고 로그인 화면에서 다시 고르게 한다. 어느 쪽이든 원래 요청은
+  /// 다시 보내지 않는다.
   Future<bool> refresh() =>
       _running ??= _refresh().whenComplete(() => _running = null);
 
@@ -71,9 +76,15 @@ class SessionRefresher {
   }
 
   Future<bool> _refresh() async {
+    // 다시 받기 시작한 때의 세션. 받는 동안 이것이 바뀌면 결과를 쓰지 않는다.
+    final before = _ref.read(sessionProvider);
+    bool changed() => !identical(_ref.read(sessionProvider), before);
+
     final idToken = await _ref
         .read(googleAuthenticatorProvider)
         .silentIdToken();
+    // 계정 선택 창이 떠 있는 동안 로그아웃했으면 이미 로그인 화면이다.
+    if (changed()) return false;
     if (idToken == null) {
       // 고른 계정이 없거나 조용히 받을 수 없다. 로그인 화면에서 다시 고른다.
       await _lose(const SessionSignedOut());
@@ -82,8 +93,16 @@ class SessionRefresher {
 
     try {
       final result = await _ref.read(authApiProvider).signInWithGoogle(idToken);
+      // 기다리는 동안 로그아웃했으면 늦게 온 로그인을 저장하지 않는다.
+      if (changed()) return false;
       switch (result) {
         case AuthenticatedResult():
+          // 원래 계정에서 시작한 요청을 다른 계정으로 보내지 않는다.
+          final accountId = before?.account.accountId;
+          if (accountId != null && result.account.accountId != accountId) {
+            await _lose(const SessionSignedOut());
+            return false;
+          }
           await _ref.read(sessionProvider.notifier).start(result);
           return true;
         case ConsentRequiredResult():
@@ -95,6 +114,7 @@ class SessionRefresher {
       return false;
     } on AuthFailure catch (failure) {
       logAuthFailure(failure);
+      if (changed()) return false;
       await _lose(const SessionSignedOut());
       return false;
     }
