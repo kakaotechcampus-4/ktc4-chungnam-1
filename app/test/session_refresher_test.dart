@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -333,6 +334,137 @@ void main() {
         isTrue,
       );
       expect(h.session!.accessToken, 'new-token');
+    });
+  });
+
+  group('공개 API 요청 중 다시 받기', () {
+    /// 하루 뒤 만료되는 세션으로 보낸 요청은 401, 새 세션은 성공으로 답하는
+    /// 공개 API 다. 받은 요청은 [sent] 에 남는다.
+    ApiClient client(_Harness h, List<http.Request> sent) => ApiClient(
+      authorization: () => h.session?.authorizationHeader,
+      beforeRequest: h.refresher.refreshIfExpiring,
+      reauthenticate: h.refresher.retryAfterUnauthorized,
+      continues: h.refresher.continues,
+      baseUrl: 'http://public.test',
+      client: MockClient((request) async {
+        sent.add(request);
+        return request.headers['Authorization'] == 'Bearer old-token'
+            ? _json({
+                'schemaVersion': 1,
+                'errorCode': 'SESSION_EXPIRED',
+                'message': '테스트',
+                'requestId': 'r',
+                'retryable': false,
+              }, 401)
+            : _json({'schemaVersion': 1}, 200);
+      }),
+    );
+
+    test('다시 받기를 기다리는 동안 다른 계정으로 바뀌면 원래 요청을 보내지 않는다', () async {
+      final h = _Harness(
+        session: _session(
+          expiresAt: DateTime.now().add(const Duration(seconds: 30)),
+        ),
+      );
+      addTearDown(h.container.dispose);
+      final sent = <http.Request>[];
+      h.google.gate = Completer<void>();
+
+      final saving = client(h, sent).post('/api/v1/profiles', {'a': 1});
+      await pumpEventQueue();
+      expect(h.google.silentCalls, 1, reason: '보내기 전에 다시 받는 중이다');
+
+      // 기다리는 동안 로그아웃하고 B 계정으로 로그인한다.
+      await h.container.read(sessionProvider.notifier).discard();
+      h.container
+          .read(sessionProvider.notifier)
+          .restore(
+            AuthSession.fromResult(
+              AuthenticatedResult.fromJson(
+                _authenticated('b-token', accountId: 'acc_other'),
+              ),
+            ),
+          );
+      h.google.gate!.complete();
+
+      await expectLater(saving, throwsA(isA<ApiSignedOutFailure>()));
+      expect(sent, isEmpty, reason: 'A 에서 시작한 요청을 B 로 보내지 않는다');
+      expect(h.session!.account.accountId, 'acc_other');
+    });
+
+    test('곧 만료돼 같은 계정으로 새로 받았으면 새 세션으로 보낸다', () async {
+      final h = _Harness(
+        session: _session(
+          expiresAt: DateTime.now().add(const Duration(seconds: 30)),
+        ),
+      );
+      addTearDown(h.container.dispose);
+      final sent = <http.Request>[];
+
+      await client(h, sent).post('/api/v1/profiles', {'a': 1});
+
+      expect(sent.single.headers['Authorization'], 'Bearer new-token');
+    });
+
+    test('401 뒤 다시 받는 서버에 닿지 못하면 연결 실패로 돌려주고 세션을 둔다', () async {
+      final h = _Harness(
+        server: (_) async => throw http.ClientException('오프라인'),
+      );
+      addTearDown(h.container.dispose);
+      final sent = <http.Request>[];
+
+      await expectLater(
+        client(h, sent).get('/api/v1/x'),
+        throwsA(isA<ApiNetworkFailure>()),
+        reason: '다시 보낼 수 있는 실패라 보낼 자료를 지우지 않는다',
+      );
+      expect(sent, hasLength(1));
+      expect(h.session!.accessToken, 'old-token');
+      expect(h.loss, isNull);
+    });
+
+    test('다시 받는 서버가 잠시 응답하지 못하면 로그아웃하지 않고 다시 시도할 수 있게 한다', () async {
+      final h = _Harness(
+        server: (_) async => _json({
+          'schemaVersion': 1,
+          'errorCode': 'IDENTITY_PROVIDER_UNAVAILABLE',
+          'message': '테스트',
+          'requestId': 'r',
+          'retryable': true,
+        }, 503),
+      );
+      addTearDown(h.container.dispose);
+      final sent = <http.Request>[];
+
+      await expectLater(
+        client(h, sent).get('/api/v1/x'),
+        throwsA(
+          isA<ApiServerFailure>()
+              .having((f) => f.statusCode, 'statusCode', 503)
+              .having((f) => f.retryable, 'retryable', isTrue),
+        ),
+      );
+      expect(sent, hasLength(1), reason: '원래 요청은 다시 보내지 않는다');
+      expect(h.session!.accessToken, 'old-token', reason: '세션을 지우지 않는다');
+      expect(h.loss, isNull, reason: '로그인 화면으로 보내지 않는다');
+    });
+
+    test('곧 만료될 세션을 미리 받다가 서버가 잠시 응답하지 못해도 로그아웃하지 않는다', () async {
+      final h = _Harness(
+        server: (_) async => _json({
+          'schemaVersion': 1,
+          'errorCode': 'IDENTITY_PROVIDER_UNAVAILABLE',
+          'message': '테스트',
+          'requestId': 'r',
+          'retryable': true,
+        }, 503),
+      );
+      addTearDown(h.container.dispose);
+
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.session!.accessToken, 'old-token');
+      expect(h.loss, isNull);
     });
   });
 
