@@ -16,8 +16,15 @@ DROP FUNCTION IF EXISTS delete_orphan_topic();
 
 CREATE TABLE storage_deletion_request_queue (
     s3_object_key VARCHAR(255) PRIMARY KEY,
-    requested_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    requested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    last_attempt_at TIMESTAMPTZ,
+    last_error_code VARCHAR(64)
 );
+
+CREATE INDEX storage_deletion_attempt_order_idx
+    ON storage_deletion_request_queue
+    (last_attempt_at NULLS FIRST, requested_at, s3_object_key);
 
 CREATE FUNCTION queue_storage_deletion() RETURNS trigger AS $$
 BEGIN
