@@ -36,6 +36,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from common.speaker_context import speaker_context
 
 Reaction = Literal["positive", "neutral", "negative", "notUsed"]
 Action = Literal["more", "less", "exclude"]
@@ -194,16 +195,10 @@ def llm_payload(request: VisitReportRequest, refs: dict[str, str], with_facts: b
     spoken = [s for s in request.transcript.segments if s.text.strip()]
     if not spoken:
         raise VisitReportError("INVALID_REQUEST", "분석할 발화 구간이 없음")
-    labels = {s.speaker_label for s in spoken if s.speaker_label is not None}
-    expected = request.participant_count
     data = {
-        "transcript_context": {
-            "expected_participant_count": expected,
-            "observed_speaker_label_count": len(labels),
-            "has_unassigned_speech": any(s.speaker_label is None for s in spoken),
-            "fewer_labels_than_expected": expected is not None and len(labels) < expected,
-            "speaker_roles_verified": False,
-        },
+        "transcript_context": speaker_context(
+            [s.speaker_label for s in spoken], request.participant_count
+        ),
         "evaluation": request.evaluation.model_dump(by_alias=True),
         "cards": [{"card": refs[c.card_id], "card_title": c.card_title, "topic": c.topic.title, "reaction": c.reaction}
                   for c in request.cards],

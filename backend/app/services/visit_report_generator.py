@@ -37,6 +37,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
+from common.speaker_context import speaker_context
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -250,6 +251,17 @@ async def build_request(
 
 def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
     """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    context = speaker_context(
+        [s.speaker_label for s in request.transcript.segments if s.text.strip()],
+        request.participant_count,
+    )
+    # 후보와 근거 발화의 연결이 없어 어느 후보만 안전한지 판별할 수 없다.
+    # 모델이 빈 후보 배열을 반환하면 일반 리포트는 계속 저장할 수 있다.
+    if result.life_fact_proposals and not context["life_fact_proposals_allowed"]:
+        raise AppError(
+            status_code=502, error_code="UNVERIFIED_SPEAKER_FACT",
+            message="화자를 확인하지 못한 전사에서 새 이야기를 제안해 저장하지 않았습니다.",
+        )
     reactions = {card.card_id: card.reaction for card in request.cards}
 
     summary_cards = [summary.card_id for summary in result.card_summaries]
