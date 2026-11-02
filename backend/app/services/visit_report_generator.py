@@ -18,6 +18,8 @@
   아무것도 저장하지 않는다. 리포트 저장과 작업 `completed`는 같은 트랜잭션이다.
 
 응답 검증 규칙
+- 미확인 발화가 있거나 라벨 수가 예상 인원보다 적으면 생성 함수를 호출하지 않는다.
+  고정된 화자 미확인 안내만 저장하고 카드 요약, 이야기와 주제 제안은 만들지 않는다.
 - `cardSummaries`는 요청 카드 중 `reaction`이 `positive`, `neutral`, `negative`인
   카드만, 카드당 하나다.
 - `topicProposals`는 요청 카드 안에서 카드당 최대 1개다.
@@ -59,6 +61,12 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 _SUMMARIZED_REACTIONS = {"positive", "neutral", "negative"}
 _NOT_EVALUATED_REACTIONS = {"notUsed", None}
 
+_UNVERIFIED_SPEAKER_TITLE = "화자 미확인 안내"
+_UNVERIFIED_SPEAKER_BODY = (
+    "녹음에서 누가 한 말인지 충분히 구분하지 못했습니다. "
+    "대화 내용의 해석, 카드별 요약, 새 이야기 후보와 주제 조정 제안을 만들지 않았습니다. "
+    "직접 남기신 소감과 카드 평가는 그대로 보관됩니다."
+)
 
 
 class ReportDeadline:
@@ -111,7 +119,12 @@ class VisitReportGenerator:
         deadline = ReportDeadline(self._time_limit_seconds)
         session_uuid = UUID(session_id)
         profile_id, request = await build_request(connection, session_uuid, speech)
-        result = await _run_until(deadline, lambda: self._generate(request, deadline))
+        deadline.check()
+        if _has_unverified_speech(request):
+            # 프롬프트에만 맡기지 않는다. 리포트와 두 종류의 제안 생성 호출을 모두 생략한다.
+            result = _unverified_speaker_notice(request)
+        else:
+            result = await _run_until(deadline, lambda: self._generate(request, deadline))
         validate_result(request, result)
         # 마감 직후 도착한 결과도 저장하지 않는다.
         deadline.check()
@@ -249,18 +262,39 @@ async def build_request(
     return profile_id, request
 
 
-def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
-    """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+def _has_unverified_speech(request: VisitReportRequest) -> bool:
+    spoken = [s for s in request.transcript.segments if s.text.strip()]
+    if not spoken:
+        # 빈 전사는 별도 실패다. 화자 미확인 안내로 성공 처리하지 않는다.
+        raise AppError(
+            status_code=502, error_code="EMPTY_TRANSCRIPT",
+            message="리포트에 사용할 전사 내용이 없습니다.",
+        )
     context = speaker_context(
-        [s.speaker_label for s in request.transcript.segments if s.text.strip()],
+        [s.speaker_label for s in spoken],
         request.participant_count,
     )
-    # 후보와 근거 발화의 연결이 없어 어느 후보만 안전한지 판별할 수 없다.
-    # 모델이 빈 후보 배열을 반환하면 일반 리포트는 계속 저장할 수 있다.
-    if result.life_fact_proposals and not context["life_fact_proposals_allowed"]:
+    return not context["life_fact_proposals_allowed"]
+
+
+def _unverified_speaker_notice(request: VisitReportRequest) -> VisitReportResult:
+    """모델을 부르지 않은 사실과 고정 안내만 저장한다. 대화 내용은 해석하지 않는다."""
+    return VisitReportResult(
+        schema_version=1, analysis_id=request.analysis_id,
+        model="not-invoked", prompt_version="speaker-unverified-v1",
+        title=_UNVERIFIED_SPEAKER_TITLE, body=_UNVERIFIED_SPEAKER_BODY,
+        card_summaries=[], life_fact_proposals=[], topic_proposals=[],
+    )
+
+
+def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
+    """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    # 후보별 근거 발화 연결이 없어 안전한 부분만 고를 수 없다.
+    # 호출 경로가 달라져도 미확인 전사로 임의 해석이나 제안을 저장하지 못하게 한다.
+    if _has_unverified_speech(request) and result != _unverified_speaker_notice(request):
         raise AppError(
             status_code=502, error_code="UNVERIFIED_SPEAKER_FACT",
-            message="화자를 확인하지 못한 전사에서 새 이야기를 제안해 저장하지 않았습니다.",
+            message="화자를 확인하지 못한 전사의 해석이나 제안을 저장하지 않았습니다.",
         )
     reactions = {card.card_id: card.reaction for card in request.cards}
 
