@@ -767,7 +767,7 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
@@ -780,6 +780,7 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
   });
@@ -793,6 +794,7 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
@@ -1036,6 +1038,7 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
     );

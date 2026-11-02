@@ -239,13 +239,15 @@ CREATE TABLE speech_analysis_jobs (
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     completed_at      TIMESTAMPTZ,
+    retry_of_analysis_id UUID REFERENCES speech_analysis_jobs(analysis_id) ON DELETE SET NULL,
+    CONSTRAINT uq_speech_analysis_retry_parent UNIQUE (retry_of_analysis_id),
     CHECK (CASE WHEN status = 'uploading' THEN size_bytes IS NULL AND sha256 IS NULL
                 WHEN status = 'failed' AND size_bytes IS NULL THEN sha256 IS NULL
                 ELSE size_bytes IS NOT NULL AND size_bytes > 0
                      AND sha256 IS NOT NULL AND sha256 ~ '^[0-9a-f]{64}$' END),
     CHECK (status <> 'failed' OR error_code IS NOT NULL),
     CHECK (status NOT IN ('uploading', 'transcribing', 'generatingReport') OR lease_expires_at IS NOT NULL),
-    CHECK (transcript IS NULL OR status IN ('sttCompleted', 'generatingReport')),
+    CHECK (transcript IS NULL OR status IN ('sttCompleted', 'generatingReport', 'failed')),
     CHECK (status <> 'sttCompleted' OR transcript IS NOT NULL),
     CHECK (transcript IS NULL OR transcript_expires_at IS NOT NULL),
     CHECK (transcript_deleted_at IS NULL OR transcript IS NULL)

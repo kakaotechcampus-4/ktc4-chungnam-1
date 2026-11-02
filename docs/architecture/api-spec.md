@@ -938,17 +938,18 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 변경 사항
 
-- `audioPending` 상태의 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
-- 업로드 단계에서 실패한 작업만 있으면 새 작업을 만든다.
+- 보호자 평가를 제출한 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
+- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다.
+- 유효한 전사가 남은 실패 작업은 `REPORT_RETRY_AVAILABLE`로 6-5 사용을 안내한다.
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
-- 접수 후 실패했거나 완료된 회차는 다시 받지 않는다.
-- 앱은 `202`를 받으면 단말의 WAV 파일을 삭제한다.
+- 완료한 회차는 다시 받지 않는다.
+- 앱은 `202`를 받아도 단말 WAV와 회차 연결을 남긴다. 실패 후 재전송에 사용한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` |
 | 404 | `VISIT_SESSION_NOT_FOUND` |
-| 409 | `EVALUATION_REQUIRED` (신규), `ANALYSIS_SUBMISSION_IN_PROGRESS`, `ANALYSIS_ALREADY_FAILED`, `ANALYSIS_ALREADY_COMPLETED` |
+| 409 | `EVALUATION_REQUIRED`, `ANALYSIS_SUBMISSION_IN_PROGRESS`, `REPORT_RETRY_AVAILABLE`, `ANALYSIS_ALREADY_COMPLETED` |
 | 413 | `AUDIO_TOO_LARGE` |
 | 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` |
 | 503 | `AUDIO_STORAGE_UNAVAILABLE`, `SPEECH_ANALYSIS_NOT_CONFIGURED` |
@@ -990,6 +991,26 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 <br>
 
 ---
+
+### 6-5. `POST /api/v1/speech-analyses/{analysisId}/retry` — 로컬 복구 변경
+
+실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
+기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
+동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
+
+응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
+이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
+
+| HTTP | errorCode | 처리 |
+| --- | --- | --- |
+| 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 재전송으로 우회하지 않고 동의 상태 확인 |
+| 404 | `SPEECH_ANALYSIS_NOT_FOUND` | 다른 계정 또는 없는 작업 |
+| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출 |
+| 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
+| 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
+| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
+
+전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 
 ## 7. 리포트와 변경 제안
 
