@@ -43,7 +43,7 @@ services:
     # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
-    stop_grace_period: 180s
+    stop_grace_period: ${SAEROK_CARD_STOP_GRACE_SECONDS:-360}s
     restart: unless-stopped
 
   speech-worker:
@@ -59,7 +59,7 @@ services:
     # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
-    stop_grace_period: 180s
+    stop_grace_period: ${SAEROK_SPEECH_STOP_GRACE_SECONDS:-1860}s
     restart: unless-stopped
 
   db:
