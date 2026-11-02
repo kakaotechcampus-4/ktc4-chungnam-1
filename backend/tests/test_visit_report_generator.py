@@ -970,22 +970,43 @@ def test_worker_fails_a_timed_out_job_and_ignores_the_late_result(migrated_datab
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
 
+def test_cancelled_deadline_fails_the_check_before_the_time_runs_out():
+    deadline = ReportDeadline(60)
+    deadline.cancel()
+
+    with pytest.raises(AppError) as error:
+        deadline.check()
+
+    assert error.value.error_code == "AI_SERVER_TIMEOUT"
+
+
+@pytest.mark.parametrize("clock", ["real", "not_yet_past"])
 def test_connected_generator_stops_before_the_proposal_call_after_the_time_limit(
-    migrated_database_url, monkeypatch
+    migrated_database_url, monkeypatch, clock
 ):
-    """마감 뒤 남은 스레드가 변경 제안을 위해 전사문을 다시 보내지 않는다."""
+    """마감 뒤 남은 스레드가 변경 제안을 위해 전사문을 다시 보내지 않는다.
+
+    `not_yet_past`는 이벤트 루프가 시간 초과를 확정했는데 스레드가 읽는 시계로는 아직
+    마감 전인 경우다(Windows의 시계 해상도에서 생김). 시계와 관계없이 멈춰야 한다.
+    """
     records = Records(migrated_database_url)
     visit = _evaluated(records)
+    report_started = threading.Event()
     release = threading.Event()
 
     def slow_report(request):
+        report_started.set()
         assert release.wait(10)
         return _ai_report(request)
 
     calls = _connected(monkeypatch, report=slow_report)
+    if clock == "not_yet_past":
+        monkeypatch.setattr(ReportDeadline, "left", lambda self: self.seconds)
 
     with pytest.raises(AppError) as error:
         _generate_with(records, visit, _connected_generator(SHORT_LIMIT_SECONDS))
+    # 시간 초과가 확정된 뒤에 첫 리포트 응답이 도착한다.
+    assert report_started.wait(5)
     release.set()
     _finish_generation_threads()
 

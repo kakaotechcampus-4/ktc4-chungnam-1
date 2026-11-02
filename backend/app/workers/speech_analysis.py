@@ -88,8 +88,8 @@ def report_generator(settings: Settings) -> GenerateReport:
     """ai 패키지의 리포트·변경 제안 생성 함수를 8-3 형식으로 감싼 생성 함수.
 
     리포트와 변경 제안을 차례로 만들고 `combine`으로 8-3 응답 하나로 합친다. 각 호출
-    직전에 마감을 확인해, 제한 시간이 지난 뒤 남은 스레드가 외부 ML API로 전사문을
-    다시 보내지 않게 한다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
+    직전에 마감과 취소 상태를 확인해, 제한 시간이 지난 뒤 남은 스레드가 외부 ML API로
+    전사문을 다시 보내지 않게 한다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
     """
     api_key = settings.ml_api_key.get_secret_value()
     if not api_key:
@@ -112,6 +112,7 @@ def report_generator(settings: Settings) -> GenerateReport:
         try:
             deadline.check()
             report = report_generation.generate_report(sent, model=model, api_key=api_key)
+            # 리포트 응답이 시간 초과 확정 뒤에 와도 변경 제안 호출을 시작하지 않는다.
             deadline.check()
             proposals = proposal_generation.generate_proposals(
                 sent, model=model, api_key=api_key
