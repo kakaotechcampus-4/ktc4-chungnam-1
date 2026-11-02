@@ -55,6 +55,32 @@ class SessionRefresher {
   /// 지금 다시 받는 중인 작업이다. 여러 요청이 함께 401 을 받아도 한 번만 받는다.
   Future<bool>? _running;
 
+  /// 같은 계정으로 새로 받아 바꾼 세션. 예전 `Authorization` → 새 값이다.
+  /// 먼저 보낸 요청의 401 이 늦게 와도 같은 계정의 것인지 가린다.
+  final _renewed = <String, String>{};
+
+  /// 공개 API 가 401 을 받았다. [sentAuthorization] 은 그 요청에 실어 보낸
+  /// 세션이다. `true` 면 지금 세션으로 같은 요청을 한 번 다시 보낸다.
+  ///
+  /// - 보낸 뒤 로그아웃했거나 다른 세션(다른 계정, 다시 로그인)이 되었으면
+  ///   다시 받지도, 다시 보내지도 않는다. 늦게 온 401 로 로그인 상태를 되살리거나
+  ///   다른 계정으로 보내지 않는다.
+  /// - 같은 계정을 그 사이 이미 새로 받았으면 받지 않고 새 세션으로 보낸다.
+  /// - 보낸 세션 그대로면 새로 받는다([refresh]).
+  Future<bool> retryAfterUnauthorized(String? sentAuthorization) async {
+    final current = _ref.read(sessionProvider);
+    if (current == null || sentAuthorization == null) return false;
+    final now = current.authorizationHeader;
+    if (sentAuthorization == now) return refresh();
+
+    var next = _renewed[sentAuthorization];
+    while (next != null) {
+      if (next == now) return true;
+      next = _renewed[next];
+    }
+    return false;
+  }
+
   /// 세션을 새로 받았으면 `true` 다.
   ///
   /// 서버에 닿지 못해 받지 못했으면 세션을 지우지 않고 `false` 다. 지금 닿지
@@ -104,6 +130,10 @@ class SessionRefresher {
             return false;
           }
           await _ref.read(sessionProvider.notifier).start(result);
+          final renewed = _ref.read(sessionProvider);
+          if (before != null && renewed != null) {
+            _renewed[before.authorizationHeader] = renewed.authorizationHeader;
+          }
           return true;
         case ConsentRequiredResult():
           await _lose(SessionConsentRequired(result));

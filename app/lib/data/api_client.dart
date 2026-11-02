@@ -101,9 +101,13 @@ class ApiClient {
   /// 요청을 보내기 전에 부른다. 곧 만료될 세션을 미리 새로 받는 자리다.
   final Future<void> Function()? beforeRequest;
 
-  /// 서버가 401 로 거절하면 부른다. 세션을 새로 받았으면 `true` 이고, 같은
-  /// 요청을 한 번만 다시 보낸다. 없으면 401 을 그대로 실패로 돌려준다.
-  final Future<bool> Function()? reauthenticate;
+  /// 서버가 401 로 거절하면 요청에 실어 보낸 `Authorization` 값과 함께
+  /// 부른다. `true` 면 같은 요청을 한 번만 다시 보낸다. 없으면 401 을 그대로
+  /// 실패로 돌려준다.
+  ///
+  /// 보낸 뒤 로그아웃했거나 다른 세션이 되었으면 다시 보내지 않도록, 어느
+  /// 세션으로 보냈는지 함께 넘긴다.
+  final Future<bool> Function(String? sentAuthorization)? reauthenticate;
 
   final String _baseUrl;
   final http.Client _client;
@@ -210,10 +214,12 @@ class ApiClient {
     Duration limit,
   ) async {
     await beforeRequest?.call();
+    // 이번 요청에 실릴 세션. 401 이 늦게 와도 이 세션의 것인지 가린다.
+    final sent = authorization();
     var response = await _attempt(request, limit);
     if (response.statusCode == 401) {
       final reauthenticate = this.reauthenticate;
-      if (reauthenticate != null && await reauthenticate()) {
+      if (reauthenticate != null && await reauthenticate(sent)) {
         response = await _attempt(request, limit);
       }
     }
@@ -268,7 +274,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   final api = ApiClient(
     authorization: () => ref.read(sessionProvider)?.authorizationHeader,
     beforeRequest: refresher.refreshIfExpiring,
-    reauthenticate: refresher.refresh,
+    reauthenticate: refresher.retryAfterUnauthorized,
   );
   ref.onDispose(api.close);
   return api;
