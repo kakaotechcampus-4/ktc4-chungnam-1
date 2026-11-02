@@ -85,6 +85,7 @@ class ApiClient {
     required this.authorization,
     this.beforeRequest,
     this.reauthenticate,
+    this.continues,
     String baseUrl = apiBaseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
@@ -107,7 +108,19 @@ class ApiClient {
   ///
   /// 보낸 뒤 로그아웃했거나 다른 세션이 되었으면 다시 보내지 않도록, 어느
   /// 세션으로 보냈는지 함께 넘긴다.
+  ///
+  /// 지금은 다시 받지 못했지만 세션이 죽었다고 볼 수 없으면(서버에 닿지 못함,
+  /// 서버의 일시 장애) [ApiFailure] 를 던진다. 그 실패를 원래 요청의 실패로
+  /// 돌려준다. 부르는 쪽은 다시 시도할 수 있는 실패로 보고 보낼 자료를 남긴다.
   final Future<bool> Function(String? sentAuthorization)? reauthenticate;
+
+  /// 요청을 시작할 때의 `Authorization` 값을 받아, 지금 세션이 그 로그인을
+  /// 이어 가는지 답한다. 같은 계정을 새로 받은 세션이면 이어 간다.
+  ///
+  /// 세션을 새로 받기를 기다린 뒤 보내기 전에 묻는다. 그 사이 로그아웃했거나
+  /// 다른 계정으로 로그인했으면 [ApiSignedOutFailure] 로 멈춰, 앞 계정에서 시작한
+  /// 요청을 다른 계정으로 보내지 않는다. 없으면 묻지 않는다.
+  final bool Function(String startedAuthorization)? continues;
 
   final String _baseUrl;
   final http.Client _client;
@@ -209,17 +222,24 @@ class ApiClient {
   /// 401 이면 세션을 새로 받아 한 번만 다시 보낸다. 요청은 보낼 때마다 헤더를
   /// 새로 읽으므로 다시 보내는 요청은 새 세션으로 나간다. 다시 보내도 401 이면
   /// 더 반복하지 않고 실패로 돌려준다.
+  ///
+  /// 세션을 새로 받기를 기다린 뒤에는 시작한 로그인이 이어지는지 보고 보낸다
+  /// ([continues]).
   Future<http.Response> _send(
     Future<http.Response> Function() request,
     Duration limit,
   ) async {
+    // 요청을 시작한 로그인. 기다리는 동안 계정이 바뀌면 보내지 않는다.
+    final started = authorization();
     await beforeRequest?.call();
+    _ensureContinues(started);
     // 이번 요청에 실릴 세션. 401 이 늦게 와도 이 세션의 것인지 가린다.
     final sent = authorization();
     var response = await _attempt(request, limit);
     if (response.statusCode == 401) {
       final reauthenticate = this.reauthenticate;
       if (reauthenticate != null && await reauthenticate(sent)) {
+        _ensureContinues(started);
         response = await _attempt(request, limit);
       }
     }
@@ -235,6 +255,12 @@ class ApiClient {
           : ApiServerFailure(statusCode: response.statusCode);
     }
     return response;
+  }
+
+  void _ensureContinues(String? started) {
+    final continues = this.continues;
+    if (started == null || continues == null) return;
+    if (!continues(started)) throw const ApiSignedOutFailure();
   }
 
   /// 한 번 보낸다. 연결 실패와 시간 초과는 [ApiNetworkFailure] 다.
@@ -275,6 +301,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     authorization: () => ref.read(sessionProvider)?.authorizationHeader,
     beforeRequest: refresher.refreshIfExpiring,
     reauthenticate: refresher.retryAfterUnauthorized,
+    continues: refresher.continues,
   );
   ref.onDispose(api.close);
   return api;

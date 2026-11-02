@@ -12,6 +12,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
 import '../../data/auth_api.dart';
 import 'auth_messages.dart';
 import 'auth_providers.dart';
@@ -47,13 +48,37 @@ final sessionLossProvider = NotifierProvider<SessionLossNotifier, SessionLoss?>(
   SessionLossNotifier.new,
 );
 
+/// 세션을 다시 받아 본 결과다.
+sealed class _Renewal {
+  const _Renewal();
+}
+
+/// 같은 계정으로 새로 받았다.
+final class _Renewed extends _Renewal {
+  const _Renewed();
+}
+
+/// 받지 못했고 원래 요청도 다시 보내지 않는다. 세션을 잃었거나, 받는 동안
+/// 로그아웃하거나 세션이 바뀌었다.
+final class _NotRenewed extends _Renewal {
+  const _NotRenewed();
+}
+
+/// 지금은 받지 못했지만 세션이 죽었다고 볼 수 없다. 세션을 지우지 않는다.
+/// [failure] 를 원래 요청의 실패로 돌려준다.
+final class _TryLater extends _Renewal {
+  const _TryLater(this.failure);
+
+  final ApiFailure failure;
+}
+
 class SessionRefresher {
   SessionRefresher(this._ref);
 
   final Ref _ref;
 
   /// 지금 다시 받는 중인 작업이다. 여러 요청이 함께 401 을 받아도 한 번만 받는다.
-  Future<bool>? _running;
+  Future<_Renewal>? _running;
 
   /// 같은 계정으로 새로 받아 바꾼 세션. 예전 `Authorization` → 새 값이다.
   /// 먼저 보낸 요청의 401 이 늦게 와도 같은 계정의 것인지 가린다.
@@ -67,13 +92,29 @@ class SessionRefresher {
   ///   다른 계정으로 보내지 않는다.
   /// - 같은 계정을 그 사이 이미 새로 받았으면 받지 않고 새 세션으로 보낸다.
   /// - 보낸 세션 그대로면 새로 받는다([refresh]).
+  /// - 서버에 닿지 못했거나 서버가 다시 시도해도 된다고 거절했으면 세션을
+  ///   지우지 않고 [ApiNetworkFailure] 나 다시 시도할 수 있는
+  ///   [ApiServerFailure] 를 던진다. 부르는 쪽이 보낼 자료를 지우지 않게 한다.
   Future<bool> retryAfterUnauthorized(String? sentAuthorization) async {
     final current = _ref.read(sessionProvider);
     if (current == null || sentAuthorization == null) return false;
-    final now = current.authorizationHeader;
-    if (sentAuthorization == now) return refresh();
+    if (sentAuthorization != current.authorizationHeader) {
+      return continues(sentAuthorization);
+    }
+    return switch (await _renew()) {
+      _Renewed() => true,
+      _NotRenewed() => false,
+      _TryLater(:final failure) => throw failure,
+    };
+  }
 
-    var next = _renewed[sentAuthorization];
+  /// 지금 세션이 [startedAuthorization] 로 시작한 로그인을 이어 가는지 답한다.
+  /// 그 세션 그대로이거나 같은 계정으로 새로 받은 세션이면 `true` 다.
+  /// 로그아웃했거나 다른 계정 또는 새 로그인이면 `false` 다.
+  bool continues(String startedAuthorization) {
+    final now = _ref.read(sessionProvider)?.authorizationHeader;
+    if (now == null) return false;
+    String? next = startedAuthorization;
     while (next != null) {
       if (next == now) return true;
       next = _renewed[next];
@@ -83,15 +124,18 @@ class SessionRefresher {
 
   /// 세션을 새로 받았으면 `true` 다.
   ///
-  /// 서버에 닿지 못해 받지 못했으면 세션을 지우지 않고 `false` 다. 지금 닿지
-  /// 못했을 뿐 세션이 죽었다고 단정하지 않는다. 그 밖에 받지 못하면 세션을
-  /// 지우고 [sessionLossProvider] 로 알린 뒤 `false` 다.
+  /// 서버에 닿지 못했거나 서버가 다시 시도해도 된다고(`retryable`) 거절했으면
+  /// 세션을 지우지 않고 `false` 다. 지금 받지 못했을 뿐 세션이 죽었다고 단정하지
+  /// 않는다. 그 밖에 받지 못하면 세션을 지우고 [sessionLossProvider] 로 알린 뒤
+  /// `false` 다.
   ///
   /// 받는 동안 로그아웃하거나 세션이 바뀌었으면 늦게 온 결과를 버리고
   /// `false` 다. 계정 선택 창에서 원래와 다른 계정을 골랐으면 그 계정으로
   /// 바꾸지 않고 로그인 화면에서 다시 고르게 한다. 어느 쪽이든 원래 요청은
   /// 다시 보내지 않는다.
-  Future<bool> refresh() =>
+  Future<bool> refresh() async => await _renew() is _Renewed;
+
+  Future<_Renewal> _renew() =>
       _running ??= _refresh().whenComplete(() => _running = null);
 
   /// 세션이 1분 안에 만료되면 미리 새로 받는다. 세션이 없으면 아무것도 하지 않는다.
@@ -101,7 +145,7 @@ class SessionRefresher {
     await refresh();
   }
 
-  Future<bool> _refresh() async {
+  Future<_Renewal> _refresh() async {
     // 다시 받기 시작한 때의 세션. 받는 동안 이것이 바뀌면 결과를 쓰지 않는다.
     final before = _ref.read(sessionProvider);
     bool changed() => !identical(_ref.read(sessionProvider), before);
@@ -110,43 +154,58 @@ class SessionRefresher {
         .read(googleAuthenticatorProvider)
         .silentIdToken();
     // 계정 선택 창이 떠 있는 동안 로그아웃했으면 이미 로그인 화면이다.
-    if (changed()) return false;
+    if (changed()) return const _NotRenewed();
     if (idToken == null) {
       // 고른 계정이 없거나 조용히 받을 수 없다. 로그인 화면에서 다시 고른다.
       await _lose(const SessionSignedOut());
-      return false;
+      return const _NotRenewed();
     }
 
     try {
       final result = await _ref.read(authApiProvider).signInWithGoogle(idToken);
       // 기다리는 동안 로그아웃했으면 늦게 온 로그인을 저장하지 않는다.
-      if (changed()) return false;
+      if (changed()) return const _NotRenewed();
       switch (result) {
         case AuthenticatedResult():
           // 원래 계정에서 시작한 요청을 다른 계정으로 보내지 않는다.
           final accountId = before?.account.accountId;
           if (accountId != null && result.account.accountId != accountId) {
             await _lose(const SessionSignedOut());
-            return false;
+            return const _NotRenewed();
           }
           await _ref.read(sessionProvider.notifier).start(result);
           final renewed = _ref.read(sessionProvider);
           if (before != null && renewed != null) {
             _renewed[before.authorizationHeader] = renewed.authorizationHeader;
           }
-          return true;
+          return const _Renewed();
         case ConsentRequiredResult():
           await _lose(SessionConsentRequired(result));
-          return false;
+          return const _NotRenewed();
       }
     } on AuthNetworkFailure catch (failure) {
       logAuthFailure(failure);
-      return false;
+      if (changed()) return const _NotRenewed();
+      return const _TryLater(ApiNetworkFailure());
     } on AuthFailure catch (failure) {
       logAuthFailure(failure);
-      if (changed()) return false;
+      if (changed()) return const _NotRenewed();
+      // 서버의 일시 장애다. 인증을 거절한 것이 아니므로 세션을 지우지 않는다.
+      if (failure case AuthServerFailure(
+        :final statusCode,
+        :final errorCode,
+        retryable: true,
+      )) {
+        return _TryLater(
+          ApiServerFailure(
+            statusCode: statusCode,
+            errorCode: errorCode,
+            retryable: true,
+          ),
+        );
+      }
       await _lose(const SessionSignedOut());
-      return false;
+      return const _NotRenewed();
     }
   }
 
