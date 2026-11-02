@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 from card_generation._steps.deadline import Deadline
 from common.structured import invoke_structured
 
+_MEDICAL_BANNED = [r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
 _BANNED = [r"기억\s*나세요", r"기억\s*하세요", r"기억하시", r"기억나시", r"요즘", r"오늘", r"어제", r"방금", r"지난주",
-          r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
+          *_MEDICAL_BANNED]
 
 
 class WritingFailed(RuntimeError):
@@ -71,6 +72,11 @@ def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
     for c in result.cards:
         if not c.description.strip():
             out.append(f"{c.position}번: 설명이 비어 있다.")
+        # 질문에 적용하던 의료 표현 검사를 설명에도 적용한다. 시간 표현과 물음표는
+        # 보호자에게 보여 주는 설명의 조건이 아니므로 질문 검사와 구분한다.
+        hit = next((b for b in _MEDICAL_BANNED if re.search(b, c.description)), None)
+        if hit:
+            out.append(f"{c.position}번: 설명에 쓰면 안 되는 의료 표현({hit})이 있다.")
         if len(c.follow_up_questions) != 3:
             out.append(f"{c.position}번: 꼬리 질문이 {len(c.follow_up_questions)}개다. 3개여야 한다.")
         for q in [c.primary_question, *c.follow_up_questions]:

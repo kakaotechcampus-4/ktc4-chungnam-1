@@ -2,6 +2,9 @@
 
 from card_generation._steps.write import _CardText, _problems, _WritingResult
 
+import pytest
+from card_generation._steps import write
+
 
 def _text(pos: int, description: str = "설명") -> _CardText:
     return _CardText(position=pos, description=description, primary_question="어떤 노래였어요?",
@@ -11,3 +14,33 @@ def _text(pos: int, description: str = "설명") -> _CardText:
 def test_blank_description_is_sent_back():
     result = _WritingResult(cards=[_text(1), _text(2, description=" ")])
     assert _problems(result, [1, 2]) == ["2번: 설명이 비어 있다."]
+
+
+@pytest.mark.parametrize("description", ["치매를 치료합니다.", "증상을 완화합니다.", "치료 효과가 있어요."])
+def test_description_uses_existing_medical_expression_guard(description):
+    problems = _problems(_WritingResult(cards=[_text(1, description)]), [1])
+    assert len(problems) == 1 and "설명" in problems[0]
+
+
+@pytest.mark.parametrize("description", ["좋아하는 노래 이야기를 나누는 카드예요.", "오늘 대화에서 함께 볼 카드예요."])
+def test_normal_description_does_not_use_question_only_rules(description):
+    assert _problems(_WritingResult(cards=[_text(1, description)]), [1]) == []
+
+
+@pytest.mark.parametrize("still_unsafe", [False, True])
+def test_unsafe_description_is_rewritten_once_or_fails(monkeypatch, still_unsafe):
+    calls = []
+
+    def invoke(*args):
+        calls.append(args)
+        unsafe = len(calls) == 1 or still_unsafe
+        return _WritingResult(cards=[_text(1, "치매를 치료합니다." if unsafe else "노래 이야기예요.")])
+
+    monkeypatch.setattr(write, "invoke_structured", invoke)
+    if still_unsafe:
+        with pytest.raises(write.WritingFailed):
+            write.write_cards(object(), {}, [{"position": 1}], "합성 시험 지시")
+    else:
+        result, problems = write.write_cards(object(), {}, [{"position": 1}], "합성 시험 지시")
+        assert result.cards[0].description == "노래 이야기예요." and problems
+    assert len(calls) == 2
