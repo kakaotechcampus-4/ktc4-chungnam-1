@@ -1,0 +1,23 @@
+{
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "context": {
+    "ageRange": "90s",
+    "profileFacts": {
+      "occupation": "초등학교 급식실 조리원",
+      "hometown": null,
+      "hobby": null,
+      "family": null
+    },
+    "lifeFacts": [],
+    "photos": [
+      {
+        "photoId": "f9dc54d4-ecdd-5cd1-9517-8788ad58fa30",
+        "description": "컬러 사진. 텃밭에 고추 모종이 줄지어 있고 밀짚모자가 놓여 있다. 사람은 보이지 않는다."
+      }
+    ],
+    "topics": [],
+    "visits": [],
+    "pastCards": []
+  }
+}

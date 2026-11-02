@@ -1,0 +1,12 @@
+{
+  "model": "gpt-5.6-luna",
+  "promptVersion": "proposals-3",
+  "lifeFactProposals": [],
+  "topicProposals": [
+    {
+      "cardId": "rc-7",
+      "suggestedAction": "more",
+      "reason": "군자란의 물주기와 분갈이, 꽃 색깔에 대해 구체적으로 길게 말씀하셨고 보호자도 꽃 이야기를 즐거워하셨다고 평가했다."
+    }
+  ]
+}
