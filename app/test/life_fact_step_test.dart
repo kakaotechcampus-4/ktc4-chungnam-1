@@ -934,6 +934,44 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('옮기는 중과 보내지 못했을 때는 마이크를 누를 수 있는 버튼으로 읽지 않는다', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      final speech = _FixedSpeech(
+        const SpeechHeard('합성 문장입니다'),
+        const Duration(milliseconds: 200),
+        queued: [const SpeechFailed(canResend: true)],
+      );
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+
+      // 옮기는 중: 마이크는 누를 수 없으므로 상태 문구만 읽는다.
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(find.semantics.byLabel('음성 입력 종료'), findsNothing);
+      expect(find.semantics.byLabel('말씀을 글로 옮기고 있어요'), findsOne);
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // 보내지 못함: 할 일은 재시도 하나로 읽는다.
+      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('재시도')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
     testWidgets('직접 입력칸은 쓰기 전후 모두 항목 이름을 읽는다', (tester) async {
       final handle = tester.ensureSemantics();
       _useReferenceScreen(tester);

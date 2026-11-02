@@ -23,7 +23,8 @@ Future<void> showVisitCardsSheet(BuildContext context) {
     backgroundColor: AppColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
     barrierColor: Colors.black54,
-    // 지정하지 않으면 앱 언어(영어)의 `Scrim` 이 읽힌다(접근성 보고서 8쪽).
+    // 지정하지 않으면 앱 언어(영어)의 `Scrim` 이 읽힌다. 보고서 8쪽은 마이페이지
+    // 메뉴를 짚었고, 같은 문제라 이 시트에도 붙인다.
     barrierLabel: '대화 카드 닫기',
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),

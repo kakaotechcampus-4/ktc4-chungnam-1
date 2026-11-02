@@ -423,7 +423,8 @@ class _CardPeek extends StatefulWidget {
   /// 하단 안전영역까지 포함한 전체 높이.
   final double height;
 
-  final VoidCallback onOpen;
+  /// 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
+  final Future<void> Function() onOpen;
 
   /// 기준 화면에서 쓰는 높이. 짧은 기기에서는 이보다 줄어든다.
   static const maxHeight = 380.0;
@@ -449,12 +450,18 @@ class _CardPeekState extends State<_CardPeek> {
   static const _dragDistance = 48.0;
 
   double _dragged = 0;
+
+  /// 한 번의 끌어올리기에서 시트가 두 번 열리지 않게 막는다. 시트가 닫히면
+  /// 푼다. 끌기 시작에서만 풀면 끌 수 없는 화면 낭독기 사용자는 한 번 닫은 뒤
+  /// 다시 꺼낼 수 없다.
   bool _opening = false;
 
   void _open() {
     if (_opening) return;
     _opening = true;
-    widget.onOpen();
+    widget.onOpen().whenComplete(() {
+      if (mounted) _opening = false;
+    });
   }
 
   @override
@@ -473,10 +480,7 @@ class _CardPeekState extends State<_CardPeek> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _open,
-        onVerticalDragStart: (_) {
-          _dragged = 0;
-          _opening = false;
-        },
+        onVerticalDragStart: (_) => _dragged = 0,
         onVerticalDragUpdate: (details) {
           _dragged += details.delta.dy;
           if (_dragged < -_dragDistance) _open();
