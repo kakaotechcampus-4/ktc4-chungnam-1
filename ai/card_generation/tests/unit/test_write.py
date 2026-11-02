@@ -17,12 +17,19 @@ def test_blank_description_is_sent_back():
 
 
 @pytest.mark.parametrize("description", ["치매를 치료합니다.", "증상을 완화합니다.", "치료 효과가 있어요."])
-def test_description_uses_existing_medical_expression_guard(description):
+def test_description_rejects_direct_medical_effect_claim(description):
     problems = _problems(_WritingResult(cards=[_text(1, description)]), [1])
     assert len(problems) == 1 and "설명" in problems[0]
 
 
-@pytest.mark.parametrize("description", ["좋아하는 노래 이야기를 나누는 카드예요.", "오늘 대화에서 함께 볼 카드예요."])
+@pytest.mark.parametrize("description", [
+    "좋아하는 노래 이야기를 나누는 카드예요.",
+    "오늘 대화에서 함께 볼 카드예요.",
+    "병원에서 일하던 경험을 나누는 카드예요.",
+    "치매를 치료하는 기능은 아니에요.",
+    "치료 효과가 있다고 볼 수 없어요.",
+    "약을 드셨는지 보호자가 적은 소감을 참고해요.",
+])
 def test_normal_description_does_not_use_question_only_rules(description):
     assert _problems(_WritingResult(cards=[_text(1, description)]), [1]) == []
 

@@ -16,10 +16,15 @@ from pydantic import BaseModel, Field
 
 from card_generation._steps.deadline import Deadline
 from common.structured import invoke_structured
+from common.medical_claims import has_medical_effect_claim
 
 _MEDICAL_BANNED = [r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
 _BANNED = [r"기억\s*나세요", r"기억\s*하세요", r"기억하시", r"기억나시", r"요즘", r"오늘", r"어제", r"방금", r"지난주",
           *_MEDICAL_BANNED]
+_DESCRIPTION_EFFECT = re.compile(
+    r"(?:치료|예방)\s*효과가\s*(?:있어요|있습니다|있다[.!]|뛰어나|좋아요)|"
+    r"증상을\s*(?:완화합니다|완화해요|개선합니다|개선해요)"
+)
 
 
 class WritingFailed(RuntimeError):
@@ -72,11 +77,10 @@ def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
     for c in result.cards:
         if not c.description.strip():
             out.append(f"{c.position}번: 설명이 비어 있다.")
-        # 질문에 적용하던 의료 표현 검사를 설명에도 적용한다. 시간 표현과 물음표는
-        # 보호자에게 보여 주는 설명의 조건이 아니므로 질문 검사와 구분한다.
-        hit = next((b for b in _MEDICAL_BANNED if re.search(b, c.description)), None)
-        if hit:
-            out.append(f"{c.position}번: 설명에 쓰면 안 되는 의료 표현({hit})이 있다.")
+        # 병원에서 일한 경험이나 효과를 보장하지 않는다는 안내까지 막지 않는다.
+        # 설명에는 직접적인 효능 주장을 검사하고 기존 질문 규칙은 그대로 둔다.
+        if has_medical_effect_claim(c.description) or _DESCRIPTION_EFFECT.search(c.description):
+            out.append(f"{c.position}번: 설명에 의료 효과를 보장하는 표현이 있다.")
         if len(c.follow_up_questions) != 3:
             out.append(f"{c.position}번: 꼬리 질문이 {len(c.follow_up_questions)}개다. 3개여야 한다.")
         for q in [c.primary_question, *c.follow_up_questions]:
