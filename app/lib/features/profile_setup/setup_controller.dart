@@ -287,7 +287,7 @@ class SetupController extends Notifier<SetupState> {
 
       _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploading));
       try {
-        await uploader.upload(photo.picked);
+        await uploader.upload(photo.picked, profileId: state.remoteId);
         if (!ref.mounted) return;
         _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploaded));
       } on PhotoUploadFailure catch (failure) {

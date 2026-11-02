@@ -104,7 +104,9 @@ Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스
 
 B-7 사진 올리기는 기기 앨범에서 최대 5장을 고르고, 고른 사진은 X로 뺄 수 있다. 앨범은 [photo_picker.dart](lib/features/profile_setup/photo_picker.dart)의 `PhotoPicker` 뒤에 두어 테스트에서 바꿔 끼운다. 안드로이드 시스템 사진 선택기를 쓰므로 저장소 권한을 받지 않는다. 고른 사진은 단말 경로로만 들고 있다가 `마치기`를 누를 때 한 장씩 올린다. 그래서 그 전에는 X로 빼도 서버에 남지 않는다.
 
-올리는 동안에는 빼기, 추가와 뒤로 가기를 막는다. 사진마다 `완료` 또는 `실패`를 표시하고, 모두 올리면 `홈으로`를 눌러 넘어간다. 사진 분석은 기다리지 않는다. 실패한 사진은 다시 올리거나 빼고 마칠 수 있다. 용량 초과와 형식 오류처럼 다시 올려도 안 되는 실패에는 `다시 올리기`를 보여주지 않는다. 올라간 사진은 지우는 API가 없어 X를 숨긴다. 업로드는 [photo_uploader.dart](lib/features/profile_setup/photo_uploader.dart)의 `PhotoUploader` 뒤에 둔 목이며 0.8초 뒤 성공한다. API 3-1과 그 앞의 프로필 생성(2-2)이 앱에 연결되면 이 자리를 바꾼다.
+올리는 동안에는 빼기, 추가와 뒤로 가기를 막는다. 사진마다 `완료` 또는 `실패`를 표시하고, 모두 올리면 `홈으로`를 눌러 넘어간다. 사진 분석은 기다리지 않는다. 실패한 사진은 다시 올리거나 빼고 마칠 수 있다. 용량 초과와 형식 오류처럼 다시 올려도 안 되는 실패에는 `다시 올리기`를 보여주지 않는다. 올라간 사진은 지우는 API가 없어 X를 숨긴다. 업로드는 [photo_uploader.dart](lib/features/profile_setup/photo_uploader.dart)의 `PhotoUploader` 뒤에 둔다. 로그인했으면 `ServerPhotoUploader`가 기본 정보를 마칠 때 만든 서버 프로필(2-2)에 3-1(`image` 필드의 multipart)로 올린다. 서버의 `errorCode`를 그대로 실패 문구로 옮기고, 서버가 `retryable`로 알렸거나 서버에 닿지 못했을 때만 `다시 올리기`를 둔다. 로그인 없이 들어오면 목 업로더가 0.8초 뒤 성공한다.
+
+**사진 분석 동의는 아직 확인하지 않는다.** 3-1은 올린 사진마다 분석 작업(8-4)을 만들지만, 계정별 분석 동의의 필드와 API는 후속 계약이다(`api-spec.md` 3절, ADR-001). 그래서 지금은 합성 사진으로만 확인하며, 실제 사용자 사진에 쓰기 전에 분석 동의 확인을 붙여야 한다.
 
 B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했어요` → `말씀을 글로 옮기고 있어요` 순서로 나눠 보여준다. 옮기는 중에는 마이크와 방법 바꾸기를 누를 수 없다. 이를 위해 [speech_input.dart](lib/features/profile_setup/speech_input.dart)의 `SpeechInput`을 녹음 시작(`start`)과 녹음 끝(`SpeechRecording.finish`)으로 나눴다.
 
@@ -138,6 +140,9 @@ B-3 ~ B-6 세부 정보의 음성 입력은 `듣고 있어요` → `다 말했�
 | `ready` | 4-3으로 묶음을 받아 카드 고르기 |
 | 기다리다 `failed` | `대화 카드를 만들지 못했어요.` + 다시 시도. 4-2가 실패 이유를 주지 않아 정보 부족과 그 밖의 실패를 가르지 못한다 |
 | `inVisit` | `아직 마치지 않은 면회가 있어요.` 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다 |
+| `ready` + `needsRefresh` | 카드는 보여주되 고르거나 시작하지 못하게 하고 `카드를 받은 뒤 어르신 정보가 바뀌었어요.` 안내와 `다음 대화 준비하기`를 둔다. 누르면 4-1로 다시 만들고 `running`과 같이 기다린다. 4-3 묶음의 `needsRefresh`가 `true`여도 같다 |
+
+`needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고친 묶음이다(BE #161). 앱은 [card_api.dart](lib/data/card_api.dart)에서 `ready`와 따로 `CardGenerationStatus.needsRefresh`로 받고, 값이 없으면 `false`로 본다. 들어올 때 자동으로 다시 만들지 않고 보호자가 버튼을 누를 때 만든다(PM 기준 사실 정정과 다음 면회 카드 반영). 카드 화면을 연 뒤 고쳐서 5-1이 `CARD_SET_NEEDS_REFRESH`로 거절하면 녹음 안내 화면에 카드 화면으로 돌아가 다시 준비하라고 알리고, 뒤의 카드 화면은 상태를 다시 물어 `다음 대화 준비하기`를 보여준다. 카드를 만드는 중에 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절하면 `profileFailureMessage`가 카드가 준비된 뒤 다시 하라고 안내한다. 고친 정보를 근거로 한 카드만 표시하거나 다시 만드는 것은 PM과 BE가 정하는 중이라 넣지 않았다.
 
 연결 실패와 서버 거절은 오류 안내와 `다시 시도`를 보여준다. 카드 provider는 Riverpod의 자동 재시도를 끈다. 다시 시도하면 4-1을 또 보내므로 버튼으로만 다시 한다. 목 묶음은 테스트에서만 쓰며(`test/fake_card_api.dart`), 서버에 저장한 프로필이 앱에 연결되기 전에는 실제 실행에서 카드를 받을 수 없다.
 
@@ -145,7 +150,7 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
 
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
-`/profile`의 로그아웃과 `/profile/delete`의 탈퇴하기는 서버에 연결했다([로그아웃과 탈퇴](#로그아웃과-탈퇴)). `/profile`의 갤러리는 올린 사진을 세 칸씩 보여주고, 분석이 끝나지 않은 사진에는 `분석 중`, 실패한 사진에는 `분석 실패`를 붙인다. 사진을 누르면 그 아래에 AI가 만든 설명(`ProfilePhoto.description`)이 `AI가 만든 설명`이라는 이름표와 함께 펼쳐지고, 보호자가 고쳐 저장하면 이름표가 `사진에 대한 설명`으로 바뀐다. 분석 중인 사진은 설명 대신 상태만 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 설명을 적어 저장할 수 있으며, 저장하면 `분석 실패` 표시를 뗀다. 보호자가 설명을 확인하는 방식과 저장 위치(API 3-3)가 미정이라, 저장은 [photo_description_store.dart](lib/features/profile/photo_description_store.dart)의 목이 앱 안에서만 한다. 목 사진의 `imageUrl`은 계약 예시 주소라 `MockRepository`가 읽을 때 앱에 든 합성 그림으로 바꾼다. 사진은 어르신마다의 `photos[]`이며, 업로드 API(3-1)가 연결되기 전까지 `profileProvider`가 목 사진을 고른 어르신의 것으로 붙인다. 고친 설명은 계정, 어르신, 사진마다 따로 두어 다른 계정이나 다른 어르신에게 보이지 않고, 저장 응답은 저장한 사진에만 반영한다. 로그아웃과 탈퇴로 어르신 정보를 지울 때 함께 지운다.
+`/profile`의 로그아웃과 `/profile/delete`의 탈퇴하기는 서버에 연결했다([로그아웃과 탈퇴](#로그아웃과-탈퇴)). `/profile`의 갤러리는 올린 사진을 세 칸씩 보여주고, 분석이 끝나지 않은 사진에는 `분석 중`, 실패한 사진에는 `분석 실패`를 붙인다. 사진을 누르면 그 아래에 AI가 만든 설명(`ProfilePhoto.description`)이 `AI가 만든 설명`이라는 이름표와 함께 펼쳐지고, 보호자가 고쳐 저장하면 이름표가 `사진에 대한 설명`으로 바뀐다. 분석 중인 사진은 설명 대신 상태만 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 설명을 적어 저장할 수 있으며, 저장하면 `분석 실패` 표시를 뗀다. 보호자가 설명을 확인하는 방식과 저장 위치(API 3-3)가 미정이라, 저장은 [photo_description_store.dart](lib/features/profile/photo_description_store.dart)의 목이 앱 안에서만 한다. 목 사진의 `imageUrl`은 계약 예시 주소라 `MockRepository`가 읽을 때 앱에 든 합성 그림으로 바꾼다. 사진은 어르신마다의 `photos[]`다. 로그인해 서버에 저장한 분은 `serverProfilePhotosProvider`가 2-3 응답의 `photos[]`를 읽고, 분석이 끝나지 않은 사진은 갤러리를 보는 동안 3-2로 5초마다 물어 끝나면 설명이나 `분석 실패`로 바꾼다. 사진 목록을 읽는 중에 갤러리를 닫으면 늦게 온 응답으로 묻기 시작하지 않는다. 읽지 못하면 사진이 없다고 하지 않고 `다시 시도`를 둔다. 조회 주소(`imageUrl`)는 수명이 짧아 갤러리를 다시 열 때 새로 받는다. 로그인 없이 들어온 분은 `profileProvider`가 목 사진을 고른 어르신의 것으로 붙인다. 고친 설명은 계정, 어르신, 사진마다 따로 두어 다른 계정이나 다른 어르신에게 보이지 않고, 저장 응답은 저장한 사진에만 반영한다. 로그아웃과 탈퇴로 어르신 정보를 지울 때 함께 지운다.
 
 `/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
 
@@ -536,7 +541,7 @@ API별 요청은 이 틀 위에 따로 둔다.
 
 | 파일 | API |
 | --- | --- |
-| [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다 |
+| [card_api.dart](lib/data/card_api.dart) | 4-1 카드 생성 요청, 4-2 상태, 4-3 묶음 조회. 4-1이 `CARD_SET_READY`, `VISIT_IN_PROGRESS`로 거절되면 실패가 아니라 `ready`, `inVisit` 상태로 받는다. 4-2의 `ready`에 `needsRefresh: true`가 붙으면 `needsRefresh` 상태로 받는다 |
 | [visit_api.dart](lib/data/visit_api.dart) | 5-1 회차 만들기, 5-3 보충 카드 더하기, 6-1 보호자 평가 저장, 6-2 녹음 제출(multipart). 6-1이 `EVALUATION_ALREADY_SUBMITTED`로 거절되면 이미 저장한 것으로 본다 |
 | [speech_api.dart](lib/data/speech_api.dart) | 세부 정보 음성의 짧은 전사 `POST /api/v1/speech-transcriptions`(multipart `audio`, 이슈 #138). 명세 반영 전이며 결과를 2분까지 기다린다 |
 

@@ -265,7 +265,7 @@ class _BodyState extends ConsumerState<_Body> {
       _Section(
         title: '갤러리',
         onEdit: () {},
-        child: ProfileGallery(photos: bundle.photos),
+        child: _Gallery(mockPhotos: bundle.photos),
       ),
       const SizedBox(height: AppSpacing.section),
     ];
@@ -398,6 +398,39 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
     return SecondaryButton(
       label: _busy ? '로그아웃하는 중이에요' : '로그아웃',
       onPressed: _busy ? null : _signOut,
+    );
+  }
+}
+
+/// 갤러리의 사진. 서버에 저장한 분은 서버의 사진(2-3)을, 로그인 없이 들어온
+/// 분은 목 사진을 보여준다.
+///
+/// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
+class _Gallery extends ConsumerWidget {
+  const _Gallery({required this.mockPhotos});
+
+  final List<ProfilePhoto> mockPhotos;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final server = ref.watch(serverProfilePhotosProvider);
+    return server.when(
+      data: (photos) => ProfileGallery(photos: photos ?? mockPhotos),
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('사진을 불러오지 못했어요.', style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            label: '다시 시도',
+            onPressed: () => ref.invalidate(serverProfilePhotosProvider),
+          ),
+        ],
+      ),
     );
   }
 }

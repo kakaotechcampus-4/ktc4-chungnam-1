@@ -56,7 +56,7 @@ class _FakeUploader implements PhotoUploader {
   final attempts = <String>[];
 
   @override
-  Future<void> upload(PickedPhoto photo) async {
+  Future<void> upload(PickedPhoto photo, {String? profileId}) async {
     attempts.add(photo.path);
     final gate = this.gate;
     if (gate != null) await gate.future;
@@ -398,7 +398,7 @@ void main() {
 /// 서버 오류가 아닌 예외로 실패한다. 연결이 끊긴 경우다.
 class _ThrowingUploader extends _FakeUploader {
   @override
-  Future<void> upload(PickedPhoto photo) async {
+  Future<void> upload(PickedPhoto photo, {String? profileId}) async {
     attempts.add(photo.path);
     throw const _ConnectionLost();
   }

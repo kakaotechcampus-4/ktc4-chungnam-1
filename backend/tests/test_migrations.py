@@ -395,3 +395,55 @@ def test_life_fact_story_columns_fill_existing_rows_and_reject_bad_values(
         assert {"story_category", "image_number"}.isdisjoint(columns)
     finally:
         engine.dispose()
+
+
+def test_card_set_stale_at_is_only_for_unused_completed_sets(
+    alembic_config, test_database_url
+):
+    """카드 묶음의 `stale_at`(e5a1c7d93b42). 기존 묶음은 NULL이고, 면회에 안 쓴 완료 묶음에만
+    찍을 수 있음."""
+    command.upgrade(alembic_config, "b7e2c4a9d153")
+    engine = sa.create_engine(test_database_url)
+    insert_set = sa.text(
+        "INSERT INTO card_sets"
+        " (profile_id, session_id, status, model, prompt_version, generation_log)"
+        " VALUES (:profile_id, :session_id, :status, 'gpt-5.6-luna', '1', :log) RETURNING set_id"
+    )
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            session_id = _insert_visit_session(conn, profile_id)
+            used, unused, running = (
+                conn.execute(
+                    insert_set,
+                    {"profile_id": profile_id, "session_id": session, "status": status, "log": log},
+                ).scalar_one()
+                for session, status, log in (
+                    (session_id, "completed", '{"input": {}}'),
+                    (None, "completed", '{"input": {}}'),
+                    (None, "running", None),
+                )
+            )
+
+        command.upgrade(alembic_config, "head")
+
+        with engine.begin() as conn:
+            stale = conn.execute(sa.text("SELECT stale_at FROM card_sets")).scalars().all()
+            assert stale == [None, None, None]
+            conn.execute(
+                sa.text("UPDATE card_sets SET stale_at = now() WHERE set_id = :set_id"),
+                {"set_id": unused},
+            )
+        for set_id in (used, running):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    sa.text("UPDATE card_sets SET stale_at = now() WHERE set_id = :set_id"),
+                    {"set_id": set_id},
+                )
+
+        command.downgrade(alembic_config, "b7e2c4a9d153")
+        with engine.begin() as conn:
+            columns = {c["name"] for c in sa.inspect(conn).get_columns("card_sets")}
+        assert "stale_at" not in columns
+    finally:
+        engine.dispose()
