@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
@@ -345,6 +346,15 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     // 남기고 예시와 방법 바꾸기를 숨긴다. 키보드를 내리면 되돌린다.
     final typing = _phase == _Phase.manualInput && _keyboardOpen;
 
+    // 녹음이 시작된 뒤 다 말했다고 알리거나 5분에 닿을 때까지만 화면을 켜
+    // 둔다. 글로 옮기는 중, 시작 실패와 화면을 벗어날 때는 놓는다.
+    return KeepScreenOn(
+      enabled: _recording != null,
+      child: _content(choosing: choosing, typing: typing),
+    );
+  }
+
+  Widget _content({required bool choosing, required bool typing}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

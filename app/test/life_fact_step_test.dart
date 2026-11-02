@@ -14,6 +14,8 @@ import 'package:saerok/features/profile_setup/life_fact_step.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
 
+import 'fake_screen_awake.dart';
+
 /// 정해진 결과만 돌려주는 대역이다. 목 데이터가 아니라 화면 흐름만 본다.
 class _FixedSpeech implements SpeechInput {
   _FixedSpeech(
@@ -94,11 +96,13 @@ Widget _wrap({
   VoidCallback? onCleared,
   _FixedSpeech? speech,
   String? initialText,
+  FakeScreenAwakePlatform? screen,
 }) => ProviderScope(
   overrides: [
     speechInputProvider.overrideWith(
       (ref) async => speech ?? _FixedSpeech(outcome, delay),
     ),
+    if (screen != null) screen.asOverride,
   ],
   child: MaterialApp(
     theme: buildAppTheme(),
@@ -906,6 +910,117 @@ void main() {
 
       await tester.enterText(find.byType(TextField), '합성 문장입니다 이어서');
       expect(captured, '합성 문장입니다 이어서');
+    });
+  });
+
+  group('녹음 중 화면 켜짐', () {
+    testWidgets('듣는 동안만 켜 두고 다 말했다고 알리면 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechHeard('합성 문장입니다'),
+          delay: const Duration(milliseconds: 200),
+          screen: screen,
+        ),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      expect(screen.calls, isEmpty, reason: '마이크를 누르기 전에는 켜지 않는다');
+
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(screen.calls, [true]);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(screen.calls, [true, false], reason: '글로 옮기는 중에는 녹음하지 않는다');
+
+      await tester.pumpAndSettle();
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+      expect(screen.calls, [true, false]);
+    });
+
+    testWidgets('5분에 닿아 저절로 끝나도 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      final speech = _FixedSpeech(const SpeechHeard('합성 문장입니다'), Duration.zero);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech, screen: screen),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+      expect(screen.calls, [true]);
+
+      speech.last!.limit.complete();
+      await tester.pumpAndSettle();
+
+      expect(screen.calls, [true, false]);
+    });
+
+    testWidgets('듣는 중에 화면을 벗어나면 녹음을 버리고 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      final speech = _FixedSpeech(const SpeechNotHeard(), Duration.zero);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech, screen: screen),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+      expect(screen.calls, [true]);
+
+      // 같은 ProviderScope 를 두고 입력 화면만 내린다. 다음 단계로 넘어가는
+      // 것과 같다.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            speechInputProvider.overrideWith((ref) async => speech),
+            screen.asOverride,
+          ],
+          child: const MaterialApp(home: SizedBox.shrink()),
+        ),
+      );
+      await tester.pump();
+
+      expect(screen.calls, [true, false]);
+      expect(speech.cancelled, 1);
+    });
+
+    testWidgets('녹음을 시작하지 못하면 켜지 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: _FixedSpeech(
+            const SpeechNotHeard(),
+            Duration.zero,
+            startFailure: const SpeechStartFailure(
+              SpeechStartProblem.micDenied,
+            ),
+          ),
+          screen: screen,
+        ),
+      );
+
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsOneWidget);
+      expect(screen.calls, isEmpty);
     });
   });
 }
