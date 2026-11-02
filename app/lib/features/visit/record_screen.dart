@@ -21,7 +21,7 @@ import 'visit_recorder.dart';
 /// 둘은 별도 화면이 아니라 이 화면의 상태다.
 ///
 /// 실제 녹음은 [VisitRecorder] 가 한다. 녹음 라이브러리와 음성 형식은 AI 영역이
-/// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작·멈춤·끝내기와
+/// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작, 멈춤, 끝내기와
 /// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
 class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
@@ -77,8 +77,9 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     _closePhotoNotice();
     // 끝내기를 누르지 않고 뒤로 나간 경우다. 열린 파일을 닫지 않으면 WAV 헤더가
     // 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
-    // 없으면 상태가 알아서 지나간다.
-    unawaited(_controller.stopRecording());
+    // 없으면 상태가 알아서 지나간다. 파일은 바로 닫고, 트리 정리 중에 상태를
+    // 바꾸지 않도록 상태 변경은 정리 뒤로 미루는 쪽을 부른다.
+    unawaited(_controller.stopRecordingOnLeave());
     super.dispose();
   }
 

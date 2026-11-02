@@ -498,7 +498,7 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 죽으면 그 자리가 0으로 남아, 소리는 들어 있는데 열 수 없는 파일이 된다.
 
 - `만남 끝내기`뿐 아니라 **녹음 화면을 떠날 때도** 파일을 닫는다
-  (`_RecordScreenState.dispose`).
+  (`_RecordScreenState.dispose`가 `VisitController.stopRecordingOnLeave`를 부른다). 파일 닫기는 그 호출 안에서 바로 시작하고, 닫을 파일이 없을 때의 상태 변경만 다음 microtask로 미룬다. `dispose` 안에서 상태를 바로 바꾸면 디버그 빌드의 Riverpod이 build 중 provider 수정 오류를 던졌다.
 - 닫은 뒤 파일이 정말 `RIFF`로 시작하는지 확인하고, 아니면 저장 실패로 알린다.
   경로가 있다고 성공이라 말하지 않는다.
 - **개발 중 hot restart(`flutter run`의 `R`)는 이 과정을 건너뛴다.** 그때 남은
@@ -528,7 +528,7 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 
 ### 화면 이탈 후 녹음 복원 검증
 
-- `visit_recording_test.dart`: 끝내기 없이 화면을 떠나도 파일을 닫고 회차 연결을 남긴다. 파일 저장 자체가 실패하면 재전송 기록을 만들지 않는다.
+- `visit_recording_test.dart`: 끝내기 없이 화면을 떠나도 파일을 닫고 회차 연결을 남긴다. 파일 저장 자체가 실패하면 재전송 기록을 만들지 않는다. 녹음 전 안내나 녹음을 끝낸 뒤 화면을 떠나도 provider 수정 오류가 나지 않는지, 떠날 때 파일 닫기는 미루지 않고 상태 변경만 미루는지도 본다.
 - `pending_uploads_test.dart`: 참여자 수가 없는 기록도 파일을 찾는다. 저장소를 다시 만들었을 때와 계정별 분리를 검사한다.
 - `submission_test.dart`, `upload_retry_test.dart`: 참여자 수 확인 전에는 보내지 않고, 확인 후 같은 파일을 전송한다. 전송 실패 후에도 원본을 남긴다.
 - `recording_recovery_screen_test.dart`: 412 x 917, 360 x 800 dp와 글자 배율 1.0, 2.0에서 확인, 취소와 전송 흐름을 검사한다.

@@ -432,18 +432,42 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// [participantCount] 는 종료 모달에서 보호자가 확인해 준 사람 수다. 모달을
   /// 거치지 않고 화면을 떠난 경우에는 넘기지 않는다. 확인받지 않은 수를 대신
   /// 지어내지 않는다.
-  Future<void> stopRecording({int? participantCount}) async {
+  ///
+  /// 녹음 화면의 `dispose` 에서는 [stopRecordingOnLeave] 를 쓴다.
+  Future<void> stopRecording({int? participantCount}) =>
+      _stop(participantCount: participantCount, deferStateChange: false);
+
+  /// 녹음 화면이 사라질 때(`State.dispose`) 부른다.
+  ///
+  /// 열린 파일은 [stopRecording] 처럼 이 호출 안에서 바로 닫기 시작한다. 닫을
+  /// 파일이 없을 때의 상태 변경만 다음 microtask 로 미룬다. `dispose` 는 위젯
+  /// 트리를 정리하는 중에 불리므로, 거기서 상태를 바로 바꾸면 디버그 빌드의
+  /// Riverpod 이 `Tried to modify a provider while the widget tree was
+  /// building` 을 던진다. 파일을 닫은 뒤의 상태 변경은 `await` 다음이라 이미
+  /// 정리가 끝난 뒤다.
+  Future<void> stopRecordingOnLeave() =>
+      _stop(participantCount: null, deferStateChange: true);
+
+  Future<void> _stop({
+    required int? participantCount,
+    required bool deferStateChange,
+  }) async {
     _stopTicker();
-    final current = state.value;
-    if (current == null) return;
+    if (state.value == null) return;
 
     if (!_fileOpen) {
-      state = AsyncData(
-        current.copyWith(recording: false, participantCount: participantCount),
+      if (deferStateChange) {
+        await Future<void>.microtask(() {});
+        if (!ref.mounted) return;
+      }
+      _update(
+        (now) =>
+            now.copyWith(recording: false, participantCount: participantCount),
       );
       await _rememberUpload();
       return;
     }
+    final current = state.value!;
     _fileOpen = false;
 
     VisitRecording? saved;
