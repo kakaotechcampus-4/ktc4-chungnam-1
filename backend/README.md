@@ -1,6 +1,6 @@
 # BE 영역
 
-담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. STT는 연결돼 있다. speech-worker가 [AiServerClient](app/clients/ai_server.py)로 `stt-server`를 HTTP로 부르고, 결과 전사로 같은 작업에서 리포트를 만든다([비동기 면회 음성 STT](docs/async-speech-analysis.md)). 세부 정보의 짧은 음성 전사 API(6-6)도 같은 서버를 부르지만 로컬 통합본에만 있고 운영에 올리지 않았다([짧은 음성 전사](docs/short-speech-transcription.md)). VLM(프로필 사진 설명)은 사진 분석 worker가 `ai/`의 `analyze_photo`로 ML API를 부르도록 코드가 연결돼 있으나 로컬 통합본에만 있다. 진입점은 `--synthetic-test-data`를 붙인 합성 사진 테스트 DB에서만 시작하고 production 환경에서는 거절한다. 계정별 사진 분석 동의 필드가 없어 실제 사용자 사진은 분석하지 않으며, 실제 ML API 품질도 검사하지 않았다([사진 분석 연결](docs/photo-analysis.md)).
 
 STT는 Tailscale 사설망으로 연결하는 개인 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 개인 GPU의 처리 성능은 해당 환경에서 검증한 결과로 별도 기록한다.
 
@@ -113,7 +113,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 구성 | 하는 일 | 준비된 것 |
 | --- | --- | --- |
 | 대기열 (`JobQueue`) | 임대 만료 정리, 작업 하나 임대(`claim`), 실패 기록(`fail`). 각 메서드는 짧은 트랜잭션 하나 | 음성 `SpeechAnalysisQueue`, 카드 생성 [CardGenerationQueue](app/services/card_generation_jobs.py), 사진 분석 [PhotoAnalysisQueue](app/services/photo_analysis_jobs.py) |
-| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`. 카드 생성과 사진 분석은 각 담당이 만든다 |
+| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 분석 [PhotoAnalysisProcessor](app/services/photo_analysis_pipeline.py)(합성 자료 전용) |
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
