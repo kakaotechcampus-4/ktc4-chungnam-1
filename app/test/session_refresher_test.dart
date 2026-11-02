@@ -62,7 +62,10 @@ http.Response _json(Object body, int status) => http.Response(
   headers: const {'content-type': 'application/json; charset=utf-8'},
 );
 
-Map<String, Object?> _authenticated(String token) => {
+Map<String, Object?> _authenticated(
+  String token, {
+  String accountId = 'acc_test_0001',
+}) => {
   'schemaVersion': 1,
   'status': 'authenticated',
   'accessToken': token,
@@ -70,7 +73,7 @@ Map<String, Object?> _authenticated(String token) => {
   'expiresIn': 3600,
   'account': {
     'schemaVersion': 1,
-    'accountId': 'acc_test_0001',
+    'accountId': accountId,
     'authProvider': 'google',
     'displayName': '보호자',
     'email': null,
@@ -221,6 +224,58 @@ void main() {
 
       expect(h.session, isNull);
       expect(h.loss, isA<SessionSignedOut>());
+    });
+  });
+
+  group('다시 받는 동안 바뀐 것', () {
+    test('계정 선택 창에서 다른 계정을 고르면 바꾸지 않고 로그인부터 하게 한다', () async {
+      final h = _Harness(
+        server: (_) async =>
+            _json(_authenticated('other-token', accountId: 'acc_other'), 200),
+      );
+      addTearDown(h.container.dispose);
+
+      expect(await h.refresher.refresh(), isFalse, reason: '원래 요청을 다시 보내지 않는다');
+
+      expect(h.session, isNull, reason: '다른 계정의 세션을 쓰지 않는다');
+      expect(h.store.stored, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+    });
+
+    test('계정 선택 창이 떠 있는 동안 로그아웃하면 다시 받지 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.gate = Completer<void>();
+
+      final refreshing = h.refresher.refresh();
+      await h.container.read(sessionProvider.notifier).discard();
+      h.google.gate!.complete();
+
+      expect(await refreshing, isFalse);
+      expect(h.requests, isEmpty, reason: '서버에 로그인하러 가지 않는다');
+      expect(h.session, isNull);
+      expect(h.loss, isNull, reason: '이미 로그인 화면이라 다시 옮기지 않는다');
+    });
+
+    test('서버 응답을 기다리는 동안 로그아웃하면 늦게 온 로그인을 저장하지 않는다', () async {
+      final answer = Completer<void>();
+      final h = _Harness(
+        server: (_) async {
+          await answer.future;
+          return _json(_authenticated('late-token'), 200);
+        },
+      );
+      addTearDown(h.container.dispose);
+
+      final refreshing = h.refresher.refresh();
+      await Future<void>.delayed(Duration.zero);
+      await h.container.read(sessionProvider.notifier).discard();
+      answer.complete();
+
+      expect(await refreshing, isFalse);
+      expect(h.session, isNull, reason: '로그아웃한 뒤 다시 로그인되지 않는다');
+      expect(h.store.stored, isNull);
+      expect(h.loss, isNull);
     });
   });
 
