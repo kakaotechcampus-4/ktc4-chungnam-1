@@ -37,6 +37,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
+from common.medical_claims import has_medical_effect_claim
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -242,6 +243,16 @@ async def build_request(
 
 def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
     """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    generated_texts = [
+        result.title, result.body,
+        *(item.summary for item in result.card_summaries),
+        *(item.reason for item in result.topic_proposals),
+        *(text for item in result.life_fact_proposals
+          for text in (item.title, item.content, item.reason)),
+    ]
+    if any(has_medical_effect_claim(text) for text in generated_texts):
+        raise AppError(status_code=502, error_code="UNSAFE_MEDICAL_CLAIM",
+                       message="리포트에 확인되지 않은 의료 효과 표현이 있어 저장하지 않았습니다.")
     reactions = {card.card_id: card.reaction for card in request.cards}
 
     summary_cards = [summary.card_id for summary in result.card_summaries]
