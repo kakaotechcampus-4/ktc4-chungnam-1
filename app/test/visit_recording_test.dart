@@ -11,9 +11,12 @@ import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
+import 'package:saerok/features/visit/pending_uploads.dart';
 
 import 'fake_card_api.dart';
 import 'fake_visit_recorder.dart';
+import 'fake_pending_uploads.dart';
+import 'fake_visit_api.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -120,10 +123,11 @@ void main() {
     testWidgets('끝내기를 누르지 않고 나가도 파일을 닫는다', (tester) async {
       // 닫지 않으면 WAV 헤더가 쓰이지 않아 재생할 수 없는 파일이 남는다.
       final recorder = FakeVisitRecorder();
+      final uploads = FakePendingUploads();
       final container = ProviderContainer(
         overrides: [
           visitRecorderProvider.overrideWithValue(recorder),
-          ...withMockCards,
+          ...mockCardsWith(pendingUploads: uploads),
         ],
       );
       addTearDown(container.dispose);
@@ -160,6 +164,8 @@ void main() {
       await tester.pump();
 
       expect(recorder.calls, contains('stop'));
+      expect(uploads.saved[FakeVisitApi.sessionId]?.audioPath, isNotNull);
+      expect(uploads.saved[FakeVisitApi.sessionId]?.participantCount, isNull);
       expect(
         container.read(visitControllerProvider).value!.participantCount,
         isNull,
@@ -217,6 +223,12 @@ void main() {
       final state = read(container);
       expect(state.recording, isFalse);
       expect(state.problem, VisitRecordingProblem.saveFailed);
+      expect(
+        await container
+            .read(pendingUploadsProvider)
+            .find(FakeVisitApi.sessionId),
+        isNull,
+      );
     });
 
     test('끝냈는데 파일이 없으면 저장 실패로 알린다', () async {

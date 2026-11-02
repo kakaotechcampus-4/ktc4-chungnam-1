@@ -39,8 +39,8 @@ class PendingUpload {
   /// 녹음 파일의 절대 경로.
   final String audioPath;
 
-  /// 녹음을 끝낼 때 보호자가 확인한 1~8.
-  final int participantCount;
+  /// 보호자가 확인한 1~8. 확인창 없이 나갔다면 null이며, 전송 전에 다시 묻는다.
+  final int? participantCount;
 }
 
 abstract interface class PendingUploads {
@@ -119,14 +119,18 @@ class DevicePendingUploads implements PendingUploads {
       if (entry['uploaded'] == true) return null;
       final name = entry['fileName'];
       final count = entry['participantCount'];
-      if (name is! String || count is! int) return null;
+      if (name is! String || name.contains('/') || name.contains('\\')) {
+        return null;
+      }
 
       final path = '${directory.path}/$name';
       if (!await File(path).exists()) return null;
       return PendingUpload(
         sessionId: sessionId,
         audioPath: path,
-        participantCount: count,
+        participantCount: count is int && count >= 1 && count <= 8
+            ? count
+            : null,
       );
     }
     return null;

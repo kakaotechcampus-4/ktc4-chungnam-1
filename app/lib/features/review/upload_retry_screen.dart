@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../widgets/app_scaffold.dart';
+import '../visit/stop_recording_dialog.dart';
 import 'status_notice.dart';
 import 'upload_retry_controller.dart';
 
@@ -45,6 +46,17 @@ class UploadRetryScreen extends ConsumerWidget {
           onHome: goHome,
         ),
         data: (outcome) => switch (outcome) {
+          UploadRetryOutcome.participantCountRequired => StatusNotice(
+            title: '녹음이 기기에 남아 있어요',
+            body: '함께 대화한 사람 수를 확인하면 이 녹음으로 리포트를 만들 수 있어요.',
+            primaryLabel: '참여자 수 확인하기',
+            onPrimary: () async {
+              final count = await showRecordingParticipantDialog(context);
+              if (count == null || !context.mounted) return;
+              await ref.read(provider.notifier).confirmParticipantCount(count);
+            },
+            onHome: goHome,
+          ),
           UploadRetryOutcome.sent => StatusNotice(
             icon: Icons.check_circle_outline,
             title: '녹음을 보냈어요',

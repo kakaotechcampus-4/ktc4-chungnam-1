@@ -439,10 +439,7 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     if (!_fileOpen) {
       state = AsyncData(
-        current.copyWith(
-          recording: false,
-          participantCount: participantCount,
-        ),
+        current.copyWith(recording: false, participantCount: participantCount),
       );
       await _rememberUpload();
       return;
@@ -471,7 +468,7 @@ class VisitController extends AsyncNotifier<VisitState> {
   }
 
   /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수
-  /// 있게 하려는 것이다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+  /// 있게 하려는 것이다. 참여자 수를 아직 확인하지 않았어도 파일 연결은 남긴다.
   ///
   /// 적지 못해도 면회는 막지 않는다. 앱이 켜져 있는 동안은 이 상태가 파일과
   /// 참여자 수를 들고 있다.
@@ -480,7 +477,11 @@ class VisitController extends AsyncNotifier<VisitState> {
     final sessionId = now?.sessionId;
     final path = now?.recordingPath;
     final count = now?.participantCount;
-    if (sessionId == null || path == null || count == null) return;
+    if (sessionId == null ||
+        path == null ||
+        now?.problem == VisitRecordingProblem.saveFailed) {
+      return;
+    }
 
     try {
       await ref

@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../visit/stop_recording_dialog.dart';
 import 'review_controller.dart';
 import 'status_notice.dart';
 import 'submission_controller.dart';
@@ -41,9 +42,22 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   /// 서버에 남긴 뒤에만 넘어간다. 실패하면 이 화면에 남아 다시 누르게 한다.
   Future<void> _submit() async {
-    final sent = await ref
+    var sent = await ref
         .read(submissionProvider.notifier)
         .submit(resumeSessionId: widget.sessionId);
+    if (!mounted) return;
+    if (!sent &&
+        ref.read(submissionProvider).failure ==
+            SubmissionFailure.participantCountRequired) {
+      final count = await showRecordingParticipantDialog(context);
+      if (count == null || !mounted) return;
+      sent = await ref
+          .read(submissionProvider.notifier)
+          .submit(
+            resumeSessionId: widget.sessionId,
+            confirmedParticipantCount: count,
+          );
+    }
     if (!sent || !mounted) return;
 
     // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
@@ -69,6 +83,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       SubmissionFailure.server => '$what 보내지 못했어요. 잠시 후 다시 눌러주세요.',
       SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
       SubmissionFailure.noRecording => '녹음 파일이 없어 리포트를 만들 수 없어요.',
+      SubmissionFailure.participantCountRequired =>
+        '녹음은 기기에 남아 있어요. 리포트 만들기를 눌러 참여자 수를 확인해 주세요.',
     };
   }
 

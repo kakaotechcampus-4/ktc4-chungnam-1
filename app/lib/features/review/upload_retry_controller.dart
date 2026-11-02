@@ -15,6 +15,9 @@ enum UploadRetryOutcome {
   /// 이 기기에 그 회차의 녹음 기록이나 파일이 없다.
   notFound,
 
+  /// 파일은 남아 있지만 참여자 수를 보호자에게 확인해야 한다.
+  participantCountRequired,
+
   /// 서버가 이미 끝났거나 실패로 끝난 회차라고 했다. 다시 보내도 받지 않는다.
   alreadyClosed,
 }
@@ -40,6 +43,12 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
     final uploads = ref.read(pendingUploadsProvider);
     final pending = await uploads.find(sessionId);
     if (pending == null) return UploadRetryOutcome.notFound;
+    final participantCount = pending.participantCount;
+    if (participantCount == null ||
+        participantCount < 1 ||
+        participantCount > 8) {
+      return UploadRetryOutcome.participantCountRequired;
+    }
 
     final String analysisId;
     try {
@@ -48,7 +57,7 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
           .submitAudio(
             sessionId,
             audioPath: pending.audioPath,
-            participantCount: pending.participantCount,
+            participantCount: participantCount,
           );
     } on ApiServerFailure catch (failure) {
       if (!isClosedAnalysis(failure)) rethrow;
@@ -82,6 +91,30 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
 
   /// 실패 화면의 다시 보내기.
   void retry() => ref.invalidateSelf();
+
+  Future<void> confirmParticipantCount(int count) async {
+    if (state.isLoading || count < 1 || count > 8 || sessionId == null) return;
+    state = const AsyncLoading();
+    try {
+      final uploads = ref.read(pendingUploadsProvider);
+      final pending = await uploads.find(sessionId!);
+      if (!ref.mounted) return;
+      if (pending == null) {
+        state = const AsyncData(UploadRetryOutcome.notFound);
+        return;
+      }
+      await uploads.save(
+        PendingUpload(
+          sessionId: pending.sessionId,
+          audioPath: pending.audioPath,
+          participantCount: count,
+        ),
+      );
+      if (ref.mounted) ref.invalidateSelf();
+    } catch (error, stack) {
+      if (ref.mounted) state = AsyncError(error, stack);
+    }
+  }
 }
 
 /// 자동 재시도는 끈다. 다시 보내기는 화면의 버튼으로만 한다.
