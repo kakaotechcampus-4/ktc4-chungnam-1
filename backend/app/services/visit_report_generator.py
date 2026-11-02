@@ -212,7 +212,15 @@ async def build_request(
     )
     life_facts = [ReportLifeFact(**row) for row in await cursor.fetchall()]
 
+    cursor = await connection.execute(
+        "SELECT participant_count FROM speech_analysis_jobs "
+        "WHERE session_id = %s AND analysis_id::text = %s",
+        (session_id, speech.analysis_id),
+    )
+    job = await cursor.fetchone()
+
     request = VisitReportRequest(
+        participant_count=job["participant_count"] if job else None,
         analysis_id=speech.analysis_id,
         visit_date=session["visit_date"],
         evaluation=ReportEvaluation(

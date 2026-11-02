@@ -34,7 +34,7 @@ import json
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 Reaction = Literal["positive", "neutral", "negative", "notUsed"]
@@ -108,6 +108,7 @@ class VisitReportRequest(_Camel):
     profile_facts: ReportProfileFacts
     life_facts: list[ReportLifeFact]
     transcript: Transcript
+    participant_count: int | None = Field(default=None, ge=1, le=8)
 
 
 # ── 결과 ───────────────────────────────────────────────
@@ -190,7 +191,19 @@ def card_refs(request: VisitReportRequest) -> dict[str, str]:
 
 def llm_payload(request: VisitReportRequest, refs: dict[str, str], with_facts: bool) -> str:
     """모델에게 보낼 입력 JSON. 카드는 번호표로, 전사는 화자 라벨과 글만. with_facts면 초기 정보와 저장된 이야기도 넣음."""
+    spoken = [s for s in request.transcript.segments if s.text.strip()]
+    if not spoken:
+        raise VisitReportError("INVALID_REQUEST", "분석할 발화 구간이 없음")
+    labels = {s.speaker_label for s in spoken if s.speaker_label is not None}
+    expected = request.participant_count
     data = {
+        "transcript_context": {
+            "expected_participant_count": expected,
+            "observed_speaker_label_count": len(labels),
+            "has_unassigned_speech": any(s.speaker_label is None for s in spoken),
+            "fewer_labels_than_expected": expected is not None and len(labels) < expected,
+            "speaker_roles_verified": False,
+        },
         "evaluation": request.evaluation.model_dump(by_alias=True),
         "cards": [{"card": refs[c.card_id], "card_title": c.card_title, "topic": c.topic.title, "reaction": c.reaction}
                   for c in request.cards],

@@ -116,7 +116,10 @@ class FakeAiServer:
             language="ko",
             durationMs=100,
             text="합성 전사 결과",
-            segments=[],
+            segments=[{
+                "startMs": 0, "endMs": 100, "speakerLabel": "SPEAKER_00",
+                "text": "합성 전사 결과", "words": [],
+            }],
         )
 
 

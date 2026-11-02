@@ -202,6 +202,7 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     [sent] = ai.report_requests
     assert sent["schemaVersion"] == 1
     assert sent["analysisId"] == ANALYSIS_ID
+    assert sent["participantCount"] == 2
     assert sent["evaluation"] == {
         "conversationSatisfaction": 4,
         "careRecipientReaction": "pleased",
