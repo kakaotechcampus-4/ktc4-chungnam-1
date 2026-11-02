@@ -9,8 +9,11 @@ import 'package:saerok/app/screen_awake.dart';
 class FakeScreenAwakePlatform implements ScreenAwakePlatform {
   FakeScreenAwakePlatform({this.fails = false});
 
-  /// 창을 바꾸지 못하는 경우.
+  /// 구현이 던지는 경우.
   bool fails;
+
+  /// 창이 요청을 거절해 `false` 를 돌려주는 경우.
+  bool refuses = false;
 
   /// 받은 요청 순서다. `true` 는 켜 두기, `false` 는 놓기.
   final List<bool> calls = [];
@@ -19,9 +22,10 @@ class FakeScreenAwakePlatform implements ScreenAwakePlatform {
   bool get isOn => calls.isNotEmpty && calls.last;
 
   @override
-  Future<void> setKeepScreenOn(bool on) async {
+  Future<bool> setKeepScreenOn(bool on) async {
     calls.add(on);
     if (fails) throw StateError('창을 바꾸지 못했다');
+    return !refuses;
   }
 
   /// 이 대역을 끼우는 override.

@@ -4,6 +4,8 @@
 // Dart 쪽이 언제 무엇을 요청하는지와 채널 약속만 본다. 실기기에서 화면이 정말
 // 꺼지지 않는지는 이 테스트로 확인하지 않는다.
 
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,6 +112,93 @@ void main() {
 
       expect(platform.calls, [true, false]);
     });
+
+    test('켜기가 던져 실패하면 앞으로 올 때 다시 켠다', () async {
+      final platform = FakeScreenAwakePlatform(fails: true);
+      final awake = ScreenAwake(platform);
+      addTearDown(awake.dispose);
+
+      awake.hold(Object());
+      await settle();
+      expect(platform.calls, [true]);
+
+      platform.fails = false;
+      awake.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await settle();
+      expect(platform.calls, [true, true], reason: '실패한 켜기를 다시 보낸다');
+
+      awake.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await settle();
+      expect(platform.calls, [true, true], reason: '성공한 뒤에는 다시 보내지 않는다');
+    });
+
+    test('창이 켜기를 거절하면 다음 잡기 때 다시 켠다', () async {
+      final platform = FakeScreenAwakePlatform()..refuses = true;
+      final awake = ScreenAwake(platform);
+      addTearDown(awake.dispose);
+      final visit = Object();
+
+      awake.hold(visit);
+      await settle();
+      expect(platform.calls, [true]);
+
+      platform.refuses = false;
+      awake.hold(Object());
+      await settle();
+      expect(platform.calls, [true, true], reason: '다른 곳이 잡을 때 다시 보낸다');
+    });
+
+    test('같은 곳이 다시 잡아도 실패한 켜기를 다시 보낸다', () async {
+      final platform = FakeScreenAwakePlatform()..refuses = true;
+      final awake = ScreenAwake(platform);
+      addTearDown(awake.dispose);
+      final visit = Object();
+
+      awake.hold(visit);
+      await settle();
+      platform.refuses = false;
+      awake.hold(visit);
+      await settle();
+
+      expect(platform.calls, [true, true]);
+    });
+
+    test('끄기가 실패하면 앞으로 올 때 다시 끈다', () async {
+      final platform = FakeScreenAwakePlatform();
+      final awake = ScreenAwake(platform);
+      addTearDown(awake.dispose);
+      final holder = Object();
+
+      awake.hold(holder);
+      await settle();
+      platform.refuses = true;
+      awake.release(holder);
+      await settle();
+      expect(platform.calls, [true, false]);
+
+      platform.refuses = false;
+      awake.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await settle();
+      expect(platform.calls, [true, false, false]);
+      expect(platform.isOn, isFalse);
+    });
+
+    test('앞선 켜기가 늦게 실패해도 그 뒤의 끄기를 되돌리지 않는다', () async {
+      final platform = _DelayedScreenAwakePlatform();
+      final awake = ScreenAwake(platform);
+      addTearDown(awake.dispose);
+      final holder = Object();
+
+      awake.hold(holder);
+      awake.release(holder);
+      platform.finish(0, applied: false);
+      platform.finish(1, applied: true);
+      await settle();
+
+      awake.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await settle();
+      expect(platform.calls, [true, false], reason: '이미 끈 상태라 보낼 것이 없다');
+    });
   });
 
   group('MethodChannelScreenAwake', () {
@@ -141,14 +230,17 @@ void main() {
       ]);
     });
 
-    test('받을 쪽이 없거나 실패해도 던지지 않는다', () async {
+    test('받을 쪽이 없거나 실패해도 던지지 않고, 실패는 false 로 알린다', () async {
       const platform = MethodChannelScreenAwake();
-      await expectLater(platform.setKeepScreenOn(true), completes);
+      expect(await platform.setKeepScreenOn(true), isTrue, reason: '받을 쪽 없음');
 
       messenger.setMockMethodCallHandler(channel, (call) async {
         throw PlatformException(code: 'FAILED');
       });
-      await expectLater(platform.setKeepScreenOn(true), completes);
+      expect(await platform.setKeepScreenOn(true), isFalse);
+
+      messenger.setMockMethodCallHandler(channel, (call) async => null);
+      expect(await platform.setKeepScreenOn(true), isTrue);
     });
   });
 
@@ -199,4 +291,21 @@ void main() {
       expect(platform.isOn, isTrue);
     });
   });
+}
+
+/// 요청마다 끝나는 시점과 결과를 테스트가 정한다.
+class _DelayedScreenAwakePlatform implements ScreenAwakePlatform {
+  final List<bool> calls = [];
+  final List<Completer<bool>> _pending = [];
+
+  @override
+  Future<bool> setKeepScreenOn(bool on) {
+    calls.add(on);
+    final completer = Completer<bool>();
+    _pending.add(completer);
+    return completer.future;
+  }
+
+  void finish(int index, {required bool applied}) =>
+      _pending[index].complete(applied);
 }
