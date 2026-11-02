@@ -34,6 +34,9 @@ uv run --locked pytest tests/test_second_visit_flow.py -ra
 
 ## 별도로 남겨야 하는 검증
 
+배포 API에 합성 녹음을 보내는 별도 도구는 [API 연결 검사](api-cycle-runner.md)에 있다.
+기본 실행은 요청을 보내지 않으며 실제 사용에는 전용 시험 계정과 외부 호출 승인이 필요하다.
+
 - 실제 배포 버전, migration과 앱 빌드의 일치 여부
 - 실제 Android의 녹음과 화면 잠금, 업로드, 재실행
 - S3와 GPU, 실제 모델 호출 및 처리 시간
