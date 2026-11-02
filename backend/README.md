@@ -348,13 +348,15 @@ BE는 인증, 필수 동의, 회차 소유권과 보호자 평가 제출 여부�
 상태 조회는 인증된 `GET /api/v1/speech-analyses/{analysisId}`다. 다른 계정의 작업은
 존재 여부를 드러내지 않고 404로 처리한다. 상태는 `queued`, `transcribing`,
 `sttCompleted`, `generatingReport`, `completed`, `failed`이며 `failed`일 때 안전한
-`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 S3 원본 삭제까지 끝났다는
-뜻이며 리포트 완료는 아니다.
+`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 전사문 임시 저장이 끝났다는
+뜻이며 리포트 완료나 원본 삭제 완료를 뜻하지 않는다. 삭제 여부는 `audio_deleted_at`과
+삭제 대기열로 따로 확인한다.
 
 worker는 PostgreSQL에서 `queued` 작업을 행 잠금으로 하나씩 가져오고 S3 Presigned GET
 URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`를 호출한다.
-`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 S3 원본을 즉시 삭제하고,
-리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 전사를 저장하고 S3 원본
+삭제를 즉시 시도한다. 삭제 요청은 먼저 DB에 남기며 S3 삭제만 실패해도 리포트 생성은
+계속한다. 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
 있다. worker는 STT 뒤 같은 작업에서 리포트 생성기(8-3, [평가와 리포트 API](#평가와-리포트-api))로
@@ -407,10 +409,12 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음(`--stt-only`는 제외) |
 
-S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
-운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
-STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
-오류 응답에 남기지 않는다.
+S3 Lifecycle의 일 단위 만료는 UTC 날짜 계산과 비동기 삭제 때문에 업로드 후 24시간 이내
+삭제를 보장하지 않는다. `data_expires_at`에 따른 기한 삭제와 삭제 대기열 실행을 별도로
+운영하고, Lifecycle은 보조 규칙으로 적용한다. 정상 경로에서는 STT 직후 삭제를 시도한다.
+대기열 등록만으로 삭제 완료를 표시하지 않는다. 이 변경만으로 대기열 실행기가 배포되지는
+않는다. [삭제 실패와 분석 결과 분리](docs/audio-deletion-isolation.md)를 참고한다.
+녹음, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와 오류 응답에 남기지 않는다.
 
 ### STT 예비 서버 전환
 

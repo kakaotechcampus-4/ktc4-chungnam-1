@@ -96,6 +96,8 @@ class SpeechAnalysisJobRepository(Protocol):
 
     async def mark_audio_deleted(self, *, analysis_id: str) -> None: ...
 
+    async def queue_audio_deletion(self, *, analysis_id: str) -> None: ...
+
     async def expire_transcripts(self) -> int:
         """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다."""
         ...
@@ -116,6 +118,7 @@ class InMemorySpeechAnalysisJobRepository:
         self._jobs: dict[str, SpeechAnalysisJob] = {}
         self._by_session: dict[str, str] = {}
         self._sessions: dict[str, str] = {}
+        self.pending_audio_deletions: set[str] = set()
         self._lock = asyncio.Lock()
 
     def allow_session(self, *, account_id: str, session_id: str) -> None:
@@ -235,6 +238,12 @@ class InMemorySpeechAnalysisJobRepository:
             self._jobs[analysis_id],
             audio_deleted_at=datetime.now(UTC),
         )
+        self.pending_audio_deletions.discard(self._jobs[analysis_id].object_key)
+
+    async def queue_audio_deletion(self, *, analysis_id: str) -> None:
+        job = self._jobs.get(analysis_id)
+        if job is not None and job.audio_deleted_at is None:
+            self.pending_audio_deletions.add(job.object_key)
 
     async def expire_transcripts(self) -> int:
         return 0
@@ -476,11 +485,33 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def mark_audio_deleted(self, *, analysis_id: str) -> None:
+        async with self._connection.transaction():
+            await self._connection.execute(
+                """
+                UPDATE speech_analysis_jobs
+                   SET audio_deleted_at = now(), updated_at = now()
+                 WHERE analysis_id = %s
+                """,
+                (UUID(analysis_id),),
+            )
+            await self._connection.execute(
+                """
+                DELETE FROM storage_deletion_request_queue
+                 WHERE s3_object_key = (
+                     SELECT s3_object_key FROM speech_analysis_jobs
+                      WHERE analysis_id = %s
+                 )
+                """,
+                (UUID(analysis_id),),
+            )
+
+    async def queue_audio_deletion(self, *, analysis_id: str) -> None:
         await self._connection.execute(
             """
-            UPDATE speech_analysis_jobs
-               SET audio_deleted_at = now(), updated_at = now()
-             WHERE analysis_id = %s
+            INSERT INTO storage_deletion_request_queue (s3_object_key)
+            SELECT s3_object_key FROM speech_analysis_jobs
+             WHERE analysis_id = %s AND audio_deleted_at IS NULL
+            ON CONFLICT (s3_object_key) DO NOTHING
             """,
             (UUID(analysis_id),),
         )
@@ -510,9 +541,11 @@ class PostgresSpeechAnalysisJobRepository:
                  WHERE status = 'uploading' AND lease_expires_at <= now()
                 """
             )
-            # 처리 중에 멈춘 작업은 실패로 끝낸다. 남은 원본은 S3 Lifecycle이 지운다.
+            # 처리 중에 멈춘 작업은 실패로 끝내고 원본 삭제 요청을 함께 남긴다.
+            # Lifecycle의 일 단위 만료만으로 정확한 삭제 시각을 보장할 수 없다.
             processing = await self._connection.execute(
                 """
+                WITH expired AS (
                 UPDATE speech_analysis_jobs
                    SET status = 'failed', error_code = %s,
                        transcript = NULL,
@@ -524,10 +557,18 @@ class PostgresSpeechAnalysisJobRepository:
                        updated_at = now()
                  WHERE status IN ('transcribing', 'generatingReport')
                    AND lease_expires_at <= now()
+                RETURNING s3_object_key, audio_deleted_at
+                ), requested AS (
+                    INSERT INTO storage_deletion_request_queue (s3_object_key)
+                    SELECT s3_object_key FROM expired WHERE audio_deleted_at IS NULL
+                    ON CONFLICT (s3_object_key) DO NOTHING
+                )
+                SELECT count(*) AS expired_count FROM expired
                 """,
                 (LEASE_EXPIRED_ERROR,),
             )
-        return uploading.rowcount + processing.rowcount
+            expired_row = await processing.fetchone()
+        return uploading.rowcount + expired_row["expired_count"]
 
     @staticmethod
     def _from_row(row: Mapping[str, Any]) -> SpeechAnalysisJob:
