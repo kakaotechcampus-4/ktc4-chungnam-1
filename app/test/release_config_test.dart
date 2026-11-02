@@ -2,6 +2,8 @@
 //
 // 값은 모두 지어낸 예시다. 실제 주소와 클라이언트 ID 를 넣지 않는다.
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/app/release_config.dart';
 import 'package:saerok/widgets/app_states.dart';
@@ -104,6 +106,25 @@ void main() {
     expect(
       ReleaseConfigProblem.googleServerClientIdMissing.message,
       contains('SAEROK_GOOGLE_SERVER_CLIENT_ID'),
+    );
+  });
+
+  test('.env.example 을 고치지 않고 복사하면 릴리스 검사에 걸린다', () {
+    // 클라이언트 ID 만 채우고 서버 주소를 그대로 두면 예시 주소로 릴리스가
+    // 나간다. 예시 서버 주소는 https 가 아니어야 검사가 막는다.
+    final values = <String, String>{};
+    for (final line in File('.env.example').readAsLinesSync()) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+      final eq = trimmed.indexOf('=');
+      if (eq < 0) continue;
+      values[trimmed.substring(0, eq)] = trimmed.substring(eq + 1);
+    }
+
+    expect(values.containsKey('SAEROK_API_BASE_URL'), isTrue);
+    expect(
+      _release(apiBaseUrl: values['SAEROK_API_BASE_URL']!),
+      contains(ReleaseConfigProblem.apiBaseUrlNotHttps),
     );
   });
 
