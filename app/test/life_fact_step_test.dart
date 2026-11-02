@@ -1023,4 +1023,47 @@ void main() {
       expect(screen.calls, isEmpty);
     });
   });
+
+  group('화면 낭독기 이름 (#180, 접근성 보고서 7쪽, 13쪽)', () {
+    testWidgets('마이크 버튼은 지금 누르면 하는 일을 이름으로 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 시작')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+
+      tester.semantics.tap(find.semantics.byLabel('음성 입력 시작'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(find.bySemanticsLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 종료')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('직접 입력칸은 쓰기 전후 모두 항목 이름을 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await tester.tap(find.text('글로 답하기'));
+      await tester.pump();
+
+      final field = find.byType(TextField);
+      expect(tester.getSemantics(field), isSemantics(isTextField: true));
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+
+      await tester.enterText(field, '합성 문장입니다');
+      await tester.pump();
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+      handle.dispose();
+    });
+  });
 }
