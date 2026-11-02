@@ -76,7 +76,9 @@ class ServerVisitApi implements VisitApi {
   }) async {
     final body = await _client.postMultipart(
       '/api/v1/visit-sessions/${Uri.encodeComponent(sessionId)}/photo',
-      files: [await http.MultipartFile.fromPath('image', photoPath)],
+      files: () async => [
+        await http.MultipartFile.fromPath('image', photoPath),
+      ],
     );
     final photoId = body['photoId'];
     if (photoId is! String || photoId.isEmpty) {
@@ -122,7 +124,9 @@ class ServerVisitApi implements VisitApi {
     final body = await _client.postMultipart(
       '/api/v1/visit-sessions/${Uri.encodeComponent(sessionId)}/speech-analyses',
       fields: {'participantCount': '$participantCount'},
-      files: [await http.MultipartFile.fromPath('audio', audioPath)],
+      files: () async => [
+        await http.MultipartFile.fromPath('audio', audioPath),
+      ],
     );
     final analysisId = body['analysisId'];
     if (analysisId is! String || analysisId.isEmpty) {

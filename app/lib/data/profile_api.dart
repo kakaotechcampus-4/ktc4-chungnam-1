@@ -182,7 +182,8 @@ class ProfileApi {
   Future<ProfilePhoto> uploadPhoto(String profileId, String path) async {
     final body = await _client.postMultipart(
       '$_base/$profileId/photos',
-      files: [await http.MultipartFile.fromPath('image', path)],
+      // 세션이 만료돼 다시 보낼 때 파일을 새로 읽는다.
+      files: () async => [await http.MultipartFile.fromPath('image', path)],
     );
     return _read(() => ProfilePhoto.fromJson(body));
   }
