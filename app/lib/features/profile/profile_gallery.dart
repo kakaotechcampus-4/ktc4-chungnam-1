@@ -29,6 +29,10 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
   String? _selectedId;
   final _text = TextEditingController();
 
+  /// 입력칸을 마지막으로 채운 설명. 입력칸이 아직 이 값 그대로면 보호자가 쓰지
+  /// 않은 것이다.
+  String _filled = '';
+
   /// 저장 결과는 그 사진에만 붙인다. 저장하는 동안 다른 사진을 골라도 그 사진의
   /// 입력칸과 안내가 바뀌지 않게 사진마다 기억한다.
   final _savingIds = <String>{};
@@ -65,8 +69,28 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
         return;
       }
       _selectedId = photo.photoId;
-      _text.text = _currentDescription(photo) ?? '';
+      _fill(_currentDescription(photo) ?? '');
     });
+  }
+
+  void _fill(String description) {
+    _filled = description;
+    _text.text = description;
+  }
+
+  /// 연 사진의 분석이 끝나 설명이 새로 왔으면 입력칸을 채운다.
+  ///
+  /// 사진을 열 때만 채우면, 분석 중에 열어 둔 사진은 설명이 와도 빈칸으로
+  /// 남는다. 보호자가 그 사이 입력칸에 쓰고 있으면 덮어쓰지 않는다.
+  @override
+  void didUpdateWidget(ProfileGallery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final selected = _selected;
+    if (selected == null) return;
+    final description = _currentDescription(selected) ?? '';
+    if (description == _filled) return;
+    if (_text.text != _filled) return;
+    _fill(description);
   }
 
   Future<void> _save(ProfilePhoto photo) async {
@@ -90,7 +114,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
         // 그 사이 다른 사진을 골랐으면 지금 입력칸은 그 사진의 것이다.
         if (_selectedId == photo.photoId) {
           _savedId = photo.photoId;
-          _text.text = description;
+          _fill(description);
         }
       });
     } catch (_) {
