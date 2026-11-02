@@ -582,6 +582,9 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `INVALID_PROPOSAL_REVIEW` | 422 | 7-4. `pending` 제안이 빠졌거나 다른 회차의 제안이거나 중복 |
 | `IMAGE_STORAGE_UNAVAILABLE`, `IMAGE_STORAGE_NOT_CONFIGURED` | 503 | 7-2. 면회 사진의 조회 URL을 만들지 못함 |
 
+프로필의 짧은 음성 입력은 면회 작업을 만들지 않고 6-6으로 처리한다.
+[짧은 음성 전사](docs/short-speech-transcription.md)에 요청 형식, 임시 파일 삭제와 남은 처리 시간 측정을 정리했다.
+
 worker가 작업 실패로 남기는 코드: `INVALID_AI_RESPONSE`, `AI_SERVER_TIMEOUT`,
 `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `REPORT_ALREADY_GENERATED`(이미 리포트가 있는 회차),
 `EVALUATION_REQUIRED`(평가 없는 회차. 6-2가 막으므로 정상 흐름에서는 생기지 않음).

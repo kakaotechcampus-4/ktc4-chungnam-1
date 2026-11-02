@@ -9,11 +9,13 @@ from app.api.routes.profile_photos import router as profile_photos_router
 from app.api.routes.profiles import router as profiles_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.speech_analyses import router as speech_analyses_router
+from app.api.routes.speech_transcriptions import router as speech_transcriptions_router
 from app.api.routes.visit_sessions import router as visit_sessions_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(speech_analyses_router)
+api_router.include_router(speech_transcriptions_router)
 api_router.include_router(auth_router)
 api_router.include_router(profiles_router)
 api_router.include_router(life_facts_router)
