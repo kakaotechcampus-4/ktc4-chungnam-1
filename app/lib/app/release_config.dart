@@ -24,8 +24,17 @@ enum ReleaseConfigProblem {
   /// `SAEROK_API_BASE_URL` 이 비어 있다.
   apiBaseUrlMissing('SAEROK_API_BASE_URL 이 비어 있어요.'),
 
-  /// `SAEROK_API_BASE_URL` 이 https 주소가 아니다.
+  /// `SAEROK_API_BASE_URL` 이 https 주소가 아니다. scheme 이 없거나 다르다.
   apiBaseUrlNotHttps('SAEROK_API_BASE_URL 이 https 주소가 아니에요.'),
+
+  /// `SAEROK_API_BASE_URL` 이 https 이지만 서버 주소로 쓸 수 없는 형식이다.
+  /// 앞뒤 공백, 해석할 수 없는 문자열, host 없음, 사용자 정보(`user@`),
+  /// query(`?`)와 fragment(`#`)가 여기에 든다. 요청 주소는 이 값 뒤에 경로를
+  /// 이어 붙여 만드므로 query 나 fragment 가 있으면 경로가 엉뚱한 곳에 붙는다.
+  apiBaseUrlMalformed(
+    'SAEROK_API_BASE_URL 형식이 올바르지 않아요. '
+    'https://host[:port][/path] 형태로만 적어 주세요.',
+  ),
 
   /// `SAEROK_GOOGLE_SERVER_CLIENT_ID` 가 비어 있다.
   googleServerClientIdMissing('SAEROK_GOOGLE_SERVER_CLIENT_ID 가 비어 있어요.');
@@ -39,7 +48,7 @@ enum ReleaseConfigProblem {
 /// 빌드 설정에서 고쳐야 할 항목을 돌려준다. 문제가 없으면 빈 목록이다.
 ///
 /// [isRelease] 가 `false` 면 늘 빈 목록이다. 디버그 동작을 바꾸지 않는다.
-/// 서버 주소는 scheme 이 `https` 이고 host 가 있어야 통과한다.
+/// 서버 주소 문제는 많아야 하나만 알린다([apiBaseUrlProblem]).
 List<ReleaseConfigProblem> releaseConfigProblems({
   required bool isRelease,
   required String apiBaseUrl,
@@ -47,26 +56,33 @@ List<ReleaseConfigProblem> releaseConfigProblems({
 }) {
   if (!isRelease) return const [];
 
-  final problems = <ReleaseConfigProblem>[];
+  return [
+    ?apiBaseUrlProblem(apiBaseUrl),
+    if (googleServerClientId.trim().isEmpty)
+      ReleaseConfigProblem.googleServerClientIdMissing,
+  ];
+}
 
+/// 서버 주소에서 고칠 점 하나를 돌려준다. 쓸 수 있는 주소면 `null` 이다.
+///
+/// 비어 있음, https 아님, 형식 오류 순서로 본다. scheme 대소문자는 구분하지
+/// 않는다(`Uri` 가 소문자로 바꾼다).
+ReleaseConfigProblem? apiBaseUrlProblem(String apiBaseUrl) {
   final url = apiBaseUrl.trim();
-  if (url.isEmpty) {
-    problems.add(ReleaseConfigProblem.apiBaseUrlMissing);
-  } else {
-    final uri = Uri.tryParse(url);
-    final isHttps =
-        uri != null &&
-        uri.scheme == 'https' &&
-        uri.host.isNotEmpty &&
-        url == apiBaseUrl;
-    if (!isHttps) problems.add(ReleaseConfigProblem.apiBaseUrlNotHttps);
-  }
+  if (url.isEmpty) return ReleaseConfigProblem.apiBaseUrlMissing;
 
-  if (googleServerClientId.trim().isEmpty) {
-    problems.add(ReleaseConfigProblem.googleServerClientIdMissing);
+  final uri = Uri.tryParse(url);
+  if (uri != null && uri.scheme != 'https') {
+    return ReleaseConfigProblem.apiBaseUrlNotHttps;
   }
-
-  return problems;
+  final usable =
+      uri != null &&
+      url == apiBaseUrl &&
+      uri.host.isNotEmpty &&
+      uri.userInfo.isEmpty &&
+      !uri.hasQuery &&
+      !uri.hasFragment;
+  return usable ? null : ReleaseConfigProblem.apiBaseUrlMalformed;
 }
 
 /// 이 빌드에 넘어온 값으로 검사한다.

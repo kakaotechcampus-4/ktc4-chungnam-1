@@ -347,10 +347,10 @@ Google Cloud Console에 Application ID `app.saerok.android`와 디버그, 릴리
 
 | 확인 | 막는 값 |
 | --- | --- |
-| `SAEROK_API_BASE_URL` | 비어 있음, scheme이 https가 아님, host 없음, 앞뒤 공백 |
+| `SAEROK_API_BASE_URL` | 비어 있음(`비어 있어요`), scheme이 https가 아님(`https 주소가 아니에요`), https이지만 형식 오류(`형식이 올바르지 않아요`: 앞뒤 공백, 해석 불가, host 없음, `user@` 사용자 정보, query `?`, fragment `#`) |
 | `SAEROK_GOOGLE_SERVER_CLIENT_ID` | 비어 있음 |
 
-하나라도 걸리면 `SaerokApp` 대신 `ReleaseConfigErrorApp`을 띄운다. 라우터, 세션 복원과 서버 요청을 시작하지 않고, 화면에는 고칠 설정 이름만 적는다. 넘긴 주소와 ID 값은 화면과 로그에 남기지 않는다. 다시 빌드해야 고쳐지므로 다시 시도 버튼은 없다. 디버그와 프로필 빌드는 검사하지 않아 기존 동작 그대로다. 확인 내용은 `test/release_config_test.dart`에 있다.
+서버 주소는 세 문제 중 하나만 알린다. 하나라도 걸리면 `main.dart`의 `rootApp`이 `SaerokApp` 대신 `ReleaseConfigErrorApp`을 고른다. 라우터, 세션 복원과 서버 요청을 시작하지 않고, 화면에는 고칠 설정 이름만 적는다. 넘긴 주소와 ID 값은 화면과 로그에 남기지 않는다. 다시 빌드해야 고쳐지므로 다시 시도 버튼은 없다. 디버그와 프로필 빌드는 검사하지 않아 기존 동작 그대로다. 확인 내용은 `test/release_config_test.dart`에 있다. 이 테스트는 dart-define 없이 실행한 기본값(`http://10.0.2.2:8000`, 빈 클라이언트 ID)을 릴리스로 검사했을 때 두 설정이 모두 막히는지와 `rootApp(isRelease: true)`가 설정 오류 앱을 고르는지도 본다. 실제 `flutter build appbundle --release` 결과물에서 이 화면이 뜨는지는 실행하지 않았다.
 
 ### 확인이 필요한 것
 
