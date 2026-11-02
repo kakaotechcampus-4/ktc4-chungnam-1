@@ -489,7 +489,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 
 | 환경 변수 | 설명 |
 | --- | --- |
-| `SAEROK_IMAGE_S3_BUCKET` | 등록 사진용 비공개 버킷. 녹음의 24시간 Lifecycle을 적용하지 않고 ADR-001의 사진 보관 및 삭제 조건을 따른다. 별도 삭제 처리가 없으면 안 된다는 뜻이며 무기한 보관 설정이 아니다 |
+| `SAEROK_IMAGE_S3_BUCKET` | 등록 사진용 비공개 버킷. 녹음 임시 객체용 Lifecycle을 적용하지 않고 ADR-001의 사진 보관 및 삭제 조건을 따른다. 별도 삭제 처리가 없으면 안 된다는 뜻이며 무기한 보관 설정이 아니다 |
 | `SAEROK_IMAGE_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
 | `SAEROK_IMAGE_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사, 기본 `photos` |
 | `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
