@@ -45,6 +45,9 @@ class ProfileScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(profileProvider),
         ),
         data: (bundle) => account.when(
+          // 체크 상태는 처음 받은 값에서 시작하므로, 저장 뒤 다시 읽는 중에는
+          // 이전 값을 보여주지 않고 기다린다.
+          skipLoadingOnRefresh: false,
           loading: () => const LoadingView(),
           error: (error, _) => ErrorStateView(
             message: '계정 정보를 불러오지 못했어요.',
@@ -102,6 +105,9 @@ class _BodyState extends ConsumerState<_Body> {
 
   /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 바꾼 것이 없거나
   /// 로그인하지 않았으면 그대로 닫는다. 저장하지 못하면 알리고 화면에 남는다.
+  ///
+  /// 저장하는 동안 화면을 떠나도 저장되면 계정을 다시 읽는다. 저장을 마쳤을 때
+  /// 이 화면이 맨 위가 아니면 닫지 않는다. 그사이 연 화면을 닫지 않기 위해서다.
   Future<void> _save() async {
     final changes = _changedOptional;
     final online = ref.read(sessionProvider) != null;
@@ -112,6 +118,8 @@ class _BodyState extends ConsumerState<_Body> {
 
     setState(() => _saving = true);
     final messenger = ScaffoldMessenger.of(context);
+    // 화면을 떠난 뒤에는 ref 를 쓸 수 없어 미리 잡아 둔다.
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       await ref.read(accountApiProvider).updateConsents(changes);
     } on ApiFailure catch (failure) {
@@ -122,13 +130,16 @@ class _BodyState extends ConsumerState<_Body> {
         ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
       return;
     }
-    if (!mounted) return;
     // 다음에 열 때 서버의 새 동의 이력을 읽는다.
-    ref.invalidate(accountProvider);
+    container.invalidate(accountProvider);
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(content: Text('동의를 저장했어요.')));
-    await Navigator.maybePop(context);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ModalRoute.of(context)?.isCurrent ?? true) {
+      await Navigator.maybePop(context);
+    }
   }
 
   void _toggleAll(bool? value) {
