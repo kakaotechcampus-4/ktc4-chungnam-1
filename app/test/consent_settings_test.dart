@@ -3,11 +3,13 @@
 //
 // 서버 대신 `MockClient` 를 쓴다. 값은 모두 합성이다.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/router.dart';
@@ -52,6 +54,9 @@ class _FakeAccountServer {
   /// 연결이 끊긴 것처럼 1-6 을 실패시킨다.
   bool patchOffline = false;
 
+  /// 정해 두면 1-6 은 이 Future 가 끝난 뒤에 저장하고 답한다.
+  Future<void>? patchHold;
+
   AccountApi get api => AccountApi(
     ApiClient(
       authorization: () => 'Bearer fake-token',
@@ -64,6 +69,7 @@ class _FakeAccountServer {
           body: body,
         ));
         if (request.method == 'PATCH') {
+          await patchHold;
           if (patchOffline) throw http.ClientException('오프라인');
           consent.addAll((body as Map).cast<String, bool>());
         }
@@ -156,7 +162,10 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> open(WidgetTester tester, _FakeAccountServer server) async {
+    Future<GoRouter> open(
+      WidgetTester tester,
+      _FakeAccountServer server,
+    ) async {
       tester.view.physicalSize = const Size(1236, 6000);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
@@ -193,7 +202,23 @@ void main() {
       await settle(tester);
       router.push(AppRoutes.profile);
       await settle(tester);
+      return router;
     }
+
+    /// 그 동의 줄의 체크 상태.
+    bool? checked(WidgetTester tester, String label) => tester
+        .widget<Checkbox>(
+          find.descendant(
+            of: find
+                .ancestor(
+                  of: find.textContaining(label, findRichText: true),
+                  matching: find.byType(InkWell),
+                )
+                .first,
+            matching: find.byType(Checkbox),
+          ),
+        )
+        .value;
 
     testWidgets('바꾼 선택 동의만 서버에 저장하고 알린다', (tester) async {
       final server = _FakeAccountServer();
@@ -210,6 +235,50 @@ void main() {
       }, reason: '바꾸지 않은 항목은 보내지 않는다');
       expect(find.text('동의를 저장했어요.'), findsOneWidget);
       expect(find.text('계정 약관 동의'), findsNothing, reason: '저장하면 화면을 닫는다');
+    });
+
+    testWidgets('저장 중 화면을 떠나도 다시 열면 저장한 동의를 보여준다', (tester) async {
+      final answer = Completer<void>();
+      final server = _FakeAccountServer()..patchHold = answer.future;
+      final router = await open(tester, server);
+
+      await tester.tap(find.textContaining('서비스 개선 활용 동의', findRichText: true));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
+      await tester.pump();
+      // 응답이 오기 전에 뒤로 간다.
+      router.pop();
+      await settle(tester);
+      expect(find.text('계정 약관 동의'), findsNothing);
+
+      answer.complete();
+      await settle(tester);
+      expect(server.consent['serviceImprovement'], isTrue);
+
+      router.push(AppRoutes.profile);
+      await settle(tester);
+      expect(checked(tester, '서비스 개선 활용 동의'), isTrue);
+    });
+
+    testWidgets('저장 중 연 회원탈퇴 화면은 저장을 마쳐도 닫지 않는다', (tester) async {
+      final answer = Completer<void>();
+      final server = _FakeAccountServer()..patchHold = answer.future;
+      await open(tester, server);
+
+      await tester.tap(find.textContaining('서비스 개선 활용 동의', findRichText: true));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
+      await tester.pump();
+      // 응답을 기다리는 동안 회원탈퇴 화면을 연다.
+      await tester.tap(find.text('회원탈퇴'));
+      await settle(tester);
+      expect(find.textContaining('새록과 이별인가요?'), findsOneWidget);
+
+      answer.complete();
+      await settle(tester);
+
+      expect(find.textContaining('새록과 이별인가요?'), findsOneWidget);
+      expect(server.consent['serviceImprovement'], isTrue);
     });
 
     testWidgets('바꾼 것이 없으면 서버에 보내지 않는다', (tester) async {
