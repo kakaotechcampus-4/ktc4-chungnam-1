@@ -3,6 +3,7 @@
 //
 // 서버는 `FakeProfileServer` 다. 사진 파일과 값은 모두 합성이다.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -316,6 +317,40 @@ void main() {
           (r) => r.path == '/api/v1/profile-photos/photo-a',
         ),
         hasLength(1),
+      );
+    });
+
+    test('읽는 중 갤러리를 닫으면 늦게 온 분석 중 사진으로 묻기 시작하지 않는다', () async {
+      final server = FakeProfileServer(
+        profiles: [
+          FakeProfileServer.profile(
+            id: 'p1',
+            setupStatus: 'completed',
+            photos: [
+              FakeProfileServer.photo(id: 'photo-a', analysisStatus: 'pending'),
+            ],
+          ),
+        ],
+      );
+      final container = await _signedIn(server);
+      final answer = Completer<void>();
+      server.holds['GET /api/v1/profiles/p1'] = answer.future;
+
+      final gallery = container.listen(serverProfilePhotosProvider, (_, _) {});
+      await _until(
+        () => server.requests.any((r) => r.path == '/api/v1/profiles/p1'),
+      );
+      // 응답이 오기 전에 갤러리를 닫는다.
+      gallery.close();
+      await Future<void>.delayed(Duration.zero);
+      answer.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        server.requests.where(
+          (r) => r.path == '/api/v1/profile-photos/photo-a',
+        ),
+        isEmpty,
       );
     });
 

@@ -38,6 +38,9 @@ class FakeProfileServer {
   /// 돌려준다. `completed` 가 되면 합성 설명을 붙인다.
   final analysisResults = <String, List<String>>{};
 
+  /// 정해 두면 그 요청은 이 Future 가 끝난 뒤에 답한다. 키는 `METHOD path` 다.
+  final holds = <String, Future<void>>{};
+
   int _next = 1;
 
   ProfileApi get api => ProfileApi(
@@ -58,6 +61,7 @@ class FakeProfileServer {
     final body = text.isEmpty || multipart ? null : jsonDecode(text);
     requests.add((method: request.method, path: request.url.path, body: body));
     if (offline) throw http.ClientException('오프라인');
+    await holds['${request.method} ${request.url.path}'];
 
     final failure = failures['${request.method} ${request.url.path}'];
     if (failure != null) {
