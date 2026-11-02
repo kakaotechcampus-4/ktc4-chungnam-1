@@ -340,12 +340,14 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
 - `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
+- `birthDate`, `occupation`, `hometown`, `hobby`, `family`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 값들은 고칠 수 없다.
 
 응답 `200` — [Profile](#profile)
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
 
 ### 2-5. 프로필 입력 마치기 — 삭제
 
@@ -389,12 +391,14 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 - 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고 `null`로 지울 수 없다.
 - 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
+- `title`, `content`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 두 값은 고칠 수 없다.
 
 응답 `200` — [LifeFact](#lifefact)
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `LIFE_FACT_NOT_FOUND` |
+| 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
 
 ### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
 
@@ -418,12 +422,13 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 응답 `204`
 
 - 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 `context.lifeFacts`에서 빠지며, 주제와 지난 카드의 근거에 남은 그 `factId`도 4-1 입력을 만들 때 뺀다. 저장된 근거는 고치지 않는다.
-- 이미 만든 카드와 주제, 그 이야기를 출처로 한 변경 제안은 지우지 않는다. 지운 이야기를 근거로 한 카드와 주제의 처리는 미정([미정 사항](#미정-사항) 12)
+- 이미 만든 카드와 주제, 그 이야기를 출처로 한 변경 제안은 지우지 않는다. 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 지울 수 없다. 지난 카드와 주제의 처리는 미정([미정 사항](#미정-사항) 12)
 - 세부 정보 네 항목은 생애 정보가 아니므로 이 API로 지우지 않는다(2-4에서 `null`).
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `LIFE_FACT_NOT_FOUND` |
+| 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
 
 <br>
 
@@ -495,7 +500,13 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 2026-10-16 [PM 기준](../pm/README.md#사실-정정과-다음-면회-카드-반영): 정정으로 사용 중지한 카드는 대화 평가의 미사용과 구분하며 추천 불이익을 주지 않는다.
 
-아래 상태 표와 `CARD_SET_READY`는 현재 계약이다. 기존 코드는 준비된 카드의 입력이 이후 수정됐는지 구분하지 않으므로 이 제품 기준을 충족하는 구현이 아니다. 2-4, 2-7과 7-4의 사실 저장, 4-1부터 4-3의 생성 및 조회, 5-1의 면회 시작 사이에서 정정 반영 여부를 맞춰야 한다. 반영 대기 저장 방식, 입력 변경 감지, 갱신 실패와 생성 중 해당 프로필 정정 저장 제한와 API 변경은 담당자가 설계한다. 이 문서 변경으로 기존 응답 enum이나 오류 코드를 임의로 바꾸지 않는다.
+BE 구현(#158)은 묶음 단위로 처리한다.
+
+- 2-4, 2-7, 2-9로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9는 항상 남긴다.
+- 면회에 쓴 묶음은 지난 기록이라 남기지 않는다.
+- `stale_at`이 있는 묶음은 4-2, 4-3에서 `status`가 그대로 `ready`이고 `needsRefresh`가 `true`다. 4-1은 이 묶음을 거절하지 않고 새로 만들며, 5-1은 `CARD_SET_NEEDS_REFRESH`로 거절한다.
+- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다.
+- 카드 한 장 단위의 사용 중지 표시와 7-4(제안 승인으로 이야기 추가)는 다루지 않는다.
 
 카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
 
@@ -511,6 +522,8 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
+`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤다는 뜻이다. 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
+
 4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
 
 ### 4-1. `POST /api/v1/profiles/{profileId}/card-generations` — 신규
@@ -521,16 +534,17 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 - 온보딩의 `마치기`(2-4 다음)
 - 홈에서 `오늘의 대화카드 받기`를 눌렀을 때(4-2 `status`가 `none`이나 `failed`)
+- 4-2가 `ready`이고 `needsRefresh`가 `true`일 때 다시 만들기
 
 응답 `202`
 
 ```json
-{ "schemaVersion": 1, "status": "running" }
+{ "schemaVersion": 1, "status": "running", "needsRefresh": false }
 ```
 
 - 이미 만드는 중이면 새로 만들지 않고 같은 응답을 준다.
 - 평가 전 회차가 지금 묶음을 쓰는 중(`inVisit`)이면 409로 거절한다. 새 묶음이 생기면 면회 중인 카드를 4-3으로 받을 수 없게 되기 때문이다.
-- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다.
+- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다. `needsRefresh`가 `true`인 묶음은 거절하지 않고 새로 만든다. 그 묶음은 5-1이 받지 않으므로 회차에 쓸 수 있는 묶음은 여전히 하나뿐이다.
 - 카드 생성 worker가 작업을 가져가 카드 12장과 새 주제를 저장한다(아래 처리). 앱은 4-2를 폴링한다.
 
 | HTTP | `errorCode` |
@@ -701,10 +715,11 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 응답 `200`
 
 ```json
-{ "schemaVersion": 1, "status": "ready" }
+{ "schemaVersion": 1, "status": "ready", "needsRefresh": false }
 ```
 
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
+- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 다른 상태에서는 늘 `false`다.
 - 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
@@ -718,6 +733,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 응답 `200` — [CardSet](#cardset)
 
 - `position` 1~9는 선택 화면용, 10~12는 면회 중 보충용이다.
+- `needsRefresh`가 `true`인 묶음도 준다. 이 묶음은 볼 수만 있고 5-1로 면회를 시작할 수 없다.
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -768,7 +784,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `CARD_GENERATION_NOT_FOUND` |
-| 409 | `CARD_GENERATION_NOT_COMPLETED`, `CARD_SET_ALREADY_USED` |
+| 409 | `CARD_GENERATION_NOT_COMPLETED`, `CARD_SET_ALREADY_USED`, `CARD_SET_NEEDS_REFRESH`(묶음을 받은 뒤 프로필이나 일대기를 고침. 4-1로 새 묶음을 만들어야 함) |
 | 422 | `INVALID_CARD_SELECTION` |
 
 ### 5-2. `POST /api/v1/visit-sessions/{sessionId}/photo` — 신규
@@ -1371,6 +1387,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
   "usedBySessionId": null,
+  "needsRefresh": false,
   "cards": [
     {
       "cardId": "00000000-0000-4000-8000-000000000501",
@@ -1398,6 +1415,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
 - `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 

@@ -1,7 +1,7 @@
 # 새록 STT 서버
 
-엘리스 클라우드 런박스의 GPU에서 STT 파이프라인을 실행하는 FastAPI 서버다.
-현재 배포 기준은 [ADR-006의 2026-10-26 변경](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#stt-실행-환경-변경-2026-10-26)을 따른다.
+개인 GPU에서 STT 파이프라인을 실행하는 FastAPI 서버다. 현재 BE는 Tailscale 사설망으로 연결한다.
+현재 배포 기준은 [ADR-006의 2026-10-31 보완](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#개인-gpu와-tailscale-임시-연결-2026-10-31-보완)을 따른다.
 
 현재 구현 범위는 S3 Presigned GET URL 또는 허가된 로컬 WAV 파일을 입력으로 받아 Whisper ASR과
 pyannote 화자 분리를 순서대로 실행하고, 두 결과를 시간축으로 결합하여 반환하는 흐름까지다.
@@ -9,11 +9,26 @@ pyannote 화자 분리를 순서대로 실행하고, 두 결과를 시간축으�
 음성 입력은 Provider로 분리되어 있으며 S3와 로컬 입력 모두 같은 STT 서비스와 모델 실행 로직을
 사용한다. 운영 요청은 WAV/PCM 16-bit/16kHz/mono 규격만 받는다.
 
-## 엘리스 클라우드 운영
+## 개인 GPU와 Tailscale 운영
 
-현재 기본 STT 장비는 엘리스 런박스 A100 MIG `1g.10gb`, CPU 2 vCore, RAM 24GiB,
-디스크 128GiB다. 개인 데스크탑을 기본 서버로 사용하지 않는다.
+GPU와 BE 서버는 관리자가 등록·승인한 tailnet에 연결한다. 담당자 설명상 현재 접근 범위는
+승인된 tailnet 기기이며, BE 한 대만 허용하는 정책의 적용·검증 완료를 뜻하지 않는다.
+기기별 접속 권한은 실제 Tailscale Grants/ACL 정책을 확인한다. BE만 허용해야 하는 경우에는
+BE → GPU의 TCP `8001`을 허용하고 기존 전체 허용 규칙도 함께 좁힌다.
 
+현재 운영에서는 아래 실행 방법으로 GPU 자신의 Tailscale IP에 바인딩한다.
+별도 공개 경로가 없다면 인터넷에서 해당 IP만 알아서는 접속할 수 없다.
+이전 공개 터널, Tailscale Funnel과 포트포워딩 등 다른 경로가 남아 있는지도 확인한다.
+실제 주소와 인증값은 저장소, 이슈와 PR에 남기지 않는다.
+
+GPU 접속 제한 확인은 이문영, BE 설정과 정상 분석 확인은 김민혁이 맡는다.
+이 문서 변경에서는 원격 환경의 설정이나 다음 검증을 실행하지 않았다.
+
+- 현재 tailnet에 등록된 기기와 STT 포트에 접근 가능한 범위를 확인한다.
+- BE 실행 환경(컨테이너 포함)에서 상태 확인과 합성 음성 분석 POST 성공을 확인한다.
+- 허용 범위 밖의 기기에서 STT 접속이 차단되고 녹음 다운로드와 GPU 추론이 시작되지 않는지 확인한다.
+- 적용 환경, 정상·차단 결과와 남은 조건을 이슈에 기록한다. `/health/live` 성공만으로 분석 성공을 보고하지 않는다.
+- 이슈의 ‘BE만 허용’ 조건과 현재 승인 기기 범위의 차이는 이슈에서 조정 여부를 확인한다.
 
 ## 백엔드 연동
 
@@ -90,12 +105,17 @@ chmod +x scripts/run_stt_server.sh
 curl http://127.0.0.1:8001/health/live
 ```
 
-엘리스 HTTP 터널 등 외부 연결을 받을 때는 접속 주소를 명시한다.
-공개 연결에는 별도로 인증 또는 접근 제한을 구성해야 한다.
+현재 BE 연결에는 `0.0.0.0` 대신 **GPU 서버 자신의 Tailscale IP**를 지정한다.
+BE의 IP를 수신 주소로 넣지 않는다. 먼저 Tailscale에 연결하고 해당 주소가 GPU 서버에 할당되어 있는지 확인한다.
 
 ```bash
-SAEROK_STT_HOST=0.0.0.0 ./scripts/run_stt_server.sh
+SAEROK_STT_HOST="<GPU 서버의 Tailscale IP>" ./scripts/run_stt_server.sh
 ```
+
+BE의 STT 기본 주소는 `http://<GPU 서버의 Tailscale IP>:8001`이다.
+위 예시의 자리표시자는 서버에서 실제 값으로 바꾼다. Tailscale IP로 바인딩한 뒤의 상태 확인도
+같은 주소의 `/health/live`로 요청한다. 이 설정만으로 특정 BE만 허용되는 것은 아니다.
+접근 범위와 검증은 [운영 안내](#개인-gpu와-tailscale-운영)를 따른다.
 
 ## 진행 로그
 

@@ -101,7 +101,10 @@ void main() {
 
   group('4-2 상태 확인', () {
     test('다섯 상태를 모두 읽는다', () async {
-      for (final value in CardGenerationStatus.values) {
+      final serverValues = CardGenerationStatus.values.where(
+        (v) => v != CardGenerationStatus.needsRefresh,
+      );
+      for (final value in serverValues) {
         late http.Request sent;
         final api = _api((request) async {
           sent = request;
@@ -117,6 +120,42 @@ void main() {
     test('모르는 상태는 성공으로 넘기지 않는다', () async {
       final api = _api(
         (_) async => _json({'schemaVersion': 1, 'status': 'done'}, 200),
+      );
+
+      await expectLater(
+        api.status(_profileId),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
+      );
+    });
+
+    test('ready 에 needsRefresh 가 붙으면 다시 만들 묶음으로 읽는다', () async {
+      CardApi reply(Map<String, dynamic> body) =>
+          _api((_) async => _json({'schemaVersion': 1, ...body}, 200));
+
+      expect(
+        await reply({
+          'status': 'ready',
+          'needsRefresh': true,
+        }).status(_profileId),
+        CardGenerationStatus.needsRefresh,
+      );
+      expect(
+        await reply({
+          'status': 'ready',
+          'needsRefresh': false,
+        }).status(_profileId),
+        CardGenerationStatus.ready,
+      );
+      // 이 값을 주기 전의 서버다.
+      expect(
+        await reply({'status': 'ready'}).status(_profileId),
+        CardGenerationStatus.ready,
+      );
+    });
+
+    test('needsRefresh 는 서버의 status 값으로 받지 않는다', () async {
+      final api = _api(
+        (_) async => _json({'schemaVersion': 1, 'status': 'needsRefresh'}, 200),
       );
 
       await expectLater(
@@ -145,8 +184,23 @@ void main() {
       expect(sent.url.toString(), '$_base/current');
       expect(set.setId, 'set-1');
       expect(set.usedBySessionId, isNull);
+      expect(set.needsRefresh, isFalse, reason: '값이 없으면 다시 만들 일이 없다');
       expect(set.cards.map((c) => c.position), List.generate(12, (i) => i + 1));
       expect(set.cards.first.cardTitle, '카드 1');
+    });
+
+    test('받은 뒤 정보를 고친 묶음이면 needsRefresh 를 읽는다', () async {
+      final api = _api(
+        (_) async => _json({
+          'schemaVersion': 1,
+          'setId': 'set-1',
+          'usedBySessionId': null,
+          'needsRefresh': true,
+          'cards': [for (var p = 1; p <= 12; p++) _card(p)],
+        }, 200),
+      );
+
+      expect((await api.current(_profileId)).needsRefresh, isTrue);
     });
 
     test('형식이 다른 묶음은 성공으로 넘기지 않는다', () async {
