@@ -277,9 +277,10 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
     )
     photos = await _rows(
         connection,
-        "SELECT photo_id, description FROM photos"
+        "SELECT photo_id, COALESCE(user_description, description) AS description FROM photos"
         " WHERE profile_id = %(profile_id)s AND session_id IS NULL"
-        "   AND analysis_status = 'completed' ORDER BY created_at, photo_id",
+        "   AND (user_description IS NOT NULL OR analysis_status = 'completed')"
+        " ORDER BY created_at, photo_id",
         profile_id,
     )
     topics = await _rows(

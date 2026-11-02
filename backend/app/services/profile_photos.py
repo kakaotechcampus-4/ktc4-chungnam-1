@@ -22,7 +22,7 @@ from fastapi import UploadFile
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
-from app.services import ownership
+from app.services import ownership, card_sets
 from app.services.image_storage import ImageStorage
 from app.services.image_validation import validate_image
 
@@ -43,11 +43,12 @@ class ProfilePhoto:
     description: str | None
     error_code: str | None
     created_at: datetime
+    description_source: Literal["ai", "caregiver"] | None = None
 
 
 _COLUMNS = (
     "photo_id, profile_id, s3_object_key, analysis_status, description, "
-    "error_code, created_at"
+    "error_code, created_at, user_description"
 )
 
 
@@ -141,6 +142,37 @@ async def _count_profile_photos(connection: DbConnection, profile_id: UUID) -> i
     return (await cursor.fetchone())["n"]
 
 
+async def update_description(connection: DbConnection, photo_id: UUID, *,
+                             account_id: str, description: str,
+                             start_timeout_seconds: int) -> dict:
+    """선택적 수정. AI 결과는 보존하고 다음 카드 입력에 보호자의 설명을 우선한다."""
+    profile_id = await ownership.require_owned(
+        connection, ownership.PROFILE_PHOTO, photo_id, account_id=account_id
+    )
+    description = description.strip()
+    if not description:
+        raise AppError(status_code=422, error_code="INVALID_REQUEST", message="설명을 입력해 주세요.")
+    async with connection.transaction():
+        await card_sets.lock_profile(connection, profile_id)
+        before = await (await connection.execute(
+            "SELECT COALESCE(user_description, description) AS effective "
+            "FROM photos WHERE photo_id = %s AND session_id IS NULL FOR UPDATE",
+            (photo_id,),
+        )).fetchone()
+        if before is None:
+            raise AppError(status_code=404, error_code="PROFILE_PHOTO_NOT_FOUND",
+                           message="프로필 사진을 찾을 수 없습니다.")
+        if before["effective"] != description:
+            await card_sets.mark_stale(connection, profile_id,
+                                       start_timeout_seconds=start_timeout_seconds)
+        row = await (await connection.execute(
+            "UPDATE photos SET user_description = %s, description_updated_at = now() "
+            "WHERE photo_id = %s RETURNING photo_id, user_description AS description, "
+            "description_updated_at AS updated_at", (description, photo_id),
+        )).fetchone()
+    return row
+
+
 async def _discard_upload(
     connection: DbConnection, storage: ImageStorage, object_key: str
 ) -> None:
@@ -169,7 +201,9 @@ def _to_photo(row: dict[str, Any]) -> ProfilePhoto:
         profile_id=row["profile_id"],
         object_key=row["s3_object_key"],
         analysis_status=row["analysis_status"],
-        description=row["description"],
+        description=row["user_description"] if row["user_description"] is not None else row["description"],
+        description_source=("caregiver" if row["user_description"] is not None
+                            else "ai" if row["description"] is not None else None),
         error_code=row["error_code"],
         created_at=row["created_at"],
     )

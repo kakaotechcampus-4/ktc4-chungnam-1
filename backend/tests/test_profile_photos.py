@@ -129,6 +129,7 @@ def test_uploaded_photo_is_stored_and_waits_for_analysis(migrated_database_url):
         "imageUrlExpiresAt": "2026-08-21T03:35:00Z",
         "analysisStatus": "pending",
         "description": None,
+        "descriptionSource": None,
         "error": None,
     }
     assert storage.objects == {object_key: PNG}

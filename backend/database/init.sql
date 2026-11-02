@@ -191,6 +191,8 @@ CREATE TABLE photos (
     session_id      UUID,
     s3_object_key   VARCHAR(255) NOT NULL UNIQUE,
     description     TEXT,
+    user_description TEXT,
+    description_updated_at TIMESTAMPTZ,
     analysis_status VARCHAR(12)  NOT NULL DEFAULT 'pending'
                       CHECK (analysis_status IN ('pending', 'processing', 'completed', 'failed')),
     error_code      VARCHAR(50),
@@ -206,7 +208,11 @@ CREATE TABLE photos (
                 THEN description IS NOT NULL AND model IS NOT NULL AND prompt_version IS NOT NULL
                 ELSE description IS NULL AND model IS NULL AND prompt_version IS NULL END),
     CONSTRAINT photos_lease_check
-        CHECK ((analysis_status = 'processing') = (lease_expires_at IS NOT NULL))
+        CHECK ((analysis_status = 'processing') = (lease_expires_at IS NOT NULL)),
+    CONSTRAINT photos_user_description_check CHECK (
+        (user_description IS NULL AND description_updated_at IS NULL)
+        OR (user_description IS NOT NULL AND length(btrim(user_description)) > 0
+            AND description_updated_at IS NOT NULL))
 );
 CREATE INDEX idx_photos_profile ON photos(profile_id, created_at);
 CREATE INDEX idx_photos_pending ON photos(created_at) WHERE analysis_status = 'pending';

@@ -130,12 +130,24 @@ class PhotoAnalysisError(ApiModel):
     error_code: str = Field(alias="errorCode")
 
 
+class PhotoDescriptionRequest(ApiModel):
+    description: NonBlankText
+
+
+class PhotoDescriptionResponse(ApiModel):
+    schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
+    photo_id: UUID = Field(alias="photoId")
+    description: str
+    description_source: Literal["caregiver"] = Field(default="caregiver", alias="descriptionSource")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
 class ProfilePhotoResponse(ApiModel):
     """프로필 사진 (API 3-1, 3-2, data-contracts.md `ProfilePhoto`).
 
     `imageUrl`은 수명이 짧은 S3 Presigned GET URL이며 `imageUrlExpiresAt`이 지나면 다시
-    조회한다. `description`은 분석이 끝난(`completed`) 사진만, `error`는 실패한(`failed`)
-    사진만 채운다.
+    조회한다. `description`은 보호자 수정이 있으면 그것을 우선하고, 없으면 완료된 AI
+    설명이다. `descriptionSource`가 출처를 구분하며 `error`는 AI 분석 실패를 나타낸다.
     """
 
     schema_version: Literal[1] = Field(default=1, alias="schemaVersion")
@@ -145,6 +157,7 @@ class ProfilePhotoResponse(ApiModel):
     image_url_expires_at: datetime = Field(alias="imageUrlExpiresAt")
     analysis_status: PhotoAnalysisStatus = Field(alias="analysisStatus")
     description: str | None
+    description_source: Literal["ai", "caregiver"] | None = Field(default=None, alias="descriptionSource")
     error: PhotoAnalysisError | None
     created_at: datetime = Field(alias="createdAt")
 

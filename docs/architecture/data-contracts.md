@@ -275,7 +275,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 기존 API 제안은 프로필 사진을 모두 분석하는 구조다. PR #92의 PM 수정안에서는 보관과 분석 동의를 구분하며, 분석하지 않는 사진의 상태와 동의 전달 및 철회 방식은 후속 계약으로 남아 있다([결정 대기 항목](#결정-대기-항목)).
 - `analysisStatus` 값은 `pending`, `processing`, `completed`, `failed`이다.
   - 분석에 실패해도 프로필 입력을 계속 진행할 수 있어야 한다.
-  - `description`은 `completed`일 때만 채우고 그 밖에는 `null`이다. 다루는 기준은 [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate)를 따른다.
+  - `description`은 보호자가 고친 설명이 있으면 그것을 우선하며, 없으면 완료된 AI 설명이다. 둘 다 없으면 `null`이다. 선택 필드 `descriptionSource`는 `caregiver`, `ai`, `null`이다. AI 분석 상태와 보호자 설명의 저장을 구분한다. 다루는 기준은 [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate)를 따른다.
   - `failed`이면 `error`에 `{ "errorCode": "..." }`를 담고, 그 밖에는 `null`이다.
 
 **없어도 되는 값** — `description`, `error`
