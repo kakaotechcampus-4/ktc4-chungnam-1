@@ -401,7 +401,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
 | `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계와 리포트 생성 단계에서 각각 새로 잡음 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
-| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름 |
+| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음(`--stt-only`는 제외) |
 
@@ -526,13 +526,25 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   함수 호출이어도 그 안에서 전사문을 포함한 요청을 외부 ML API(엘리스)로 보낸다.
   생성 함수의 실패 코드는 기존 작업 실패 코드로 바꾼다: `LLM_UNAVAILABLE` →
   `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST` → `AI_SERVER_ERROR`.
+- 생성 오류 구분(#143): 모델 호출의 연결 실패와 시간 초과는 `AI_SERVER_UNAVAILABLE`(재시도
+  가능), 그 밖의 호출 실패(예: 400 응답)와 잘린 응답, JSON 처리 오류, 응답 형식 불일치는
+  `AI_SERVER_ERROR`다. 둘 다 아무것도 저장하지 않는다. 카드 요약, 이야기 후보와 주제 조정이
+  모두 0건인 응답은 실패가 아니라 정상 완료다(리포트 저장, 작업 `completed`). 잘린 응답만 따로
+  나누는 실패 코드는 없다. 실제 출력 한도에 닿았을 때 SDK가 던지는 예외 종류는 실측하지
+  않았고, 테스트는 모델 호출 자리(`invoke_structured`)에 그런 예외를 넣어 확인한다.
+  모델이나 SDK가 남긴 오류 메시지는 작업 실패에 담지 않는다.
+- 출력 한도(`max_tokens`)는 BE가 넘기지 않고 `ai/common/llm.py`의 `ChatConfig` 기본값을 쓴다.
+  BE의 전체 시간 제한과 늦은 결과 저장 방지는 출력 한도와 관계없이 적용된다.
 - 전체 시간 제한: 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본
   600초)를 넘으면 작업을 `AI_SERVER_TIMEOUT`으로 실패시킨다. 생성 함수의 호출당 timeout(300초)은
   응답 대기 제한이라 스트리밍이 이어지면 전체 시간이 늘어나므로, BE가 전체 마감을 따로 둔다.
   `generatingReport`로 바꿀 때 임대(기본 900초)를 새로 잡고, 제한 시간은 임대보다 60초 이상
   짧아야 한다(저장과 완료 처리 여유). 생성 함수는 daemon 스레드에서 돌고 worker는 마감까지만
   기다린다. 동기 함수라 스레드를 멈출 수는 없으므로, 리포트와 변경 제안 호출 직전마다 마감을
-  확인해 마감 뒤 새 외부 호출을 하지 않는다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있다.
+  확인해 마감 뒤 새 외부 호출을 하지 않는다. worker가 시간 초과를 확정하면 마감에 취소를
+  표시하므로, 스레드가 읽는 시계가 해상도 차이(Windows)로 아직 마감 전이어도 다음 호출 전에
+  멈춘다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있고, 시간 초과 확정 전에 마감 확인을
+  통과한 변경 제안 호출도 시작될 수 있다(결과는 버리고 저장하지 않는다).
 - 늦은 결과 저장 방지: 마감 뒤 도착한 결과는 아무도 읽지 않고, 생성 함수는 DB를 쓰지 않는다.
   결과가 와도 저장 직전에 마감을 다시 확인한다. 저장 트랜잭션은 먼저 작업 행을
   `FOR UPDATE`로 잠그고 `generatingReport`이며 `lease_expires_at > now()`일 때만 저장한다.

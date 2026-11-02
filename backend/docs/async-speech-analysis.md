@@ -561,6 +561,10 @@ error_code = null
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
+| 리포트 생성 중 모델 연결 실패, 시간 초과 | 작업 `failed`, `AI_SERVER_UNAVAILABLE`, 저장 없음 |
+| 리포트 생성 중 그 밖의 호출 실패, 잘린 응답, JSON 오류 | 작업 `failed`, `AI_SERVER_ERROR`, 저장 없음 |
+| 카드 요약, 이야기 후보와 주제 조정이 모두 0건 | 작업 `completed`, 리포트만 저장(정상 완료) |
+| 리포트 모델이 `ai/common/llm.py`의 `ENDPOINTS`에 없음 | worker 시작 안 함(`--stt-only` 제외) |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | S3 삭제 실패 | 작업을 STT 완료로 표시하지 않음, Lifecycle 삭제 대상 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |
