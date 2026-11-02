@@ -271,4 +271,35 @@ void main() {
       expect(entry.basicInfo!.name, sampleBasicInfo.name);
     });
   });
+
+  group('갤러리', () {
+    /// 제목 [title] 과 같은 줄에 있는 수정하기 버튼.
+    Finder editOf(String title) => find.descendant(
+      of: find.ancestor(of: find.text(title), matching: find.byType(Row)),
+      matching: find.widgetWithText(TextButton, '수정하기'),
+    );
+
+    testWidgets('갈 곳이 없는 머리글 수정하기는 두지 않는다', (tester) async {
+      await _open(tester);
+
+      expect(editOf('갤러리'), findsNothing);
+      expect(editOf('기본 정보'), findsOneWidget, reason: '다른 칸은 그대로 둔다');
+      expect(editOf('세부 정보'), findsOneWidget);
+      expect(find.text('수정하기'), findsNWidgets(2));
+    });
+
+    testWidgets('사진을 누르면 그 자리에서 설명을 고칠 수 있다', (tester) async {
+      await _open(tester);
+
+      await tester.tap(find.bySemanticsLabel('사진 1'));
+      await tester.pump();
+
+      expect(find.text('AI가 만든 설명'), findsOneWidget);
+      expect(
+        find.byType(ProfileScreen),
+        findsOneWidget,
+        reason: '화면을 옮기지 않는다',
+      );
+    });
+  });
 }

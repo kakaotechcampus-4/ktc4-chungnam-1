@@ -206,9 +206,10 @@ class _BodyState extends State<_Body> {
       // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
       const SizedBox(height: AppSpacing.section),
 
+      // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+      // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
       _Section(
         title: '갤러리',
-        onEdit: () {},
         child: _Gallery(mockPhotos: bundle.photos),
       ),
       const SizedBox(height: AppSpacing.section),
@@ -382,15 +383,14 @@ class _Gallery extends ConsumerWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.child,
-    required this.onEdit,
-  });
+  const _Section({required this.title, required this.child, this.onEdit});
 
   final String title;
   final Widget child;
-  final VoidCallback onEdit;
+
+  /// `null` 이면 머리글에 수정하기를 두지 않는다. 눌러도 갈 곳이 없는 버튼을
+  /// 보이지 않기 위해서다.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -400,15 +400,16 @@ class _Section extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            TextButton.icon(
-              onPressed: onEdit,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSub,
-                minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+            if (onEdit case final onEdit?)
+              TextButton.icon(
+                onPressed: onEdit,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSub,
+                  minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('수정하기', style: AppTypography.caption),
               ),
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('수정하기', style: AppTypography.caption),
-            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
