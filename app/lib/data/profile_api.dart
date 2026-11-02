@@ -2,10 +2,11 @@
 ///
 /// 요청은 [ApiClient] 가 보내고, 이 파일은 경로, 본문과 응답 모양만 맡는다.
 /// 일대기 이야기(`lifeFacts`)도 2절이라 여기서 읽고 담는다(2-3, 2-6, 2-7, 2-9).
-/// 사진(`photos`)은 갤러리 작업에서 다루므로 여기서 읽지 않는다.
+/// 프로필 사진(`photos`)은 2-3 으로 읽고 3-1 로 올리며 3-2 로 분석 상태를 묻는다.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
 import 'models.dart';
@@ -55,6 +56,7 @@ class RemoteProfile {
     required this.basicInfo,
     required this.details,
     required this.lifeFacts,
+    this.photos = const [],
     this.symptomNote,
   });
 
@@ -84,6 +86,10 @@ class RemoteProfile {
         for (final item in json['lifeFacts'] as List)
           LifeFact.fromJson(item as Map<String, dynamic>),
       ],
+      photos: [
+        for (final item in json['photos'] as List? ?? const [])
+          ProfilePhoto.fromJson(item as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -99,6 +105,9 @@ class RemoteProfile {
   /// 일대기에 담긴 이야기. 먼저 담은 것부터다. 일대기 전용 목록 API 는 없어
   /// 2-3 의 이 목록으로 일대기를 그린다.
   final List<LifeFact> lifeFacts;
+
+  /// 올린 프로필 사진. 올린 순서대로다. `imageUrl` 은 수명이 짧다.
+  final List<ProfilePhoto> photos;
 }
 
 /// 프로필 API 를 부른다. 실패는 [ApiFailure] 로 던진다.
@@ -108,6 +117,7 @@ class ProfileApi {
   final ApiClient _client;
 
   static const _base = '/api/v1/profiles';
+  static const _photoBase = '/api/v1/profile-photos';
   static const _lifeFactBase = '/api/v1/life-facts';
 
   /// 2-1 현재 계정의 프로필 목록. 만든 순서대로다.
@@ -165,6 +175,23 @@ class ProfileApi {
 
   /// 2-8 프로필 하나를 지운다.
   Future<void> delete(String profileId) => _client.delete('$_base/$profileId');
+
+  /// 3-1 프로필 사진 한 장을 올린다. 분석 상태는 `pending` 으로 온다.
+  ///
+  /// 형식(JPEG, PNG)은 서버가 파일 내용으로 확인한다.
+  Future<ProfilePhoto> uploadPhoto(String profileId, String path) async {
+    final body = await _client.postMultipart(
+      '$_base/$profileId/photos',
+      files: [await http.MultipartFile.fromPath('image', path)],
+    );
+    return _read(() => ProfilePhoto.fromJson(body));
+  }
+
+  /// 3-2 사진 한 장의 분석 상태와 새 조회 주소.
+  Future<ProfilePhoto> photo(String photoId) async {
+    final body = await _client.get('$_photoBase/$photoId');
+    return _read(() => ProfilePhoto.fromJson(body));
+  }
 
   /// 2-6 일대기에 이야기를 담는다. 서버가 만든 `factId` 를 돌려받는다.
   Future<LifeFact> createLifeFact(

@@ -497,14 +497,19 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
 /// 기본 정보와 세부 정보 네 항목은 입력한 값이다. 그 밖의 생애 정보는 아직 목
-/// 데이터 그대로다. 사진은 목 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
-/// 올린 사진으로 바뀐다.
+/// 데이터 그대로다.
+///
+/// 서버에 저장한 분의 사진은 여기 담지 않는다. 갤러리가
+/// [serverProfilePhotosProvider] 로 따로 읽는다. 사진을 읽지 못해도 이름과 정보는
+/// 보여야 해서다. 로그인 없이 들어온 분은 목 사진을 이 분의 `photos[]` 로 붙인다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
   final entered = selected?.basicInfo;
   if (selected == null || entered == null) return null;
 
+  final online = ref.watch(sessionProvider.select((s) => s != null));
+  final onServer = online && selected.remoteId != null;
   final mock = bundle.profile;
   final details = selected.details;
   return ProfileBundle(
@@ -517,7 +522,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,
-      photoIds: mock.photoIds,
+      photoIds: onServer ? const [] : mock.photoIds,
       occupation: details.occupation,
       hometown: details.hometown,
       hobby: details.hobby,
@@ -525,9 +530,87 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
+    photos: onServer
+        ? const []
+        : [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
+
+/// 사진 분석(3-2)이 끝났는지 다시 묻는 간격. 테스트는 짧게 바꾼다.
+///
+/// 명세는 간격을 정하지 않는다. 리포트 상태를 묻는 간격과 같게 둔다.
+final photoAnalysisPollIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
+/// 서버에 저장한 지금 어르신의 프로필 사진(2-3). 올린 순서대로다.
+///
+/// 로그인하지 않았거나 서버에 저장하지 않은 분이면 `null` 이고, 갤러리는
+/// [profileProvider] 의 목 사진을 쓴다.
+///
+/// 분석이 끝나지 않은 사진(`pending`, `processing`)은 3-2 로 끝날 때까지 묻고 그
+/// 자리를 바꾼다. 묻지 못하면 다음 차례에 다시 묻는다. 갤러리를 떠나면 묻지
+/// 않고, 다시 열면 처음부터 읽는다. `imageUrl` 은 수명이 짧아 다시 열 때 새로
+/// 받는다.
+class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
+  /// 읽을 때마다 올라간다. 지난 읽기의 폴링은 버린다.
+  int _round = 0;
+
+  @override
+  Future<List<ProfilePhoto>?> build() async {
+    final round = ++_round;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) return null;
+
+    final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
+    if (!_stale(round) && photos.any(_analyzing)) {
+      // 상태를 돌려준 뒤에 묻기 시작한다.
+      Future<void>(() => _poll(round));
+    }
+    return photos;
+  }
+
+  static bool _analyzing(ProfilePhoto photo) => switch (photo.analysisStatus) {
+    PhotoAnalysisStatus.completed || PhotoAnalysisStatus.failed => false,
+    _ => true,
+  };
+
+  bool _stale(int round) => !ref.mounted || round != _round;
+
+  Future<void> _poll(int round) async {
+    if (_stale(round)) return;
+    final interval = ref.read(photoAnalysisPollIntervalProvider);
+    final api = ref.read(profileApiProvider);
+    while (true) {
+      await Future<void>.delayed(interval);
+      if (_stale(round)) return;
+      final photos = state.value;
+      if (photos == null || !photos.any(_analyzing)) return;
+
+      final next = [...photos];
+      for (var i = 0; i < next.length; i++) {
+        if (!_analyzing(next[i])) continue;
+        try {
+          next[i] = await api.photo(next[i].photoId);
+        } on ApiFailure {
+          // 이번에는 묻지 못했다. 다음 차례에 다시 묻는다.
+        }
+        if (_stale(round)) return;
+      }
+      state = AsyncData(next);
+    }
+  }
+}
+
+final serverProfilePhotosProvider =
+    AsyncNotifierProvider.autoDispose<
+      ServerProfilePhotosNotifier,
+      List<ProfilePhoto>?
+    >(ServerProfilePhotosNotifier.new);
 
 /// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
 String ageRangeOf(String birthDate, DateTime today) {
