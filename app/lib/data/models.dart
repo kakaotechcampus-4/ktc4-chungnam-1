@@ -155,25 +155,40 @@ class Profile {
   };
 }
 
+/// 일대기에 담긴 이야기 한 편(api-spec 의 LifeFact). 세부 정보 네 항목은
+/// 여기가 아니라 [Profile] 의 필드다.
 class LifeFact {
   const LifeFact({
     required this.factId,
-    required this.category,
-    required this.text,
-    required this.sourceType,
+    required this.storyCategory,
+    required this.title,
+    required this.content,
+    required this.imageNumber,
+    required this.createdAt,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
     factId: json['factId'] as String,
-    category: json['category'] as String,
-    text: json['text'] as String,
-    sourceType: json['sourceType'] as String,
+    storyCategory: json['storyCategory'] as String,
+    title: json['title'] as String,
+    content: json['content'] as String,
+    imageNumber: json['imageNumber'] as int,
+    createdAt: json['createdAt'] as String,
   );
 
   final String factId;
-  final String category;
-  final String text;
-  final String sourceType;
+
+  /// 일대기의 분류. `family`, `hobby`, `work`, `hometown`, `friend`,
+  /// `travel`, `other` 이다. 필드 이름은 임시다(API 미정 사항 11).
+  final String storyCategory;
+
+  /// 100자 이하. 제목과 내용은 비지 않는다.
+  final String title;
+  final String content;
+
+  /// 분류별 기본 그림 번호. 1~5 다.
+  final int imageNumber;
+  final String createdAt;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.
@@ -317,9 +332,6 @@ class ProfileBundle {
   /// 올린 순서대로다. 최대 5장이다.
   final List<ProfilePhoto> photos;
 
-  LifeFact? factOf(String category) =>
-      lifeFacts.where((f) => f.category == category).firstOrNull;
-
   CategoryCollectionState? stateOf(String category) =>
       collectionStates.where((s) => s.category == category).firstOrNull;
 }
@@ -332,11 +344,14 @@ class CardSet {
     required this.setId,
     required this.usedBySessionId,
     required this.cards,
+    this.needsRefresh = false,
   });
 
   factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
     setId: json['setId'] as String,
     usedBySessionId: json['usedBySessionId'] as String?,
+    // 이 값을 주기 전의 서버와 목 묶음은 다시 만들 일이 없는 묶음이다.
+    needsRefresh: json['needsRefresh'] as bool? ?? false,
     cards:
         (json['cards'] as List)
             .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
@@ -351,6 +366,10 @@ class CardSet {
 
   /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
   final String? usedBySessionId;
+
+  /// 받은 뒤 프로필이나 일대기를 고쳤는지. `true` 면 볼 수만 있고 이 묶음으로
+  /// 면회를 시작할 수 없다(API 4절).
+  final bool needsRefresh;
 
   /// 12장. [ConversationCard.position] 순서다.
   final List<ConversationCard> cards;

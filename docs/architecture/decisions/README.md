@@ -11,7 +11,7 @@ ADR은 앱, AI와 BE의 구조를 바꾸는 기술 결정에 사용한다. 담�
 | [ADR-006](ADR-006-server-side-ai-processing.md) | accepted, 후속 방향 정정 | STT는 GPU 서버, 사진 설명과 카드 및 리포트는 ML API 활용. 9월 14일 일괄 GPU 결정은 과거 기록으로 구분. 실제 사용자 자료 전송 조건 별도 확인 |
 | [ADR-007](ADR-007-google-social-login.md) | proposed | 구글 로그인과 백엔드 ID 토큰 직접 검증, ADR-006의 인증과 계정 저장 부분을 구체화. 저장 항목 등 공동 검토 필요 |
 | [ADR-008](ADR-008-stt-pipeline.md) | proposed | 면회 WAV 접수 후 PostgreSQL 작업 상태와 worker를 사용하는 비동기 STT·리포트 처리. 재시도와 리포트 계약 공동 검토 필요 |
-| [ADR-009](ADR-009-android-application-id-saerok.md) | accepted | Android Application ID와 Kotlin 패키지는 `com.saerok.app`. ADR-002를 대체 |
+| [ADR-009](ADR-009-android-application-id-saerok.md) | accepted | Android Application ID와 Kotlin 패키지는 `app.saerok.android`. ADR-002를 대체 |
 
 accepted는 결정이 확정됐다는 뜻이며 구현이나 배포 완료를 뜻하지 않는다. ADR-007의 `proposed` 표기는 구글 로그인 방향에 대한 PM 동의를 되돌리는 뜻이 아니며 계정 저장 항목 등 남은 검토안을 확정하지 않기 위한 표시다.
 

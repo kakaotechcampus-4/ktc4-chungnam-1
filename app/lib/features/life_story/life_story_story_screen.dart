@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
+import '../../data/profile_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
@@ -37,6 +39,12 @@ class LifeStoryStoryScreen extends ConsumerStatefulWidget {
 class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   late String _storyId = widget.storyId;
 
+  /// 지우는 중이다. 이때는 연필과 휴지통을 막는다.
+  bool _deleting = false;
+
+  /// 지우고 목차로 돌아가는 중인 이야기.
+  LifeStory? _leavingWith;
+
   Future<void> _edit(LifeStory story) async {
     if (story.isProfileDetail) {
       context.push(AppRoutes.profileEditDetails);
@@ -58,16 +66,28 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
     final confirmed = await showChoiceDialog(
       context,
       title: '이 이야기를 지울까요?',
-      detail: '지운 이야기는 되돌릴 수 없어요.',
+      // 이야기만 지우고 그 이야기로 만든 카드와 면회 기록은 남긴다(api-spec 2-9).
+      detail: '지운 이야기는 되돌릴 수 없어요.\n이 이야기로 이미 만든 대화 카드와 리포트는\n그대로 남아요.',
       primaryLabel: '지우기',
       secondaryLabel: '취소',
     );
     if (!confirmed || !mounted) return;
-    final edits = ref.read(lifeStoryEditsProvider.notifier);
     final messenger = ScaffoldMessenger.of(context);
-    // 지운 이야기가 잠깐이라도 '찾을 수 없어요' 로 보이지 않게 먼저 목차로 간다.
+    setState(() => _deleting = true);
+    try {
+      await ref.read(lifeStoryStoreProvider).delete(profileId, story);
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(profileFailureMessage(failure))));
+      return;
+    }
+    if (!mounted) return;
+    // 목차로 돌아가는 동안 지운 이야기가 '찾을 수 없어요' 로 보이지 않게 둔다.
+    setState(() => _leavingWith = story);
     context.pop();
-    edits.delete(profileId, story);
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(content: Text('이야기를 지웠어요.')));
@@ -76,7 +96,7 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   @override
   Widget build(BuildContext context) {
     final book = ref.watch(lifeStoryBookProvider).value;
-    final story = book?.find(_storyId);
+    final story = book?.find(_storyId) ?? _leavingWith;
 
     return Scaffold(
       appBar: AppTopBar(
@@ -84,13 +104,15 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
         actions: [
           if (book != null && story != null) ...[
             IconButton(
-              onPressed: () => _edit(story),
+              onPressed: _deleting ? null : () => _edit(story),
               tooltip: '이야기 수정',
               icon: const Icon(Icons.edit_outlined, size: 22),
             ),
             if (!story.isProfileDetail)
               IconButton(
-                onPressed: () => _delete(book.profile.profileId, story),
+                onPressed: _deleting
+                    ? null
+                    : () => _delete(book.profile.profileId, story),
                 tooltip: '이야기 지우기',
                 icon: const Icon(Icons.delete_outline, size: 22),
               ),
@@ -100,7 +122,7 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
       ),
       body: LifeStoryBookLoader(
         builder: (context, book) {
-          final story = book.find(_storyId);
+          final story = book.find(_storyId) ?? _leavingWith;
           if (story == null) {
             return const EmptyStateView(message: '이야기를 찾을 수 없어요.');
           }

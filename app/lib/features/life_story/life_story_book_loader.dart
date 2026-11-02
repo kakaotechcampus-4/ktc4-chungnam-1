@@ -22,7 +22,9 @@ class LifeStoryBookLoader extends ConsumerWidget {
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
         message: '일대기를 불러오지 못했어요.',
-        onRetry: () => ref.invalidate(profileProvider),
+        onRetry: () => ref
+          ..invalidate(profileProvider)
+          ..invalidate(serverLifeFactsProvider),
       ),
       data: (book) => book == null
           ? const EmptyStateView(message: '함께하는 소중한 분을 먼저 등록해주세요.')

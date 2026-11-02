@@ -8,6 +8,7 @@ import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/report_api.dart';
 import '../auth/auth_providers.dart';
+import '../life_story/life_story_providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -121,6 +122,9 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
   );
 
   /// 로그인했으면 서버(7-4)에 보낸다. 보내지 못하면 알리고 이 화면에 남는다.
+  ///
+  /// 이야기를 승인했으면 서버가 일대기에 담으므로, 일대기를 다시 열 때 새로
+  /// 읽게 한다.
   Future<void> _apply(ChangeProposal proposal) async {
     setState(() => _submitting = true);
     final review = _review(proposal);
@@ -129,10 +133,16 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
           .read(mockRepositoryProvider)
           .submitProposalReview(proposal.sessionId, review);
     } else {
+      // 답을 기다리는 사이 화면을 떠나도 일대기는 다시 읽게 미리 잡아 둔다.
+      final lifeStory = ref.read(lifeStoryStoreProvider);
       try {
         await ref
             .read(reportApiProvider)
             .reviewProposals(proposal.sessionId, review);
+        final accepted = review.lifeFacts.any(
+          (r) => r.reviewStatus == ChangeReviewStatus.accepted,
+        );
+        if (accepted) lifeStory.reload();
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         setState(() => _submitting = false);

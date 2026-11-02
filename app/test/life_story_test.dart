@@ -81,6 +81,16 @@ LifeStory _story(String id, LifeStoryCategory category, String date) =>
       createdAt: DateTime.parse(date),
     );
 
+LifeFact _fact({String storyCategory = 'family', int imageNumber = 1}) =>
+    LifeFact(
+      factId: 'fact_001',
+      storyCategory: storyCategory,
+      title: '경주 여행',
+      content: '불국사에 가셨대요.',
+      imageNumber: imageNumber,
+      createdAt: '2026-09-01T10:00:00+09:00',
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -92,6 +102,34 @@ void main() {
           expect(File(path).existsSync(), isTrue, reason: path);
         }
       }
+    });
+
+    test('담은 이야기는 분류, 제목, 내용, 그림 번호와 날짜를 그대로 쓴다', () {
+      final story = LifeStory.fromLifeFact(
+        _fact(storyCategory: 'travel', imageNumber: 4),
+      );
+
+      expect(story.id, 'fact_001');
+      expect(story.category, LifeStoryCategory.travel);
+      expect(story.title, '경주 여행');
+      expect(story.content, '불국사에 가셨대요.');
+      expect(story.imageNumber, 4);
+      expect(
+        story.createdAt!.isAtSameMomentAs(DateTime.utc(2026, 9, 1, 1)),
+        isTrue,
+      );
+      expect(story.isProfileDetail, isFalse);
+    });
+
+    test('모르는 분류는 기타에, 범위 밖 그림 번호는 1~5 안에 둔다', () {
+      final unknown = LifeStory.fromLifeFact(
+        _fact(storyCategory: 'school', imageNumber: 9),
+      );
+      final zero = LifeStory.fromLifeFact(_fact(imageNumber: 0));
+
+      expect(unknown.category, LifeStoryCategory.other);
+      expect(unknown.imageNumber, lifeStoryImageCount);
+      expect(zero.imageNumber, 1);
     });
 
     test('세부 정보는 적은 항목만 이야기가 되고 날짜가 없다', () {
@@ -338,7 +376,7 @@ void main() {
     });
 
     testWidgets('이야기 위에 그 분류와 번호의 그림을 놓는다', (tester) async {
-      await openAt(tester, AppRoutes.albumStoryOf('family', 'story_demo_001'));
+      await openAt(tester, AppRoutes.albumStoryOf('family', 'fact_demo_001'));
 
       expect(
         showsAsset(tester, 'assets/images/life-story-family-2.webp'),
@@ -366,7 +404,7 @@ void main() {
         AppRoutes.album,
         AppRoutes.albumBook,
         AppRoutes.albumCategoryOf('family'),
-        AppRoutes.albumStoryOf('family', 'story_demo_001'),
+        AppRoutes.albumStoryOf('family', 'fact_demo_001'),
       ]) {
         await openAt(tester, location, textScale: 2);
         expect(tester.takeException(), isNull, reason: location);
