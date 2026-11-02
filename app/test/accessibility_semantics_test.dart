@@ -20,6 +20,7 @@ import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
+import 'package:saerok/features/home/my_page_menu.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/review/review_screen.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
@@ -313,6 +314,31 @@ void main() {
       );
       handle.dispose();
     });
+
+    testWidgets('카드 시트를 닫은 뒤에도 두 번 눌러 다시 꺼낼 수 있다', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openRecording(tester);
+
+      for (var round = 1; round <= 3; round++) {
+        tester.semantics.tap(find.semantics.byLabel('대화 카드 꺼내기'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(
+          find.semantics.byLabel('다음 카드'),
+          findsOne,
+          reason: '$round 번째에도 시트가 열린다',
+        );
+
+        // 화면 낭독기 사용자가 닫는 방법인 바깥 영역 두 번 누르기로 닫는다.
+        tester.semantics.tap(find.semantics.byLabel('대화 카드 닫기'));
+        await tester.pump();
+        // 닫기는 Navigator.maybePop 을 거쳐 한 프레임 늦게 시작한다.
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.semantics.byLabel('다음 카드'), findsNothing);
+      }
+      handle.dispose();
+    });
   });
 
   group('소감 (보고서 6쪽, 13쪽과 같은 문제)', () {
@@ -558,6 +584,42 @@ void main() {
       expect(find.bySemanticsLabel('성별, 필수 입력'), findsOneWidget);
       expect(find.bySemanticsLabel('메모'), findsOneWidget);
       expect(_traversalLabels(tester).any((l) => l.contains('*')), isFalse);
+      handle.dispose();
+    });
+  });
+
+  group('마이페이지 메뉴 (보고서 8쪽, 일부)', () {
+    testWidgets('메뉴 바깥 영역은 영어 Scrim 대신 한국어로 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => showMyPageMenu(context),
+                    child: const Text('메뉴 열기'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('메뉴 열기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('프로필 설정'), findsOneWidget);
+      expect(find.semantics.byLabel('메뉴 닫기'), findsOne);
+      expect(find.semantics.byLabel('Scrim'), findsNothing);
+      // 손잡이의 `Dismiss` 는 앱 언어를 따르므로 이 변경으로 바뀌지 않는다.
+
+      tester.semantics.tap(find.semantics.byLabel('메뉴 닫기'));
+      await tester.pumpAndSettle();
+      expect(find.text('프로필 설정'), findsNothing);
       handle.dispose();
     });
   });

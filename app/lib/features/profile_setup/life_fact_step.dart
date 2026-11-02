@@ -630,35 +630,43 @@ class _MicArea extends StatelessWidget {
                   ),
                 )
               // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
-              // (접근성 보고서 7쪽).
-              : Semantics(
-                  button: true,
-                  label: listening ? '음성 입력 종료' : '음성 입력 시작',
-                  child: InkWell(
-                    onTap: onTap,
-                    customBorder: const CircleBorder(),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: failed
-                              ? AppColors.danger
-                              : listening
-                              ? AppColors.ink
-                              : AppColors.line,
-                          width: listening ? 3 : 2,
+              // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
+              // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
+              : ExcludeSemantics(
+                  excluding: onTap == null,
+                  child: Semantics(
+                    button: true,
+                    label: listening ? '음성 입력 종료' : '음성 입력 시작',
+                    child: InkWell(
+                      onTap: onTap,
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: failed
+                                ? AppColors.danger
+                                : listening
+                                ? AppColors.ink
+                                : AppColors.line,
+                            width: listening ? 3 : 2,
+                          ),
                         ),
+                        child: transcribing
+                            ? const Padding(
+                                padding: EdgeInsets.all(36),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : Icon(
+                                Icons.mic,
+                                size: 48,
+                                color: failed
+                                    ? AppColors.danger
+                                    : AppColors.ink,
+                              ),
                       ),
-                      child: transcribing
-                          ? const Padding(
-                              padding: EdgeInsets.all(36),
-                              child: CircularProgressIndicator(strokeWidth: 3),
-                            )
-                          : Icon(
-                              Icons.mic,
-                              size: 48,
-                              color: failed ? AppColors.danger : AppColors.ink,
-                            ),
                     ),
                   ),
                 ),
