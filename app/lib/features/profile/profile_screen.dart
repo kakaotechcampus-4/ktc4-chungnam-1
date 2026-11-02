@@ -28,6 +28,9 @@ import 'profile_gallery.dart';
 ///
 /// 등록한 어르신이 없으면 어르신 항목을 모두 감추고 계정 약관 동의, 저장하기,
 /// 로그아웃과 회원탈퇴만 보여준다.
+///
+/// 계정 정보를 읽지 못해도 로그아웃은 둔다. 세션이 만료돼 다시 시도해도 같은
+/// 오류가 나면 로그아웃한 뒤 다시 로그인할 길이 있어야 한다.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -49,9 +52,19 @@ class ProfileScreen extends ConsumerWidget {
           // 이전 값을 보여주지 않고 기다린다.
           skipLoadingOnRefresh: false,
           loading: () => const LoadingView(),
-          error: (error, _) => ErrorStateView(
-            message: '계정 정보를 불러오지 못했어요.',
-            onRetry: () => ref.invalidate(accountProvider),
+          error: (error, _) => Column(
+            children: [
+              Expanded(
+                child: ErrorStateView(
+                  message: '계정 정보를 불러오지 못했어요.',
+                  onRetry: () => ref.invalidate(accountProvider),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(AppSpacing.screen),
+                child: _SignOutButton(),
+              ),
+            ],
           ),
           data: (account) => _Body(bundle: bundle, account: account),
         ),
