@@ -22,6 +22,8 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/auth/google_authenticator.dart';
+import 'package:saerok/features/auth/session_store.dart';
 
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
@@ -40,6 +42,30 @@ AuthSession _session() => AuthSession(
   ),
 );
 
+class _FakeGoogle implements GoogleAuthenticator {
+  @override
+  Future<String?> idToken() async => null;
+
+  @override
+  Future<String?> silentIdToken() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
+
+class _MemoryStore implements SessionStore {
+  AuthSession? stored;
+
+  @override
+  Future<AuthSession?> read() async => stored;
+
+  @override
+  Future<void> write(AuthSession session) async => stored = session;
+
+  @override
+  Future<void> clear() async => stored = null;
+}
+
 /// 계정 API 를 흉내 낸다. 동의는 [consent] 에 두고 1-6 이 보낸 항목만 바꾼다.
 class _FakeAccountServer {
   final consent = <String, bool>{
@@ -57,6 +83,9 @@ class _FakeAccountServer {
   /// 정해 두면 1-6 은 이 Future 가 끝난 뒤에 저장하고 답한다.
   Future<void>? patchHold;
 
+  /// 세션이 만료된 것처럼 1-3 을 401 로 거절한다.
+  bool meRejected = false;
+
   AccountApi get api => AccountApi(
     ApiClient(
       authorization: () => 'Bearer fake-token',
@@ -68,6 +97,21 @@ class _FakeAccountServer {
           path: request.url.path,
           body: body,
         ));
+        if (request.method == 'GET' && meRejected) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode({
+                'schemaVersion': 1,
+                'errorCode': 'SESSION_EXPIRED',
+                'message': '테스트',
+                'requestId': 'r',
+                'retryable': false,
+              }),
+            ),
+            401,
+            headers: {'content-type': 'application/json'},
+          );
+        }
         if (request.method == 'PATCH') {
           await patchHold;
           if (patchOffline) throw http.ClientException('오프라인');
@@ -178,6 +222,15 @@ void main() {
           FakeProfileServer().override,
           FakeReportServer().override,
           accountApiProvider.overrideWithValue(server.api),
+          // 로그아웃(1-5)은 세션이 만료됐어도 단말 세션을 지운다.
+          authApiProvider.overrideWithValue(
+            AuthApi(
+              baseUrl: 'http://api.test',
+              client: MockClient((_) async => http.Response('', 401)),
+            ),
+          ),
+          googleAuthenticatorProvider.overrideWithValue(_FakeGoogle()),
+          sessionStoreProvider.overrideWithValue(_MemoryStore()),
           profileSampleProvider.overrideWith((ref) async => sample),
         ],
       );
@@ -279,6 +332,24 @@ void main() {
 
       expect(find.textContaining('새록과 이별인가요?'), findsOneWidget);
       expect(server.consent['serviceImprovement'], isTrue);
+    });
+
+    testWidgets('세션이 만료돼 계정을 읽지 못해도 로그아웃하고 다시 로그인할 수 있다', (tester) async {
+      final server = _FakeAccountServer()..meRejected = true;
+      final router = await open(tester, server);
+
+      expect(find.text('계정 정보를 불러오지 못했어요.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(OutlinedButton, '로그아웃'));
+      await settle(tester);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp)),
+      );
+      expect(container.read(sessionProvider), isNull);
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        Uri.parse(AppRoutes.signIn).path,
+      );
     });
 
     testWidgets('바꾼 것이 없으면 서버에 보내지 않는다', (tester) async {
