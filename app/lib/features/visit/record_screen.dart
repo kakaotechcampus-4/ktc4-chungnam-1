@@ -327,11 +327,16 @@ class _Recording extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: AppSpacing.xxxl),
-                Text(
-                  state.recording ? '녹음 중이에요' : '잠시 멈췄어요',
-                  // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
-                  style: AppTypography.screenTitle.copyWith(fontSize: 24),
-                  textAlign: TextAlign.center,
+                // 멈춤과 이어서 녹음을 누르면 바뀐 상태를 화면 낭독기가 바로
+                // 읽는다. 1초마다 바뀌는 시간은 읽지 않게 여기에만 둔다.
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    state.recording ? '녹음 중이에요' : '잠시 멈췄어요',
+                    // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
+                    style: AppTypography.screenTitle.copyWith(fontSize: 24),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
@@ -457,37 +462,49 @@ class _CardPeekState extends State<_CardPeek> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final fanHeight = widget.height - bottomInset - _CardPeek._fanInset;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    // 화면 낭독기에서는 끌어올릴 수 없으므로 두 번 눌러 꺼내는 버튼 하나로 읽는다.
+    // 부채 그림과 `위로 올려서` 안내는 읽지 않는다.
+    return Semantics(
+      container: true,
+      button: true,
+      label: '대화 카드 꺼내기',
       onTap: _open,
-      onVerticalDragStart: (_) {
-        _dragged = 0;
-        _opening = false;
-      },
-      onVerticalDragUpdate: (details) {
-        _dragged += details.delta.dy;
-        if (_dragged < -_dragDistance) _open();
-      },
-      onVerticalDragEnd: (details) {
-        if ((details.primaryVelocity ?? 0) < _flingVelocity) _open();
-      },
-      child: SizedBox(
-        height: widget.height,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: _CardPeek._fanBottom + bottomInset,
-              child: _CardFan(key: const Key('cardPeekFan'), height: fanHeight),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _PullHint(bottomInset: bottomInset),
-            ),
-          ],
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _open,
+        onVerticalDragStart: (_) {
+          _dragged = 0;
+          _opening = false;
+        },
+        onVerticalDragUpdate: (details) {
+          _dragged += details.delta.dy;
+          if (_dragged < -_dragDistance) _open();
+        },
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) < _flingVelocity) _open();
+        },
+        child: SizedBox(
+          height: widget.height,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: _CardPeek._fanBottom + bottomInset,
+                child: _CardFan(
+                  key: const Key('cardPeekFan'),
+                  height: fanHeight,
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _PullHint(bottomInset: bottomInset),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -620,24 +637,34 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.line, width: 2),
+    // 둥근 버튼과 아래 이름을 화면 낭독기에서 버튼 하나로 읽는다. 이름이 버튼
+    // 밖에 있으면 아이콘만 있는 이름 없는 버튼과 글자가 따로 읽힌다(접근성
+    // 보고서 11쪽). 이름은 지금 누르면 하는 일이라 멈춘 뒤에는 `이어서 녹음` 이 된다.
+    return Semantics(
+      container: true,
+      button: true,
+      label: label,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.line, width: 2),
+              ),
+              child: Icon(icon, size: 30, color: AppColors.ink),
             ),
-            child: Icon(icon, size: 30, color: AppColors.ink),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(label, style: AppTypography.sub),
-      ],
+          const SizedBox(height: AppSpacing.sm),
+          Text(label, style: AppTypography.sub),
+        ],
+      ),
     );
   }
 }

@@ -237,7 +237,11 @@ class _BodyState extends ConsumerState<_Body> {
                 const SizedBox(height: AppSpacing.section),
               ],
 
-              Text('오늘의 만남', style: set.section),
+              // 화면 낭독기에서 제목 단위로 옮겨 다닐 수 있게 한다.
+              Semantics(
+                header: true,
+                child: Text('오늘의 만남', style: set.section),
+              ),
               const SizedBox(height: AppSpacing.lg),
               AppSurfaceBox(
                 padding: EdgeInsets.all(set.cardPadding),
@@ -245,7 +249,10 @@ class _BodyState extends ConsumerState<_Body> {
               ),
               const SizedBox(height: AppSpacing.section),
 
-              Text('대화 카드별 반응', style: set.section),
+              Semantics(
+                header: true,
+                child: Text('대화 카드별 반응', style: set.section),
+              ),
               const SizedBox(height: AppSpacing.lg),
 
               if (cards.summaries.isEmpty)
@@ -347,6 +354,11 @@ class _MetaLine extends StatelessWidget {
     final label = Text(date, style: set.sub);
     final chip = AppChip(mood, style: set.chip);
 
+    // 날짜와 만남 표시를 한 번에 읽는다.
+    return MergeSemantics(child: _layout(label, chip));
+  }
+
+  Widget _layout(Widget label, Widget chip) {
     if (stacked) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -383,21 +395,25 @@ class _CardSummaryTile extends StatelessWidget {
     // 글자 크기를 키운 기기에서도 두 줄을 유지한다.
     final twoLines = MediaQuery.textScalerOf(context).scale(lineHeight) * 2;
 
-    return AppCard(
-      padding: EdgeInsets.all(set.cardPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(summary.topicTitle, style: set.cardTitle),
-          const SizedBox(height: AppSpacing.md),
-          ConstrainedBox(
-            constraints: BoxConstraints(minHeight: twoLines),
-            child: SizedBox(
-              width: double.infinity,
-              child: Text(summary.summary, style: style),
+    // 카드 제목과 반응을 한 항목으로 읽는다. 따로 읽히면 어느 카드의 반응인지
+    // 이어 듣기 어렵다.
+    return MergeSemantics(
+      child: AppCard(
+        padding: EdgeInsets.all(set.cardPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary.topicTitle, style: set.cardTitle),
+            const SizedBox(height: AppSpacing.md),
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: twoLines),
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(summary.summary, style: style),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -419,36 +435,45 @@ class _EasyModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = on ? AppColors.background : AppColors.ink;
 
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: on ? AppColors.ink : AppColors.background,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: on ? AppColors.ink : AppColors.line),
-        boxShadow: AppShadows.high,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => onChanged(!on),
+    // 켜고 끄는 버튼이라 화면 낭독기에 켜짐과 꺼짐을 알린다. 아이콘은 읽지 않는다.
+    return Semantics(
+      container: true,
+      button: true,
+      toggled: on,
+      label: '쉬운 모드',
+      onTap: () => onChanged(!on),
+      excludeSemantics: true,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: on ? AppColors.ink : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 켜졌다는 것을 색만으로 알리지 않는다(`app/DESIGN.md` 접근성).
-                Icon(
-                  on ? Icons.check : Icons.format_size,
-                  size: 24,
-                  color: foreground,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '쉬운 모드',
-                  style: AppTypography.bodyStrong.copyWith(color: foreground),
-                ),
-              ],
+          border: Border.all(color: on ? AppColors.ink : AppColors.line),
+          boxShadow: AppShadows.high,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onChanged(!on),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 켜졌다는 것을 색만으로 알리지 않는다(`app/DESIGN.md` 접근성).
+                  Icon(
+                    on ? Icons.check : Icons.format_size,
+                    size: 24,
+                    color: foreground,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    '쉬운 모드',
+                    style: AppTypography.bodyStrong.copyWith(color: foreground),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -478,6 +503,7 @@ class _VisitPhoto extends StatelessWidget {
             height: _height,
             width: double.infinity,
             fit: BoxFit.cover,
+            semanticLabel: '면회 사진',
           )
         : Image.network(
             url,
