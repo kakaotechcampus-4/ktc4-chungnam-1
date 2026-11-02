@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/release_config.dart';
 import 'app/router.dart';
 import 'app/routes.dart';
 import 'design/theme.dart';
@@ -8,6 +10,13 @@ import 'features/auth/session_refresher.dart';
 import 'features/profile_setup/setup_controller.dart';
 
 void main() {
+  // 릴리스 빌드에 서버 주소나 구글 클라이언트 ID 를 잘못 넘겼으면 로그인과 요청을
+  // 시작하지 않고 설정 오류를 알린다. 디버그 빌드는 검사하지 않는다.
+  final problems = currentReleaseConfigProblems(isRelease: kReleaseMode);
+  if (problems.isNotEmpty) {
+    runApp(ReleaseConfigErrorApp(problems: problems));
+    return;
+  }
   runApp(const ProviderScope(child: SaerokApp()));
 }
 

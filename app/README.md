@@ -34,7 +34,7 @@ Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스
 
     flutter build appbundle --release --dart-define-from-file=.env
 
-`key.properties`가 없으면 release도 디버그 키로 서명되며, 그 결과물은 Play에 올릴 수 없다. `.env`의 `SAEROK_API_BASE_URL`은 https여야 한다. 릴리스 빌드는 평문 통신을 막는다. 구글 로그인을 하려면 업로드 키의 SHA-1과 Play App Signing의 앱 서명 키 SHA-1을 Google Cloud Console에 등록해야 한다. 버전은 `pubspec.yaml`의 `version`(`이름+versionCode`)을 따르며, 올릴 때마다 versionCode를 올린다.
+`key.properties`가 없으면 release도 디버그 키로 서명되며, 그 결과물은 Play에 올릴 수 없다. `.env`의 `SAEROK_API_BASE_URL`은 https여야 하고 `SAEROK_GOOGLE_SERVER_CLIENT_ID`는 비어 있으면 안 된다. 릴리스 빌드는 평문 통신을 막는다. 둘 중 하나라도 맞지 않으면 릴리스 앱은 켜자마자 로그인 대신 설정 오류 화면을 띄우고 고칠 설정 이름을 보여 준다([릴리스 설정 검사](#릴리스-설정-검사)). 구글 로그인을 하려면 업로드 키의 SHA-1과 Play App Signing의 앱 서명 키 SHA-1을 Google Cloud Console에 등록해야 한다. 버전은 `pubspec.yaml`의 `version`(`이름+versionCode`)을 따르며, 올릴 때마다 versionCode를 올린다.
 
 ## 기술과 화면 기준
 
@@ -336,10 +336,21 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `SAEROK_API_BASE_URL` | `http://10.0.2.2:8000` | 에뮬레이터에서 호스트를 가리키는 주소. 실기기는 PC의 LAN 주소를 넘긴다 |
 
 `serverClientId`가 ID 토큰의 `aud`가 되므로 서버의 `SAEROK_GOOGLE_CLIENT_IDS`와 같아야 한다.
-Google Cloud Console에 Application ID `app.saerok.android`와 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
+Google Cloud Console에 Application ID `app.saerok.android`와 디버그, 릴리스 SHA-1 등록이 선행되어야 한다.
 
 개발 서버가 http라서 평문 통신을 디버그 빌드에서만 열어 두었다
 (`android/app/src/debug/AndroidManifest.xml`). 릴리스 빌드에는 들어가지 않는다.
+
+#### 릴리스 설정 검사
+
+기본 서버 주소가 에뮬레이터용 http라서, 값을 넘기지 않은 릴리스 빌드는 모든 요청이 연결 오류로만 보인다. 이를 막으려고 릴리스 빌드(`kReleaseMode`)는 앱을 켤 때 [release_config.dart](lib/app/release_config.dart)의 `releaseConfigProblems`로 아래를 확인한다.
+
+| 확인 | 막는 값 |
+| --- | --- |
+| `SAEROK_API_BASE_URL` | 비어 있음, scheme이 https가 아님, host 없음, 앞뒤 공백 |
+| `SAEROK_GOOGLE_SERVER_CLIENT_ID` | 비어 있음 |
+
+하나라도 걸리면 `SaerokApp` 대신 `ReleaseConfigErrorApp`을 띄운다. 라우터, 세션 복원과 서버 요청을 시작하지 않고, 화면에는 고칠 설정 이름만 적는다. 넘긴 주소와 ID 값은 화면과 로그에 남기지 않는다. 다시 빌드해야 고쳐지므로 다시 시도 버튼은 없다. 디버그와 프로필 빌드는 검사하지 않아 기존 동작 그대로다. 확인 내용은 `test/release_config_test.dart`에 있다.
 
 ### 확인이 필요한 것
 
