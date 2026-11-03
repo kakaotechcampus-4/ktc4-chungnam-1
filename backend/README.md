@@ -55,6 +55,7 @@ uv run pytest
 | 생존 확인 | `GET /health/live` |
 | 준비 상태 | `GET /health/ready`. 외부 의존성이 없는 골격의 상태만 확인 |
 | API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
+| API 명세 대조 | [test_api_spec_routes.py](tests/test_api_spec_routes.py)가 서버의 실제 경로와 `docs/architecture/api-spec.md`의 `METHOD /경로` 제목이 서로 빠짐없는지 확인. 상태 확인과 AI 서버의 `/internal` 경로는 제외. 필드와 설명은 비교하지 않음 |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
