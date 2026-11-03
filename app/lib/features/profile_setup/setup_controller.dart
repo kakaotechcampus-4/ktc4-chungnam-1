@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 
 import '../../data/api_client.dart';
 import '../../data/card_api.dart';
@@ -405,12 +406,22 @@ final pendingSetupsProvider =
 /// 일대기에서 바꾼 이야기도 함께 지워야 다음 사람의 같은 번호 어르신에 남지
 /// 않는다. 이번 회차에 찍어 둔 면회 사진도 잊는다. 사진 파일은 녹음처럼 기기에
 /// 남기며 탈퇴 때만 지운다(`visit_photos.dart`).
-void forgetCareProfiles(WidgetRef ref) {
-  ref
-    ..invalidate(careProfilesProvider)
-    ..invalidate(setupControllerProvider)
-    ..invalidate(pendingSetupsProvider)
-    ..invalidate(editedPhotoDescriptionsProvider)
-    ..invalidate(lifeStoryEditsProvider)
-    ..invalidate(visitPhotoProvider);
+void forgetCareProfiles(WidgetRef ref) => _forgetCareProfiles(ref.invalidate);
+
+/// [forgetCareProfiles] 와 같다. 부른 화면이 이미 사라졌을 수 있는 곳(로그아웃
+/// 응답을 기다린 뒤)에서 미리 잡아 둔 [container] 로 지운다.
+void forgetCareProfilesIn(ProviderContainer container) =>
+    _forgetCareProfiles(container.invalidate);
+
+void _forgetCareProfiles(void Function(ProviderOrFamily provider) invalidate) {
+  for (final provider in <ProviderOrFamily>[
+    careProfilesProvider,
+    setupControllerProvider,
+    pendingSetupsProvider,
+    editedPhotoDescriptionsProvider,
+    lifeStoryEditsProvider,
+    visitPhotoProvider,
+  ]) {
+    invalidate(provider);
+  }
 }

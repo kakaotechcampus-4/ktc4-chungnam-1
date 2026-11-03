@@ -398,12 +398,16 @@ class _SignOutButton extends ConsumerStatefulWidget {
 class _SignOutButtonState extends ConsumerState<_SignOutButton> {
   bool _busy = false;
 
+  /// 세션을 지우면 계정 정보가 바뀌어 설정 화면이 다시 그려지고, 이 버튼은
+  /// 서버 응답을 기다리는 동안 사라질 수 있다. 그래도 한 번의 로그아웃으로
+  /// 로그인 화면까지 가도록 필요한 것을 미리 잡아 둔다.
   Future<void> _signOut() async {
     setState(() => _busy = true);
-    await ref.read(sessionProvider.notifier).signOut();
-    if (!mounted) return;
-    forgetCareProfiles(ref);
-    context.go(AppRoutes.signIn);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final router = GoRouter.of(context);
+    await container.read(sessionProvider.notifier).signOut();
+    forgetCareProfilesIn(container);
+    router.go(AppRoutes.signIn);
   }
 
   @override
