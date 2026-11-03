@@ -2,7 +2,22 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
-import uvicorn
+import uvicorn, warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r"TensorFloat-32 \(TF32\) has been disabled.*",
+    module=r"pyannote\.audio\.utils\.reproducibility",
+)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"std\(\): degrees of freedom is <= 0.*",
+    module=r"pyannote\.audio\.models\.blocks\.pooling",
+)
+
+from stt_server.progress import configure_logging, progress
+
+configure_logging()
 
 from stt_server.api.router import api_router
 from stt_server.audio.providers import (
@@ -14,6 +29,7 @@ from stt_server.audio.providers import (
 from stt_server.stt.diarization import DiarizationRuntime
 from stt_server.stt.runtime import AsrRuntime
 from stt_server.stt.service import SpeechAnalysisService
+from stt_server.runtime_settings import RuntimeSettings
 
 os.environ["PYANNOTE_METRICS_ENABLED"] = "0"
 
@@ -23,6 +39,7 @@ from pyannote.audio import Pipeline
 
 SERVICE_NAME = "saerok-stt-server"
 SERVICE_VERSION = "0.1.0"
+runtime_settings = RuntimeSettings.from_environment()
 
 # asr_runtime is a singleton instance of AsrRuntime that is initialized when the FastAPI app starts.
 asr_runtime: AsrRuntime | None = None
@@ -34,8 +51,8 @@ def _get_asr_runtime() -> AsrRuntime:
     global asr_runtime
 
     if asr_runtime is None:
-        asr_runtime = AsrRuntime()
-        print("Whisper model loaded successfully.")
+        with progress("asr_model_load"):
+            asr_runtime = AsrRuntime(settings=runtime_settings)
 
     return asr_runtime
 
@@ -47,15 +64,15 @@ def _get_diarization_pipeline() -> Pipeline:
 
     global diarization_pipeline
     if diarization_pipeline is None:
-        diarization_pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-community-1",
-        )
-        print("Diarization pipeline loaded successfully.")
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
-
-        diarization_pipeline.to(device)
+        with progress("diarization_model_load"):
+            diarization_pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-community-1",
+            )
+            device = torch.device(
+                runtime_settings.torch_cuda_device
+                if torch.cuda.is_available() else "cpu"
+            )
+            diarization_pipeline.to(device)
 
     return diarization_pipeline
 

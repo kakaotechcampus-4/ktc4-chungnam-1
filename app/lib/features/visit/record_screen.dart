@@ -216,6 +216,8 @@ class _ProblemNotice extends StatelessWidget {
       '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
     VisitRecordingProblem.sessionFailed =>
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+    VisitRecordingProblem.cardsOutdated =>
+      '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
   };
 
   @override

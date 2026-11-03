@@ -25,12 +25,22 @@ enum CardGenerationStatus {
   inVisit,
 
   /// 실패했다. 4-2 는 실패 이유를 주지 않는다.
-  failed;
+  failed,
 
-  /// 모르는 값이면 성공으로 넘기지 않는다.
-  static CardGenerationStatus parse(Object? raw) {
+  /// 다 만들었지만 받은 뒤 프로필이나 일대기를 고쳤다. 서버는 `ready` 에
+  /// `needsRefresh: true` 를 붙여 주고, 앱은 따로 가른다. 카드는 볼 수 있지만
+  /// 이 묶음으로 면회를 시작할 수 없고 4-1 로 다시 만든다.
+  needsRefresh;
+
+  /// 모르는 값이면 성공으로 넘기지 않는다. [needsRefresh] 는 서버의 `status`
+  /// 값이 아니므로 받지 않는다.
+  static CardGenerationStatus parse(Object? raw, {bool needsRefresh = false}) {
     for (final value in values) {
-      if (value.name == raw) return value;
+      if (value == CardGenerationStatus.needsRefresh) continue;
+      if (value.name != raw) continue;
+      return value == CardGenerationStatus.ready && needsRefresh
+          ? CardGenerationStatus.needsRefresh
+          : value;
     }
     throw ApiUnexpectedResponseFailure('모르는 카드 생성 status: $raw');
   }
@@ -43,7 +53,7 @@ abstract interface class CardApi {
   /// 돌려준다(`CARD_SET_READY` 는 `ready`, `VISIT_IN_PROGRESS` 는 `inVisit`).
   Future<CardGenerationStatus> requestGeneration(String profileId);
 
-  /// 4-2. 가장 최근 작업의 상태다.
+  /// 4-2. 가장 최근 작업의 상태다. `needsRefresh` 가 없으면 `false` 로 본다.
   Future<CardGenerationStatus> status(String profileId);
 
   /// 4-3. 지금 쓸 카드 묶음이다. 쓸 묶음이 없으면 `CARD_GENERATION_NOT_FOUND`
@@ -81,7 +91,10 @@ class ServerCardApi implements CardApi {
   @override
   Future<CardGenerationStatus> status(String profileId) async {
     final body = await _client.get('${_base(profileId)}/status');
-    return CardGenerationStatus.parse(body['status']);
+    return CardGenerationStatus.parse(
+      body['status'],
+      needsRefresh: body['needsRefresh'] == true,
+    );
   }
 
   @override

@@ -438,4 +438,68 @@ void main() {
       });
     });
   });
+
+  group('열어 둔 사진의 분석이 끝나면', () {
+    /// 같은 갤러리에 새 사진 목록을 넘긴다. 3-2 로 분석 상태를 다시 받은 때다.
+    Future<void> show(WidgetTester tester, List<ProfilePhoto> photos) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            photoDescriptionStoreProvider.overrideWithValue(_FakeStore()),
+          ],
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: ProfileGallery(
+                  key: const ValueKey('gallery'),
+                  photos: photos,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('새로 온 설명을 입력칸에 채운다', (tester) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await show(tester, [_photo('photo_1', PhotoAnalysisStatus.processing)]);
+      await tester.tap(find.bySemanticsLabel('사진 1, 분석 중'));
+      await tester.pumpAndSettle();
+
+      await show(tester, [
+        _photo('photo_1', PhotoAnalysisStatus.completed, description: _aiText),
+      ]);
+
+      expect(find.widgetWithText(TextField, _aiText), findsOneWidget);
+    });
+
+    testWidgets('보호자가 쓰고 있던 내용은 덮어쓰지 않는다', (tester) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await show(tester, [
+        _photo('photo_1', PhotoAnalysisStatus.completed, description: _aiText),
+      ]);
+      await tester.tap(find.bySemanticsLabel('사진 1'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '보호자가 쓰던 설명');
+      await tester.pump();
+
+      await show(tester, [
+        _photo(
+          'photo_1',
+          PhotoAnalysisStatus.completed,
+          description: '다시 받은 설명이에요.',
+        ),
+      ]);
+
+      expect(find.widgetWithText(TextField, '보호자가 쓰던 설명'), findsOneWidget);
+    });
+  });
 }

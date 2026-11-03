@@ -10,7 +10,8 @@
 - 요청 조립부터 검증까지 전체에 제한 시간(`time_limit_seconds`)을 둔다. 넘기면
   `AI_SERVER_TIMEOUT`이다. 생성 함수는 daemon 스레드에서 돌고, 기다림만 끝낸다.
   동기 함수라 스레드는 멈추지 않지만 그 결과는 아무도 읽지 않고, 생성 함수는 DB를
-  쓰지 않는다.
+  쓰지 않는다. 시간 초과를 확정하면 마감에 취소를 표시해, 남은 스레드는 다음 외부 호출
+  직전 `deadline.check()`에서 멈춘다.
 - 결과가 와도 저장 직전에 마감을 다시 확인한다.
 - 저장 트랜잭션은 먼저 작업 행을 잠그고 `generatingReport`이며 임대가 남았는지
   확인한다. 아니면(임대 만료로 다른 worker가 실패 처리함) `WORKER_LEASE_EXPIRED`로
@@ -60,18 +61,23 @@ _NOT_EVALUATED_REACTIONS = {"notUsed", None}
 
 
 class ReportDeadline:
-    """리포트 생성 한 번의 마감 시각."""
+    """리포트 생성 한 번의 마감 시각과 취소 상태."""
 
     def __init__(self, seconds: float) -> None:
         self.seconds = seconds
         self._end = time.monotonic() + seconds
+        self._cancelled = threading.Event()
 
     def left(self) -> float:
         return self._end - time.monotonic()
 
+    def cancel(self) -> None:
+        """시간 초과가 확정됐다고 표시한다. 이후 `check()`는 시계와 관계없이 실패한다."""
+        self._cancelled.set()
+
     def check(self) -> None:
-        """마감이 지났으면 `AI_SERVER_TIMEOUT`."""
-        if self.left() <= 0:
+        """취소됐거나 마감이 지났으면 `AI_SERVER_TIMEOUT`."""
+        if self._cancelled.is_set() or self.left() <= 0:
             raise _timed_out()
 
 
@@ -145,6 +151,9 @@ async def _run_until(
     try:
         return await asyncio.wait_for(done, timeout=max(0.0, deadline.left()))
     except TimeoutError:
+        # 이벤트 루프 타이머와 스레드가 읽는 시계는 해상도가 달라(Windows), 남은 스레드가
+        # 아직 마감 전으로 볼 수 있다. 취소를 표시해 다음 외부 호출 전에 멈추게 한다.
+        deadline.cancel()
         raise _timed_out() from None
 
 

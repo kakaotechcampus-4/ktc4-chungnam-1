@@ -2,6 +2,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
@@ -261,6 +262,23 @@ void main() {
       state = container.read(visitControllerProvider).value!;
       expect(state.recording, isTrue);
       expect(state.problem, isNull);
+    });
+
+    test('받은 뒤 정보를 고친 묶음이라 거절되면 카드를 다시 준비하라고 알린다', () async {
+      final api = FakeVisitApi()
+        ..createFailure = const ApiServerFailure(
+          statusCode: 409,
+          errorCode: 'CARD_SET_NEEDS_REFRESH',
+        );
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+
+      await container.read(visitControllerProvider.notifier).startRecording();
+
+      final state = container.read(visitControllerProvider).value!;
+      expect(state.problem, VisitRecordingProblem.cardsOutdated);
+      expect(state.started, isFalse);
+      expect(state.sessionId, isNull);
     });
 
     test('회차가 있으면 보충 카드를 서버에 먼저 알린다', () async {

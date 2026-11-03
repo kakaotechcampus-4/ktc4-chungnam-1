@@ -2,17 +2,20 @@ from pathlib import Path
 
 from faster_whisper import WhisperModel
 
+from stt_server.runtime_settings import RuntimeSettings
 from stt_server.stt.schemas import AsrResult, AsrSegment, AsrWord
 
 
 class AsrRuntime:
     """Whisper 모델을 한 번 불러오고 WAV 파일을 전사한다."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: RuntimeSettings | None = None) -> None:
+        settings = settings if settings is not None else RuntimeSettings.from_environment()
         self.model = WhisperModel(
             "large-v3-turbo",
             device="cuda",
-            compute_type="float16",
+            device_index=settings.cuda_device_index,
+            compute_type=settings.asr_compute_type,
         )
 
     def transcribe(

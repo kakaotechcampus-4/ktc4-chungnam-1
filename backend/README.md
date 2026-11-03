@@ -2,7 +2,7 @@
 
 담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. 실제 STT와 VLM은 아직 연결되지 않았다.
 
-STT는 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. RTX 3060 Ti는 개발용이며 시연 장비 사양은 실험 후 정한다. 실제 사용자 자료의 외부 전송 조건은 별도 확인한다.
+STT는 Tailscale 사설망으로 연결하는 개인 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 개인 GPU의 처리 성능은 해당 환경에서 검증한 결과로 별도 기록한다.
 
 [ADR-007](../docs/architecture/decisions/ADR-007-google-social-login.md)은 계정 저장 항목 등의 공동 검토를 위해 `proposed`로 유지한다.
 
@@ -48,7 +48,7 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
-컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하고, 온프레미스 GPU의 STT 서버는 SSH 터널(`stt-tunnel`)로 연결한다. 공개 범위와 운영 배포의 AI 서버 연결은 정하지 않았다.
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, BE 공개 범위는 별도 검토하며, STT는 개인 GPU 서버의 Tailscale IP로 연결한다.
 
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
@@ -117,6 +117,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
+- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
 - **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
@@ -130,7 +131,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
 | 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | 개발용 RTX 3060 Ti에서 AI와 처리 조건을 측정하고 PM과 시연 장비 및 운영 방식 결정. 모델 파일 배포와 무결성 확인 |
+| 운영 | 현재 개인 GPU에서 STT 처리 시간·메모리와 동시 처리 조건 측정. PM과 운영 방식 확인. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
@@ -391,6 +392,8 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | --- | --- |
 | `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
 | `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_AI_SERVER_BACKUP_URL` | 선택한 예비 STT 주소. 기본은 비어 있어 기존 단일 서버 동작을 유지 |
+| `SAEROK_AI_SERVER_FAILOVER_CONNECT_TIMEOUT_SECONDS` | 예비 주소를 설정한 경우 서버별 연결 제한. 기본 5초, 0초 초과 30초 이하 |
 | `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
 | `SAEROK_SPEECH_AUDIO_S3_REGION` | S3 리전, 기본 `ap-northeast-2` |
 | `SAEROK_SPEECH_AUDIO_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사 |
@@ -400,7 +403,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
 | `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계와 리포트 생성 단계에서 각각 새로 잡음 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
-| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름 |
+| `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-5.6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음(`--stt-only`는 제외) |
 
@@ -408,6 +411,17 @@ S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만
 운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
 STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
 오류 응답에 남기지 않는다.
+
+### STT 예비 서버 전환
+
+기본 서버의 연결 실패(`ConnectError`, `ConnectTimeout`)에만 예비 서버를 한 번 호출한다.
+응답 대기나 전송 도중 오류, HTTP 오류와 잘못된 응답은 이미 처리 중일 수 있어 재전송하지 않는다.
+두 시도는 기존 전체 STT 제한 시간을 공유하고 같은 작업 ID, 입력과 삭제 기한을 사용한다.
+다음 작업은 다시 기본 서버부터 시작한다. 종료된 실패 작업을 다시 여는 기능은 아니다.
+
+현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
+주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
+[연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
 
 ## 사진 저장 (S3)
 
@@ -525,13 +539,25 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   함수 호출이어도 그 안에서 전사문을 포함한 요청을 외부 ML API(엘리스)로 보낸다.
   생성 함수의 실패 코드는 기존 작업 실패 코드로 바꾼다: `LLM_UNAVAILABLE` →
   `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST` → `AI_SERVER_ERROR`.
+- 생성 오류 구분(#143): 모델 호출의 연결 실패와 시간 초과는 `AI_SERVER_UNAVAILABLE`(재시도
+  가능), 그 밖의 호출 실패(예: 400 응답)와 잘린 응답, JSON 처리 오류, 응답 형식 불일치는
+  `AI_SERVER_ERROR`다. 둘 다 아무것도 저장하지 않는다. 카드 요약, 이야기 후보와 주제 조정이
+  모두 0건인 응답은 실패가 아니라 정상 완료다(리포트 저장, 작업 `completed`). 잘린 응답만 따로
+  나누는 실패 코드는 없다. 실제 출력 한도에 닿았을 때 SDK가 던지는 예외 종류는 실측하지
+  않았고, 테스트는 모델 호출 자리(`invoke_structured`)에 그런 예외를 넣어 확인한다.
+  모델이나 SDK가 남긴 오류 메시지는 작업 실패에 담지 않는다.
+- 출력 한도(`max_tokens`)는 BE가 넘기지 않고 `ai/common/llm.py`의 `ChatConfig` 기본값을 쓴다.
+  BE의 전체 시간 제한과 늦은 결과 저장 방지는 출력 한도와 관계없이 적용된다.
 - 전체 시간 제한: 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본
   600초)를 넘으면 작업을 `AI_SERVER_TIMEOUT`으로 실패시킨다. 생성 함수의 호출당 timeout(300초)은
   응답 대기 제한이라 스트리밍이 이어지면 전체 시간이 늘어나므로, BE가 전체 마감을 따로 둔다.
   `generatingReport`로 바꿀 때 임대(기본 900초)를 새로 잡고, 제한 시간은 임대보다 60초 이상
   짧아야 한다(저장과 완료 처리 여유). 생성 함수는 daemon 스레드에서 돌고 worker는 마감까지만
   기다린다. 동기 함수라 스레드를 멈출 수는 없으므로, 리포트와 변경 제안 호출 직전마다 마감을
-  확인해 마감 뒤 새 외부 호출을 하지 않는다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있다.
+  확인해 마감 뒤 새 외부 호출을 하지 않는다. worker가 시간 초과를 확정하면 마감에 취소를
+  표시하므로, 스레드가 읽는 시계가 해상도 차이(Windows)로 아직 마감 전이어도 다음 호출 전에
+  멈춘다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있고, 시간 초과 확정 전에 마감 확인을
+  통과한 변경 제안 호출도 시작될 수 있다(결과는 버리고 저장하지 않는다).
 - 늦은 결과 저장 방지: 마감 뒤 도착한 결과는 아무도 읽지 않고, 생성 함수는 DB를 쓰지 않는다.
   결과가 와도 저장 직전에 마감을 다시 확인한다. 저장 트랜잭션은 먼저 작업 행을
   `FOR UPDATE`로 잠그고 `generatingReport`이며 `lease_expires_at > now()`일 때만 저장한다.

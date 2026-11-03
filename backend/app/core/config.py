@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     service_version: str = "0.1.0"
     ai_server_url: str = "http://127.0.0.1:8001"
     ai_server_timeout_seconds: float = 600.0
+    ai_server_backup_url: str | None = None
+    ai_server_failover_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     database_url: str | None = None
 
     # 면회 음성은 비공개 S3 버킷에 임시 저장한다. 버킷과 DB가 모두 설정돼야
@@ -96,6 +98,13 @@ class Settings(BaseSettings):
     def _reject_short_secret(cls, value: str) -> str:
         if value and len(value.encode("utf-8")) < 32:
             raise ValueError("session_secret 은 32바이트 이상이어야 한다")
+        return value
+
+    @field_validator("ai_server_backup_url", mode="before")
+    @classmethod
+    def _empty_backup_url_is_disabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
         return value
 
     @field_validator("google_client_ids", mode="before")

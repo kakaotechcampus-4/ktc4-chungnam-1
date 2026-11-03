@@ -14,7 +14,9 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -34,6 +36,7 @@ import 'package:saerok/features/visit/visit_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
+import 'fake_selected_profile_store.dart';
 import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
 
@@ -201,6 +204,7 @@ Widget _app({
   bool skipGoogleLogin = false,
   PendingUploads? uploads,
   VisitPhotos? photos,
+  SelectedProfileStore? selectedProfile,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -255,12 +259,20 @@ Widget _app({
       // 로그인하면 어르신 목록을 서버에서 불러온다. 실제 주소로 나가지 않게 한다.
       FakeProfileServer().override,
       FakeReportServer().override,
+      // 프로필 설정의 계정 약관 동의는 로그인하면 서버(1-3)에서 읽는다. 이
+      // 테스트는 로그인과 탈퇴만 보므로 목 계정을 쓴다.
+      accountProvider.overrideWith(
+        (ref) => const MockRepository().loadAccount(),
+      ),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
       // 기기의 녹음 폴더를 건드리지 않는다.
       pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      selectedProfileStoreProvider.overrideWithValue(
+        selectedProfile ?? FakeSelectedProfileStore(),
+      ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
     ],
@@ -1014,6 +1026,9 @@ void main() {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
       final photos = FakeVisitPhotos();
+      final selectedProfile = FakeSelectedProfileStore()
+        ..values[_signedIn().account.accountId] = 'p-remembered'
+        ..values['account-other'] = 'p-other';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1031,6 +1046,7 @@ void main() {
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
           photos: photos,
+          selectedProfile: selectedProfile,
         ),
       );
 
@@ -1044,6 +1060,9 @@ void main() {
       expect(photos.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 면회 사진을 지운다');
+      expect(selectedProfile.values, {
+        'account-other': 'p-other',
+      }, reason: '탈퇴한 계정이 고른 어르신 기억만 지운다');
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);

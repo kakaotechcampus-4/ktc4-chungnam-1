@@ -21,6 +21,8 @@ def create_app() -> FastAPI:
     application.state.ai_server_client = AiServerClient(
         base_url=settings.ai_server_url,
         timeout_seconds=settings.ai_server_timeout_seconds,
+        backup_base_url=settings.ai_server_backup_url,
+        failover_connect_timeout_seconds=settings.ai_server_failover_connect_timeout_seconds,
     )
     application.include_router(api_router)
     return application

@@ -355,7 +355,7 @@ uv run alembic upgrade head
 
 현재 AI 구현의 Whisper 실행 장치는 CUDA로 고정되어 있다. GPU가 없는 BE 개발 PC에 AI
 브랜치를 체크아웃하고 `uv sync`하는 것만으로는 실제 STT를 실행할 수 없다. 실제 통합
-테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 내부 주소를
+테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 GPU 서버의 Tailscale 기본 주소를
 공유한다. 원격 GPU 서버를 사용할 때 BE 개발 PC에는 AI 의존성을 설치할 필요가 없다.
 
 AI 서버가 제공하는 실제 API는 다음과 같다.
@@ -371,8 +371,8 @@ http://127.0.0.1:8001/internal/v1/speech-analyses
 SAEROK_AI_SERVER_URL=http://127.0.0.1:8001
 ```
 
-AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 내부 IP 또는 내부
-도메인을 사용한다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
+AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 GPU 서버의 Tailscale 기본 주소(`http://<GPU 서버의 Tailscale IP>:8001`)를 사용한다. 현재 배포 절차는
+[STT 운영 안내](../../stt-server/README.md#개인-gpu와-tailscale-운영)를 따른다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
 AI 서비스로 보내지 않는다. worker를 실행하기 전에 다음 생존 확인이 성공해야 한다.
 
 ```powershell
@@ -561,6 +561,10 @@ error_code = null
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
+| 리포트 생성 중 모델 연결 실패, 시간 초과 | 작업 `failed`, `AI_SERVER_UNAVAILABLE`, 저장 없음 |
+| 리포트 생성 중 그 밖의 호출 실패, 잘린 응답, JSON 오류 | 작업 `failed`, `AI_SERVER_ERROR`, 저장 없음 |
+| 카드 요약, 이야기 후보와 주제 조정이 모두 0건 | 작업 `completed`, 리포트만 저장(정상 완료) |
+| 리포트 모델이 `ai/common/llm.py`의 `ENDPOINTS`에 없음 | worker 시작 안 함(`--stt-only` 제외) |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | S3 삭제 실패 | 작업을 STT 완료로 표시하지 않음, Lifecycle 삭제 대상 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |

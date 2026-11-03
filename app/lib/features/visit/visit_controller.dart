@@ -7,6 +7,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
+import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
 import 'visit_camera.dart';
@@ -28,6 +29,10 @@ enum VisitRecordingProblem {
 
   /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
   sessionFailed,
+
+  /// 카드를 받은 뒤 프로필이나 일대기를 고쳐 5-1 이 그 묶음을 받지 않았다
+  /// (`CARD_SET_NEEDS_REFRESH`). 다시 눌러도 같으므로 카드를 다시 준비해야 한다.
+  cardsOutdated,
 }
 
 /// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
@@ -295,8 +300,22 @@ class VisitController extends AsyncNotifier<VisitState> {
       // 녹음은 사진을 기다리지 않는다.
       unawaited(_uploadPhoto(retryOnce: true));
       return true;
-    } on ApiFailure {
-      _fail(VisitRecordingProblem.sessionFailed);
+    } on ApiFailure catch (failure) {
+      if (failure case ApiServerFailure(errorCode: 'CARD_SET_NEEDS_REFRESH')) {
+        _fail(VisitRecordingProblem.cardsOutdated);
+        // 뒤에 있는 카드 화면이 다시 확인해 옛 카드를 감추고 홈으로 돌려보내게
+        // 한다. 받아 둔 묶음은 버리지 않는다. 이 회차가 그 묶음을 보고 있다.
+        // 지우면 시작하지 않은 상태로 남아 카드 화면이 기다리기만 하므로
+        // 다시 확인하게 한다.
+        final profileId = ref.read(serverProfileIdProvider).value;
+        if (profileId != null) {
+          unawaited(
+            ref.read(cardGenerationProvider(profileId).notifier).start(),
+          );
+        }
+      } else {
+        _fail(VisitRecordingProblem.sessionFailed);
+      }
       return false;
     } finally {
       _creatingSession = false;
@@ -427,10 +446,7 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     if (!_fileOpen) {
       state = AsyncData(
-        current.copyWith(
-          recording: false,
-          participantCount: participantCount,
-        ),
+        current.copyWith(recording: false, participantCount: participantCount),
       );
       await _rememberUpload();
       return;
