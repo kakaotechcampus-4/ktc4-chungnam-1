@@ -5,16 +5,17 @@
 하는 일
 1. 빈 DB를 새로 만들고 `alembic upgrade head`를 적용한다.
 2. 이 실행에서만 쓰는 RSA 키로 구글 ID 토큰을 서명하고, 공개키를 로컬 JWKS 주소로 연다.
-3. 이 프로세스 안에서 BE(uvicorn)와 카드 생성 worker를 띄운다. worker의 생성 함수만
-   합성 카드 12장을 돌려주는 함수로 바꾼다. 모델은 부르지 않는다.
+3. 이 프로세스 안에서 BE(uvicorn), 카드 생성 worker, 음성 분석 worker를 띄운다.
+   바꾸는 것은 서버 밖으로 나가는 경계뿐이다. 카드 생성 함수는 합성 카드 12장을, 녹음 저장소는
+   메모리를, STT 서버 호출은 화자 두 명의 합성 전사를, 리포트 생성 함수는 합성 리포트와 제안을
+   돌려준다. 모델과 S3로는 요청이 나가지 않는다.
 4. `app/`에서 `flutter test e2e/server_journey_test.dart`를 실행한다. 앱 쪽 테스트는
    AuthApi, ProfileApi, ServerCardApi, ServerVisitApi, ReportApi와 ApiClient를 그대로 쓰고
    HTTP만 실제로 보낸다.
 5. 서버와 worker를 멈추고 DB를 지운다(`--keep-database`면 남긴다).
 
-대신하는 것: 구글 로그인(로컬 서명 키), 카드 생성 모델(합성 카드). 녹음 업로드와 사진은
-S3가 필요해 이 E2E에 넣지 않았다. 녹음 이후 흐름은 `tests/test_second_visit_flow.py`가
-API와 worker 수준에서 본다. 값은 모두 합성이다.
+대신하는 것: 구글 로그인(로컬 서명 키), 카드 생성 모델, S3, STT, 리포트 모델. 사진 업로드는
+넣지 않았다. 값은 모두 합성이다.
 """
 
 from __future__ import annotations
@@ -93,21 +94,27 @@ def _signing_material():
 
 
 def _synthetic_generate(request):
-    """카드 생성 모델 대신 합성 카드 12장을 돌려준다. 첫 카드는 첫 이야기를 근거로 둔다."""
+    """카드 생성 모델 대신 합성 카드 12장을 돌려준다.
+
+    서버가 넘긴 이야기 하나마다 앞에서부터 카드 한 장을 만들고, 카드 제목과 설명에 그 이야기의
+    제목과 출처(`caregiver`, `visit`)를 적는다. 승인한 이야기가 다음 카드 생성 자료에 들어갔는지를
+    앱 쪽 테스트가 카드에서 확인할 수 있게 하려는 것이다.
+    """
     from app.schemas.card_generation import CardGenerationResult, GeneratedCard, GeneratedTopic
 
     facts = request.context.life_facts
     cards = []
     for position in range(1, 13):
-        evidence = [{"factId": str(facts[0].fact_id)}] if facts and position == 1 else []
+        fact = facts[position - 1] if position <= len(facts) else None
+        evidence = [{"factId": str(fact.fact_id)}] if fact else []
         cards.append(
             GeneratedCard(
                 position=position,
                 topic=GeneratedTopic(
                     title=f"E2E 합성 주제 {position}", description="E2E 합성 주제 설명", evidence=evidence
                 ),
-                card_title=f"E2E 합성 카드 {position}",
-                description="E2E 합성 카드 설명",
+                card_title=f"E2E 이야기 카드: {fact.title}" if fact else f"E2E 합성 카드 {position}",
+                description=f"E2E 합성 카드 설명(이야기 출처: {fact.source})" if fact else "E2E 합성 카드 설명",
                 primary_question="좋아하시던 꽃이 있으세요?",
                 follow_up_questions=["어떤 색이었나요?", "어디서 보셨나요?", "누구와 보셨나요?"],
                 evidence_source="lifeFact" if evidence else "none",
@@ -130,6 +137,104 @@ def _run_card_worker(settings, stop: threading.Event) -> None:
                 await asyncio.sleep(0.2)
 
     # psycopg 비동기 연결은 Windows 기본 루프(ProactorEventLoop)에서 동작하지 않는다.
+    asyncio.run(loop(), loop_factory=asyncio.SelectorEventLoop)
+
+
+class _MemoryAudioStorage:
+    """S3 대신 메모리에 녹음을 둔다. 분석이 끝나면 서버가 지우는 것도 그대로 받는다."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.deleted: list[str] = []
+
+    async def upload(self, *, object_key: str, file) -> None:
+        file.seek(0)
+        self.objects[object_key] = file.read()
+
+    async def create_download(self, *, object_key: str, expires_at: datetime):
+        from app.services.audio_storage import AudioDownload
+
+        if object_key not in self.objects:
+            raise RuntimeError("E2E_AUDIO_NOT_UPLOADED")
+        return AudioDownload(url="https://e2e-audio.invalid/synthetic.wav", expires_at=expires_at)
+
+    async def delete(self, *, object_key: str) -> None:
+        self.objects.pop(object_key, None)
+        self.deleted.append(object_key)
+
+
+def _synthetic_transcript(request):
+    """STT 서버(8-1) 대신 보호자와 어르신 두 화자의 합성 전사를 돌려준다."""
+    import httpx
+
+    analysis_id = json.loads(request.content)["analysisId"]
+    lines = [
+        ("SPEAKER_00", "어머니, 수선집 하실 때 단골손님이 많으셨다면서요?"),
+        ("SPEAKER_01", "그럼, 양복 맞추러 오는 사람이 줄을 섰지."),
+        ("SPEAKER_00", "제일 기억에 남는 손님은 누구셨어요?"),
+        ("SPEAKER_01", "한복을 지어 달라던 새댁이 있었어. 고름을 몇 번이나 다시 달았지."),
+    ]
+    segments = [
+        {"startMs": i * 4000, "endMs": i * 4000 + 3500, "speakerLabel": speaker, "text": text, "words": []}
+        for i, (speaker, text) in enumerate(lines)
+    ]
+    body = {
+        "schemaVersion": 1,
+        "analysisId": analysis_id,
+        "language": "ko",
+        "durationMs": len(lines) * 4000,
+        "text": " ".join(text for _, text in lines),
+        "segments": segments,
+    }
+    return httpx.Response(200, json=body)
+
+
+def _synthetic_report(request, deadline):
+    """리포트 모델 대신, 평가에서 쓴 카드 하나에 대한 합성 리포트와 변경 제안을 돌려준다."""
+    from app.services.visit_report_generator import parse_result
+
+    used = next(card for card in request.cards if card.reaction is not None)
+    data = {
+        "schemaVersion": 1,
+        "analysisId": request.analysis_id,
+        "model": "e2e-synthetic-report",
+        "promptVersion": "e2e-report",
+        "title": "E2E 합성 리포트",
+        "body": "수선집 단골손님과 한복 이야기를 나눈 합성 리포트입니다.",
+        "cardSummaries": [{"cardId": str(used.card_id), "summary": "E2E 합성 카드 요약"}],
+        "lifeFactProposals": [
+            {"title": "E2E 합성 제안 이야기", "content": "한복 고름을 여러 번 다시 다셨어요.", "reason": "E2E 합성 이유"}
+        ],
+        "topicProposals": [{"cardId": str(used.card_id), "suggestedAction": "more", "reason": "E2E 합성 이유"}],
+    }
+    return parse_result(data, request)
+
+
+def _run_speech_worker(database_url: str, storage: _MemoryAudioStorage, stop: threading.Event) -> None:
+    import httpx
+
+    from app.clients.ai_server import AiServerClient
+    from app.core.database import connect
+    from app.services.speech_analysis_jobs import PostgresSpeechAnalysisJobRepository
+    from app.services.speech_analysis_pipeline import create_speech_worker
+    from app.services.visit_report_generator import VisitReportGenerator
+
+    worker = create_speech_worker(
+        jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(connection, lease_seconds=900),
+        audio_storage=storage,
+        ai_server=AiServerClient(
+            base_url="http://stt.e2e.invalid", timeout_seconds=5, transport=httpx.MockTransport(_synthetic_transcript)
+        ),
+        open_connection=lambda: connect(database_url),
+        lease_seconds=900,
+        report_generator=VisitReportGenerator(generate=_synthetic_report, time_limit_seconds=60),
+    )
+
+    async def loop():
+        while not stop.is_set():
+            if not await worker.run_once():
+                await asyncio.sleep(0.2)
+
     asyncio.run(loop(), loop_factory=asyncio.SelectorEventLoop)
 
 
@@ -187,12 +292,18 @@ def main(argv: list[str] | None = None) -> int:
         from app.core.config import Settings
         from app.main import create_app
 
+        from app.api.deps import get_speech_audio_storage
+
         settings = Settings(_env_file=None)
-        server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+        storage = _MemoryAudioStorage()
+        application = create_app()
+        application.dependency_overrides[get_speech_audio_storage] = lambda: storage
+        server = uvicorn.Server(uvicorn.Config(application, host="127.0.0.1", port=port, log_level="warning"))
         threading.Thread(
             target=lambda: asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop), daemon=True
         ).start()
         threading.Thread(target=_run_card_worker, args=(settings, stop), daemon=True).start()
+        threading.Thread(target=_run_speech_worker, args=(database_url, storage, stop), daemon=True).start()
         base_url = f"http://127.0.0.1:{port}"
         for _ in range(50):
             try:
@@ -215,6 +326,9 @@ def main(argv: list[str] | None = None) -> int:
             [args.flutter, "test", "e2e/server_journey_test.dart", "--reporter", "expanded"], cwd=APP_DIR, env=env
         )
         code = result.returncode
+        if code == 0 and storage.objects:
+            print(f"E2E_AUDIO_NOT_DELETED count={len(storage.objects)}")
+            code = 1
         print("E2E_PASSED" if code == 0 else f"E2E_FAILED rc={code}")
         return code
     finally:

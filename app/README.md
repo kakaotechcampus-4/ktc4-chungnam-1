@@ -38,20 +38,37 @@ Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스
 
 ### 앱과 실제 서버 E2E
 
-`flutter test`의 앱 테스트는 서버 응답을 가짜로 바꾼다. [e2e/server_journey_test.dart](e2e/server_journey_test.dart)는 화면 없이 앱의 실제 API 코드(`AuthApi`, `ProfileApi`, `ServerCardApi`, `ServerVisitApi`, `ReportApi`, `ApiClient`)로 실제 BE를 HTTP로 부른다.
+`flutter test`의 앱 테스트는 서버 응답을 가짜로 바꾼다. [e2e/server_journey_test.dart](e2e/server_journey_test.dart)는 화면 없이 앱의 실제 API 코드(`AuthApi`, `ProfileApi`, `ServerCardApi`, `ServerVisitApi`, `ReportApi`, `ApiClient`)로 실제 BE와 PostgreSQL을 HTTP로 부른다.
 
 ```bash
 cd backend
-SAEROK_TEST_DATABASE_URL=postgresql://<생성과 삭제가 허용된 테스트 DB 계정>/postgres   uv run --locked python scripts/run_app_server_e2e.py --flutter <flutter 실행 파일>
+SAEROK_TEST_DATABASE_URL=postgresql://<생성과 삭제가 허용된 테스트 DB 계정>/postgres uv run --locked python scripts/run_app_server_e2e.py --flutter <flutter 실행 파일>
 ```
 
-스크립트가 빈 DB에 `alembic upgrade head`를 적용하고, 같은 프로세스에서 BE(uvicorn)와 카드 생성 worker를 띄운 뒤 `flutter test e2e/server_journey_test.dart`를 실행한다. 끝나면 DB를 지운다. 두 환경변수(`SAEROK_E2E_BASE_URL`, `SAEROK_E2E_ID_TOKEN`) 없이 이 파일만 돌리면 건너뛴다. `flutter test`의 기본 범위(`test/`)에는 들어가지 않는다.
+스크립트가 빈 DB에 `alembic upgrade head`를 적용하고, 같은 프로세스에서 BE(uvicorn), 카드 생성 worker, 음성 분석 worker를 띄운 뒤 `flutter test e2e/server_journey_test.dart`를 실행한다. 끝나면 DB를 지운다. 두 환경변수(`SAEROK_E2E_BASE_URL`, `SAEROK_E2E_ID_TOKEN`) 없이 이 파일만 돌리면 건너뛴다. `flutter test`의 기본 범위(`test/`)에는 들어가지 않는다.
 
-다루는 흐름: 첫 로그인의 동의 요구(1-1), 동의 제출(1-2), 계정 확인(1-3) → 프로필 생성과 세부 정보, 이야기 추가(2-1~2-6) → 카드 12장 생성(4-1~4-3), 쓰지 않은 묶음이 있을 때의 `CARD_SET_READY` → 이야기 정정(2-7) 뒤 `needsRefresh`와 그 묶음으로 회차를 만들 때의 `CARD_SET_NEEDS_REFRESH` → 묶음 전체 재생성 → 카드 세 장으로 회차 시작(5-1)과 보충 카드 추가(5-3), 면회 중 생성 요청의 `VISIT_IN_PROGRESS` → 평가 제출과 같은 평가 재제출(6-1) → 최근 회차가 녹음 대기(5-4) → 로그아웃 뒤 세션 거절(1-4) → 다시 로그인하면 같은 계정 → 탈퇴(1-5) 뒤 다시 동의 요구.
+다루는 흐름
 
-대신하는 것: 구글 로그인은 스크립트가 실행마다 만든 RSA 키로 서명한 ID 토큰과 로컬 JWKS 주소를 쓴다. 카드 생성 worker는 실제 worker와 큐를 쓰고 생성 함수만 합성 카드 12장을 돌려준다. ML API 키 자리에는 비어 있지 않은 합성 값을 넣으며 모델로 요청이 나가지 않는다. 확인하지 않는 것: 녹음 업로드와 리포트, 사진(S3 필요), 실제 카드 모델, 화면과 기기. 녹음 이후는 `backend/tests/test_second_visit_flow.py`가 API와 worker 수준에서 본다.
+- 가입: 첫 로그인의 동의 요구(1-1), 동의 제출(1-2), 계정 확인(1-3)
+- 프로필: 생성과 세부 정보, 이야기 추가(2-1~2-6)
+- 카드: 12장 생성(4-1~4-3), 쓰지 않은 묶음이 있을 때 `CARD_SET_READY`
+- 사실 정정: 이야기 정정(2-7) 뒤 `needsRefresh`, 그 묶음으로 회차를 만들면 `CARD_SET_NEEDS_REFRESH`, 묶음 전체 재생성
+- 면회: 카드 세 장으로 회차 시작(5-1), 보충 카드 추가(5-3), 면회 중 생성 요청의 `VISIT_IN_PROGRESS`, 평가 제출과 같은 평가 재제출(6-1)
+- 녹음과 리포트: 녹음 제출(6-2), 분석 완료까지 상태 조회(6-3), 리포트 목록과 리포트(7-1, 7-2), 이야기 제안을 고쳐 승인하고 주제 제안 수락(7-3, 7-4), 승인한 이야기가 프로필에 들어감(2-3)
+- 다음 대화 준비: 새 카드 생성 자료에 승인한 이야기가 출처 `visit`으로 들어감
+- 계정: 로그아웃 뒤 세션 거절(1-4), 다시 로그인하면 같은 계정, 탈퇴(1-5) 뒤 다시 동의 요구
 
-11/4 로컬 실행: Windows, Flutter 3.44.8, PostgreSQL 17 테스트 DB에서 develop `b35c0fe0`과, 열린 PR을 모두 합친 로컬 통합 트리 양쪽 다 통과(약 2초). `CARD_SET_NEEDS_REFRESH` 기대값을 다른 값으로 바꾸면 서버가 돌려준 `ApiServerFailure(409, CARD_SET_NEEDS_REFRESH)`와 달라 실패하는 것을 확인했다.
+대신하는 것은 서버 밖으로 나가는 경계뿐이다.
+
+- 구글 로그인: 스크립트가 실행마다 만든 RSA 키로 서명한 ID 토큰과 로컬 JWKS 주소
+- 카드 생성 모델: 실제 worker와 작업 큐를 쓰고 생성 함수만 합성 카드 12장을 돌려준다. 서버가 넘긴 이야기마다 카드 한 장에 그 제목과 출처를 적어서, 승인한 이야기가 생성 자료에 들어갔는지 카드로 확인한다. ML API 키 자리에는 비어 있지 않은 합성 값을 넣으며 모델로 요청이 나가지 않는다.
+- S3: 메모리 저장소. 분석이 끝난 뒤 녹음이 지워지지 않으면 스크립트가 실패로 끝난다.
+- STT 서버: 화자 두 명의 합성 전사. 녹음은 0.1초 무음 WAV다.
+- 리포트 모델: 평가에서 쓴 카드 하나의 요약, 이야기 제안 하나, 주제 제안 하나를 담은 합성 결과. 서버의 결과 검사(`parse_result`)는 그대로 거친다.
+
+확인하지 않는 것: 사진 업로드, 실제 카드와 리포트 모델, 실제 STT와 화자 분리, 화면과 기기.
+
+11/4 로컬 실행: Windows, Flutter 3.44.8, PostgreSQL 17 테스트 DB에서 develop `b35c0fe0`과, 열린 PR을 모두 합친 로컬 통합 트리 양쪽 다 통과(약 3초). `CARD_SET_NEEDS_REFRESH` 기대값이나 승인한 이야기의 출처(`visit`) 기대값을 다른 값으로 바꾸면 실패하는 것을 확인했다.
 
 ## 기술과 화면 기준
 
