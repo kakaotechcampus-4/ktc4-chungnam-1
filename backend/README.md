@@ -552,7 +552,6 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   기존 `.env`의 `SAEROK_CARD_GENERATION_MODEL`, `SAEROK_REPORT_GENERATION_MODEL`에
   이전 모델이 명시돼 있으면 그 값이 우선한다. 적용할 때 두 값을 함께 확인한다.
   이미 접수한 카드 작업의 모델은 DB에 저장된 값을 유지하므로 이전 모델 주소도 남긴다.
-  사진 분석 모델을 따로 설정하지 않으면 리포트 모델을 따르지만 사진 분석의 운영 차단과 동의 기준은 유지한다.
 - 전체 시간 제한: 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본
   600초)를 넘으면 작업을 `AI_SERVER_TIMEOUT`으로 실패시킨다. 생성 함수의 호출당 timeout(300초)은
   응답 대기 제한이라 스트리밍이 이어지면 전체 시간이 늘어나므로, BE가 전체 마감을 따로 둔다.
