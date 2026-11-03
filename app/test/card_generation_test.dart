@@ -1,7 +1,9 @@
-// 카드 화면에 들어온 뒤 쓸 묶음이 생길 때까지의 흐름을 확인한다.
+// 한 어르신의 쓸 묶음이 생길 때까지의 흐름을 확인한다.
 //
 // `lib/features/cards/card_generation_controller.dart`. 서버 대신
 // `FakeCardApi` 를 쓰고 값은 모두 합성이다.
+
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,27 +27,42 @@ const _needsRefresh = CardGenerationStatus.needsRefresh;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  ProviderContainer makeContainer(CardApi api) {
+  final generation = cardGenerationProvider(sampleProfileId);
+
+  ProviderContainer makeContainer(
+    CardApi api, {
+    Duration poll = Duration.zero,
+  }) {
     final container = ProviderContainer(
       overrides: [
         withSampleProfile,
         cardApiProvider.overrideWithValue(api),
-        cardPollIntervalProvider.overrideWithValue(Duration.zero),
+        cardPollIntervalProvider.overrideWithValue(poll),
       ],
     );
     addTearDown(container.dispose);
-    // autoDispose 라서 보는 쪽이 있어야 살아 있다. 화면이 보는 것과 같다.
-    container.listen(cardGenerationProvider, (_, _) {});
     return container;
   }
+
+  /// 처음부터 확인하고 끝난 상태를 돌려준다.
+  Future<CardGenerationStatus?> run(ProviderContainer container) async {
+    await container.read(generation.notifier).start();
+    return container.read(generation).value;
+  }
+
+  test('시작하기 전에는 묻지 않는다', () {
+    final api = FakeCardApi();
+    final container = makeContainer(api);
+
+    expect(container.read(generation).value, isNull);
+    expect(api.calls, isEmpty);
+  });
 
   test('작업이 없으면 생성을 요청하고 다 될 때까지 다시 묻는다', () async {
     final api = FakeCardApi(statuses: [_none, _running, _running, _ready]);
     final container = makeContainer(api);
 
-    final status = await container.read(cardGenerationProvider.future);
-
-    expect(status, _ready);
+    expect(await run(container), _ready);
     expect(api.calls, ['status', 'request', 'status', 'status', 'status']);
   });
 
@@ -53,23 +70,23 @@ void main() {
     final api = FakeCardApi(statuses: [_ready]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _ready);
+    expect(await run(container), _ready);
     expect(api.calls, ['status']);
   });
 
-  test('지난 생성이 실패했으면 들어올 때 다시 요청한다', () async {
+  test('지난 생성이 실패했으면 다시 요청한다', () async {
     final api = FakeCardApi(statuses: [_failed, _ready]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _ready);
+    expect(await run(container), _ready);
     expect(api.calls, ['status', 'request', 'status']);
   });
 
-  test('만드는 중에 들어오면 요청하지 않고 기다린다', () async {
+  test('만드는 중이면 요청하지 않고 기다린다', () async {
     final api = FakeCardApi(statuses: [_running, _ready]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _ready);
+    expect(await run(container), _ready);
     expect(api.calls, isNot(contains('request')));
   });
 
@@ -77,34 +94,48 @@ void main() {
     final api = FakeCardApi(statuses: [_none, _running, _failed]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _failed);
+    expect(await run(container), _failed);
     expect(api.calls.where((c) => c == 'request'), hasLength(1));
   });
 
-  test('다시 받기를 누르면 처음부터 확인하고 다시 요청한다', () async {
+  test('다시 시작하면 처음부터 확인하고 다시 요청한다', () async {
     final api = FakeCardApi(statuses: [_none, _failed, _failed, _ready]);
     final container = makeContainer(api);
-    expect(await container.read(cardGenerationProvider.future), _failed);
+    expect(await run(container), _failed);
 
-    container.read(cardGenerationProvider.notifier).retry();
-
-    expect(await container.read(cardGenerationProvider.future), _ready);
+    expect(await run(container), _ready);
     expect(api.calls.where((c) => c == 'request'), hasLength(2));
+  });
+
+  test('묻는 중에 다시 시작해도 생성을 두 번 요청하지 않는다', () async {
+    final api = FakeCardApi(statuses: [_none, _running, _ready]);
+    final container = makeContainer(
+      api,
+      poll: const Duration(milliseconds: 20),
+    );
+    final notifier = container.read(generation.notifier);
+
+    final first = notifier.start();
+    await notifier.start();
+    await first;
+
+    expect(container.read(generation).value, _ready);
+    expect(api.calls.where((c) => c == 'request'), hasLength(1));
   });
 
   test('면회 중인 묶음이 있으면 그 상태로 끝낸다', () async {
     final api = FakeCardApi(statuses: [_inVisit]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _inVisit);
+    expect(await run(container), _inVisit);
     expect(api.calls, ['status']);
   });
 
-  test('받은 뒤 정보를 고친 묶음이면 들어올 때 다시 만들지 않는다', () async {
+  test('받은 뒤 정보를 고친 묶음이면 시작할 때 다시 만들지 않는다', () async {
     final api = FakeCardApi(statuses: [_needsRefresh]);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _needsRefresh);
+    expect(await run(container), _needsRefresh);
     expect(api.calls, ['status'], reason: '보호자가 다음 대화 준비를 누를 때 만든다');
   });
 
@@ -112,11 +143,11 @@ void main() {
     final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
     final container = makeContainer(api);
     await container.read(currentCardSetProvider.future);
-    expect(await container.read(cardGenerationProvider.future), _needsRefresh);
+    expect(await run(container), _needsRefresh);
 
-    await container.read(cardGenerationProvider.notifier).refresh();
+    await container.read(generation.notifier).refresh();
 
-    expect(container.read(cardGenerationProvider).value, _ready);
+    expect(container.read(generation).value, _ready);
     expect(api.calls.where((c) => c == 'request'), hasLength(1));
     await container.read(currentCardSetProvider.future);
     expect(api.calls.where((c) => c == 'current'), hasLength(2));
@@ -125,19 +156,19 @@ void main() {
   test('다시 만들다 실패하면 실패로 끝난다', () async {
     final api = FakeCardApi(statuses: [_needsRefresh, _failed]);
     final container = makeContainer(api);
-    await container.read(cardGenerationProvider.future);
+    await run(container);
 
-    await container.read(cardGenerationProvider.notifier).refresh();
+    await container.read(generation.notifier).refresh();
 
-    expect(container.read(cardGenerationProvider).value, _failed);
+    expect(container.read(generation).value, _failed);
   });
 
   test('다시 만들 묶음이 아니면 다음 대화 준비는 아무것도 하지 않는다', () async {
     final api = FakeCardApi(statuses: [_ready]);
     final container = makeContainer(api);
-    await container.read(cardGenerationProvider.future);
+    await run(container);
 
-    await container.read(cardGenerationProvider.notifier).refresh();
+    await container.read(generation.notifier).refresh();
 
     expect(api.calls, ['status']);
   });
@@ -146,7 +177,7 @@ void main() {
     final api = FakeCardApi(statuses: [_none], onRequest: _ready);
     final container = makeContainer(api);
 
-    expect(await container.read(cardGenerationProvider.future), _ready);
+    expect(await run(container), _ready);
     expect(api.calls, ['status', 'request']);
   });
 
@@ -155,7 +186,7 @@ void main() {
     final container = makeContainer(api);
 
     await container.read(currentCardSetProvider.future);
-    await container.read(cardGenerationProvider.future);
+    await run(container);
     await container.read(currentCardSetProvider.future);
 
     expect(api.calls.where((c) => c == 'current'), hasLength(2));
@@ -165,40 +196,61 @@ void main() {
     final api = _OfflineCardApi();
     final container = makeContainer(api);
 
-    await expectLater(
-      container.read(cardGenerationProvider.future),
-      throwsA(isA<ApiNetworkFailure>()),
-    );
+    await run(container);
+    expect(container.read(generation).error, isA<ApiNetworkFailure>());
     await Future<void>.delayed(const Duration(milliseconds: 300));
 
     expect(api.attempts, 1, reason: '자동 재시도로 4-1 이 반복되면 안 된다');
   });
 
-  test('화면을 떠나면 더 묻지 않는다', () async {
-    final api = FakeCardApi(statuses: [_running]);
-    final container = ProviderContainer(
-      overrides: [
-        withSampleProfile,
-        cardApiProvider.overrideWithValue(api),
-        cardPollIntervalProvider.overrideWithValue(
-          const Duration(milliseconds: 20),
-        ),
-      ],
+  test('보는 화면이 없어도 다 될 때까지 묻는다', () async {
+    // 홈에서 시작하고 일대기로 가도 이어진다. 아무도 듣지 않는 상태다.
+    final api = FakeCardApi(statuses: [_running, _running, _running, _ready]);
+    final container = makeContainer(
+      api,
+      poll: const Duration(milliseconds: 20),
     );
-    addTearDown(container.dispose);
-    final subscription = container.listen(cardGenerationProvider, (_, _) {});
 
+    unawaited(container.read(generation.notifier).start());
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    expect(container.read(generation).value, _ready);
+    expect(api.calls, hasLength(4));
+  });
+
+  test('로그아웃처럼 지우면 더 묻지 않는다', () async {
+    final api = FakeCardApi(statuses: [_running]);
+    final container = makeContainer(
+      api,
+      poll: const Duration(milliseconds: 20),
+    );
+
+    unawaited(container.read(generation.notifier).start());
     await Future<void>.delayed(const Duration(milliseconds: 70));
-    subscription.close();
+    container.invalidate(cardGenerationProvider);
     await Future<void>.delayed(const Duration(milliseconds: 30));
-    final askedWhileOpen = api.calls.length;
+    final askedBefore = api.calls.length;
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    expect(askedWhileOpen, greaterThan(1));
-    expect(api.calls, hasLength(askedWhileOpen));
+    expect(askedBefore, greaterThan(1));
+    expect(api.calls, hasLength(askedBefore));
+    expect(container.read(generation).value, isNull);
   });
-  test('서버에는 앱 안의 ID 가 아니라 프로필의 profileId 를 보낸다', () async {
+
+  test('어르신마다 따로 기다린다', () async {
+    final api = FakeCardApi(statuses: [_ready]);
+    final container = makeContainer(api);
+
+    await run(container);
+
+    expect(container.read(generation).value, _ready);
+    expect(container.read(cardGenerationProvider('other')).value, isNull);
+    expect(api.profileIds, everyElement(sampleProfileId));
+  });
+
+  test('카드 묶음은 앱 안의 ID 가 아니라 프로필의 profileId 로 받는다', () async {
     // 이번 실행에서 새로 등록한 분은 앱 안의 ID 와 서버가 준 ID 가 다르다.
+    // 카드 화면은 serverProfileIdProvider 의 값으로 생성을 시작한다.
     final api = FakeCardApi(statuses: [_ready]);
     final container = ProviderContainer(
       overrides: [
@@ -226,11 +278,12 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.listen(cardGenerationProvider, (_, _) {});
 
-    await container.read(cardGenerationProvider.future);
+    final id = await container.read(serverProfileIdProvider.future);
+    await container.read(cardGenerationProvider(id!).notifier).start();
     await container.read(currentCardSetProvider.future);
 
+    expect(id, 'server-profile-1');
     expect(api.profileIds, everyElement('server-profile-1'));
     expect(api.profileIds, isNot(contains(sampleProfileId)));
   });

@@ -30,37 +30,83 @@ class CardsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final generation = ref.watch(cardGenerationProvider);
-    final controller = ref.read(cardGenerationProvider.notifier);
+    final profileId = ref.watch(serverProfileIdProvider);
 
     return Scaffold(
       appBar: const AppTopBar(),
-      body: generation.when(
+      body: profileId.when(
         loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
         error: (error, _) => ErrorStateView(
           message: _failureMessage(error),
-          onRetry: controller.retry,
+          onRetry: () => ref.invalidate(serverProfileIdProvider),
         ),
-        data: (status) => switch (status) {
-          CardGenerationStatus.ready => const _Cards(),
-          CardGenerationStatus.needsRefresh => const _Cards(outdated: true),
-          // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
-          // 못하므로 공통 문구만 보여준다.
-          CardGenerationStatus.failed => ErrorStateView(
-            message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
-            onRetry: controller.retry,
-          ),
-          // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
-          CardGenerationStatus.inVisit => const EmptyStateView(
-            message: '아직 마치지 않은 면회가 있어요.',
-            icon: Icons.style_outlined,
-          ),
-          // 생성 흐름은 none 과 running 을 남기지 않는다. 기다리는 도중 화면을
-          // 떠난 경우뿐이라 기다리는 화면을 그대로 둔다.
-          CardGenerationStatus.none || CardGenerationStatus.running =>
-            const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
-        },
+        data: (id) => id == null
+            ? ErrorStateView(
+                message: _failureMessage(StateError('고른 어르신이 없다')),
+                onRetry: () => ref.invalidate(serverProfileIdProvider),
+              )
+            : _Generation(profileId: id),
       ),
+    );
+  }
+}
+
+/// 한 어르신의 카드 생성 상태. 들어올 때 묻는 중이 아니면 처음부터 확인한다.
+class _Generation extends ConsumerStatefulWidget {
+  const _Generation({required this.profileId});
+
+  final String profileId;
+
+  @override
+  ConsumerState<_Generation> createState() => _GenerationState();
+}
+
+class _GenerationState extends ConsumerState<_Generation> {
+  @override
+  void initState() {
+    super.initState();
+    // 그리는 도중에는 provider 를 바꿀 수 없다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(cardGenerationProvider(widget.profileId).notifier).start();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final generation = ref.watch(cardGenerationProvider(widget.profileId));
+    final controller = ref.read(
+      cardGenerationProvider(widget.profileId).notifier,
+    );
+
+    return generation.when(
+      loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
+      error: (error, _) => ErrorStateView(
+        message: _failureMessage(error),
+        onRetry: controller.start,
+      ),
+      data: (status) => switch (status) {
+        CardGenerationStatus.ready => _Cards(profileId: widget.profileId),
+        CardGenerationStatus.needsRefresh => _Cards(
+          profileId: widget.profileId,
+          outdated: true,
+        ),
+        // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
+        // 못하므로 공통 문구만 보여준다.
+        CardGenerationStatus.failed => ErrorStateView(
+          message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
+          onRetry: controller.start,
+        ),
+        // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
+        CardGenerationStatus.inVisit => const EmptyStateView(
+          message: '아직 마치지 않은 면회가 있어요.',
+          icon: Icons.style_outlined,
+        ),
+        // 생성 흐름은 none 과 running 을 남기지 않는다. 아직 시작하지 않은
+        // null 은 들어온 직후 한 프레임뿐이라 기다리는 화면을 그대로 둔다.
+        null || CardGenerationStatus.none || CardGenerationStatus.running =>
+          const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
+      },
     );
   }
 }
@@ -76,8 +122,9 @@ String _failureMessage(Object error) => switch (error) {
 /// 고르거나 면회를 시작하지 못하게 하고 `다음 대화 준비하기` 를 둔다. 받아 둔
 /// 묶음(4-3)이 그렇다고 해도 같다.
 class _Cards extends ConsumerWidget {
-  const _Cards({this.outdated = false});
+  const _Cards({required this.profileId, this.outdated = false});
 
+  final String profileId;
   final bool outdated;
 
   @override
@@ -93,14 +140,23 @@ class _Cards extends ConsumerWidget {
         // 실패한 묶음 조회를 버려야 다시 받는다.
         onRetry: () => ref.invalidate(currentCardSetProvider),
       ),
-      data: (state) => _Body(state: state, outdated: outdated || setOutdated),
+      data: (state) => _Body(
+        profileId: profileId,
+        state: state,
+        outdated: outdated || setOutdated,
+      ),
     );
   }
 }
 
 class _Body extends ConsumerStatefulWidget {
-  const _Body({required this.state, required this.outdated});
+  const _Body({
+    required this.profileId,
+    required this.state,
+    required this.outdated,
+  });
 
+  final String profileId;
   final CardsState state;
   final bool outdated;
 
@@ -165,7 +221,9 @@ class _BodyState extends ConsumerState<_Body> {
         bottom: outdated
             ? PrimaryButton(
                 label: '다음 대화 준비하기',
-                onPressed: ref.read(cardGenerationProvider.notifier).refresh,
+                onPressed: ref
+                    .read(cardGenerationProvider(widget.profileId).notifier)
+                    .refresh,
               )
             : PrimaryButton(
                 label: '대화 시작하기',

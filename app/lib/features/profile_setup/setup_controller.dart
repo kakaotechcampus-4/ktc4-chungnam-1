@@ -8,6 +8,7 @@ import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../auth/auth_providers.dart';
+import '../cards/card_generation_controller.dart';
 import '../life_story/life_story_providers.dart';
 import '../profile/photo_description_store.dart';
 import '../visit/visit_camera.dart';
@@ -404,9 +405,11 @@ final pendingSetupsProvider =
 /// 한다. 어르신 번호는 다시 1 부터 매겨지므로, 어르신마다 고친 사진 설명과
 /// 일대기에서 바꾼 이야기도 함께 지워야 다음 사람의 같은 번호 어르신에 남지
 /// 않는다. 이번 회차에 찍어 둔 면회 사진도 잊는다. 사진 파일은 녹음처럼 기기에
-/// 남기며 탈퇴 때만 지운다(`visit_photos.dart`).
+/// 남기며 탈퇴 때만 지운다(`visit_photos.dart`). 기다리던 카드 생성도 더 묻지
+/// 않는다. 서버의 생성은 이어진다.
 void forgetCareProfiles(WidgetRef ref) {
   ref
+    ..invalidate(cardGenerationProvider)
     ..invalidate(careProfilesProvider)
     ..invalidate(setupControllerProvider)
     ..invalidate(pendingSetupsProvider)
