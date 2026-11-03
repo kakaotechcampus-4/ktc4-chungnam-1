@@ -6,8 +6,8 @@ DB revision은 `f95c2d7eb143`, 부모는 `e84b1c6da032`다. 기본값은 접수 
 
 ## 제어하는 범위
 
-- 새 녹음 분석 접수, 남은 전사를 이용한 리포트 재처리, 프로필 세부 정보의 짧은 녹음 전사, 카드 생성 요청을 멈춘다.
-- 카드, 음성, 합성 사진 분석 worker가 새 작업을 가져가지 못하게 한다. 이미 시작한 처리에는 중단 신호를 보내지 않는다.
+- 새 녹음 분석 접수, 프로필 세부 정보의 짧은 녹음 전사, 카드 생성 요청을 멈춘다.
+- 카드, 음성 분석 worker가 새 작업을 가져가지 못하게 한다. 이미 시작한 처리에는 중단 신호를 보내지 않는다.
 - 공개 관리 API는 추가하지 않는다. DB 접속 권한이 있는 운영자만 내부 CLI를 실행한다.
 - 조회, 소감 저장, 사진 업로드와 다른 수정 API까지 막는 기능은 아니다. DB 변경이나 백업을 위해 모든 쓰기를 멈춰야 한다면 API 트래픽 차단과 다른 실행 도구 중지도 별도로 필요하다.
 - 저장소를 직접 호출하는 개발용 코드와 구버전 worker는 이 제어를 우회한다. 운영 API와 모든 분석 worker가 이 버전을 사용하는지 확인해야 한다.
@@ -28,8 +28,7 @@ DB revision은 `f95c2d7eb143`, 부모는 `e84b1c6da032`다. 기본값은 접수 
 ```
 
 HTTP 상태는 `503`이다. `POST /api/v1/visit-sessions/{sessionId}/speech-analyses`,
-`POST /api/v1/speech-analyses/{analysisId}/retry`, `POST /api/v1/speech-transcriptions`,
-`POST /api/v1/profiles/{profileId}/card-generations`에 적용한다.
+`POST /api/v1/speech-transcriptions`, `POST /api/v1/profiles/{profileId}/card-generations`에 적용한다.
 짧은 전사는 S3 업로드와 STT 호출 전에 거절한다. 녹음 분석도 새 작업을 저장하기 전에 거절한다.
 클라이언트는 파일과 입력을 보존하고 점검 후 사용자가 다시 요청할 수 있어야 한다.
 앱의 실제 안내와 파일 보존 검사는 FE E2E 담당자에게 인계한다. 이 문서만으로 앱 적용 완료를 뜻하지 않는다.

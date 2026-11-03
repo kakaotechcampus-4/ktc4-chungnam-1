@@ -15,7 +15,7 @@ from app.workers.base import Worker
 from tests.card_fixtures import query
 from tests.support import run
 from tests.test_short_speech_transcription import harness, submit
-from tests.test_speech_job_repository import _Db, _job, _generating
+from tests.test_speech_job_repository import _Db, _job
 
 
 def test_default_status_is_read_only_and_admissions_open(migrated_database_url):
@@ -39,20 +39,16 @@ def test_state_changes_require_confirmation_and_pause_order(migrated_database_ur
     assert not run(control(migrated_database_url, "resume-all", confirm=True))["admissionsPaused"]
 
 
-def test_paused_recording_and_retry_do_not_create_jobs(migrated_database_url):
+def test_paused_recording_does_not_create_jobs(migrated_database_url):
     db = _Db(migrated_database_url)
-    owner, session = db.seed_session()
-    failed = _generating(db, session)
-    run(db.repository.mark_failed(analysis_id=failed.analysis_id, error_code="REPORT_GENERATION_FAILED"))
+    _owner, session = db.seed_session()
     before = db.execute("SELECT * FROM speech_analysis_jobs")
     run(control(migrated_database_url, "pause-all", confirm=True))
-    for call in (db.repository.reserve(_job(session)),
-                 db.repository.retry_report(analysis_id=failed.analysis_id, account_id=owner)):
-        with pytest.raises(AppError) as error:
-            run(call)
-        assert error.value.status_code == 503
-        assert error.value.error_code == "SERVICE_MAINTENANCE"
-        assert error.value.retryable is True
+    with pytest.raises(AppError) as error:
+        run(db.repository.reserve(_job(session)))
+    assert error.value.status_code == 503
+    assert error.value.error_code == "SERVICE_MAINTENANCE"
+    assert error.value.retryable is True
     assert db.execute("SELECT * FROM speech_analysis_jobs") == before
 
 

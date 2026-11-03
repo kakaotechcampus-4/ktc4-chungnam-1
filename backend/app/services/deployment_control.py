@@ -103,8 +103,7 @@ async def snapshot(connection):
         SELECT
           (SELECT count(*) FROM speech_analysis_jobs
            WHERE status IN ('uploading','transcribing','generatingReport')) AS active_speech,
-          (SELECT count(*) FROM speech_analysis_jobs
-           WHERE status='queued' OR (status='sttCompleted' AND retry_of_analysis_id IS NOT NULL)) AS queued_speech,
+          (SELECT count(*) FROM speech_analysis_jobs WHERE status='queued') AS queued_speech,
           (SELECT count(*) FROM card_sets WHERE status='running' AND lease_expires_at IS NOT NULL) AS active_cards,
           (SELECT count(*) FROM card_sets WHERE status='running' AND lease_expires_at IS NULL) AS queued_cards,
           (SELECT count(*) FROM photos WHERE analysis_status='processing') AS active_photos,
