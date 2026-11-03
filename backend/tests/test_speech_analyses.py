@@ -574,3 +574,46 @@ def test_ai_client_rejects_a_response_for_another_analysis() -> None:
         asyncio.run(client.analyze_speech(_internal_request()))
 
     assert captured.value.error_code == "INVALID_AI_RESPONSE"
+
+
+@pytest.mark.parametrize("backup_works", [True, False])
+def test_worker_keeps_audio_during_failover_and_finishes_one_job(backup_works) -> None:
+    application, jobs, storage, _ = harness()
+    accepted = submit(application).json()
+    calls = []
+    reports = FakeReportGenerator()
+
+    def handler(ai_request):
+        calls.append(ai_request.url.host)
+        assert storage.deleted == []
+        assert len(storage.objects) == 1
+        if ai_request.url.host == "primary.test" or not backup_works:
+            raise httpx.ConnectError("synthetic", request=ai_request)
+        return httpx.Response(200, json={
+            "schemaVersion": 1, "analysisId": accepted["analysisId"],
+            "language": "ko", "durationMs": 100,
+            "text": "합성 전사 결과", "segments": [],
+        })
+
+    ai = AiServerClient(
+        base_url="http://primary.test", backup_base_url="http://backup.test",
+        timeout_seconds=10, transport=httpx.MockTransport(handler),
+    )
+    worker = speech_worker(jobs, storage, ai, reports)
+    assert run(worker.run_once()) is True
+    assert run(worker.run_once()) is False
+    job = asyncio.run(jobs.get_for_account(
+        analysis_id=accepted["analysisId"], account_id=ACCOUNT.account_id,
+    ))
+    assert calls == ["primary.test", "backup.test"]
+    assert len(storage.deleted) == 1
+    assert storage.objects == {}
+    assert job.audio_deleted_at is not None
+    if backup_works:
+        assert job.status == SpeechAnalysisStatus.COMPLETED
+        assert job.error_code is None
+        assert reports.sessions == [SESSION_ID]
+    else:
+        assert job.status == SpeechAnalysisStatus.FAILED
+        assert job.error_code == "AI_SERVER_UNAVAILABLE"
+        assert reports.sessions == []

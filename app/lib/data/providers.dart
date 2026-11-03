@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
 import 'mock_repository.dart';
@@ -22,9 +23,18 @@ final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
 );
 
-final accountProvider = FutureProvider<Account>(
-  (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
-);
+/// 로그인한 계정과 가장 최근 동의 이력(1-3). 로그인하지 않았으면 목 계정이다.
+///
+/// 계정이 바뀌면 다시 읽는다.
+final accountProvider = FutureProvider<Account>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  if (accountId == null) {
+    return ref.watch(mockRepositoryProvider).loadAccount();
+  }
+  return ref.watch(accountApiProvider).me();
+});
 
 /// 환자 정보 입력에서 받은 기본 정보다.
 class EnteredBasicInfo {
