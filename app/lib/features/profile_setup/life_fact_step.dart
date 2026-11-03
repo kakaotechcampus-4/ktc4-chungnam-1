@@ -85,6 +85,9 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   /// 남겨 둔 녹음을 다시 보낸 횟수. 새로 녹음하면 0 이다.
   int _resends = 0;
 
+  /// 점검 중이라 보내지 못했을 때의 안내. [_Phase.sendFailed] 에서만 쓴다.
+  String? _maintenanceNotice;
+
   /// 알아들은 녹음이 최대 길이에 닿아 멈춘 것이다.
   bool _stoppedAtLimit = false;
 
@@ -259,9 +262,21 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
           setState(() => _phase = _Phase.notHeardOnce);
           widget.onCleared();
         }
+      // 점검은 기다리면 풀린다. 재시도 횟수에 세지 않고 녹음을 남겨, 점검이
+      // 끝난 뒤 같은 녹음을 다시 보내게 한다. 글로 답할게요로 바꿀 수도 있다.
+      case SpeechFailed(canResend: true, :final maintenanceMessage?):
+        setState(() {
+          _unsent = recording;
+          _resends = 0;
+          _maintenanceNotice = maintenanceMessage;
+          _stoppedAtLimit = atLimit;
+          _phase = _Phase.sendFailed;
+        });
+        widget.onCleared();
       case SpeechFailed(canResend: true) when _resends < _maxResends:
         setState(() {
           _unsent = recording;
+          _maintenanceNotice = null;
           _stoppedAtLimit = atLimit;
           _phase = _Phase.sendFailed;
         });
@@ -422,6 +437,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
             onRetry: _retry,
             onResend: _resend,
             stoppedAtLimit: _stoppedAtLimit,
+            maintenanceNotice: _maintenanceNotice,
           ),
 
         const Spacer(flex: 3),
@@ -577,6 +593,7 @@ class _MicArea extends StatelessWidget {
     required this.onRetry,
     required this.onResend,
     required this.stoppedAtLimit,
+    this.maintenanceNotice,
   });
 
   final _Phase phase;
@@ -593,6 +610,9 @@ class _MicArea extends StatelessWidget {
 
   /// 알아들은 녹음이 최대 길이에 닿아 멈췄다.
   final bool stoppedAtLimit;
+
+  /// 점검 중이라 보내지 못했을 때의 안내. 없으면 연결 문제 문구를 쓴다.
+  final String? maintenanceNotice;
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +703,9 @@ class _MicArea extends StatelessWidget {
           // 인터넷이 끊긴 경우와 서버가 처리하지 못한 경우를 함께 덮는다.
           // 확인하지 않은 원인을 단정하지 않는다.
           Text(
-            '연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.',
+            maintenanceNotice == null
+                ? '연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'
+                : '$maintenanceNotice\n녹음은 남아 있으니 점검 후 재시도를 눌러주세요.',
             style: AppTypography.body.copyWith(color: AppColors.danger),
             textAlign: TextAlign.center,
           ),

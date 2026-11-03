@@ -150,6 +150,41 @@ void main() {
     expect(api.calls, ['audio', 'audio']);
   });
 
+  test('점검 중이라 거절되면 기록을 남기고 점검 뒤 다시 보낸다', () async {
+    final api = FakeVisitApi(
+      audioFailure: const ApiServerFailure(
+        statusCode: 503,
+        errorCode: 'SERVICE_MAINTENANCE',
+        retryable: true,
+      ),
+    );
+    final uploads = withPending();
+    final container = makeContainer(api, uploads);
+    final provider = uploadRetryProvider(_sessionId);
+
+    await expectLater(
+      container.read(provider.future),
+      throwsA(
+        isA<ApiServerFailure>().having(
+          (f) => f.isMaintenance,
+          'isMaintenance',
+          isTrue,
+        ),
+      ),
+    );
+    expect(uploads.saved[_sessionId]?.audioPath, '/synthetic/visit.wav');
+    expect(uploads.uploaded, isEmpty);
+    expect(uploads.removedPaths, isEmpty);
+
+    api.audioFailure = null;
+    container.read(provider.notifier).retry();
+
+    expect(await container.read(provider.future), UploadRetryOutcome.sent);
+    expect(api.audio?.audioPath, '/synthetic/visit.wav');
+    expect(uploads.uploaded, contains(_sessionId));
+    expect(uploads.removedPaths, isEmpty);
+  });
+
   test('리포트 알림에 받은 분석 작업 ID 를 넘긴다', () async {
     final notice = _RecordingNotice();
     final container = ProviderContainer(

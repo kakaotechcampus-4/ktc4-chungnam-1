@@ -65,8 +65,11 @@ class CardsScreen extends ConsumerWidget {
   }
 }
 
+/// 점검 중 카드 생성 요청(4-1)이 거절되면 서버의 점검 안내를 보여준다.
+/// 다시 시도하기는 상태(4-2)부터 다시 확인하므로 점검이 끝난 뒤 누르면 된다.
 String _failureMessage(Object error) => switch (error) {
   ApiNetworkFailure() => '서버에 연결하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 시도해주세요.',
+  ApiServerFailure(isMaintenance: true) => maintenanceMessageOf(error)!,
   _ => '대화 카드를 불러오지 못했어요.\n잠시 후 다시 시도해주세요.',
 };
 

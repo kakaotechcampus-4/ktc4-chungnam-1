@@ -335,6 +335,54 @@ void main() {
       expect(recorder.calls.where((c) => c.startsWith('delete')), isEmpty);
     });
 
+    test('점검 중이면 안내를 넘기고 파일을 남겨 점검 뒤 같은 녹음을 보낸다', () async {
+      final recorder = _FakeRecorder();
+      final api = _FakeApi([
+        const ApiServerFailure(
+          statusCode: 503,
+          errorCode: 'SERVICE_MAINTENANCE',
+          retryable: true,
+        ),
+        '합성 문장입니다',
+      ]);
+      final input = ServerSpeechInput(recorder: recorder, api: api);
+      final recording = await _start(input);
+
+      final first = await recording.finish();
+      expect(
+        first,
+        isA<SpeechFailed>()
+            .having((o) => o.canResend, 'canResend', true)
+            .having(
+              (o) => o.maintenanceMessage,
+              'maintenanceMessage',
+              serviceMaintenanceMessage,
+            ),
+      );
+      expect(recorder.calls.where((c) => c.startsWith('delete')), isEmpty);
+
+      expect(await recording.resend(), isA<SpeechHeard>());
+      expect(api.sentPaths, [_FakeRecorder.path, _FakeRecorder.path]);
+    });
+
+    test('점검이 아닌 실패는 점검 안내를 붙이지 않는다', () async {
+      final input = ServerSpeechInput(
+        recorder: _FakeRecorder(),
+        api: _FakeApi([const ApiNetworkFailure()]),
+      );
+
+      final outcome = await (await _start(input)).finish();
+
+      expect(
+        outcome,
+        isA<SpeechFailed>().having(
+          (o) => o.maintenanceMessage,
+          'maintenanceMessage',
+          isNull,
+        ),
+      );
+    });
+
     test('다시 해도 안 되는 실패는 파일을 지운다', () async {
       final recorder = _FakeRecorder();
       final input = ServerSpeechInput(

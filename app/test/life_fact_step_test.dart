@@ -759,6 +759,78 @@ void main() {
       );
     });
 
+    testWidgets('점검 중이면 안내를 보여주고 재시도 횟수와 상관없이 녹음을 남긴다', (tester) async {
+      _useReferenceScreen(tester);
+      const maintenance = SpeechFailed(
+        canResend: true,
+        maintenanceMessage: '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.',
+      );
+      String? captured;
+      final speech = _FixedSpeech(
+        const SpeechHeard('합성 문장입니다'),
+        Duration.zero,
+        queued: [maintenance, maintenance, maintenance],
+      );
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: speech,
+          onCaptured: (text) => captured = text,
+        ),
+      );
+
+      await openMic(tester);
+      await _speak(tester);
+
+      const notice =
+          '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.\n녹음은 남아 있으니 점검 후 재시도를 눌러주세요.';
+      expect(find.text(notice), findsOneWidget);
+      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsNothing);
+
+      // 연결 실패는 두 번 재시도하면 글로 넘어가지만 점검은 녹음을 계속 남긴다.
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.text('재시도'));
+        await tester.pumpAndSettle();
+        expect(find.text(notice), findsOneWidget);
+      }
+      expect(speech.cancelled, 0, reason: '남은 녹음을 버리지 않는다');
+      expect(find.byType(TextField), findsNothing);
+
+      // 점검이 끝난 뒤 같은 녹음을 다시 보낸다.
+      await tester.tap(find.text('재시도'));
+      await tester.pumpAndSettle();
+      expect(speech.resent, 3);
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+      expect(captured, '합성 문장입니다');
+    });
+
+    testWidgets('점검 뒤 연결 실패가 나면 연결 문구로 돌아간다', (tester) async {
+      _useReferenceScreen(tester);
+      final speech = _FixedSpeech(
+        const SpeechHeard('합성 문장입니다'),
+        Duration.zero,
+        queued: [
+          const SpeechFailed(
+            canResend: true,
+            maintenanceMessage: '서비스 점검 중입니다.',
+          ),
+          canResend,
+        ],
+      );
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+
+      await openMic(tester);
+      await _speak(tester);
+      expect(find.textContaining('서비스 점검 중입니다.'), findsOneWidget);
+
+      await tester.tap(find.text('재시도'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('서비스 점검 중입니다.'), findsNothing);
+      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsOneWidget);
+    });
+
     testWidgets('다시 해도 안 되는 실패는 바로 글로 받는다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(

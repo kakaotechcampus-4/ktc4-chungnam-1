@@ -38,9 +38,7 @@ class UploadRetryScreen extends ConsumerWidget {
         error: (error, _) => StatusNotice(
           danger: true,
           title: '녹음을 보내지 못했어요.',
-          body: error is ApiNetworkFailure
-              ? '인터넷 연결을 확인한 뒤 다시 보내주세요.'
-              : '잠시 후 다시 보내주세요.',
+          body: _failureBody(error),
           primaryLabel: '다시 보내기',
           onPrimary: ref.read(provider.notifier).retry,
           onHome: goHome,
@@ -79,5 +77,17 @@ class UploadRetryScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  /// 실패 안내. 점검 중이면 서버의 안내와 함께 녹음이 기기에 남아 있다고
+  /// 알린다. 컨트롤러는 이때 기록을 지우지 않는다.
+  String _failureBody(Object error) {
+    final maintenance = maintenanceMessageOf(error);
+    if (maintenance != null) {
+      return '$maintenance\n녹음은 기기에 남아 있어요.';
+    }
+    return error is ApiNetworkFailure
+        ? '인터넷 연결을 확인한 뒤 다시 보내주세요.'
+        : '잠시 후 다시 보내주세요.';
   }
 }

@@ -9,6 +9,8 @@
 // 바꾸는 것은 서버와 기기 경계뿐이다(`journey_harness.dart`). 실제 마이크,
 // STT, 리포트 모델, 운영 서버와 TalkBack 은 확인하지 않는다(`app/README.md`).
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/features/cards/cards_screen.dart' show cardSelectLabel;
@@ -68,8 +70,8 @@ Future<void> _pickCards(JourneyDriver app, List<String> titles) async {
   await app.waitFor(find.text('${titles.length}개 선택함'));
 }
 
-/// 녹음을 끝내고 소감을 남겨 녹음까지 보낸 뒤 홈으로 돌아온다.
-Future<void> _finishVisit(JourneyDriver app) async {
+/// 녹음을 끝내고 소감을 남긴 뒤 `리포트 만들기` 를 누른다.
+Future<void> _reviewAndSubmit(JourneyDriver app) async {
   // 글자 위의 둥근 버튼이 누르는 자리다.
   expect(find.text('만남 끝내기'), findsOneWidget);
   await app.tap(find.byIcon(Icons.stop));
@@ -83,7 +85,11 @@ Future<void> _finishVisit(JourneyDriver app) async {
   await app.tap(find.text('4'));
   await app.tap(find.text('기뻐하셨어요'));
   await app.tap(find.text('리포트 만들기'));
+}
 
+/// 녹음을 끝내고 소감을 남겨 녹음까지 보낸 뒤 홈으로 돌아온다.
+Future<void> _finishVisit(JourneyDriver app) async {
+  await _reviewAndSubmit(app);
   await app.waitFor(find.text('제출 완료!'));
   await app.tap(find.text('홈으로'));
   await app.waitFor(find.text(_homeCardsButton));
@@ -268,6 +274,83 @@ void defineAppJourneyTests() {
         findsOneWidget,
         reason: '새 묶음의 카드를 평가한다',
       );
+
+      await app.close();
+    });
+
+    testWidgets('녹음 제출이 점검으로 거절되면 안내하고 파일을 남겼다가 점검 뒤 보낸다', (tester) async {
+      final server = JourneyServer();
+      final app = await JourneyDriver.launch(tester, server);
+      await app.waitFor(find.text(_homeCardsButton), maxSteps: 300);
+      await app.tap(find.text(_homeCardsButton));
+      await app.waitFor(find.text('오늘의 대화 카드'));
+      await _pickCards(
+        app,
+        server.cardTitlesOf(server.setIds.single).take(2).toList(),
+      );
+      await _startVisit(app);
+
+      // 면회 중 배포가 시작돼 녹음 분석 접수가 멈췄다.
+      server.maintenance = true;
+      await _reviewAndSubmit(app);
+      await app.waitFor(find.textContaining(journeyMaintenanceMessage));
+      expect(
+        find.text('$journeyMaintenanceMessage\n소감은 저장했고 녹음은 기기에 남아 있어요.'),
+        findsOneWidget,
+      );
+      expect(find.text('제출 완료!'), findsNothing);
+      expect(
+        server.responses
+            .lastWhere((r) => r.path.endsWith('/speech-analyses'))
+            .status,
+        503,
+      );
+
+      final sessionId = server.requests
+          .lastWhere((r) => r.path.endsWith('/speech-analyses'))
+          .path
+          .split('/')[4];
+      final kept = app.uploads.saved[sessionId];
+      expect(kept, isNotNull, reason: '다시 보낼 기록을 남긴다');
+      expect(app.uploads.uploaded, isEmpty);
+      expect(app.uploads.removedPaths, isEmpty);
+      expect(
+        await tester.runAsync(() => File(kept!.audioPath).exists()),
+        isTrue,
+        reason: '녹음 파일을 지우지 않는다',
+      );
+
+      // 점검이 끝난 뒤 같은 화면에서 다시 누르면 녹음만 보낸다.
+      server.maintenance = false;
+      await app.tap(find.text('리포트 만들기'));
+      await app.waitFor(find.text('제출 완료!'));
+      expect(
+        server.count('POST', '/api/v1/visit-sessions/$sessionId/evaluation'),
+        1,
+      );
+      final audio = server.requests.where(
+        (r) => r.path.endsWith('/speech-analyses'),
+      );
+      expect(audio, hasLength(2));
+      expect(audio.last.body, {'participantCount': '2', 'audio': true});
+      expect(
+        server.responses
+            .lastWhere((r) => r.path.endsWith('/speech-analyses'))
+            .status,
+        202,
+      );
+      // 녹음 화면이 닫힐 때 기록을 다시 적을 수 있어 어느 목록인지는 보지 않는다.
+      // 같은 파일이 기기에 남아 있는지만 본다.
+      final after = await app.uploads.find(sessionId, includeUploaded: true);
+      expect(after?.audioPath, kept!.audioPath);
+      expect(
+        await tester.runAsync(() => File(kept.audioPath).exists()),
+        isTrue,
+      );
+      expect(app.uploads.removedPaths, isEmpty);
+
+      await app.tap(find.text('홈으로'));
+      await app.waitFor(find.text('리포트가 도착했어요'));
 
       await app.close();
     });

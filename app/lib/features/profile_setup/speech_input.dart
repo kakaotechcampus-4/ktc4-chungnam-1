@@ -31,12 +31,17 @@ class SpeechNotHeard extends SpeechOutcome {
 ///
 /// 보호자가 잘못 말한 것이 아니므로 알아듣지 못한 횟수에 세지 않는다.
 class SpeechFailed extends SpeechOutcome {
-  const SpeechFailed({required this.canResend});
+  const SpeechFailed({required this.canResend, this.maintenanceMessage});
 
   /// 녹음이 남아 있어 [SpeechRecording.resend] 로 같은 녹음을 다시 보낼 수
   /// 있다. 연결 실패, 시간 초과처럼 서버가 다시 시도해도 된다고 한 경우다.
   /// 아니면 녹음은 이미 지웠다.
   final bool canResend;
+
+  /// 배포 중이라 서버가 전사 접수를 잠시 멈췄을 때(`SERVICE_MAINTENANCE`)
+  /// 보여줄 안내다. 이때 녹음은 남아 있고([canResend]), 점검이 끝난 뒤 같은
+  /// 녹음을 다시 보낼 수 있다.
+  final String? maintenanceMessage;
 }
 
 /// 녹음을 시작하지 못한 이유.
@@ -203,7 +208,10 @@ class _ServerRecording implements SpeechRecording {
         _ => false,
       };
       if (!canResend) await cancel();
-      return SpeechFailed(canResend: canResend);
+      return SpeechFailed(
+        canResend: canResend,
+        maintenanceMessage: maintenanceMessageOf(failure),
+      );
     } on Exception {
       await cancel();
       return const SpeechFailed(canResend: false);
@@ -249,9 +257,7 @@ class MockSpeechInput implements SpeechInput {
 
     // 목 데이터에 문장이 없는 항목은 화면에 보여준 예시를 결과로 쓴다.
     // 없는 생애 정보를 지어내지 않기 위해서다.
-    final step = lifeFactSteps
-        .where((s) => s.category == category)
-        .firstOrNull;
+    final step = lifeFactSteps.where((s) => s.category == category).firstOrNull;
     final example = step?.examples.firstOrNull;
     if (example == null) return const SpeechNotHeard();
     return SpeechHeard(example.replaceAll('"', ''));

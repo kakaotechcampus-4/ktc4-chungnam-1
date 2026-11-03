@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart' show serviceMaintenanceMessage;
 import '../../data/providers.dart';
 import '../../data/models.dart';
 import '../../design/tokens.dart';
@@ -73,9 +74,12 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   /// 평가를 저장했으면 녹음만 남았다고 알린다. 다시 누르면 녹음만 보낸다.
+  ///
+  /// 점검 중이면 서버의 안내와 함께 녹음이 기기에 남아 있다고 알린다.
   static String _failureMessage(
     SubmissionFailure failure, {
     required bool evaluationSaved,
+    String? maintenanceMessage,
   }) {
     final what = evaluationSaved ? '소감은 저장했지만 녹음을' : '소감을';
     return switch (failure) {
@@ -85,6 +89,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       SubmissionFailure.noRecording => '녹음 파일이 없어 리포트를 만들 수 없어요.',
       SubmissionFailure.participantCountRequired =>
         '녹음은 기기에 남아 있어요. 리포트 만들기를 눌러 참여자 수를 확인해 주세요.',
+      SubmissionFailure.maintenance =>
+        '${maintenanceMessage ?? serviceMaintenanceMessage}\n'
+            '${evaluationSaved ? '소감은 저장했고 ' : ''}녹음은 기기에 남아 있어요.',
     };
   }
 
@@ -154,6 +161,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 _failureMessage(
                   failure,
                   evaluationSaved: submission.evaluationSaved,
+                  maintenanceMessage: submission.maintenanceMessage,
                 ),
                 style: AppTypography.sub.copyWith(color: AppColors.danger),
                 textAlign: TextAlign.center,

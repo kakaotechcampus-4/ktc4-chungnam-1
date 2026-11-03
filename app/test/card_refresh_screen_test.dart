@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:saerok/app/routes.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
@@ -42,6 +43,22 @@ class _PreloadedCardApi extends FakeCardApi {
       cards: _mockSet.cards,
       needsRefresh: true,
     );
+  }
+}
+
+/// 4-1 이 먼저 [requestFailures] 로 거절된다. 배포 중 접수 중지를 흉내 낸다.
+class _MaintenanceCardApi extends _PreloadedCardApi {
+  _MaintenanceCardApi({required super.statuses});
+
+  final requestFailures = <Object>[];
+
+  @override
+  Future<CardGenerationStatus> requestGeneration(String profileId) async {
+    if (requestFailures.isNotEmpty) {
+      calls.add('request');
+      throw requestFailures.removeAt(0);
+    }
+    return super.requestGeneration(profileId);
   }
 }
 
@@ -153,5 +170,42 @@ void main() {
     ], reason: '4-1 로 생성을 요청한다');
     expect(find.text('대화 시작하기'), findsOneWidget);
     expect(find.textContaining('어르신 정보가 바뀌었어요'), findsNothing);
+  });
+  testWidgets('다음 대화 준비가 점검으로 거절되면 안내하고 점검 뒤 다시 만든다', (tester) async {
+    final api =
+        _MaintenanceCardApi(
+            statuses: [
+              CardGenerationStatus.needsRefresh,
+              CardGenerationStatus.needsRefresh,
+              CardGenerationStatus.running,
+              CardGenerationStatus.ready,
+            ],
+          )
+          ..requestFailures.add(
+            const ApiServerFailure(
+              statusCode: 503,
+              errorCode: 'SERVICE_MAINTENANCE',
+              retryable: true,
+              message: '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.',
+            ),
+          );
+    await _open(tester, api);
+
+    await tester.tap(find.text('다음 대화 준비하기'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.'), findsOneWidget);
+    expect(find.text('대화 시작하기'), findsNothing, reason: '고친 묶음으로 시작하지 않는다');
+
+    // 다시 시도는 상태부터 확인한다. 묶음은 아직 고친 그대로라 시작할 수 없다.
+    await tester.tap(find.text('다시 시도'));
+    await tester.pumpAndSettle();
+    expect(find.text('다음 대화 준비하기'), findsOneWidget);
+    expect(find.text('대화 시작하기'), findsNothing);
+
+    await tester.tap(find.text('다음 대화 준비하기'));
+    await tester.pumpAndSettle();
+    expect(api.calls.where((c) => c == 'request'), hasLength(2));
+    expect(find.text('대화 시작하기'), findsOneWidget);
   });
 }

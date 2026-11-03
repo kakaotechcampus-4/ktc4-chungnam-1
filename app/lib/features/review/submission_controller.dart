@@ -25,6 +25,10 @@ enum SubmissionFailure {
 
   /// 파일은 있지만 참여자 수를 아직 확인하지 않았다.
   participantCountRequired,
+
+  /// 배포 중이라 서버가 녹음 접수를 잠시 멈췄다(`SERVICE_MAINTENANCE`).
+  /// 녹음과 다시 보낼 기록은 그대로 두고, 점검이 끝난 뒤 다시 누르게 한다.
+  maintenance,
 }
 
 class SubmissionState {
@@ -33,6 +37,7 @@ class SubmissionState {
     this.sending = false,
     this.failure,
     this.analysisId,
+    this.maintenanceMessage,
   });
 
   /// 평가(API 6-1)를 저장했는지. 저장했으면 다시 보내지 않는다.
@@ -48,6 +53,10 @@ class SubmissionState {
   ///
   /// 분석 상태 조회(6-3)와 리포트 알림이 이 값을 쓴다.
   final String? analysisId;
+
+  /// [SubmissionFailure.maintenance] 일 때 보여줄 점검 안내. 서버가 준 문구가
+  /// 없으면 [serviceMaintenanceMessage] 다.
+  final String? maintenanceMessage;
 
   SubmissionState copyWith({
     bool? evaluationSaved,
@@ -187,6 +196,16 @@ class SubmissionController extends Notifier<SubmissionState> {
     } on ApiNetworkFailure {
       _fail(SubmissionFailure.network);
       return false;
+    } on ApiServerFailure catch (failure) {
+      // 점검 중이면 기기의 녹음과 다시 보낼 기록([PendingUploads])은 건드리지
+      // 않는다. 점검이 끝난 뒤 다시 누르거나 홈의 `음성 다시 보내기` 로 보낸다.
+      final maintenance = maintenanceMessageOf(failure);
+      if (maintenance != null) {
+        _fail(SubmissionFailure.maintenance, maintenanceMessage: maintenance);
+      } else {
+        _fail(SubmissionFailure.server);
+      }
+      return false;
     } on ApiFailure {
       _fail(SubmissionFailure.server);
       return false;
@@ -230,12 +249,13 @@ class SubmissionController extends Notifier<SubmissionState> {
     }
   }
 
-  void _fail(SubmissionFailure failure) {
+  void _fail(SubmissionFailure failure, {String? maintenanceMessage}) {
     if (!ref.mounted) return;
     state = SubmissionState(
       evaluationSaved: state.evaluationSaved,
       analysisId: state.analysisId,
       failure: failure,
+      maintenanceMessage: maintenanceMessage,
     );
   }
 }

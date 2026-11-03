@@ -43,6 +43,9 @@ const journeyReportTitle = '수선집 이야기를 나눈 날';
 const journeyReportBody = '오늘은 수선집을 하시던 시절 이야기를 나눴어요.';
 const journeyCardSummary = '단골손님 옷을 고쳐 주던 이야기를 하셨어요.';
 
+/// BE 의 점검 안내 문구와 같다.
+const journeyMaintenanceMessage = '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.';
+
 /// 이야기 제안. 보호자가 내용을 고쳐 승인한다.
 const journeyProposalTitle = '한복 짓던 시절';
 const journeyProposalContent = '한복을 주로 지으셨어요.';
@@ -93,6 +96,11 @@ class JourneyServer {
   /// `true` 인 동안 분석 작업이 다음 단계로 나아가지 않는다. 홈의 `만드는 중`
   /// 을 확인한 뒤 풀어 도착을 확인한다.
   bool holdAnalyses = false;
+
+  /// `true` 인 동안 배포 중 접수 중지처럼 녹음 분석(6-2), 분석 다시 요청(6-5),
+  /// 짧은 음성 전사, 카드 생성 요청(4-1)을 `503 SERVICE_MAINTENANCE` 로
+  /// 거절한다(`backend/docs/deployment-control.md`). 조회는 그대로 받는다.
+  bool maintenance = false;
 
   http.Client get client => MockClient(handle);
 
@@ -155,6 +163,10 @@ class JourneyServer {
 
     if (s.length < 3 || s[0] != 'api' || s[1] != 'v1') return _notFound();
     final rest = s.sublist(2);
+
+    if (maintenance && method == 'POST' && _pausedDuringDeploy(rest)) {
+      return _maintenance();
+    }
 
     // 2-1 어르신 목록
     if (method == 'GET' && rest.length == 1 && rest[0] == 'profiles') {
@@ -627,6 +639,29 @@ class JourneyServer {
       _Reply(status, body);
 
   static _Reply _notFound() => _error(404, 'NOT_FOUND');
+
+  /// 배포 중 접수를 멈추는 POST 경로. BE 는 인증과 접근 권한을 먼저 확인하지만
+  /// 이 서버는 경로만 본다.
+  static bool _pausedDuringDeploy(List<String> rest) =>
+      (rest.length == 3 &&
+          rest[0] == 'visit-sessions' &&
+          rest[2] == 'speech-analyses') ||
+      (rest.length == 3 &&
+          rest[0] == 'speech-analyses' &&
+          rest[2] == 'retry') ||
+      (rest.length == 1 && rest[0] == 'speech-transcriptions') ||
+      (rest.length == 3 &&
+          rest[0] == 'profiles' &&
+          rest[2] == 'card-generations');
+
+  /// BE 의 점검 응답(`backend/docs/deployment-control.md`)과 같은 모양이다.
+  static _Reply _maintenance() => const _Reply(503, {
+    'schemaVersion': 1,
+    'errorCode': 'SERVICE_MAINTENANCE',
+    'message': journeyMaintenanceMessage,
+    'requestId': 'req_journey',
+    'retryable': true,
+  });
 
   static _Reply _error(int status, String errorCode) => _Reply(status, {
     'schemaVersion': 1,

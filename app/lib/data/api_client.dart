@@ -39,6 +39,7 @@ final class ApiServerFailure extends ApiFailure {
     required this.statusCode,
     this.errorCode,
     this.retryable = false,
+    this.message,
   });
 
   final int statusCode;
@@ -47,8 +48,34 @@ final class ApiServerFailure extends ApiFailure {
   /// 서버가 다시 시도해도 된다고 알린 경우다.
   final bool retryable;
 
+  /// `ErrorResponse.message`. 화면에는 점검 안내([maintenanceMessageOf])에만
+  /// 쓴다. 다른 실패는 화면마다 정한 문구를 쓴다.
+  final String? message;
+
+  /// 배포 중 분석 접수를 잠시 멈췄다는 거절이다
+  /// (`backend/docs/deployment-control.md`). 앱에서는 녹음 분석, 짧은 음성
+  /// 전사, 카드 생성 요청이 받는다. 보낼 파일과 입력은 지우지 않고 점검이
+  /// 끝난 뒤 다시 보내게 한다.
+  bool get isMaintenance =>
+      statusCode == 503 && errorCode == serviceMaintenanceCode;
+
   @override
   String toString() => 'ApiServerFailure($statusCode, $errorCode)';
+}
+
+/// 배포 중 접수를 멈췄을 때 서버가 주는 `errorCode`.
+const serviceMaintenanceCode = 'SERVICE_MAINTENANCE';
+
+/// 서버가 안내 문구를 주지 않았을 때 보여줄 점검 안내.
+const serviceMaintenanceMessage = '서비스 점검 중이에요. 잠시 후 다시 시도해 주세요.';
+
+/// [error] 가 점검 중 거절이면 보여줄 문구를, 아니면 `null` 을 돌려준다.
+///
+/// 서버가 준 `message` 를 쓰고, 비어 있으면 [serviceMaintenanceMessage] 다.
+String? maintenanceMessageOf(Object? error) {
+  if (error is! ApiServerFailure || !error.isMaintenance) return null;
+  final text = error.message?.trim() ?? '';
+  return text.isEmpty ? serviceMaintenanceMessage : text;
 }
 
 /// 서버에 닿지 못했다. 연결 실패와 시간 초과다.
@@ -251,6 +278,9 @@ class ApiClient {
               statusCode: response.statusCode,
               errorCode: decoded['errorCode'] as String?,
               retryable: decoded['retryable'] as bool? ?? false,
+              message: decoded['message'] is String
+                  ? decoded['message'] as String
+                  : null,
             )
           : ApiServerFailure(statusCode: response.statusCode);
     }

@@ -189,6 +189,60 @@ void main() {
       expect(files.removedPaths, isEmpty);
     });
 
+    test('점검 중이라 거절되면 안내를 남기고 녹음 기록을 지우지 않으며 점검 뒤 다시 보낸다', () async {
+      final api = FakeVisitApi(
+        audioFailure: const ApiServerFailure(
+          statusCode: 503,
+          errorCode: 'SERVICE_MAINTENANCE',
+          retryable: true,
+          message: '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.',
+        ),
+      );
+      final files = FakePendingUploads();
+      final container = await afterVisit(api, files: files);
+      final path = container.read(visitControllerProvider).value!.recordingPath;
+      final controller = container.read(submissionProvider.notifier);
+
+      expect(await controller.submit(), isFalse);
+      var state = container.read(submissionProvider);
+      expect(state.failure, SubmissionFailure.maintenance);
+      expect(state.maintenanceMessage, '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.');
+      expect(state.evaluationSaved, isTrue);
+      expect(state.sending, isFalse);
+      expect(files.saved[FakeVisitApi.sessionId]?.audioPath, path);
+      expect(files.uploaded, isEmpty, reason: '보냈다고 적지 않는다');
+      expect(files.removedPaths, isEmpty, reason: '녹음 파일을 지우지 않는다');
+
+      api.audioFailure = null;
+      expect(await controller.submit(), isTrue);
+      state = container.read(submissionProvider);
+      expect(state.failure, isNull);
+      expect(state.maintenanceMessage, isNull);
+      expect(api.audio?.audioPath, path, reason: '같은 녹음을 보낸다');
+      expect(api.calls.where((c) => c == 'evaluation'), hasLength(1));
+      expect(files.uploaded[FakeVisitApi.sessionId]?.audioPath, path);
+      expect(files.removedPaths, isEmpty);
+    });
+
+    test('점검이 아닌 503 은 일반 서버 실패다', () async {
+      final api = FakeVisitApi(
+        audioFailure: const ApiServerFailure(
+          statusCode: 503,
+          errorCode: 'AUDIO_STORAGE_UNAVAILABLE',
+          retryable: true,
+        ),
+      );
+      final container = await afterVisit(api);
+
+      expect(
+        await container.read(submissionProvider.notifier).submit(),
+        isFalse,
+      );
+      final state = container.read(submissionProvider);
+      expect(state.failure, SubmissionFailure.server);
+      expect(state.maintenanceMessage, isNull);
+    });
+
     test('이미 끝난 회차라고 거절되면 분석 작업 없이 마치고 파일은 남긴다', () async {
       final api = FakeVisitApi(
         audioFailure: const ApiServerFailure(

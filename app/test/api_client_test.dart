@@ -169,6 +169,93 @@ void main() {
     );
   });
 
+  group('배포 중 접수 중지(SERVICE_MAINTENANCE)', () {
+    Map<String, Object?> maintenance({Object? message}) => {
+      'schemaVersion': 1,
+      'errorCode': 'SERVICE_MAINTENANCE',
+      'message': message,
+      'requestId': 'req_01',
+      'retryable': true,
+    };
+
+    test('503 점검 응답은 점검으로 읽고 서버의 안내 문구를 남긴다', () async {
+      final api = _client(
+        (_) async =>
+            _json(maintenance(message: '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.'), 503),
+      );
+
+      Object? caught;
+      try {
+        await api.postMultipart(
+          '/api/v1/speech-transcriptions',
+          files: () async => [http.MultipartFile.fromString('audio', 'x')],
+        );
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(
+        caught,
+        isA<ApiServerFailure>()
+            .having((f) => f.isMaintenance, 'isMaintenance', isTrue)
+            .having((f) => f.retryable, 'retryable', isTrue)
+            .having(
+              (f) => f.message,
+              'message',
+              '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.',
+            ),
+      );
+      expect(maintenanceMessageOf(caught), '서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.');
+    });
+
+    test('서버 문구가 비었거나 문자열이 아니면 앱의 점검 안내를 쓴다', () {
+      for (final message in [null, '', '   ']) {
+        expect(
+          maintenanceMessageOf(
+            ApiServerFailure(
+              statusCode: 503,
+              errorCode: 'SERVICE_MAINTENANCE',
+              retryable: true,
+              message: message,
+            ),
+          ),
+          serviceMaintenanceMessage,
+        );
+      }
+    });
+
+    test('문자열이 아닌 message 는 버린다', () async {
+      final api = _client((_) async => _json(maintenance(message: 3), 503));
+
+      await expectLater(
+        api.post('/x'),
+        throwsA(
+          isA<ApiServerFailure>()
+              .having((f) => f.isMaintenance, 'isMaintenance', isTrue)
+              .having((f) => f.message, 'message', isNull),
+        ),
+      );
+    });
+
+    test('다른 503 과 다른 상태의 같은 코드는 점검으로 보지 않는다', () {
+      const others = [
+        ApiServerFailure(
+          statusCode: 503,
+          errorCode: 'AUDIO_STORAGE_UNAVAILABLE',
+          retryable: true,
+          message: '합성 메시지',
+        ),
+        ApiServerFailure(statusCode: 409, errorCode: 'SERVICE_MAINTENANCE'),
+        ApiServerFailure(statusCode: 503),
+      ];
+      for (final failure in others) {
+        expect(failure.isMaintenance, isFalse, reason: '$failure');
+        expect(maintenanceMessageOf(failure), isNull, reason: '$failure');
+      }
+      expect(maintenanceMessageOf(const ApiNetworkFailure()), isNull);
+    });
+  });
+
   test('오류 본문을 읽지 못해도 상태 코드는 남기고 코드를 지어내지 않는다', () async {
     final api = _client((_) async => http.Response('Bad Gateway', 502));
 
