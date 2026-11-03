@@ -259,8 +259,8 @@ void defineAppJourneyTests() {
         reason: '고친 뒤의 묶음(두 번째)으로는 회차를 만들지 않았다',
       );
 
-      // 녹음 파일을 닫고 소감 화면까지 간 뒤 마친다. 녹음 중에 앱 provider 를
-      // 통째로 정리하면 녹음 종료가 정리된 ref 를 건드린다(보고서 참고).
+      // 녹음 파일을 닫고 소감 화면까지 간 뒤 마친다. 녹음 중에 정리되는 경우는
+      // `visit_recording_test.dart` 가 따로 확인한다.
       await app.tap(find.byIcon(Icons.stop));
       await app.tap(find.text('끝내기'));
       await app.waitFor(find.text('오늘 만남은\n어떠셨나요?'));
@@ -314,6 +314,9 @@ void defineAppJourneyTests() {
       }
       expect(find.text(journeyReportTitle), findsNothing);
       expect(find.text(journeyCardSummary), findsNothing);
+      // 보호자는 첫 카드를 썼다고 답했다. 요약이 없다고 다룬 카드가 없다고 하지 않는다.
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsNothing);
+      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsOneWidget);
       expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이야기와 주제 제안이 없다');
 
       final texts = _visibleTexts(tester);
