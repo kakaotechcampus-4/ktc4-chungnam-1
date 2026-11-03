@@ -43,7 +43,12 @@ ML_API_KEY=... uv run --offline --project ai python $D/run.py reports           
 ML_API_KEY=... uv run --offline --project ai python $D/run.py card rich-uuid    # 5~6회 예상
 ```
 
-실행기는 2026-11-03에 쓴 것과 경로만 다릅니다(ai 폴더와 출력 폴더 위치, `check` 모드 추가). `scan.py`, `show.py`도 경로만 바꿨고, `inputs.py`에는 JSON 사본을 쓰는 부분만 덧붙였습니다. 입력 값은 그대로입니다.
+최초 실행기에는 경로와 `check` 모드만 바꿨습니다. 이후 Luna 6 재점검을 위해
+`SPOT_CHECK_MODEL` 선택, 요청 모델과 한도 기록, 오류의 URL 제거를 추가했습니다.
+변수를 생략하면 기존 `gpt-5.6-luna`를 사용하고 출력 상한은 현재 `ChatConfig`를 따릅니다.
+새 모델은 `SPOT_CHECK_MODEL=gpt-6-luna`로 지정하고 빈 `SPOT_CHECK_OUT` 폴더에 저장합니다.
+입력과 기존 `outputs/`는 바꾸지 않습니다. 기능 실행이 실패하면 종료 코드 1입니다.
+`scan.py`, `show.py`와 `inputs.py`의 입력 값은 그대로입니다.
 
 ## 재현의 범위
 

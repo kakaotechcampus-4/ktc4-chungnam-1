@@ -10,7 +10,8 @@
 출력 폴더는 SPOT_CHECK_OUT 환경 변수로 정하고, 없으면 OS 임시 폴더 아래 saerok-spot-check-116을 쓴다.
 커밋된 outputs/를 덮어쓰지 않도록 기본값을 저장소 밖에 둔다.
 
-2026-11-03 실행 때와 다른 점은 경로뿐이다(ai 폴더와 출력 폴더 위치, check 모드 추가). 호출 방식과 인자는 같다.
+SPOT_CHECK_MODEL을 설정하면 그 모델로 검사한다. 없으면 기존 5.6 모델을 사용한다.
+출력 한도는 현재 ChatConfig 기본값이다. 이전 결과의 모델, 한도를 새 실행으로 덮어쓰지 않는다.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import contextvars
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -35,6 +37,7 @@ from langchain_core.tracers.context import register_configure_hook  # noqa: E402
 OUT = Path(os.environ.get("SPOT_CHECK_OUT") or Path(tempfile.gettempdir()) / "saerok-spot-check-116")
 LEDGER = OUT / "calls.json"
 CAP = 40
+MODEL = os.environ.get("SPOT_CHECK_MODEL", "gpt-5.6-luna")
 
 
 class BudgetExceeded(RuntimeError):
@@ -79,16 +82,21 @@ def ledger() -> dict:
 
 def scrub(text: str) -> str:
     key = os.environ.get("ML_API_KEY", "")
-    return text.replace(key, "[REDACTED]") if key else text
+    text = text.replace(key, "[REDACTED]") if key else text
+    return re.sub(r"https?://[^\s\"'<>]+", "[URL_REDACTED]", text)
 
 
 def record(name: str, counter: Counter, started: float, used_before: int, result=None, error=None) -> None:
+    from common.llm import ChatConfig
+    config = ChatConfig(model=MODEL, api_key="")
     data = ledger()
     data["used"] = counter.used
-    data["runs"].append({"name": name, "calls_attempted": counter.used - used_before,
+    data["runs"].append({"name": name, "requested_model": MODEL,
+                         "max_output_tokens": config.max_tokens, "effort": config.effort,
+                         "calls_attempted": counter.used - used_before,
                          "wall_seconds": round(time.monotonic() - started, 1), "calls": counter.calls,
                          "error": scrub(error) if error else None})
-    LEDGER.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    LEDGER.write_text(scrub(json.dumps(data, ensure_ascii=False, indent=2)), encoding="utf-8")
     if result is not None:
         (OUT / f"{name}.json").write_text(scrub(json.dumps(result, ensure_ascii=False, indent=2)), encoding="utf-8")
 
@@ -116,6 +124,11 @@ def main() -> int:
         print("ML_API_KEY 없음")
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
+    from common.llm import ENDPOINTS
+    if MODEL not in ENDPOINTS:
+        print("등록되지 않은 SPOT_CHECK_MODEL")
+        return 2
+    failed = False
     import inputs
     if mode == "reports":
         from common.visit_report import VisitReportRequest
@@ -130,10 +143,11 @@ def main() -> int:
                 before, started = counter.used, time.monotonic()
                 token = _var.set(counter)
                 try:
-                    out = fn(req, model="gpt-5.6-luna", api_key=key)
+                    out = fn(req, model=MODEL, api_key=key)
                     record(name, counter, started, before, result=out.model_dump(by_alias=True))
                     print(name, "ok", counter.used - before, "calls", round(time.monotonic() - started, 1), "s")
                 except Exception as error:
+                    failed = True
                     record(name, counter, started, before, error=f"{type(error).__name__}: {error}")
                     print(name, "FAILED", scrub(f"{type(error).__name__}: {str(error)[:300]}"))
                 finally:
@@ -146,15 +160,16 @@ def main() -> int:
         before, started = counter.used, time.monotonic()
         token = _var.set(counter)
         try:
-            out = generate_cards(GenerationRequest.model_validate(payload), api_key=key, seed=116)
+            out = generate_cards(GenerationRequest.model_validate({**payload, "model": MODEL}), api_key=key, seed=116)
             record(name, counter, started, before, result=out.model_dump(by_alias=True))
             print(name, "ok", counter.used - before, "calls", round(time.monotonic() - started, 1), "s")
         except Exception as error:
+            failed = True
             record(name, counter, started, before, error=f"{type(error).__name__}: {error}\n{traceback.format_exc()[-1500:]}")
             print(name, "FAILED", scrub(f"{type(error).__name__}: {str(error)[:500]}"))
         finally:
             _var.reset(token)
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

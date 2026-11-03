@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "model": "gpt-6-luna",
+  "promptVersion": 1,
+  "cards": [
+    {
+      "position": 1,
+      "topic": {
+        "topicId": null,
+        "title": "급식실 조리 전 준비",
+        "description": "초등학교 급식실에 출근해 조리를 시작하기 전 준비하던 경험",
+        "evidence": [
+          {
+            "profileField": "occupation"
+          }
+        ]
+      },
+      "cardTitle": "급식실의 아침 준비",
+      "description": "초등학교 급식실에서 일하시며 조리를 시작하기 전에 어떤 준비를 하셨는지 여쭤보는 카드입니다.",
+      "primaryQuestion": "급식실에서 조리를 시작하기 전에 어떤 준비를 하셨어요?",
+      "followUpQuestions": [
+        "출근하시면 가장 먼저 무엇을 하셨어요?",
+        "재료를 준비하실 때 어떤 순서로 하셨어요?",
+        "일을 시작할 때 어떤 마음이 드셨어요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "occupation"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "급식실에 출근해 조리를 시작하던 때의 준비 과정",
+        "pickReason": "새 이야기",
+        "agentReason": "초등학교 급식실 조리원으로 일하신 경험을 구체적인 하루의 장면으로 여쭙는다.",
+        "matchReason": "급식실에서 조리를 시작하며 준비하던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 2,
+      "topic": {
+        "topicId": null,
+        "title": "급식실에서 쓰던 조리 도구",
+        "description": "초등학교 급식실에서 자주 손에 들고 사용하던 조리 도구",
+        "evidence": [
+          {
+            "profileField": "occupation"
+          }
+        ]
+      },
+      "cardTitle": "급식실의 조리 도구",
+      "description": "초등학교 급식실에서 자주 사용하신 조리 도구에 관해 여쭤보는 카드입니다.",
+      "primaryQuestion": "급식실에서 일하실 때 자주 손에 드셨던 조리 도구는 무엇이었나요?",
+      "followUpQuestions": [
+        "그 도구로 주로 어떤 일을 하셨어요?",
+        "도구를 쓰실 때 기억에 남는 일이 있으세요?",
+        "일을 마친 뒤 도구를 어떻게 정리하셨어요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "occupation"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "일하시던 급식실에서 자주 손에 들었던 조리 도구",
+        "pickReason": "새 이야기",
+        "agentReason": "같은 일의 다른 장면인 조리 도구와 손에 익은 일을 떠올릴 수 있다.",
+        "matchReason": "급식실에서 쓰던 조리 도구가 중심으로, 조리 준비 경험과는 별개의 이야기입니다."
+      }
+    },
+    {
+      "position": 3,
+      "topic": {
+        "topicId": null,
+        "title": "고추 모종을 돌보던 텃밭",
+        "description": "텃밭에 고추 모종을 심고 돌보던 경험",
+        "evidence": [
+          {
+            "photoId": "f9dc54d4-ecdd-5cd1-9517-8788ad58fa30"
+          }
+        ]
+      },
+      "cardTitle": "고추 모종이 선 텃밭",
+      "description": "사진을 보며 고추 모종을 심고 돌보던 텃밭 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "이런 고추 모종을 보시면 텃밭을 돌보시던 때 어떤 일이 떠오르세요?",
+      "followUpQuestions": [
+        "모종을 심으실 때는 어떤 기분이셨어요?",
+        "텃밭을 돌보며 어떤 일을 하셨어요?",
+        "텃밭에서 보내는 시간은 어떠셨어요?"
+      ],
+      "evidenceSource": "photo",
+      "evidence": [
+        {
+          "photoId": "f9dc54d4-ecdd-5cd1-9517-8788ad58fa30"
+        }
+      ],
+      "extra": {
+        "kind": "photo",
+        "bucket": "new",
+        "angle": "고추 모종을 심고 돌보던 텃밭의 풍경",
+        "pickReason": "새 이야기",
+        "agentReason": "사진에 보이는 고추 모종과 밀짚모자를 따라 텃밭 풍경을 이야기할 수 있다.",
+        "matchReason": "텃밭에서 고추 모종을 심고 돌보던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 4,
+      "topic": {
+        "topicId": null,
+        "title": "고향의 골목길",
+        "description": "어릴 적 살던 동네의 길과 주변 모습을 떠올리는 이야기",
+        "evidence": []
+      },
+      "cardTitle": "고향의 골목길",
+      "description": "어릴 적 살던 동네의 골목길과 주변 풍경을 여쭤보는 카드입니다.",
+      "primaryQuestion": "어릴 적 살던 동네의 골목길은 어떤 모습이었어요?",
+      "followUpQuestions": [
+        "골목길에는 무엇이 있었어요?",
+        "동네 길을 다니실 때 어떤 일이 있었어요?",
+        "그 골목길에서 어떤 기분이 드셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "discover",
+        "bucket": "new",
+        "angle": "어릴 적 살던 동네의 길과 주변 모습",
+        "pickReason": "새 이야기",
+        "agentReason": "비어 있는 고향 정보를 과거의 익숙한 풍경으로 자연스럽게 여쭙는다.",
+        "matchReason": "어릴 적 고향 동네의 골목길을 떠올리는 이야기입니다."
+      }
+    },
+    {
+      "position": 5,
+      "topic": {
+        "topicId": null,
+        "title": "젊었을 때 즐기던 취미",
+        "description": "젊었을 때 여유가 생기면 즐기던 활동",
+        "evidence": []
+      },
+      "cardTitle": "즐겨 하던 취미",
+      "description": "젊었을 때 여유가 생기면 즐기던 활동을 여쭤보는 카드입니다.",
+      "primaryQuestion": "젊었을 때 여유가 생기면 무엇을 하며 즐기셨어요?",
+      "followUpQuestions": [
+        "그 활동을 하실 때 어떤 기분이셨어요?",
+        "누구와 함께 즐기셨어요?",
+        "그중 특히 즐거웠던 점은 무엇이었어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "discover",
+        "bucket": "new",
+        "angle": "젊었을 때 여유가 생기면 즐기던 활동",
+        "pickReason": "새 이야기",
+        "agentReason": "비어 있는 취미 정보를 부담 없이 알아갈 수 있다.",
+        "matchReason": "젊었을 때 즐기던 취미 활동이 중심입니다."
+      }
+    },
+    {
+      "position": 6,
+      "topic": {
+        "topicId": null,
+        "title": "가족과 함께한 저녁 시간",
+        "description": "가족이 함께 둘러앉아 저녁을 보내던 경험",
+        "evidence": []
+      },
+      "cardTitle": "가족과의 저녁 시간",
+      "description": "가족이 함께 둘러앉아 저녁을 보내던 모습과 이야기를 여쭤보는 카드입니다.",
+      "primaryQuestion": "가족이 함께 저녁을 보내실 때 어떤 모습이었어요?",
+      "followUpQuestions": [
+        "저녁 자리에서 어떤 이야기를 나누셨어요?",
+        "함께 식사할 때 어떤 기분이셨어요?",
+        "저녁을 드신 뒤에는 무엇을 하셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "discover",
+        "bucket": "new",
+        "angle": "가족이 함께 둘러앉아 저녁을 보내던 모습",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "가족 정보가 비어 있어 편안한 일상 장면으로 알아간다.",
+        "matchReason": "가족이 함께 저녁을 보내던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 7,
+      "topic": {
+        "topicId": null,
+        "title": "겨울 아랫목에서 몸 녹이기",
+        "description": "추운 날 아랫목에서 몸을 녹이던 경험",
+        "evidence": []
+      },
+      "cardTitle": "겨울 아랫목",
+      "description": "추운 날 아랫목에서 몸을 녹이던 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "추운 날 아랫목에 앉아 몸을 녹이실 때는 어떠셨어요?",
+      "followUpQuestions": [
+        "아랫목에서 주로 무엇을 하셨어요?",
+        "그곳에 앉아 있으면 어떤 기분이 드셨어요?",
+        "아랫목에서 누구와 함께 시간을 보내셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "추운 날 아랫목에서 몸을 녹이던 풍경",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "90대 어르신과 나눌 수 있는 계절의 보편적인 옛 풍경이다.",
+        "matchReason": "추운 날 아랫목에서 몸을 녹이던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 8,
+      "topic": {
+        "topicId": null,
+        "title": "겨울철 군고구마",
+        "description": "겨울철 군고구마를 먹으며 맛과 냄새를 느끼던 경험",
+        "evidence": []
+      },
+      "cardTitle": "군고구마의 맛",
+      "description": "겨울철 군고구마를 먹으며 느꼈던 맛과 냄새를 여쭤보는 카드입니다.",
+      "primaryQuestion": "겨울에 군고구마를 드실 때 맛과 냄새는 어땠어요?",
+      "followUpQuestions": [
+        "군고구마는 어떻게 드셨어요?",
+        "군고구마를 드실 때 어떤 기분이셨어요?",
+        "함께 드신 분이 계셨다면 어떤 이야기를 나누셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "겨울철 군고구마를 먹던 때의 맛과 냄새",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "겨울 간식의 감각을 중심으로 부담 없이 이야기할 수 있다.",
+        "matchReason": "겨울철 군고구마를 먹던 경험이 중심으로 아랫목 이야기와는 다릅니다."
+      }
+    },
+    {
+      "position": 9,
+      "topic": {
+        "topicId": null,
+        "title": "여름날 부채질",
+        "description": "더위를 식히려고 여름날 부채를 부치던 경험",
+        "evidence": []
+      },
+      "cardTitle": "여름 부채",
+      "description": "여름날 부채질로 더위를 식히던 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "여름에 부채를 부치며 더위를 식히실 때는 어떠셨어요?",
+      "followUpQuestions": [
+        "부채를 주로 어디에서 부치셨어요?",
+        "부채질을 하며 무엇을 하셨어요?",
+        "부채 바람을 쐬면 어떤 기분이 드셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "더위를 식히려고 부채를 부치던 여름날",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "여름의 익숙한 물건과 감각을 소재로 삼는다.",
+        "matchReason": "여름날 부채를 부치며 더위를 식히던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 10,
+      "topic": {
+        "topicId": null,
+        "title": "처마 끝 빗소리",
+        "description": "비 오는 날 처마 끝에서 떨어지는 빗물을 바라보던 경험",
+        "evidence": []
+      },
+      "cardTitle": "처마 끝 빗소리",
+      "description": "비 오는 날 처마 끝의 빗소리와 풍경을 바라보던 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "비 오는 날 처마 끝에서 떨어지는 빗물을 보실 때는 어떠셨어요?",
+      "followUpQuestions": [
+        "빗소리를 들으며 어떤 생각을 하셨어요?",
+        "비 오는 날에는 주로 어디에서 시간을 보내셨어요?",
+        "처마 아래에서 어떤 풍경을 보셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "비 오는 날 처마 끝에서 떨어지는 빗물을 바라보던 풍경",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "계절의 소리와 풍경을 편안하게 떠올릴 수 있다.",
+        "matchReason": "비 오는 날 처마 끝의 빗소리와 풍경을 바라보던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 11,
+      "topic": {
+        "topicId": null,
+        "title": "봄나물 반찬",
+        "description": "봄에 향긋한 나물 반찬을 맛보던 경험",
+        "evidence": []
+      },
+      "cardTitle": "봄나물 반찬",
+      "description": "봄에 맛보던 향긋한 나물 반찬에 얽힌 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "봄에 드시던 나물 반찬은 어떤 맛과 향이었어요?",
+      "followUpQuestions": [
+        "어떤 나물 반찬을 즐겨 드셨어요?",
+        "나물 반찬은 어떻게 드셨는지 들려주실 수 있어요?",
+        "나물 반찬을 드실 때 어떤 기분이셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "봄에 맛보던 향긋한 나물 반찬",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "봄철 음식에 대한 보편적인 기억을 나누기 좋다.",
+        "matchReason": "봄나물 반찬을 맛보던 경험이 중심입니다."
+      }
+    },
+    {
+      "position": 12,
+      "topic": {
+        "topicId": null,
+        "title": "장날 시장 구경",
+        "description": "장날 시장에서 들리던 소리와 사람들 모습을 구경하던 경험",
+        "evidence": []
+      },
+      "cardTitle": "장날 시장 구경",
+      "description": "장날 시장에서 들리던 소리와 사람들의 모습을 구경하던 경험을 여쭤보는 카드입니다.",
+      "primaryQuestion": "장날 시장에 가시면 어떤 소리와 사람들 모습이 보였어요?",
+      "followUpQuestions": [
+        "시장에서는 어떤 소리가 들렸어요?",
+        "사람들은 시장에서 무엇을 하고 있었어요?",
+        "시장 구경을 하실 때 어떤 기분이셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "장날 시장에서 들리던 소리와 사람들 모습",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "옛 시장의 활기찬 풍경은 다양한 추억으로 이어질 수 있다.",
+        "matchReason": "장날 시장의 소리와 사람들을 구경하던 경험이 중심입니다."
+      }
+    }
+  ],
+  "log": {
+    "candidates": 16,
+    "toolCalls": 6,
+    "rejectedSubmissions": 0,
+    "refills": [],
+    "dropped": [
+      {
+        "no": 13,
+        "card_title": "화롯불 곁에서",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 14,
+        "card_title": "라디오에서 듣던 노래",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 15,
+        "card_title": "편지를 기다리던 날",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 16,
+        "card_title": "명절 음식상",
+        "reason": "12장이 다 참"
+      }
+    ],
+    "selectionSeed": 116,
+    "writingFirstProblems": [],
+    "seconds": 49.4
+  }
+}
