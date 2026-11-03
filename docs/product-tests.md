@@ -10,6 +10,7 @@ Flutter 정적 검사와 테스트, Python 정적 검사, BE 테스트, AI 단�
 | --- | --- | --- |
 | `app/` | `flutter pub get --enforce-lockfile`, `flutter analyze`, `flutter test` | 고정 의존성, Dart 정적 검사와 기존 앱 테스트 |
 | `backend/` | `uv sync --locked`, `uv run --locked pytest -ra` | API, 서비스, migration과 실제 PostgreSQL 저장 검사 |
+| `backend/` | 테스트 뒤 `app.openapi()`를 `openapi.json`으로 저장해 `openapi-schema` 결과물로 14일 보관 | 서버가 실제로 여는 API 경로와 요청, 응답 형식. 손으로 쓴 명세와 경로 목록이 같은지는 테스트(`test_api_spec_routes.py`)가 따로 본다 |
 | `ai/` | `uv sync --locked`, `uv run --locked pytest -ra` | 카드, 리포트와 변경 제안의 단위 테스트 및 카드 자료 조회 DB 검사 |
 | `stt-server/` | `uv sync --locked`, `PYTHONPATH=src uv run --locked python -m unittest discover -s tests -v` | 입력 검증, 화자 정렬, 오류 처리와 합성 응답을 사용하는 파이프라인 검사 |
 | 저장소 루트 | `uvx ruff@0.17.3 check --select E9,F63,F7,F82 backend ai stt-server` | Python 문법 오류, 정의되지 않은 이름, 잘못된 비교 같은 실행 전에 알 수 있는 오류. 형식과 스타일 규칙은 아직 넣지 않음 |

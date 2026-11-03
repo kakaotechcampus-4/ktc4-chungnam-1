@@ -85,6 +85,14 @@ jobs:
             ai/uv.lock
       - run: uv sync --locked
       - run: uv run --locked pytest -ra
+      # 서버가 만드는 API 스키마를 결과물로 남긴다. 손으로 쓴 명세(docs/architecture/api-spec.md)와 함께 본다.
+      - name: Export OpenAPI schema
+        run: uv run --locked python -c "import json; from app.main import app; print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))" > openapi.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openapi-schema
+          path: backend/openapi.json
+          retention-days: 14
 
   ai:
     name: AI tests and PostgreSQL (no model calls)
