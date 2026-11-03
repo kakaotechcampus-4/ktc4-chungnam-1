@@ -1,0 +1,604 @@
+name: Deploy (manual)
+
+# 수동 배포. 자동으로 실행되지 않으며 workflow_dispatch로만 시작한다.
+#
+# 사용 전에 팀이 GitHub 설정에서 직접 준비해야 한다. 아래가 없으면 첫 단계에서 멈춘다.
+# - Environment `production`: Required reviewers 지정, 배포 브랜치 제한
+# - Environment 시크릿: AWS_DEPLOY_ROLE_ARN, DEPLOY_INSTANCE_ID
+# - Environment 변수: AWS_REGION, DEPLOY_REPO_DIR, DEPLOY_BACKUP_DIR, DEPLOY_RELEASE_DIR
+#   (선택: DEPLOY_HOST_USER, DEPLOY_HOST_PYTHON, DEPLOY_COMPOSE_FILES, DEPLOY_COMPOSE_PROFILES,
+#    DEPLOY_SERVICES, DEPLOY_DB_CONTAINER, DEPLOY_DB_NAME, DEPLOY_DB_USER)
+# - AWS: GitHub OIDC 공급자, 이 저장소의 production 환경만 맡을 수 있는 IAM 역할,
+#   대상 인스턴스의 SSM Agent와 인스턴스 역할(AmazonSSMManagedInstanceCore)
+# 상세 설정, 되돌리기와 자동화 범위는 backend/docs/deployment.md의
+# "배포 후보 빌드와 수동 배포 workflow"를 따른다.
+#
+# 순서: 요청 확인 -> 승인 -> 사전 점검 -> DB 백업과 격리 복원 검사 -> SHA 체크아웃과 빌드
+#       -> alembic upgrade -> compose up -> 사후 점검 -> 배포 기록. 실패하면 되돌리기 안내를 출력한다.
+# migration downgrade, DB 복원, 이미지 되돌리기는 자동으로 실행하지 않는다.
+#
+# 공개 저장소의 Actions 로그는 누구나 볼 수 있다. 서버 주소, 인스턴스 ID와 .env 값을
+# 출력하지 않는다. 서버 안의 점검은 127.0.0.1로만 한다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: '배포할 전체 40자 커밋 SHA. Release build가 성공한 커밋이어야 함'
+        required: true
+        type: string
+      source_branch:
+        description: 'SHA가 포함돼 있어야 하는 브랜치'
+        required: true
+        type: choice
+        options:
+          - develop
+          - main
+        default: develop
+      confirm:
+        description: '"deploy " 뒤에 SHA 앞 12자리를 붙여 입력. 예: deploy 48af8c780416'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# 배포는 한 번에 하나만. 진행 중인 배포를 취소하지 않고 다음 요청이 기다린다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Check request and release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.request.outputs.sha }}
+    steps:
+      - name: Check inputs
+        id: request
+        env:
+          SHA_INPUT: ${{ inputs.sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ ! "$SHA_INPUT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha는 소문자 16진수 40자여야 합니다."
+            exit 1
+          fi
+          if [ "$CONFIRM" != "deploy ${SHA_INPUT:0:12}" ]; then
+            echo "::error::confirm 값이 'deploy ${SHA_INPUT:0:12}'와 다릅니다."
+            exit 1
+          fi
+          echo "sha=$SHA_INPUT" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check that the commit is on the source branch
+        env:
+          SHA: ${{ steps.request.outputs.sha }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          git cat-file -e "${SHA}^{commit}"
+          if ! git merge-base --is-ancestor "$SHA" "origin/${SOURCE_BRANCH}"; then
+            echo "::error::${SHA}가 origin/${SOURCE_BRANCH}에 없습니다. 병합된 커밋만 배포합니다."
+            exit 1
+          fi
+      - name: Check that Release build passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.request.outputs.sha }}
+        run: |
+          count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release-build.yml/runs?head_sha=${SHA}&status=success&per_page=1" --jq '.total_count')
+          if [ "${count:-0}" -lt 1 ]; then
+            echo "::error::이 커밋의 성공한 Release build 실행이 없습니다. Release build를 먼저 실행합니다."
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to production
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    # Required reviewers 승인 전에는 이 작업이 시작되지 않는다. 환경 시크릿도 승인 후에만 주어진다.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SHA: ${{ needs.verify.outputs.sha }}
+      DEPLOY_INSTANCE_ID: ${{ secrets.DEPLOY_INSTANCE_ID }}
+      DEPLOY_AWS_REGION: ${{ vars.AWS_REGION }}
+      DEPLOY_REPO_DIR: ${{ vars.DEPLOY_REPO_DIR }}
+      DEPLOY_BACKUP_DIR: ${{ vars.DEPLOY_BACKUP_DIR }}
+      DEPLOY_RELEASE_DIR: ${{ vars.DEPLOY_RELEASE_DIR }}
+      DEPLOY_HOST_USER: ${{ vars.DEPLOY_HOST_USER || 'ubuntu' }}
+      DEPLOY_HOST_PYTHON: ${{ vars.DEPLOY_HOST_PYTHON || 'python3' }}
+      DEPLOY_COMPOSE_FILES: ${{ vars.DEPLOY_COMPOSE_FILES || 'compose.yml' }}
+      DEPLOY_COMPOSE_PROFILES: ${{ vars.DEPLOY_COMPOSE_PROFILES }}
+      DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'api card-worker' }}
+      DEPLOY_DB_CONTAINER: ${{ vars.DEPLOY_DB_CONTAINER || 'saerok-db-1' }}
+      DEPLOY_DB_NAME: ${{ vars.DEPLOY_DB_NAME || 'saerok' }}
+      DEPLOY_DB_USER: ${{ vars.DEPLOY_DB_USER || 'saerok' }}
+    steps:
+      # 값은 서버 셸 스크립트에 들어가므로 허용 문자만 통과시킨다. 따옴표와 공백 주입을 막는다.
+      - name: Check deploy settings and prepare SSM helper
+        env:
+          ROLE_ARN_SET: ${{ secrets.AWS_DEPLOY_ROLE_ARN != '' }}
+        run: |
+          fail=0
+          need() { if [ -z "$2" ]; then echo "::error::$1이 설정되지 않았습니다."; fail=1; fi; }
+          need "시크릿 AWS_DEPLOY_ROLE_ARN" "$([ "$ROLE_ARN_SET" = true ] && echo set)"
+          need "시크릿 DEPLOY_INSTANCE_ID" "$DEPLOY_INSTANCE_ID"
+          need "변수 AWS_REGION" "$DEPLOY_AWS_REGION"
+          need "변수 DEPLOY_REPO_DIR" "$DEPLOY_REPO_DIR"
+          need "변수 DEPLOY_BACKUP_DIR" "$DEPLOY_BACKUP_DIR"
+          need "변수 DEPLOY_RELEASE_DIR" "$DEPLOY_RELEASE_DIR"
+          [ "$fail" = 0 ] || exit 1
+
+          check() { if [[ ! "$2" =~ $3 ]] || [[ "$2" == *..* ]]; then echo "::error::$1 형식이 허용 범위를 벗어났습니다."; fail=1; fi; }
+          check DEPLOY_INSTANCE_ID "$DEPLOY_INSTANCE_ID" '^i-[0-9a-f]{8,17}$'
+          check AWS_REGION "$DEPLOY_AWS_REGION" '^[a-z]{2}(-[a-z]+)+-[0-9]$'
+          check DEPLOY_REPO_DIR "$DEPLOY_REPO_DIR" '^/[A-Za-z0-9._/-]+$'
+          check DEPLOY_BACKUP_DIR "$DEPLOY_BACKUP_DIR" '^/[A-Za-z0-9._/-]+$'
+          check DEPLOY_RELEASE_DIR "$DEPLOY_RELEASE_DIR" '^/[A-Za-z0-9._/-]+$'
+          check DEPLOY_HOST_USER "$DEPLOY_HOST_USER" '^[a-z_][a-z0-9_-]*$'
+          check DEPLOY_HOST_PYTHON "$DEPLOY_HOST_PYTHON" '^[A-Za-z0-9._/-]+$'
+          check DEPLOY_COMPOSE_FILES "$DEPLOY_COMPOSE_FILES" '^[A-Za-z0-9._-][A-Za-z0-9._/-]*( [A-Za-z0-9._-][A-Za-z0-9._/-]*)*$'
+          check DEPLOY_SERVICES "$DEPLOY_SERVICES" '^[a-z0-9_-]+( [a-z0-9_-]+)*$'
+          check DEPLOY_DB_CONTAINER "$DEPLOY_DB_CONTAINER" '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
+          check DEPLOY_DB_NAME "$DEPLOY_DB_NAME" '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
+          check DEPLOY_DB_USER "$DEPLOY_DB_USER" '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
+          if [ -n "$DEPLOY_COMPOSE_PROFILES" ]; then
+            check DEPLOY_COMPOSE_PROFILES "$DEPLOY_COMPOSE_PROFILES" '^[a-z0-9_-]+( [a-z0-9_-]+)*$'
+          fi
+          if [[ " $DEPLOY_SERVICES " != *" api "* ]]; then
+            echo "::error::DEPLOY_SERVICES에 api가 있어야 합니다."
+            fail=1
+          fi
+          case "$DEPLOY_BACKUP_DIR/" in
+            "$DEPLOY_REPO_DIR"/*)
+              echo "::error::DEPLOY_BACKUP_DIR는 저장소 밖이어야 합니다. 백업에는 개인정보가 들어갈 수 있습니다."
+              fail=1
+              ;;
+          esac
+          [ "$fail" = 0 ] || exit 1
+
+          # 서버에서 단계마다 앞에 붙는 공통 부분. 값은 위에서 검사했다.
+          {
+            echo 'set -eu'
+            echo 'umask 077'
+            printf "SHA='%s'\n" "$SHA"
+            printf "RUN_KEY='%s'\n" "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            printf "REPO_DIR='%s'\n" "$DEPLOY_REPO_DIR"
+            printf "BACKUP_DIR='%s'\n" "$DEPLOY_BACKUP_DIR"
+            printf "RELEASE_DIR='%s'\n" "$DEPLOY_RELEASE_DIR"
+            printf "HOST_USER='%s'\n" "$DEPLOY_HOST_USER"
+            printf "PY='%s'\n" "$DEPLOY_HOST_PYTHON"
+            printf "COMPOSE_FILES='%s'\n" "$DEPLOY_COMPOSE_FILES"
+            printf "COMPOSE_PROFILES='%s'\n" "$DEPLOY_COMPOSE_PROFILES"
+            printf "SERVICES='%s'\n" "$DEPLOY_SERVICES"
+            printf "DB_CONTAINER='%s'\n" "$DEPLOY_DB_CONTAINER"
+            printf "DB_NAME='%s'\n" "$DEPLOY_DB_NAME"
+            printf "DB_USER='%s'\n" "$DEPLOY_DB_USER"
+            cat <<'HOST'
+          BACKEND_DIR="$REPO_DIR/backend"
+          STATE_DIR="$RELEASE_DIR/runs/$RUN_KEY"
+          STATE_FILE="$STATE_DIR/state"
+          # git 쓰기는 저장소 소유자로 한다. 읽기는 root에서 safe.directory만 허용한다.
+          as_owner() { sudo -u "$HOST_USER" -H "$@"; }
+          git_read() { GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" git -C "$REPO_DIR" "$@"; }
+          compose_args() {
+            for f in $COMPOSE_FILES; do printf '%s %s ' -f "$f"; done
+            for p in $COMPOSE_PROFILES; do printf '%s %s ' --profile "$p"; done
+          }
+          # shellcheck disable=SC2046
+          dc() { ( cd "$BACKEND_DIR" && docker compose $(compose_args) "$@" ); }
+          state_get() { sed -n "s/^$1=//p" "$STATE_FILE" | tail -n 1; }
+          state_set() { echo "$1=$2" >> "$STATE_FILE"; }
+          out() { echo "SAEROK_OUT $1=$2"; }
+          HOST
+          } > "$RUNNER_TEMP/host-prelude.sh"
+
+          # 러너에서 쓰는 SSM 실행 함수. 각 단계가 source 한다.
+          cat > "$RUNNER_TEMP/deploy-lib.sh" <<'LIB'
+          ssm_run() {
+            local name=$1 body=$2 timeout=$3 script params id status deadline output err
+            script="$RUNNER_TEMP/ssm-$name.sh"
+            cat "$RUNNER_TEMP/host-prelude.sh" "$body" > "$script"
+            params="$RUNNER_TEMP/ssm-$name.json"
+            jq -Rs --arg t "$timeout" '{commands: (rtrimstr("\n") | split("\n")), executionTimeout: [$t]}' "$script" > "$params"
+            id=$(aws ssm send-command \
+              --region "$DEPLOY_AWS_REGION" \
+              --document-name AWS-RunShellScript \
+              --instance-ids "$DEPLOY_INSTANCE_ID" \
+              --comment "saerok deploy $name ${SHA:0:12}" \
+              --timeout-seconds 600 \
+              --parameters "file://$params" \
+              --query Command.CommandId --output text)
+            deadline=$(( $(date +%s) + timeout + 300 ))
+            status=Pending
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              sleep 10
+              status=$(aws ssm get-command-invocation --region "$DEPLOY_AWS_REGION" \
+                --command-id "$id" --instance-id "$DEPLOY_INSTANCE_ID" \
+                --query Status --output text 2>/dev/null) || status=Pending
+              case "$status" in Pending|InProgress|Delayed) ;; *) break ;; esac
+            done
+            output="$RUNNER_TEMP/ssm-$name.out"
+            aws ssm get-command-invocation --region "$DEPLOY_AWS_REGION" \
+              --command-id "$id" --instance-id "$DEPLOY_INSTANCE_ID" \
+              --query StandardOutputContent --output text > "$output" 2>/dev/null || true
+            err=$(aws ssm get-command-invocation --region "$DEPLOY_AWS_REGION" \
+              --command-id "$id" --instance-id "$DEPLOY_INSTANCE_ID" \
+              --query StandardErrorContent --output text 2>/dev/null) || err=""
+            echo "::group::$name 출력"
+            cat "$output"
+            echo "::endgroup::"
+            if [ -n "$err" ] && [ "$err" != "None" ]; then
+              echo "::group::$name 오류 출력"
+              printf '%s\n' "$err"
+              echo "::endgroup::"
+            fi
+            # 서버가 남긴 값 중 정해진 형식만 단계 출력으로 옮긴다.
+            grep -E '^SAEROK_OUT [A-Z_]+=[A-Za-z0-9:._,-]*$' "$output" | sed 's/^SAEROK_OUT //' >> "$GITHUB_OUTPUT" || true
+            if [ "$status" != "Success" ]; then
+              echo "::error::$name 단계가 끝나지 않았습니다. SSM 상태: $status"
+              return 1
+            fi
+          }
+          LIB
+          bash -n "$RUNNER_TEMP/host-prelude.sh"
+          bash -n "$RUNNER_TEMP/deploy-lib.sh"
+
+      # 장기 액세스 키 대신 GitHub OIDC로 짧은 자격증명을 받는다.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: saerok-deploy-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: 1. Pre-check (tools, clean checkout, ready, running jobs)
+        id: precheck
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          for tool in docker git curl sudo sed; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "MISSING_TOOL $tool"; exit 1; }
+          done
+          docker compose version
+          "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+            || { echo "HOST_PYTHON_TOO_OLD: scripts/에는 Python 3.11 이상이 필요합니다"; exit 1; }
+          [ -d "$BACKEND_DIR" ] || { echo "REPO_DIR_NOT_FOUND"; exit 1; }
+          mkdir -p "$STATE_DIR"
+          chmod 700 "$STATE_DIR"
+          : > "$STATE_FILE"
+
+          # 추적 파일이 바뀐 서버에서는 배포하지 않는다. .env 같은 무시 파일은 보지 않는다.
+          if [ -n "$(git_read status --porcelain --untracked-files=no)" ]; then
+            echo "REPO_DIRTY: 서버 저장소의 추적 파일에 변경이 있습니다"
+            exit 1
+          fi
+          previous_sha=$(git_read rev-parse HEAD)
+          previous_branch=$(git_read symbolic-ref -q --short HEAD || true)
+
+          api_id=$(dc ps -q api)
+          [ -n "$api_id" ] || { echo "API_NOT_RUNNING: 실행 중인 api가 없어 자동 배포 대상이 아닙니다"; exit 1; }
+          previous_image=$(docker inspect --format '{{.Image}}' "$api_id")
+          previous_revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$api_id")
+          rollback_tag="saerok-backend:rollback-$RUN_KEY"
+          # 이전 이미지를 태그로 보존한다. 같은 이름의 태그가 다른 내용을 가리킨다고 추측하지 않도록 ID도 남긴다.
+          docker tag "$previous_image" "$rollback_tag"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8000/health/ready || true)
+          [ "$code" = "200" ] || { echo "READY_CHECK_FAILED http=$code"; exit 1; }
+          echo "health/ready 200"
+
+          dc exec -T api python -m app.ops.runtime_check > "$STATE_DIR/runtime-before.json" || true
+          cat "$STATE_DIR/runtime-before.json"
+          "$PY" - "$STATE_DIR/runtime-before.json" <<'PY'
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          issues = data.get("issues", [])
+          database = data.get("database") or {}
+          blocking = {"DATABASE_INSPECTION_FAILED", "INVALID_CONFIGURATION", "DATABASE_NOT_CONFIGURED"}
+          if blocking & set(issues) or not database:
+              print("PRECHECK_DATABASE_FAILED")
+              sys.exit(1)
+          counts = database.get("counts", {})
+          attention = database.get("attention", {})
+          speech = sum(counts.get("speech", {}).get(s, 0) for s in ("uploading", "transcribing", "generatingReport"))
+          speech -= attention.get("expired_speech_leases", 0)
+          cards = counts.get("cards", {}).get("running", 0) - attention.get("expired_card_leases", 0)
+          photos = counts.get("photos", {}).get("processing", 0)
+          print(f"ACTIVE_JOBS speech={speech} cards={cards} photos={photos}")
+          print("SAEROK_OUT PREVIOUS_DB_REVISION=" + ",".join(database.get("revisions") or []))
+          if speech > 0 or cards > 0 or photos > 0:
+              print("IN_PROGRESS_WORK: 처리 중인 작업이 끝난 뒤 다시 실행합니다")
+              sys.exit(1)
+          PY
+
+          state_set PREVIOUS_SHA "$previous_sha"
+          state_set PREVIOUS_BRANCH "$previous_branch"
+          state_set PREVIOUS_IMAGE_ID "$previous_image"
+          state_set ROLLBACK_TAG "$rollback_tag"
+          out PREVIOUS_SHA "$previous_sha"
+          out PREVIOUS_IMAGE_ID "$previous_image"
+          out PREVIOUS_IMAGE_REVISION "${previous_revision:-unknown}"
+          out ROLLBACK_TAG "$rollback_tag"
+          HOST
+          ssm_run precheck "$RUNNER_TEMP/step.sh" 600
+
+      - name: 2. Back up the database and verify an isolated restore
+        id: backup
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          mkdir -p "$BACKUP_DIR"
+          chmod 700 "$BACKUP_DIR"
+          # backend/docs/release-safety.md의 도구. 새 파일만 만들고 운영 DB에 쓰지 않는다.
+          if ! "$PY" "$BACKEND_DIR/scripts/verify_database_backup.py" \
+            --source-container "$DB_CONTAINER" \
+            --source-database "$DB_NAME" \
+            --source-user "$DB_USER" \
+            --backup-dir "$BACKUP_DIR" > "$STATE_DIR/backup.json"; then
+            cat "$STATE_DIR/backup.json"
+            echo "BACKUP_FAILED"
+            exit 1
+          fi
+          cat "$STATE_DIR/backup.json"
+          archive=$("$PY" -c 'import json, sys; d = json.load(open(sys.argv[1], encoding="utf-8")); print(d["archive"] if d.get("restoreVerified") is True else "")' "$STATE_DIR/backup.json")
+          [ -n "$archive" ] || { echo "BACKUP_NOT_VERIFIED"; exit 1; }
+          state_set BACKUP_ARCHIVE "$archive"
+          out BACKUP_ARCHIVE "$archive"
+          HOST
+          ssm_run backup "$RUNNER_TEMP/step.sh" 1800
+
+      - name: 3. Check out the commit and build the image
+        id: build
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          image_ref=""
+          # 이 단계가 중간에 끝나면 서버 체크아웃과 이미지 이름을 이전 상태로 되돌린다. 실행 중인 컨테이너는 아직 그대로다.
+          restore_on_failure() {
+            previous_branch=$(state_get PREVIOUS_BRANCH)
+            if [ -n "$previous_branch" ]; then
+              as_owner git -C "$REPO_DIR" checkout -q "$previous_branch" || true
+            else
+              as_owner git -C "$REPO_DIR" checkout -q --detach "$(state_get PREVIOUS_SHA)" || true
+            fi
+            if [ -n "$image_ref" ]; then
+              docker tag "$(state_get ROLLBACK_TAG)" "$image_ref" || true
+            fi
+            echo "CHECKOUT_RESTORED"
+          }
+          trap 'restore_on_failure' EXIT
+          as_owner git -C "$REPO_DIR" fetch -q --no-tags origin "$SHA"
+          as_owner git -C "$REPO_DIR" checkout -q --detach "$SHA"
+          [ "$(git_read rev-parse HEAD)" = "$SHA" ] || { echo "CHECKOUT_MISMATCH"; exit 1; }
+
+          # compose 설정 원문에는 .env 값이 들어갈 수 있다. 이미지 이름만 꺼내고 출력하지 않는다.
+          image_ref=$(dc config --format json | "$PY" -c 'import json, sys; print(json.load(sys.stdin)["services"]["api"]["image"])')
+          if ! dc build --build-arg "SOURCE_REVISION=$SHA" api > "$STATE_DIR/build.log" 2>&1; then
+            tail -n 80 "$STATE_DIR/build.log"
+            echo "BUILD_FAILED"
+            exit 1
+          fi
+          tail -n 20 "$STATE_DIR/build.log"
+
+          new_image=$(docker image inspect --format '{{.Id}}' "$image_ref")
+          label=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_ref")
+          if [ "$label" != "$SHA" ]; then
+            echo "IMAGE_REVISION_MISMATCH label=$label"
+            exit 1
+          fi
+          head=$(docker run --rm --network none --read-only "$new_image" python -B -c             "from alembic.config import Config; from alembic.script import ScriptDirectory; print(' '.join(ScriptDirectory.from_config(Config('alembic.ini')).get_heads()))")
+          case "$head" in
+            *" "*|"") echo "ALEMBIC_HEAD_NOT_SINGLE $head"; exit 1 ;;
+          esac
+          docker tag "$new_image" "saerok-backend:$SHA"
+          trap - EXIT
+          state_set IMAGE_REF "$image_ref"
+          state_set NEW_IMAGE_ID "$new_image"
+          state_set ALEMBIC_HEAD "$head"
+          out IMAGE_REF "$image_ref"
+          out NEW_IMAGE_ID "$new_image"
+          out ALEMBIC_HEAD "$head"
+          HOST
+          ssm_run build "$RUNNER_TEMP/step.sh" 1800
+
+      - name: 4. Apply database migrations
+        id: migrate
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          # init.sql, DB 재생성, compose down -v는 쓰지 않는다.
+          dc run --rm --no-deps api alembic upgrade head
+          HOST
+          ssm_run migrate "$RUNNER_TEMP/step.sh" 900
+
+      - name: 5. Replace containers
+        id: up
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          # worker는 SIGTERM을 받고 처리 중 작업을 마친 뒤 끝난다(유예 최대 1860초). -t로 줄이지 않는다.
+          # shellcheck disable=SC2086
+          dc up -d --no-build $SERVICES
+          dc ps
+          HOST
+          ssm_run up "$RUNNER_TEMP/step.sh" 3600
+
+      - name: 6. Post-check (live, ready, migration revision)
+        id: postcheck
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          wait_ok() {
+            tries=0
+            until [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:8000$1" || true)" = "200" ]; do
+              tries=$((tries + 1))
+              [ "$tries" -lt 24 ] || { echo "CHECK_FAILED $1"; exit 1; }
+              sleep 5
+            done
+            echo "$1 200"
+          }
+          wait_ok /health/live
+          wait_ok /health/ready
+          head=$(state_get ALEMBIC_HEAD)
+          dc exec -T api python -m app.ops.runtime_check --expected-revision "$head" > "$STATE_DIR/runtime-after.json" || true
+          cat "$STATE_DIR/runtime-after.json"
+          "$PY" - "$STATE_DIR/runtime-after.json" <<'PY'
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          issues = set(data.get("issues", []))
+          database = data.get("database") or {}
+          if issues & {"MIGRATION_MISMATCH", "DATABASE_INSPECTION_FAILED", "INVALID_CONFIGURATION"}:
+              print("POSTCHECK_FAILED " + ",".join(sorted(issues)))
+              sys.exit(1)
+          if database.get("revisionMatches") is not True:
+              print("POSTCHECK_REVISION_NOT_CONFIRMED")
+              sys.exit(1)
+          if issues:
+              print("POSTCHECK_ATTENTION " + ",".join(sorted(issues)))
+          PY
+          HOST
+          ssm_run postcheck "$RUNNER_TEMP/step.sh" 600
+
+      - name: 7. Record the release
+        id: record
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          args=""
+          # shellcheck disable=SC2086
+          for id in $(dc ps -q $SERVICES); do args="$args --container $id"; done
+          for f in $COMPOSE_FILES; do args="$args --compose-file $BACKEND_DIR/$f"; done
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          record="$RELEASE_DIR/release-$stamp-$(echo "$SHA" | cut -c1-12).json"
+          # backend/docs/release-safety.md의 도구. 환경 변수와 로그는 읽지 않는다.
+          # shellcheck disable=SC2086
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" \
+            "$PY" "$BACKEND_DIR/scripts/capture_release.py" --repo "$REPO_DIR" $args > "$record"
+          cp "$STATE_FILE" "$record.state"
+          cat "$record"
+          "$PY" - "$record" "$SHA" "$SERVICES" <<'PY'
+          import json
+          import sys
+
+          record = json.load(open(sys.argv[1], encoding="utf-8"))
+          sha, services = sys.argv[2], set(sys.argv[3].split())
+          problems = []
+          if record.get("gitCommit") != sha:
+              problems.append("GIT_COMMIT_MISMATCH")
+          if record.get("worktreeDirty"):
+              problems.append("WORKTREE_DIRTY")
+          seen = set()
+          for item in record.get("containers", []):
+              seen.add(item.get("service"))
+              if item.get("sourceRevision") != sha:
+                  problems.append(f"IMAGE_REVISION_MISMATCH:{item.get('service')}")
+              if item.get("status") != "running":
+                  problems.append(f"NOT_RUNNING:{item.get('service')}")
+          missing = services - seen
+          if missing:
+              problems.append("MISSING_SERVICE:" + ",".join(sorted(missing)))
+          if problems:
+              print("RELEASE_RECORD_PROBLEMS " + " ".join(problems))
+              sys.exit(1)
+          print("RELEASE_RECORD_OK")
+          PY
+          out RELEASE_RECORD "$(basename "$record")"
+          HOST
+          ssm_run record "$RUNNER_TEMP/step.sh" 300
+
+      - name: Write deploy summary
+        if: always()
+        env:
+          PREVIOUS_SHA: ${{ steps.precheck.outputs.PREVIOUS_SHA }}
+          PREVIOUS_IMAGE_ID: ${{ steps.precheck.outputs.PREVIOUS_IMAGE_ID }}
+          PREVIOUS_DB_REVISION: ${{ steps.precheck.outputs.PREVIOUS_DB_REVISION }}
+          BACKUP_ARCHIVE: ${{ steps.backup.outputs.BACKUP_ARCHIVE }}
+          NEW_IMAGE_ID: ${{ steps.build.outputs.NEW_IMAGE_ID }}
+          ALEMBIC_HEAD: ${{ steps.build.outputs.ALEMBIC_HEAD }}
+          RELEASE_RECORD: ${{ steps.record.outputs.RELEASE_RECORD }}
+          OUTCOMES: >-
+            precheck=${{ steps.precheck.outcome }}
+            backup=${{ steps.backup.outcome }}
+            build=${{ steps.build.outcome }}
+            migrate=${{ steps.migrate.outcome }}
+            up=${{ steps.up.outcome }}
+            postcheck=${{ steps.postcheck.outcome }}
+            record=${{ steps.record.outcome }}
+        run: |
+          {
+            echo "## 배포 ${SHA:0:12}"
+            echo
+            echo "| 항목 | 값 |"
+            echo "| --- | --- |"
+            echo "| 배포 커밋 | \`${SHA}\` |"
+            echo "| 이전 커밋 | \`${PREVIOUS_SHA:-미확인}\` |"
+            echo "| 이전 이미지 ID | \`${PREVIOUS_IMAGE_ID:-미확인}\` |"
+            echo "| 새 이미지 ID | \`${NEW_IMAGE_ID:-없음}\` |"
+            echo "| DB revision (배포 전) | \`${PREVIOUS_DB_REVISION:-미확인}\` |"
+            echo "| Alembic head (새 이미지) | \`${ALEMBIC_HEAD:-없음}\` |"
+            echo "| 백업 파일 | \`${BACKUP_ARCHIVE:-없음}\` |"
+            echo "| 배포 기록 파일 | \`${RELEASE_RECORD:-없음}\` |"
+            echo "| 단계 결과 | ${OUTCOMES} |"
+            echo
+            echo "- 기능 확인(로그인, 카드 생성, 녹음부터 리포트, 다음 카드)과 옛 앱/새 앱 확인은 이 workflow가 하지 않는다. release-safety.md 6, 7단계를 사람이 확인한다."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Print rollback instructions
+        if: failure()
+        env:
+          PREVIOUS_SHA: ${{ steps.precheck.outputs.PREVIOUS_SHA }}
+          PREVIOUS_IMAGE_ID: ${{ steps.precheck.outputs.PREVIOUS_IMAGE_ID }}
+          ROLLBACK_TAG: ${{ steps.precheck.outputs.ROLLBACK_TAG }}
+          IMAGE_REF: ${{ steps.build.outputs.IMAGE_REF }}
+          MIGRATE_OUTCOME: ${{ steps.migrate.outcome }}
+        run: |
+          compose="docker compose"
+          for f in $DEPLOY_COMPOSE_FILES; do compose="$compose -f $f"; done
+          for p in $DEPLOY_COMPOSE_PROFILES; do compose="$compose --profile $p"; done
+          {
+            echo "## 되돌리기 안내"
+            echo
+            echo "자동 되돌리기는 하지 않았다. 아래는 서버의 \`\$DEPLOY_REPO_DIR/backend\`에서 사람이 판단해 실행한다."
+            echo
+            echo "- 이전 커밋: \`${PREVIOUS_SHA:-미확인}\`"
+            echo "- 이전 이미지 ID: \`${PREVIOUS_IMAGE_ID:-미확인}\` (보존 태그 \`${ROLLBACK_TAG:-없음}\`)"
+            echo
+            # migration 단계가 실행됐다면 실패했더라도 DB 상태를 확인 전까지 알 수 없는 것으로 본다.
+            if [ -n "$MIGRATE_OUTCOME" ] && [ "$MIGRATE_OUTCOME" != "skipped" ]; then
+              echo "migration 단계가 실행됐다(결과: ${MIGRATE_OUTCOME}). 실패했어도 일부 revision이 적용됐을 수 있으므로 \`alembic current\`로 DB revision을 먼저 확인한다."
+              echo
+              echo "1. 이전 이미지가 새 DB 스키마를 읽을 수 있는지 먼저 확인한다. 확인하지 못하면 이미지를 되돌리지 않는다."
+              echo "2. 호환이 확인되면 이전 이미지 ID를 다시 대조한 뒤 아래를 실행한다."
+              echo
+              echo '```bash'
+              echo "docker image inspect --format '{{.Id}}' ${ROLLBACK_TAG:-<보존 태그>}   # ${PREVIOUS_IMAGE_ID:-이전 이미지 ID}와 같아야 함"
+              echo "docker tag ${ROLLBACK_TAG:-<보존 태그>} ${IMAGE_REF:-saerok-backend}"
+              echo "$compose up -d --no-build $DEPLOY_SERVICES"
+              echo "sudo -u <저장소 소유자> git -C \"\$DEPLOY_REPO_DIR\" checkout --detach ${PREVIOUS_SHA:-<이전 커밋>}"
+              echo '```'
+              echo
+              echo "3. alembic downgrade와 운영 DB 복원은 자동으로 하지 않는다. 필요하면 backend/docs/release-safety.md의 \"이상이 생겼을 때\"에 따라 손실 범위와 승인자를 먼저 정한다."
+              echo "4. 이 workflow로 이전 커밋을 다시 배포하면 이전 코드에 없는 revision 때문에 alembic upgrade가 실패할 수 있다."
+            else
+              echo "migration 전에 멈췄다. 실행 중인 컨테이너는 바뀌지 않았다."
+              echo
+              echo "- 빌드 단계에서 실패했다면 서버 체크아웃은 자동으로 이전 위치로 돌아갔다(출력의 CHECKOUT_RESTORED 확인)."
+              echo "- 원인을 고친 뒤 같은 SHA로 다시 실행하거나, 이 실행을 기록만 남기고 끝낸다."
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
