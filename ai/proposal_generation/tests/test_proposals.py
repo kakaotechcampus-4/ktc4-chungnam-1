@@ -33,3 +33,14 @@ def test_facts_drop_blank_and_cut_title():
         _LifeFact(title="가" * 120, content="내용", reason="이유"), _LifeFact(title="빈 이유", content="내용", reason=" ")])
     facts = _facts(out)
     assert len(facts) == 1 and len(facts[0].title) == 100
+
+
+def test_prompt_limits_painful_memory_exclude_to_that_experience():
+    """#116: 아픈 기억 때문에 같은 시기나 장소의 다른 경험까지 빼지 않음. 실제 모델 동작이 아니라 프롬프트 문구만 확인함."""
+    from proposal_generation.generate import PROMPT
+
+    text = PROMPT.read_text(encoding="utf-8")
+    assert "가장 가까운 카드의 주제로 exclude" not in text
+    assert "그 아픈 경험을 다룬 주제에만" in text
+    assert "같은 시기, 같은 장소, 같은 사람이 나오는 다른 경험의 주제에는 내지 않는다" in text
+    assert "그 주제가 아닌 아픈 기억이 떠올랐다면, 그 카드에 less나 exclude를 내지 않는다" in text
