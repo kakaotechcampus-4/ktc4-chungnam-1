@@ -105,6 +105,20 @@ Deploy는 자동으로 되돌리지 않는다. 실패하면 요약에 이전 커
 - `alembic downgrade`와 운영 DB 복원은 workflow에 넣지 않았다.
 - 배포 작업의 시간 한도는 210분이다. 단계별 SSM 대기 한도(실행 한도 + 300초) 합계 약 195분보다 길다. 대기 기한을 넘기거나 실행이 취소, 시간 초과로 끝나도 SSM 명령은 서버에서 계속 돌 수 있다. workflow는 SSM 명령을 취소하지 않는다. migration이나 컨테이너 교체를 중간에 끊으면 더 나쁜 상태가 남을 수 있어서다. 이때도 되돌리기 안내를 출력하며, 서버의 마지막 명령이 끝난 것을 확인하기 전에는 다시 배포하거나 되돌리지 않는다.
 
+## 이미지 태그 정리
+
+Deploy는 실행할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saerok-backend:<SHA>` 태그를 남기고 지우지 않는다. 태그가 이전 이미지를 붙잡고 있어 EC2 디스크가 계속 줄어든다. workflow는 운영 서버의 이미지를 지우지 않으므로, 담당자가 배포가 없는 시간에 서버의 `backend` 디렉터리에서 정리한다. 이 절차는 실제 서버에서 실행해 보지 않았다.
+
+1. 아래로 지울 후보를 먼저 출력해 확인한다. 각 종류에서 최근 3개는 남긴다. 직전 배포의 보존 태그는 되돌리기에 필요하므로 지우지 않는다.
+
+   ```bash
+   docker image ls saerok-backend --format '{{.CreatedAt}}|{{.Repository}}:{{.Tag}}' | sort -r | cut -d'|' -f2 | grep -E ':rollback-' | tail -n +4
+   docker image ls saerok-backend --format '{{.CreatedAt}}|{{.Repository}}:{{.Tag}}' | sort -r | cut -d'|' -f2 | grep -E ':[0-9a-f]{40}$' | tail -n +4
+   ```
+
+2. 확인한 태그만 `docker image rm <태그>`로 지운다. 실행 중인 컨테이너가 쓰는 이미지의 마지막 태그는 Docker가 거절하므로 `-f`를 붙이지 않는다. compose가 쓰는 이미지 이름(`docker compose config`의 `image`)은 지우지 않는다.
+3. `docker image prune`으로 태그가 없어진 이미지만 정리한다. `docker image prune -a`는 컨테이너가 쓰지 않는 이미지를 모두 지워 보존 태그가 없는 이전 이미지까지 사라질 수 있고, `docker system prune`은 멈춘 컨테이너와 네트워크까지 지우므로 쓰지 않는다.
+
 ## 검증 범위
 
 11월 3일 로컬에서 확인한 것과 확인하지 않은 것이다.
