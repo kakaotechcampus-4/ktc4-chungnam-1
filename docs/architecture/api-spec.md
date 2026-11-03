@@ -992,7 +992,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 ---
 
-### 6-5. `POST /api/v1/speech-analyses/{analysisId}/retry` — 로컬 복구 변경
+### 6-5. `POST /api/v1/speech-analyses/{analysisId}/retry` — 신규
 
 실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
 기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
@@ -1178,7 +1178,7 @@ worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본
 
 S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
 
-- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 11/3 로컬 복구안은 실패 전사를 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다. 보관 변경의 운영 적용은 PM 승인 대기다. 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
+- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 실패 전사는 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다(2026-11-03 PM 승인). 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 ### 8-2. 카드 생성 — 삭제
