@@ -410,6 +410,7 @@ final pendingSetupsProvider =
 void forgetCareProfiles(WidgetRef ref) {
   ref
     ..invalidate(cardGenerationProvider)
+    ..invalidate(cardMakingProvider)
     ..invalidate(careProfilesProvider)
     ..invalidate(setupControllerProvider)
     ..invalidate(pendingSetupsProvider)

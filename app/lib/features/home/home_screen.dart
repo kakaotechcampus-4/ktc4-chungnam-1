@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/api_client.dart';
+import '../../data/card_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/profile_avatar.dart';
+import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
 import 'my_page_menu.dart';
 
@@ -57,11 +62,7 @@ class HomeScreen extends ConsumerWidget {
             child: ScreenBody(
               bottom: Column(
                 children: [
-                  PrimaryButton(
-                    label: '오늘의 대화카드 받기',
-                    onPressed: () =>
-                        needsProfile(() => context.push(AppRoutes.cards)),
-                  ),
+                  _CardButton(needsProfile: needsProfile),
                   // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
                   // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
                   if (notice != null) ...[
@@ -164,6 +165,100 @@ class HomeScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+/// `오늘의 대화카드 받기`. 카드 화면으로 가기 전에 여기서 쓸 묶음을 준비한다.
+///
+/// 바로 쓸 묶음이 있으면 카드 화면으로 간다. 만들어야 하면(처음, 다 쓴 뒤,
+/// 받은 뒤 정보를 고친 뒤) 이 버튼이 도는 표시로 바뀌고, 그동안 일대기나
+/// 프로필을 볼 수 있다. 다 되면 하단 알림으로 알리고 카드 화면으로 데려가지
+/// 않는다. 보호자가 다른 화면에 있을 수 있어서다. 다시 누르면 들어간다.
+///
+/// 받은 뒤 정보를 고친 묶음이면 옛 카드를 보여주지 않고 12장을 모두 새로
+/// 만든다(2026-11-01 #171 에서 PM 확인). 만드는 동안 버튼 아래에 까닭을 둔다.
+///
+/// 버튼은 지금 고른 어르신의 상태를 보여준다. 다른 분으로 바꿔도 앞의 분은
+/// 서버와 앱 모두에서 이어서 만든다.
+class _CardButton extends ConsumerWidget {
+  const _CardButton({required this.needsProfile});
+
+  final void Function(VoidCallback open) needsProfile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileId = ref.watch(serverProfileIdProvider).value;
+    final generation = profileId == null
+        ? null
+        : ref.watch(cardGenerationProvider(profileId));
+    final loading = generation?.isLoading ?? false;
+    // 상태를 묻는 짧은 동안은 모양을 바꾸지 않는다. 이미 준비됐으면 곧 카드
+    // 화면으로 가므로 바꾸면 깜빡인다. 그동안 다시 눌러도 생성 흐름이 무시한다.
+    final stage = loading
+        ? ref.watch(cardMakingProvider(profileId!))
+        : CardMaking.checking;
+    final making = stage != CardMaking.checking;
+
+    return Column(
+      children: [
+        PrimaryButton(
+          label: making ? '대화 카드를 만들고 있어요' : '오늘의 대화카드 받기',
+          loading: making,
+          onPressed: () => needsProfile(() => _getCards(context, ref)),
+        ),
+        if (stage == CardMaking.remaking) ...[
+          const SizedBox(height: AppSpacing.md),
+          const Text(
+            '카드를 받은 뒤 어르신 정보가 바뀌어서 대화 카드를 새로 만들고 있어요.',
+            style: AppTypography.sub,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _getCards(BuildContext context, WidgetRef ref) async {
+    // 이미 읽은 값이 있으면 기다리지 않는다. 누르자마자 버튼이 돌게 한다.
+    final profileId =
+        ref.read(serverProfileIdProvider).value ??
+        await ref.read(serverProfileIdProvider.future);
+    if (profileId == null || !context.mounted) return;
+    final name = ref.read(profileProvider).value?.profile.name;
+    final provider = cardGenerationProvider(profileId);
+
+    final waited = await ref.read(provider.notifier).prepare();
+    if (!context.mounted) return;
+    final result = ref.read(provider);
+    // 다른 흐름이 이어서 묻는 중이거나, 로그아웃으로 지웠다.
+    if (result.isLoading || !result.hasValue && !result.hasError) return;
+
+    final status = result.value;
+    final opens =
+        !result.hasError &&
+        (status == CardGenerationStatus.ready ||
+            status == CardGenerationStatus.inVisit);
+    final stillSelected = ref.read(serverProfileIdProvider).value == profileId;
+    if (opens && !waited && stillSelected) {
+      unawaited(context.push(AppRoutes.cards));
+      return;
+    }
+
+    final who = name == null ? '' : '$name 어르신의 ';
+    final message = switch (result) {
+      AsyncError(error: ApiNetworkFailure()) =>
+        '서버에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+      AsyncError() => '대화 카드를 불러오지 못했어요. 잠시 후 다시 눌러주세요.',
+      // 4-2 는 실패 이유를 주지 않으므로 공통 문구만 둔다.
+      _ when status == CardGenerationStatus.failed =>
+        '$who대화 카드를 만들지 못했어요. 다시 누르면 새로 만들어요.',
+      _ when opens => '$who대화 카드가 준비됐어요.',
+      _ => null,
+    };
+    if (message == null) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

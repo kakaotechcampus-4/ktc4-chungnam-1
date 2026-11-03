@@ -30,6 +30,10 @@ final cardPollIntervalProvider = Provider<Duration>(
 ///
 /// 기다리다 `failed` 가 되면 그대로 돌려준다. 4-2 는 실패 이유를 주지 않으므로
 /// 화면은 공통 문구만 보여준다. 다시 받기도 [start] 로 한다.
+///
+/// 홈의 `오늘의 대화카드 받기` 는 [prepare] 를 부른다. [start] 와 같되
+/// `needsRefresh` 도 새로 만든다. 홈 버튼이 `다음 대화 준비` 를 맡는다
+/// (2026-11-01 #171 에서 PM 확인).
 class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   CardGenerationController(this.profileId);
 
@@ -47,7 +51,18 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
 
   /// 상태를 처음부터 확인한다. 이미 묻는 중이면 그대로 둔다. 4-1 을 두 번
   /// 보내지 않기 위해서다.
-  Future<void> start() => _begin(_check);
+  Future<void> start() => _begin((api, run) => _check(api, run));
+
+  /// 홈 버튼. 쓸 묶음이 생길 때까지 확인하고, 받은 뒤 정보를 고친 묶음이면
+  /// 새로 만든다. 이미 묻는 중이면 그대로 둔다.
+  ///
+  /// 기다렸으면(4-1 을 보냈거나 `running` 이었으면) `true` 를 돌려준다. 홈은
+  /// 바로 준비된 경우만 카드 화면으로 가고, 기다린 경우는 그동안 다른 화면에
+  /// 있을 수 있으므로 알림만 띄운다.
+  Future<bool> prepare() async {
+    await _begin((api, run) => _check(api, run, remake: true));
+    return ref.mounted && _stage != CardMaking.checking;
+  }
 
   /// `다음 대화 준비하기`. 받은 뒤 고친 묶음을 버리고 새로 만든다.
   ///
@@ -68,7 +83,10 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
         state.value == CardGenerationStatus.needsRefresh ||
         (state.value == CardGenerationStatus.ready && setOutdated);
     if (!outdated) return;
-    await _begin(_generate);
+    await _begin((api, run) {
+      _mark(run, CardMaking.remaking);
+      return _generate(api, run);
+    });
   }
 
   /// [flow] 를 새 흐름으로 돌리고 끝나면 상태에 담는다.
@@ -78,14 +96,23 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     if (state.isLoading) return;
     final run = ++_run;
     final api = ref.read(cardApiProvider);
+    _setStage(CardMaking.checking);
     state = const AsyncLoading();
     final result = await AsyncValue.guard(() => flow(api, run));
     if (!ref.mounted || run != _run) return;
     state = result;
   }
 
-  Future<CardGenerationStatus> _check(CardApi api, int run) async {
+  Future<CardGenerationStatus> _check(
+    CardApi api,
+    int run, {
+    bool remake = false,
+  }) async {
     final status = await api.status(profileId);
+    if (remake && status == CardGenerationStatus.needsRefresh) {
+      _mark(run, CardMaking.remaking);
+      return _generate(api, run);
+    }
     return switch (status) {
       CardGenerationStatus.none ||
       CardGenerationStatus.failed => _generate(api, run),
@@ -95,8 +122,10 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   }
 
   /// 4-1 로 만들어 달라고 한 뒤 다 될 때까지 기다린다.
-  Future<CardGenerationStatus> _generate(CardApi api, int run) async =>
-      _wait(api, run, await api.requestGeneration(profileId));
+  Future<CardGenerationStatus> _generate(CardApi api, int run) async {
+    _mark(run, CardMaking.making);
+    return _wait(api, run, await api.requestGeneration(profileId));
+  }
 
   /// `running` 이 끝날 때까지 4-2 로 다시 묻는다.
   Future<CardGenerationStatus> _wait(
@@ -105,6 +134,7 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     CardGenerationStatus status,
   ) async {
     while (status == CardGenerationStatus.running) {
+      _mark(run, CardMaking.making);
       await Future<void>.delayed(ref.read(cardPollIntervalProvider));
       if (!ref.mounted || run != _run) return status;
       status = await api.status(profileId);
@@ -119,6 +149,19 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     }
     return status;
   }
+
+  CardMaking get _stage => ref.read(cardMakingProvider(profileId));
+
+  void _setStage(CardMaking stage) =>
+      ref.read(cardMakingProvider(profileId).notifier).set(stage);
+
+  /// 이번 흐름이 어디까지 왔는지 남긴다. `remaking` 은 `making` 으로 낮추지
+  /// 않는다. 지웠거나 다른 흐름이 시작됐으면 남기지 않는다.
+  void _mark(int run, CardMaking stage) {
+    if (!ref.mounted || run != _run) return;
+    if (_stage == CardMaking.remaking) return;
+    _setStage(stage);
+  }
 }
 
 /// 자동 재시도는 끈다. 다시 시도하면 4-1 을 또 보내므로 버튼으로만 한다.
@@ -128,3 +171,35 @@ final cardGenerationProvider =
       CardGenerationStatus?,
       String
     >(CardGenerationController.new, retry: (_, _) => null);
+
+/// 생성 흐름이 어디까지 왔는지. 홈 버튼의 모양과 아래 안내에 쓴다.
+enum CardMaking {
+  /// 4-2 로 상태를 묻는 중이다. 이미 준비됐으면 곧 끝나므로 버튼 글자를
+  /// 바꾸지 않는다. 바꾸면 깜빡인다.
+  checking,
+
+  /// 4-1 을 보냈거나 `running` 을 기다린다.
+  making,
+
+  /// 받은 뒤 정보를 고친 묶음을 새로 만든다.
+  remaking,
+}
+
+/// 생성이 loading 일 때만 본다. 흐름을 새로 시작할 때 [CardMaking.checking]
+/// 으로 돌린다.
+final cardMakingProvider =
+    NotifierProvider.family<CardMakingStage, CardMaking, String>(
+      CardMakingStage.new,
+    );
+
+class CardMakingStage extends Notifier<CardMaking> {
+  CardMakingStage(this.profileId);
+
+  final String profileId;
+
+  @override
+  CardMaking build() => CardMaking.checking;
+
+  // ignore: use_setters_to_change_properties
+  void set(CardMaking stage) => state = stage;
+}
