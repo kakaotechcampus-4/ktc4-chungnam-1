@@ -45,6 +45,21 @@ speech-worker가 어느 주소를 쓰는지, 이전 터널을 쓰는 서비스�
 - 백업의 SHA-256, 크기, 복원 성공 여부, 복원된 migration과 주요 테이블 건수를 기록한다.
 - 이 실행에서 만든 라벨이 일치하는 복원용 컨테이너만 정리한다. 백업 파일은 실패해도 보존한다.
 - 백업에는 개인정보가 들어갈 수 있다. 공개 GitHub에 넣지 않으며 암호화된 보관 위치와 접근 권한을 별도로 확인한다. Linux 파일은 0600으로 생성하지만 Windows에서는 디렉터리 ACL과 디스크 암호화를 따로 확인한다.
+
+### 매일 실행과 오래된 백업 정리
+
+`scripts/prune_database_backups.py`는 같은 폴더의 백업과 기록을 읽어 오래된 것만 지운다. 기록에 `restoreVerified: true`가 있는 최근 백업 `--keep`개(기본 7)는 날짜와 상관없이 남기고, 그 밖의 백업 중 `--older-than-days`일(기본 7)보다 오래된 것만 지운다. 기본은 지울 목록만 출력하며 `--apply`를 줘야 지운다.
+
+```bash
+# 운영 서버 예시(승인 뒤 설치). 백업 폴더는 root만 접근하고 디스크 암호화가 된 위치를 쓴다.
+python3 scripts/verify_database_backup.py --source-container saerok-db-1 --source-database saerok   --source-user saerok --backup-dir /var/backups/saerok
+python3 scripts/prune_database_backups.py --backup-dir /var/backups/saerok --keep 7 --older-than-days 7 --apply
+```
+
+- 하루 한 번 systemd timer나 cron으로 위 두 명령을 차례로 실행한다. 백업 검사가 실패하면 정리는 하지 않는다.
+- 보관 기한과 마지막 삭제 시점(AWS 종료 전 전부 삭제)은 `docs/legal/README.md`의 백업 항목을 따른다.
+
+로컬 확인(2026-11-04): 로컬 Docker의 PostgreSQL 17에 최신 migration(`d73f0b5ca921`)과 합성 프로필 3건을 넣고 `verify_database_backup.py`를 실행했다. 4초 걸렸고 `restoreVerified: true`, 복원된 revision `d73f0b5ca921`, 사용자와 프로필과 이야기 각 3건이 원본과 같았으며 복원용 컨테이너는 지워졌다. 운영 DB에서 실행한 기록은 아니다.
 - SQL 복원 성공은 서비스 복구 완료와 다르다. 앱 연결, 이미지와 migration 호환성, 외부 S3 파일까지 복원됐다는 뜻도 아니다.
 
 로컬 검증은 합성 DB에서만 한다. `tests/test_backup_restore_tool.py`의 Docker 복원 시험은
