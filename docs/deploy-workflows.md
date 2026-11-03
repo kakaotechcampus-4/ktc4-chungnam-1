@@ -40,7 +40,7 @@ CD는 수동 실행에 승인을 붙이는 방식이며 병합할 때 자동으�
 - 백엔드 이미지는 `docker buildx build --build-context ai=../ai --build-arg SOURCE_REVISION=<SHA> --load`로 한 번 만든다. api, card-worker, speech-worker가 같은 이미지를 쓴다. 이미지 안에서 DB 없이 Alembic head를 읽고, `tests/test_container_packages.py`를 그 이미지로 실행한다.
 - Android 빌드는 `SAEROK_API_BASE_URL`과 `SAEROK_GOOGLE_SERVER_CLIENT_ID`를 `--dart-define`으로 넘긴다. [릴리스 설정 검사](../app/lib/app/release_config.dart)와 같은 기준으로 값을 먼저 확인하고, 비어 있거나 https가 아니면 빌드하지 않는다.
 - versionName과 versionCode는 `app/pubspec.yaml`의 `version`을 쓴다. 수동 실행에서는 `build_name`, `build_number` 입력으로 바꿀 수 있다. 태그 이름과 versionName이 다르면 경고만 남긴다.
-- 업로드 키 시크릿 네 개가 모두 있을 때만 `android/key.properties`를 만들어 업로드 키로 서명하고 끝나면 지운다. 없으면 [build.gradle.kts](../app/android/app/build.gradle.kts)의 기존 동작대로 디버그 키로 서명하고 요약에 `debug`라고 적는다. 이 빌드는 Play에 올릴 수 없고, 실행기마다 디버그 키가 달라 기존 설치본 위에 업데이트되지 않을 수 있다.
+- 업로드 키 시크릿 네 개가 모두 있을 때만 `android/key.properties`를 만들어 업로드 키로 서명하고 끝나면 지운다. keystore 시크릿은 줄바꿈과 공백을 지운 뒤 디코딩하고, 빌드 전에 `keytool -list`로 비밀번호와 별칭이 맞는지 확인한다. 없으면 [build.gradle.kts](../app/android/app/build.gradle.kts)의 기존 동작대로 디버그 키로 서명하고 요약에 `debug`라고 적는다. 이 빌드는 Play에 올릴 수 없고, 실행기마다 디버그 키가 달라 기존 설치본 위에 업데이트되지 않을 수 있다.
 - 공개 저장소의 artifact는 로그인한 GitHub 사용자라면 받을 수 있다. 앱 artifact는 7일만 보관하며, 수동 실행에서는 `upload_app`을 끄고 빌드만 확인할 수 있다. 승인된 비공개 테스트 경로를 대신하지 않는다.
 - 공개 저장소의 Actions 로그도 누구나 볼 수 있다. 저장소 변수(vars)는 로그에 그대로 보이므로 서버 주소는 같은 이름의 시크릿으로 넣는 것을 권한다. 시크릿이 있으면 시크릿을, 없으면 변수를 쓴다.
 

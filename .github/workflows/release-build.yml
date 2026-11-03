@@ -232,10 +232,20 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
-            keystore="${RUNNER_TEMP}/upload-keystore.jks"
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
-            chmod 600 "$keystore"
             umask 077
+            keystore="${RUNNER_TEMP}/upload-keystore.jks"
+            # 시크릿에 붙여 넣으며 섞인 줄바꿈(CR/LF), 탭과 공백을 지운 뒤 디코딩한다.
+            if ! printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 --decode > "$keystore"; then
+              echo "::error::ANDROID_UPLOAD_KEYSTORE_BASE64를 base64로 디코딩하지 못했습니다."
+              exit 1
+            fi
+            chmod 600 "$keystore"
+            # 비밀번호와 별칭이 맞는지 빌드 전에 확인한다. 비밀번호는 명령줄 대신 환경 변수로 넘긴다.
+            if ! "${JAVA_HOME_17_X64}/bin/keytool" -list -keystore "$keystore" \
+              -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" > /dev/null; then
+              echo "::error::업로드 키 파일을 열지 못했거나 별칭이 없습니다. 키 파일, 비밀번호, 별칭 시크릿을 확인합니다."
+              exit 1
+            fi
             {
               echo "storeFile=$keystore"
               echo "storePassword=$KEYSTORE_PASSWORD"
