@@ -19,13 +19,6 @@ from common.structured import invoke_structured
 
 _BANNED = [r"기억\s*나세요", r"기억\s*하세요", r"기억하시", r"기억나시", r"요즘", r"오늘", r"어제", r"방금", r"지난주",
           r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
-# 사진 속 사물, 사람, 장소를 맞히게 하는 질문. 정답이 있는 시험식 형태만 좁게 잡음.
-# "이 사진은 어디서 찍으셨어요?", "사진 속 텃밭에서는 무엇을 기르셨어요?", "누구랑 하셨어요?"는 걸리지 않게 둠.
-_QUIZ = [
-    re.compile(r"사진\s*(?:속|에|안)[^?]{0,20}?(?<!에서)(?:은|는|이|가)\s*"
-               r"(?:무엇|뭐|뭘|누구(?:예요|세요|인가요|일까요|에요|였어요|였나요|인지))"),
-    re.compile(r"(?:(?:누구|무엇|어디)인지|(?:누군|뭔|어딘)지)\s*(?:아세요|아시겠|아십니까|아시나요|아실까요|맞혀|맞춰)"),
-]
 
 
 class WritingFailed(RuntimeError):
@@ -66,6 +59,15 @@ def write_cards(model: BaseChatModel, profile: dict[str, Any], cards: list[dict[
         if again:
             raise WritingFailed("; ".join(again))
     return result, first
+
+
+# 사진 속 사물, 사람, 장소를 맞히게 하는 질문. 정답이 있는 시험식 형태만 좁게 잡음.
+# "이 사진은 어디서 찍으셨어요?", "사진 속 텃밭에서는 무엇을 기르셨어요?", "누구랑 하셨어요?"는 걸리지 않게 둠.
+_QUIZ = [
+    re.compile(r"사진\s*(?:속|에|안)[^?]{0,20}?(?<!에서)(?:은|는|이|가)\s*"
+               r"(?:무엇|뭐|뭘|누구(?:예요|세요|인가요|일까요|에요|였어요|였나요|인지))"),
+    re.compile(r"(?:(?:누구|무엇|어디)인지|(?:누군|뭔|어딘)지)\s*(?:아세요|아시겠|아십니까|아시나요|아실까요|맞혀|맞춰)"),
+]
 
 
 def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
