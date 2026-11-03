@@ -43,6 +43,12 @@ ML_API_KEY=... uv run --offline --project ai python $D/run.py reports           
 ML_API_KEY=... uv run --offline --project ai python $D/run.py card rich-uuid    # 5~6회 예상
 ```
 
+카드 프롬프트 2판(사진 속 일을 어르신 경험으로 단정하지 않음)과 1판을 같은 입력으로 비교하려면 `SPOT_CHECK_CARD_PROMPT_VERSION=2`를 함께 줍니다. 출력은 `card-sparse-uuid-v2.json`처럼 저장되어 1판 출력과 겹치지 않습니다. 리포트와 변경 제안은 코드의 현재 판(`report-3`, `proposals-5` 등)으로 실행되므로, 수정 전 결과는 커밋된 `outputs/`와 비교합니다.
+
+```bash
+SPOT_CHECK_MODEL=gpt-6-luna SPOT_CHECK_CARD_PROMPT_VERSION=2 ML_API_KEY=... uv run --offline --project ai python $D/run.py card sparse-uuid
+```
+
 최초 실행기에는 경로와 `check` 모드만 바꿨습니다. 이후 Luna 6 재점검을 위해
 `SPOT_CHECK_MODEL` 선택, 요청 모델과 한도 기록, 오류의 URL 제거를 추가했습니다.
 변수를 생략하면 기존 `gpt-5.6-luna`를 사용하고 출력 상한은 현재 `ChatConfig`를 따릅니다.

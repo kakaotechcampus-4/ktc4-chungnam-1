@@ -11,6 +11,7 @@
 커밋된 outputs/를 덮어쓰지 않도록 기본값을 저장소 밖에 둔다.
 
 SPOT_CHECK_MODEL을 설정하면 그 모델로 검사한다. 없으면 기존 5.6 모델을 사용한다.
+SPOT_CHECK_CARD_PROMPT_VERSION을 설정하면 카드 입력의 promptVersion을 그 판으로 바꾸고 출력 이름 끝에 -v판을 붙인다.
 출력 한도는 현재 ChatConfig 기본값이다. 이전 결과의 모델, 한도를 새 실행으로 덮어쓰지 않는다.
 """
 
@@ -38,6 +39,8 @@ OUT = Path(os.environ.get("SPOT_CHECK_OUT") or Path(tempfile.gettempdir()) / "sa
 LEDGER = OUT / "calls.json"
 CAP = 40
 MODEL = os.environ.get("SPOT_CHECK_MODEL", "gpt-5.6-luna")
+# 카드 프롬프트 판을 바꿔 같은 입력을 다시 돌릴 때 쓴다(예: 2). 없으면 입력에 적힌 판(1)을 쓴다.
+CARD_PROMPT_VERSION = os.environ.get("SPOT_CHECK_CARD_PROMPT_VERSION")
 
 
 class BudgetExceeded(RuntimeError):
@@ -160,6 +163,9 @@ def main() -> int:
         before, started = counter.used, time.monotonic()
         token = _var.set(counter)
         try:
+            if CARD_PROMPT_VERSION:
+                payload = {**payload, "promptVersion": int(CARD_PROMPT_VERSION)}
+                name = f"{name}-v{CARD_PROMPT_VERSION}"
             out = generate_cards(GenerationRequest.model_validate({**payload, "model": MODEL}), api_key=key, seed=116)
             record(name, counter, started, before, result=out.model_dump(by_alias=True))
             print(name, "ok", counter.used - before, "calls", round(time.monotonic() - started, 1), "s")
