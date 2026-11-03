@@ -188,9 +188,12 @@ jobs:
           BACKEND_DIR="$REPO_DIR/backend"
           STATE_DIR="$RELEASE_DIR/runs/$RUN_KEY"
           STATE_FILE="$STATE_DIR/state"
-          # git 쓰기는 저장소 소유자로 한다. 읽기는 root에서 safe.directory만 허용한다.
-          as_owner() { sudo -u "$HOST_USER" -H "$@"; }
-          git_read() { GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" git -C "$REPO_DIR" "$@"; }
+          # git 쓰기는 저장소 소유자로 한다. umask 077을 물려주면 checkout한 파일이 0600이 되고,
+          # 이미지에 root 소유 0600으로 복사돼 비root 사용자(saerok)가 읽지 못한다. 그래서 022로 낮춘다.
+          as_owner() { ( umask 022; sudo -u "$HOST_USER" -H "$@" ); }
+          # 읽기는 root에서 safe.directory만 허용한다. git status가 .git/index를 root 소유로
+          # 다시 쓰지 않도록 optional lock을 끈다.
+          git_read() { GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" git --no-optional-locks -C "$REPO_DIR" "$@"; }
           compose_args() {
             for f in $COMPOSE_FILES; do printf '%s %s ' -f "$f"; done
             for p in $COMPOSE_PROFILES; do printf '%s %s ' --profile "$p"; done
@@ -486,8 +489,9 @@ jobs:
           stamp=$(date -u +%Y%m%dT%H%M%SZ)
           record="$RELEASE_DIR/release-$stamp-$(echo "$SHA" | cut -c1-12).json"
           # backend/docs/release-safety.md의 도구. 환경 변수와 로그는 읽지 않는다.
+          # capture_release.py의 git status가 .git/index를 root 소유로 다시 쓰지 않게 한다.
           # shellcheck disable=SC2086
-          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" \
+          GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REPO_DIR" \
             "$PY" "$BACKEND_DIR/scripts/capture_release.py" --repo "$REPO_DIR" $args > "$record"
           cp "$STATE_FILE" "$record.state"
           cat "$record"

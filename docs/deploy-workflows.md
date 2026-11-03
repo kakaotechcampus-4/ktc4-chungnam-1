@@ -65,7 +65,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 
 서버가 갖춰야 할 조건은 다음과 같다. 하나라도 다르면 이 workflow를 쓰지 않고 [수동 절차](../backend/docs/deployment.md#갱신)를 따른다.
 
-- SSM Agent가 실행 중이고 인스턴스 역할에 `AmazonSSMManagedInstanceCore`가 있다. SSM 명령은 root로 실행되며 git 쓰기는 `sudo -u <DEPLOY_HOST_USER>`로 한다.
+- SSM Agent가 실행 중이고 인스턴스 역할에 `AmazonSSMManagedInstanceCore`가 있다. SSM 명령은 root로 실행되며 git 쓰기는 `sudo -u <DEPLOY_HOST_USER>`와 umask 022로 한다. root에서 하는 git 읽기는 `--no-optional-locks`(git 2.15 이상)로 `.git/index`를 다시 쓰지 않는다. root 소유 index가 남으면 저장소 소유자의 checkout이 실패하고, umask 077로 checkout한 파일은 이미지 안의 비root 사용자가 읽지 못한다.
 - `docker compose`, `git`, `curl`, `sudo`와 Python 3.11 이상이 있다. `scripts/`의 도구가 3.11 기능을 쓴다.
 - DB는 compose의 `db` 컨테이너다. RDS를 쓰면 백업 도구가 동작하지 않으므로 RDS 스냅샷 절차를 따로 정한 뒤에 쓴다.
 - 서버 저장소의 `origin`이 이 GitHub 저장소이고 서버에서 받을 수 있다.
