@@ -83,6 +83,7 @@ def create_worker(
         lease_seconds=lease_seconds,
         # STT 뒤 같은 작업에서 리포트(8-3)까지 만든다.
         report_generator=report,
+        control_deployment=True,
     )
 
 

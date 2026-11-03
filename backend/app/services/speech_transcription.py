@@ -18,6 +18,7 @@ from app.services.accounts import Account
 from app.services.audio_storage import AudioStorage
 from app.services.audio_validation import validate_visit_audio
 from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionService
+from app.services.deployment_control import short_speech_admission
 
 logger = logging.getLogger("saerok.speech_transcription")
 MAX_SECONDS = 300
@@ -31,6 +32,18 @@ async def transcribe_short_audio(
     retention_seconds: int, timeout_seconds: float, max_audio_bytes: int,
 ) -> str:
     SpeechAnalysisSubmissionService._assert_account_consents(account)
+    async with short_speech_admission(connection):
+        return await _transcribe_short_audio(
+            connection, audio=audio, storage=storage, ai_server=ai_server,
+            object_prefix=object_prefix, retention_seconds=retention_seconds,
+            timeout_seconds=timeout_seconds, max_audio_bytes=max_audio_bytes,
+        )
+
+
+async def _transcribe_short_audio(
+    connection, *, audio, storage, ai_server, object_prefix,
+    retention_seconds, timeout_seconds, max_audio_bytes,
+):
     validated = await validate_visit_audio(audio, max_size_bytes=min(max_audio_bytes, MAX_BYTES))
     with wave.open(audio.file, "rb") as wav:
         seconds = wav.getnframes() / wav.getframerate()

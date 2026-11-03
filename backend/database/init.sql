@@ -9,10 +9,19 @@ DROP TABLE IF EXISTS
 DROP TABLE IF EXISTS
     topic_feedback, topic_proposals, life_fact_proposals, profile_topics, speech_analysis_jobs, photos,
     conversation_cards, card_sets, visit_sessions, life_facts, profiles, withdrawal_feedback, consent_records,
-    users, storage_deletion_request_queue, session_revocations
+    users, storage_deletion_request_queue, session_revocations, deployment_control
     CASCADE;
 DROP FUNCTION IF EXISTS queue_storage_deletion();
 DROP FUNCTION IF EXISTS delete_orphan_topic();
+
+CREATE TABLE deployment_control (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+    admissions_paused BOOLEAN NOT NULL DEFAULT false,
+    claims_paused BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (NOT claims_paused OR admissions_paused)
+);
+INSERT INTO deployment_control (singleton) VALUES (true);
 
 CREATE TABLE storage_deletion_request_queue (
     s3_object_key VARCHAR(255) PRIMARY KEY,

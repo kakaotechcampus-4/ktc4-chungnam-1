@@ -284,6 +284,7 @@ def create_speech_worker(
     open_connection: OpenConnection,
     lease_seconds: int,
     report_generator: ReportGenerator | None = None,
+    control_deployment: bool = False,
 ) -> Worker[SpeechAnalysisJob]:
     return Worker(
         queue=SpeechAnalysisQueue(jobs_for=jobs_for, audio_storage=audio_storage),
@@ -295,6 +296,7 @@ def create_speech_worker(
         ),
         open_connection=open_connection,
         lease_seconds=lease_seconds,
+        control_deployment=control_deployment,
     )
 
 

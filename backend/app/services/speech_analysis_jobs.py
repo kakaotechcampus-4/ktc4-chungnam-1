@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
+from app.services.deployment_control import assert_admission_open
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업에 임시 저장한다.
@@ -299,6 +300,7 @@ class PostgresSpeechAnalysisJobRepository:
     ) -> tuple[SpeechAnalysisJob, bool]:
         session_id = UUID(job.session_id)
         async with self._connection.transaction():
+            await assert_admission_open(self._connection)
             # 접수 후 실패한 회차는 다시 받지 않는다. 업로드 단계의 실패는 작업을
             # 지우므로(`discard_upload`) 남은 실패 작업은 모두 접수된 작업이다.
             cursor = await self._connection.execute(

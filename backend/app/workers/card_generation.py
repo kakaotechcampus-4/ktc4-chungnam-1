@@ -24,6 +24,7 @@ def create_worker(settings: Settings, generate: Generate) -> Worker[CardGenerati
         process=CardGenerationProcessor(queue=queue, generate=generate),
         open_connection=lambda: connect(database_url),
         lease_seconds=settings.card_generation_lease_seconds,
+        control_deployment=True,
     )
 
 

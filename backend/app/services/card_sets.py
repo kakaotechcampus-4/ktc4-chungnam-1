@@ -34,6 +34,7 @@ from app.schemas.card_generation import (
     Visit,
 )
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
+from app.services.deployment_control import assert_admission_open
 
 logger = logging.getLogger("saerok.card_generation")
 
@@ -161,6 +162,7 @@ async def start_card_generation(
     문자열 열이라 문자열로 저장함.
     """
     async with connection.transaction():
+        await assert_admission_open(connection)
         await lock_profile(connection, profile_id)
         current = await generation_status(
             connection, profile_id, start_timeout_seconds=start_timeout_seconds

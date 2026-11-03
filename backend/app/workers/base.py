@@ -29,6 +29,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.core.logging import configure_logging
+from app.services import deployment_control
 
 JobT = TypeVar("JobT")
 
@@ -70,11 +71,13 @@ class Worker(Generic[JobT]):
         process: JobProcessor[JobT],
         open_connection: OpenConnection,
         lease_seconds: int,
+        control_deployment: bool = False,
     ) -> None:
         self._queue = queue
         self._process = process
         self._open_connection = open_connection
         self._lease_seconds = lease_seconds
+        self._control_deployment = control_deployment
         self._stopping = asyncio.Event()
 
     def request_stop(self) -> None:
@@ -95,7 +98,13 @@ class Worker(Generic[JobT]):
             # 임대 만료 정리 중에 종료 요청이 왔으면 작업을 가져가지 않는다.
             if self._stopping.is_set():
                 return False
-            job = await self._queue.claim(connection, lease_seconds=self._lease_seconds)
+            async def claim():
+                return await self._queue.claim(connection, lease_seconds=self._lease_seconds)
+
+            job = (
+                await deployment_control.claim_job(connection, claim)
+                if self._control_deployment else await claim()
+            )
             if job is None:
                 return False
             try:
@@ -112,6 +121,9 @@ class Worker(Generic[JobT]):
                 await self._queue.fail(
                     connection, job, error_code=self._queue.unexpected_error_code
                 )
+            finally:
+                if self._control_deployment:
+                    await deployment_control.finish_job(connection)
             return True
 
     async def run(self, *, poll_seconds: float, once: bool = False) -> None:
