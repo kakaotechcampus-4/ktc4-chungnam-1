@@ -58,17 +58,6 @@ uv run pytest
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
-배포 준비용 [분석 접수 제어](docs/deployment-control.md)는 새 녹음 접수, 카드 생성과
-worker의 새 작업 시작을 따로 멈춘다. 기본은 허용이며 진행 중 작업을 강제로 종료하지 않는다.
-기존 API에 `503 SERVICE_MAINTENANCE` 응답을 추가하므로 앱 E2E와 배포 절차에서 확인한다.
-모든 쓰기를 막는 기능은 아니며 migration `f95c2d7eb143`과 해당 버전의 worker가 필요하다.
-로컬 구현이며 운영에 적용하지 않았다.
-
-[운영 상태 점검](docs/runtime-check.md)은 DB, worker 프로세스와 STT HTTP 응답을 구분한다.
-ML API는 키 설정 여부와 콘솔에서 한도를 확인하는 방법만 제공하며, 실제 인증 및 모델 호출을
-검증한 것으로 표시하지 않는다. 기본 GPU와 ck 예비 경로의 전환, 재시작 및 장애 대응은
-[STT 운영 절차](docs/stt-operations.md)를 따른다.
-
 ## 데이터베이스 마이그레이션 (Alembic)
 
 PostgreSQL 스키마의 소유권은 Alembic migration에 있다. `backend/database/init.sql`은
@@ -433,6 +422,7 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
 주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
 [연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
+기본 GPU와 ck 예비 경로의 상태 확인, 재시작과 증상별 대응은 [STT 운영 절차](docs/stt-operations.md)를 따른다.
 
 ## 사진 저장 (S3)
 
