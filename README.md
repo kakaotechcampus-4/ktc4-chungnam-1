@@ -9,9 +9,9 @@
 | 표시 | 뜻 |
 | --- | --- |
 | [운영 반영] | 11/3 새벽 운영 서버와 Play Console을 읽기 전용으로 확인했을 때 있던 것. 운영 이미지는 10/25 빌드라 develop보다 뒤처져 있다 |
-| [develop 구현] | GitHub `develop`(`2f3c141`)에 병합된 코드. 운영 반영 여부는 따로 적는다 |
-| [로컬 작업] | `develop` 위에 쌓은 로컬 통합 커밋에만 있고 GitHub에 올리지 않은 것. 합성 자료와 격리 DB로만 검사했다 |
-| [미구현] | 코드가 없다 |
+| [develop 구현] | GitHub `develop`(`e465099`)에 병합된 코드. 운영 반영 여부는 따로 적는다 |
+| [PR 검토 중] | 열린 PR에만 있고 `develop`에 병합되지 않은 것. PR 번호를 함께 적는다. 합성 자료와 격리 DB로만 검사했다 |
+| [미구현] | `develop`에 코드가 없고 검토 중인 PR도 없다 |
 | [계획] | 아직 정하지 않았거나 준비 중이다 |
 
 ## 제품 원칙
@@ -31,43 +31,43 @@
 | --- | --- | --- |
 | 로그인과 동의 | 구글 로그인 뒤 필수 동의 2종을 제출해야 계정이 생긴다 | [운영 반영] |
 | 프로필 | 보호자 1명당 어르신 최대 3명. 기본 정보와 세부 정보 4칸(하시던 일, 고향, 취미, 가족) | [운영 반영] |
-| 세부 정보 음성 입력 | 짧은 녹음을 서버(6-6)에 보내 글로 받아 입력칸에 채운다. 실패하면 글 입력으로 넘어간다 | 앱은 [develop 구현], 서버 API는 [로컬 작업] |
+| 세부 정보 음성 입력 | 짧은 녹음을 서버(6-6)에 보내 글로 받아 입력칸에 채운다. 실패하면 글 입력으로 넘어간다 | 앱은 [develop 구현], 서버 API는 [PR 검토 중] PR {D4} |
 | 프로필 사진 | 어르신마다 사진 최대 5장을 서버에 올린다 | [develop 구현]. 서버 API는 10/15, 앱 화면은 11/02 develop 반영이라 운영 앱(versionCode 3)에는 없다 |
-| 사진 설명 | 사진 분석 worker가 설명을 만들고, 보호자가 고친 설명은 AI 원문과 따로 저장해 다음 카드 입력에 우선 쓴다. 설명은 프로필 설정 갤러리에서 사진을 눌러 그 자리에서 고치며, 갈 화면이 없던 갤러리 머리글의 `수정하기`는 숨겼다 | [로컬 작업]. 분석 worker는 합성 자료 전용이며 운영 환경에서는 실행을 거절한다 |
+| 사진 설명 | 프로필 설정 갤러리에서 사진을 눌러 설명을 고친다. 지금은 앱 안에서만 저장해 앱을 다시 열면 원래 설명으로 돌아간다. 보호자가 고친 설명을 AI 원문과 따로 서버에 저장해 다음 카드 입력에 우선 쓰는 3-3은 PR {E1}, 갈 화면이 없는 갤러리 머리글 `수정하기` 숨김은 PR {F4}에서 다룬다. 사진 설명을 만드는 분석 worker는 없다 | 고치는 화면은 [develop 구현], 서버 저장은 [PR 검토 중], 분석 worker는 [미구현] |
 | 대화 카드 | card-worker가 카드 12장을 만든다. 1~9번 중에서 골라 면회를 시작하고 10~12번은 면회 중 보충 카드다 | [운영 반영] |
-| 면회 | 기기에서 WAV 16kHz mono로 녹음하고 끝낼 때 참여자 수를 확인한다. 면회 사진 1장을 올릴 수 있다. 녹음하는 동안에는 Android 화면이 저절로 꺼지지 않게 한다 | [운영 반영] 회차와 녹음 전송. 면회 사진은 [develop 구현], 운영 사용 미확인. 화면 켜짐은 [로컬 작업]이며 백그라운드 녹음 유지(포그라운드 서비스)는 [미구현] |
+| 면회 | 기기에서 WAV 16kHz mono로 녹음하고 끝낼 때 참여자 수를 확인한다. 면회 사진 1장을 올릴 수 있다. 녹음하는 동안에는 Android 화면이 저절로 꺼지지 않게 한다 | [운영 반영] 회차와 녹음 전송. 면회 사진은 [develop 구현], 운영 사용 미확인. 화면 켜짐은 [PR 검토 중] PR {F2}이며 백그라운드 녹음 유지(포그라운드 서비스)는 [미구현] |
 | 소감 | 만족도, 어르신 반응, 카드별 사용 여부와 반응을 저장한 뒤에만 녹음을 서버로 보낸다 | [develop 구현] |
-| 음성 분석과 리포트 | speech-worker가 STT와 화자 분리를 부르고 같은 작업에서 리포트와 변경 제안을 만든다. 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장한다 | [운영 반영] STT와 리포트 생성. 화자 미확인 시 모델 생략은 [로컬 작업] |
+| 음성 분석과 리포트 | speech-worker가 STT와 화자 분리를 부르고 같은 작업에서 리포트와 변경 제안을 만든다. 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장한다 | [운영 반영] STT와 리포트 생성. 화자 미확인 시 모델 생략은 [PR 검토 중] PR {C3} |
 | 변경 제안 확인 | 이야기 후보와 주제 조정(more, less, exclude)을 보호자가 고치거나 빼고 승인한다. 승인 전에는 반영하지 않는다 | [develop 구현], 운영 사용 미확인 |
 | 다음 회차 반영 | 승인한 이야기와 주제 조정이 다음 카드 생성 입력에 들어간다 | [develop 구현] |
-| 화면 낭독(#180) | 카드 고르기, 면회 녹음과 카드 꺼내기, 소감, 리포트와 변경 제안, 세부 정보 음성 입력 등 핵심 흐름에서 TalkBack이 읽을 이름, 선택 상태, 읽기 순서와 대비를 보완했다 | [로컬 작업]. 위젯 테스트만 했고 실기기 TalkBack 확인과 낭독 문구의 PM 확인이 남았다 |
+| 화면 낭독(#180) | 카드 고르기, 면회 녹음과 카드 꺼내기, 소감, 리포트와 변경 제안, 세부 정보 음성 입력 등 핵심 흐름에서 TalkBack이 읽을 이름, 선택 상태, 읽기 순서와 대비를 보완했다 | [PR 검토 중] PR {F3}. 위젯 테스트만 했고 실기기 TalkBack 확인과 낭독 문구의 PM 확인이 남았다 |
 | 사실 정정 뒤 카드 갱신 | 프로필이나 일대기를 고치면 아직 쓰지 않은 카드로는 면회를 시작할 수 없고, `다음 대화 준비하기`로 카드 묶음 전체를 한 번 다시 만든다 | [develop 구현], 운영 미반영 |
-| 분석 실패 후 다시 요청 | 남은 전사로 리포트만 다시 만들고(6-5), 전사가 없으면 기기에 남긴 녹음을 다시 보낸다. 이를 위해 실패한 분석의 전사를 즉시 지우지 않고 최초 STT 저장 후 24시간의 남은 기한 동안 보관한다 | [로컬 작업]. 실패 전사 보관은 보관 정책 변경이라 운영 적용 전 PM 승인이 필요하다 |
+| 분석 실패 후 다시 요청 | 남은 전사로 리포트만 다시 만들고(6-5), 전사가 없으면 기기에 남긴 녹음을 다시 보낸다. 이를 위해 실패한 분석의 전사를 즉시 지우지 않고 최초 STT 저장 후 24시간의 남은 기한 동안 보관한다 | [PR 검토 중] PR {D3}. 실패 전사 보관 변경은 2026-11-03 PM이 승인했고, 동의 문구 반영은 운영 적용 전에 확인한다 |
 
-카드, 리포트, 변경 제안, 사진 설명은 엘리스 ML API를 쓴다. STT는 faster-whisper와 pyannote 화자 분리를 쓴다. 모델 이름과 설정은 [AI README](ai/README.md)와 [STT 서버 README](stt-server/README.md)를 따른다.
+카드, 리포트, 변경 제안은 엘리스 ML API를 쓴다. STT는 faster-whisper와 pyannote 화자 분리를 쓴다. 모델 이름과 설정은 [AI README](ai/README.md)와 [STT 서버 README](stt-server/README.md)를 따른다.
 
 ## 구성
 
 | 경로 | 역할 | 실행 형태 |
 | --- | --- | --- |
 | `app/` | Flutter 앱(Android, Application ID `app.saerok.android`) | 기기나 에뮬레이터 |
-| `backend/` | FastAPI API, PostgreSQL 스키마와 Alembic migration, card-worker, speech-worker, 사진 분석과 삭제 대기열 실행기, 운영 점검 도구 | `uv` 로컬 실행 또는 Docker Compose |
-| `ai/` | 카드, 리포트, 변경 제안 생성 패키지(사진 설명 생성은 [로컬 작업])와 합성 페르소나 시뮬레이터. 생성 패키지는 DB를 읽거나 쓰지 않는다. 시뮬레이터는 `TOPIC_REC_DATABASE_URL`의 합성 DB를 쓴다 | backend가 경로 의존성으로 설치해 worker 안에서 부른다 |
+| `backend/` | FastAPI API, PostgreSQL 스키마와 Alembic migration, card-worker, speech-worker. 삭제 대기열 실행기와 운영 점검 도구는 [PR 검토 중] | `uv` 로컬 실행 또는 Docker Compose |
+| `ai/` | 카드, 리포트, 변경 제안 생성 패키지와 합성 페르소나 시뮬레이터. 사진 설명 생성 함수는 없다. 생성 패키지는 DB를 읽거나 쓰지 않는다. 시뮬레이터는 `TOPIC_REC_DATABASE_URL`의 합성 DB를 쓴다 | backend가 경로 의존성으로 설치해 worker 안에서 부른다 |
 | `stt-server/` | Whisper ASR과 pyannote 화자 분리를 실행하고 결과를 시간축으로 결합하는 내부 FastAPI 서버 | GPU 서버. backend가 사설망으로 호출 |
-| `evals/` | STT 시험 케이스 9개, 기대 결과, 합성 음성 생성 스크립트. 자동 채점 스크립트는 없다. `results/`에 #116 실제 모델 소규모 점검 기록이 있다([로컬 작업]) | 로컬 |
-| `docs/` | PM 제품 기준, 데이터 계약, API 명세, ADR, 처리 복구 기준, 법률 검토, 테크스펙, 제품 테스트 CI | - |
+| `evals/` | STT 시험 케이스 9개, 기대 결과, 합성 음성 생성 스크립트. 자동 채점 스크립트는 없다 | 로컬 |
+| `docs/` | PM 제품 기준, 데이터 계약, API 명세, ADR, 처리 복구 기준, 법률 검토, 테크스펙 | - |
 
 호출 흐름
 
 1. 앱이 backend API를 HTTPS로 부른다. 로그인, 프로필, 사진, 카드 생성 요청, 회차, 평가, 녹음 전송, 리포트와 변경 제안 조회가 모두 이 API로 간다.
-2. API는 PostgreSQL에 저장하고 카드 생성, 음성 분석, 사진 분석 요청을 작업 행으로 남긴다.
+2. API는 PostgreSQL에 저장하고 카드 생성과 음성 분석 요청을 작업 행으로 남긴다.
 3. card-worker가 카드 생성 작업을 가져와 `ai/`의 카드 생성 패키지를 부른다.
 4. 녹음은 S3 임시 저장소에 올라간다. speech-worker가 S3 Presigned GET URL을 `stt-server`에 넘기고, 전사를 저장한 뒤 원본 삭제를 시도한다. 이어서 리포트와 변경 제안을 만든다.
-5. 사진과 녹음 행을 지우면 S3 객체 키가 삭제 대기열에 쌓인다. 대기열 실행기는 [로컬 작업]이며 운영에 배포하거나 주기 실행으로 연결하지 않았다.
+5. 사진과 녹음 행을 지우면 S3 객체 키가 삭제 대기열에 쌓인다. 대기열을 처리해 S3 객체를 지우는 실행기는 PR {D2}에서 검토 중이며 운영 배포와 주기 실행은 정하지 않았다.
 
 ## 로컬 실행
 
-아래 명령은 각 영역 README, 배포 문서와 [제품 테스트 CI](docs/product-tests.md)에 적힌 것만 옮겼다. 세부 설정은 링크한 문서를 따른다. 실제 사용자 자료는 쓰지 않고 합성 데이터만 쓴다. `powershell` 블록은 Windows PowerShell에서, `bash` 블록과 `.sh` 스크립트는 Git Bash, WSL, macOS나 Linux 셸에서 실행한다.
+아래 명령은 각 영역 README와 배포 문서에 적힌 것만 옮겼다. 세부 설정은 링크한 문서를 따른다. 실제 사용자 자료는 쓰지 않고 합성 데이터만 쓴다. `powershell` 블록은 Windows PowerShell에서, `bash` 블록과 `.sh` 스크립트는 Git Bash, WSL, macOS나 Linux 셸에서 실행한다.
 
 ### 준비물
 
@@ -129,36 +129,33 @@
    flutter run --dart-define=SAEROK_GOOGLE_SERVER_CLIENT_ID=<웹 클라이언트 ID> --dart-define=SAEROK_API_BASE_URL=http://10.0.2.2:8000
    ```
 
-   `SAEROK_API_BASE_URL`의 기본값 `http://10.0.2.2:8000`은 에뮬레이터에서 PC를 가리킨다. 릴리스 빌드는 이 주소가 비어 있거나 https가 아니거나 형식이 틀리면(query, fragment 포함), 또는 구글 클라이언트 ID가 비어 있으면 로그인 대신 설정 오류 화면을 띄운다([로컬 작업], [FE README](app/README.md#릴리스-설정-검사)). 실기기는 PC의 LAN 주소를 넘긴다. `--dart-define` 없이 실행한 디버그 빌드는 구글 로그인을 건너뛰고 합성 목 데이터로 화면을 보여준다. 이때는 서버를 부르지 않으며 로그아웃과 탈퇴도 동작하지 않는다. 설정이 준비되면 지울 임시 경로다([FE README](app/README.md#실행과-테스트)).
+   `SAEROK_API_BASE_URL`의 기본값 `http://10.0.2.2:8000`은 에뮬레이터에서 PC를 가리킨다. PR {F4}가 병합되면 릴리스 빌드는 이 주소가 비어 있거나 https가 아니거나 형식이 틀리면(query, fragment 포함), 또는 구글 클라이언트 ID가 비어 있으면 로그인 대신 설정 오류 화면을 띄운다([PR 검토 중] PR {F4}). 실기기는 PC의 LAN 주소를 넘긴다. `--dart-define` 없이 실행한 디버그 빌드는 구글 로그인을 건너뛰고 합성 목 데이터로 화면을 보여준다. 이때는 서버를 부르지 않으며 로그아웃과 탈퇴도 동작하지 않는다. 설정이 준비되면 지울 임시 경로다([FE README](app/README.md#실행과-테스트)).
 
-### 운영 점검과 복구 도구 [로컬 작업]
+### 검토 중인 운영 점검과 복구 도구
 
-모두 `backend/`에서 실행한다. 운영 서버에서 실행한 기록은 없다. 운영 실행과 실제 자료 삭제는 별도 승인이 필요하다.
+아래 도구는 `develop`에 없고 각 PR에서 검토 중이다. 병합되면 `backend/`에서 실행한다. 운영 서버에서 실행한 기록은 없고, 운영 실행과 실제 자료 삭제는 별도 승인이 필요하다. 사용법은 각 PR의 `backend/docs/` 문서에 있다.
 
-| 도구 | 기본 명령 | 기본 동작 | 문서 |
-| --- | --- | --- | --- |
-| 운영 상태 점검 | `uv run python -m app.ops.runtime_check` | 읽기 전용. migration revision, 작업 상태별 건수, 기한 지난 녹음 수를 JSON으로 출력 | [읽기 전용 운영 점검](backend/docs/runtime-check.md) |
-| S3와 DB 대조 | `uv run python -m app.ops.storage_audit` | 읽기 전용. `--s3`는 버킷 목록까지 읽는다. `--enqueue-safe-expired`만 DB를 수정한다 | [S3 원본과 DB 참조 점검](backend/docs/storage-audit.md) |
-| 삭제 대기열 실행 | `uv run python -m app.workers.storage_deletion --limit 100` | DB 조회만 하는 dry run. `--apply`에서만 S3 삭제와 확인을 한다 | [S3 삭제 대기열 실행](backend/docs/storage-deletion.md) |
-| 사진 분석 worker | `uv run python -m app.workers.photo_analysis --synthetic-test-data --once` | 합성 사진만 있는 테스트 DB 전용. 운영 환경에서는 거절한다 | [프로필 사진 분석 연결](backend/docs/photo-analysis.md) |
-| 배포 후 API 연결 검사 | `uv run --locked python scripts/verify_api_cycle.py` | 인수 없이 실행하면 검사 순서만 출력하고 요청을 보내지 않는다 | [API 연결 검사](backend/docs/api-cycle-runner.md) |
-| 배포 전 기록과 백업 복원 검사 | `scripts/capture_release.py`, `scripts/verify_database_backup.py` | 이미지와 버전 기록, 격리 컨테이너 복원 검사. 필수 인수는 문서 참고 | [배포 전 백업, 버전 대조와 되돌리기](backend/docs/release-safety.md) |
+| 도구 | 기본 동작 | PR |
+| --- | --- | --- |
+| 운영 상태 점검(`app.ops.runtime_check`) | 읽기 전용. migration revision, 작업 상태별 건수, 기한 지난 녹음 수를 JSON으로 출력 | {B1} |
+| S3와 DB 대조(`app.ops.storage_audit`) | 읽기 전용. `--s3`는 버킷 목록까지 읽는다. `--enqueue-safe-expired`만 DB를 수정한다 | {D2} |
+| 삭제 대기열 실행(`app.workers.storage_deletion`) | DB 조회만 하는 dry run. `--apply`에서만 S3 삭제와 확인을 한다 | {D2} |
+| 배포 후 API 연결 검사(`scripts/verify_api_cycle.py`) | 인수 없이 실행하면 검사 순서만 출력하고 요청을 보내지 않는다 | {A2} |
+| 배포 전 기록과 백업 복원 검사(`scripts/capture_release.py`, `scripts/verify_database_backup.py`) | 이미지와 버전 기록, 격리 컨테이너 복원 검사 | {B2} |
 
 ## 테스트
 
-명령은 [제품 테스트 CI](docs/product-tests.md)와 같다. CI 워크플로(`.github/workflows/product-tests.yml`)는 [로컬 작업]이며 GitHub Actions에서 실행한 기록은 아직 없다.
-
-| 영역 | 실행 위치 | 명령 | 11/3 로컬 결과 (로컬 통합본 `a0d3161`, STT만 `1b3acaa`) |
+| 영역 | 실행 위치 | 명령 | 출처 |
 | --- | --- | --- | --- |
-| 앱 | `app/` | `flutter pub get --enforce-lockfile`, `flutter analyze`, `flutter test` | analyze 이슈 0, 테스트 783개 통과, 건너뜀 0 (Flutter 3.44.8, `pub get --offline`로 설치) |
-| 백엔드 | `backend/` | `uv sync --locked`, `uv run --locked pytest -ra` | 일회용 PostgreSQL 17 연결 시 580개 중 577 통과, 3 건너뜀. 건너뛴 3개는 별도 Docker 이미지나 복원용 컨테이너를 지정해야 도는 백업 복원, 이미지 패키지, worker 종료 검사다 |
-| AI | `ai/` | `uv sync --locked`, `uv run --locked pytest -ra` | 일회용 PostgreSQL 17의 전용 DB 연결 시 113개 통과 |
-| STT 서버 | `stt-server/` | `uv sync --locked`, `PYTHONPATH=src uv run --locked python -m unittest discover -s tests -v` | 27개 중 26 통과, 1 건너뜀. Windows에서 실행했으며 CI의 TorchCodec 합성 WAV 디코딩 검사는 실행하지 않았다 |
-| 평가 자료 | `evals/fixtures/speech/` | 합성 음성 생성 스크립트 4개([평가 README](evals/README.md)) | 자동 채점 스크립트 없음 |
+| 앱 | `app/` | `flutter pub get`, `flutter analyze`, `flutter test` | [FE README](app/README.md#실행과-테스트) |
+| 백엔드 | `backend/` | `uv sync`, `uv run pytest` | [BE README](backend/README.md#실행과-테스트) |
+| AI | `ai/` | `uv run pytest` | [카드 생성 README](ai/card_generation/README.md) |
+| STT 서버 | `stt-server/` | `PYTHONPATH=src uv run python -m unittest discover -s tests -v` | [STT 서버 README](stt-server/README.md) |
+| 평가 자료 | `evals/fixtures/speech/` | 합성 음성 생성 스크립트 4개 | [평가 README](evals/README.md). 자동 채점 스크립트 없음 |
 
 - 백엔드 DB 테스트는 `SAEROK_TEST_DATABASE_URL`, AI DB 테스트는 `TOPIC_REC_TEST_DATABASE_URL`이 있어야 돌고 없으면 건너뛴다. 두 값 모두 생성과 삭제가 허용된 전용 테스트 PostgreSQL만 가리켜야 한다. 건너뛴 실행은 DB 통합 검사 통과로 기록하지 않는다.
 - 위 테스트는 외부 모델, S3, Google 인증을 대역으로 처리한다. 실제 모델 품질, GPU 실행, Android 마이크와 화면 잠금, Play 서명 빌드, 운영 배포, 실기기의 다음 회차 성공은 확인하지 않는다.
-- 두 번째 면회 시작까지의 흐름은 실제 API 라우터와 PostgreSQL, worker를 연결한 [두 번째 회차 검증](backend/docs/second-visit-verification.md)에서 검사한다 [로컬 작업].
+- PR마다 위 테스트를 GitHub Actions에서 돌리는 제품 테스트 CI는 PR {A1}, 두 번째 면회 시작까지 실제 API 라우터와 PostgreSQL, worker를 연결해 보는 검사는 PR {A2}에서 검토 중이다.
 - 실제 모델을 부르는 평가 스크립트(`ai/card_generation/tests/eval/`)와 시뮬레이터(`ai/simulation/`)는 위 테스트에 들어가지 않는다.
 
 ## 배포와 시연
@@ -168,37 +165,36 @@
 | 대상 | 현재 | 상태 |
 | --- | --- | --- |
 | Android 앱 | Google Play 비공개 테스트(versionCode 3, 10/25 업로드). 테스터로 등록된 계정만 설치할 수 있다. 프로덕션 트랙은 비활성. 이 빌드에는 앱의 프로필 사진 업로드 화면(PR #176, 11/02 병합)이 없다 | [운영 반영] |
-| 백엔드 서버 | AWS EC2의 Docker Compose와 Caddy HTTPS. api, card-worker 이미지는 10/25 빌드라 정정 뒤 카드 갱신(`needsRefresh`)과 위 [로컬 작업]이 없다 | [운영 반영] |
-| STT | 기본 STT 연결이 실패하면 예비 STT로 한 번 전환하는 speech-worker 임시 이미지로 운영 중이다. 전환 코드는 develop에 없고 열린 PR #188~#190에서 다룬다 | [운영 반영] 임시 이미지 |
+| 백엔드 서버 | AWS EC2의 Docker Compose와 Caddy HTTPS. api, card-worker 이미지는 10/25 빌드라 정정 뒤 카드 갱신(`needsRefresh`)이 없다 | [운영 반영] |
+| STT | 기본 STT 연결이 실패하면 예비 STT로 한 번 전환하는 speech-worker 임시 이미지로 운영 중이다. 전환 코드(PR #189), GPU 번호와 연산 형식 설정(PR #188), 예비 서버 SSH 연결(PR #190)은 11/3 develop에 병합됐다 | [운영 반영] 임시 이미지, 코드는 [develop 구현] |
 | 로그인 없는 화면 확인 | 디버그 빌드를 `--dart-define` 없이 실행하면 합성 목 데이터로 화면을 볼 수 있다. 서버 기능은 확인할 수 없다 | [develop 구현] 임시 |
 | 심사자 접근 방법, 시연 영상 | 테스터 등록 경로와 촬영 시점을 정하는 중 | [계획] |
 
 | 문서 | 내용 |
 | --- | --- |
 | [컨테이너 실행과 개발 서버 배포](backend/docs/deployment.md) | Compose 서비스 구성, EC2 처음 설정과 갱신, worker 종료 유예 |
-| [배포 전 백업, 버전 대조와 되돌리기](backend/docs/release-safety.md) | 승인 후 적용 순서와 이상이 생겼을 때의 기준 [로컬 작업] |
+| [STT 예비 서버 전환](backend/docs/stt-backup.md), [ck 예비 서버 SSH 연결](backend/docs/stt-backup-ssh.md) | 예비 STT 설정, 전환 조건과 SSH 운영 연결 |
 | [비동기 면회 음성 STT 구현 및 테스트 가이드](backend/docs/async-speech-analysis.md) | 음성 분석 구현 파일, 환경 설정, 합성 WAV 시험 |
 | [FE README의 Play 업로드용 빌드](app/README.md#play-업로드용-빌드) | 업로드 키 서명과 versionCode 규칙 |
 | [작업 중단과 실패 후 복구 기준](docs/architecture/processing-recovery.md) | 녹음 전송, STT, 리포트 실패 복구(상태 `proposed`) |
 
-배포는 수동 절차다. 위 [로컬 작업] 도구와 절차를 운영에 적용한 기록은 없다.
+배포는 수동 절차다. 검토 중인 PR의 도구와 절차를 운영에 적용한 기록은 없다.
 
 ## 알려진 제한
 
 | 내용 | 상태 |
 | --- | --- |
-| 운영 서버 이미지가 10/25 빌드라 develop의 정정 뒤 카드 갱신과 로컬 작업의 안전 보완이 운영에 없다. 운영 앱(versionCode 3)에는 프로필 사진 업로드 화면이 없다 | 운영 미반영 |
-| 녹음 원본의 24시간 상한을 운영에서 강제하지 못한다. 삭제 대기열 실행기와 기한 대조 도구는 [로컬 작업]이고, 운영 배포, 주기 실행, 음성 버킷 Lifecycle 보조 규칙은 적용하지 않았다 | 운영 설정 남음 |
-| 사진 분석 동의를 계정별로 확인하는 필드가 DB에 없다. 그래서 사진 분석 worker는 합성 자료 전용이며 운영 Compose에 넣지 않았다 | [미구현] 동의 연결 |
-| 빈 전사는 리포트 생성 전에 거절한다. 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장하므로, 그 회차에는 이야기 후보, 주제 조정 제안, 카드별 요약이 없다. 화자가 확인된 회차의 리포트 문장 인물 귀속 전체를 코드로 검사하지는 않는다 | 검사와 모델 생략은 [로컬 작업], 귀속 검사는 [미구현] |
-| 카드 설명과 리포트, 변경 제안에서 치료 효과를 직접 보장하는 표현을 정규식으로 검사한다. 모든 우회 표현을 판정하지는 않는다 | [로컬 작업] |
-| 녹음 원본 삭제가 실패해도 전사와 리포트는 계속 만들고 삭제 요청을 대기열에 남긴다 | [로컬 작업] |
-| 실패한 분석의 수동 재요청(6-5)은 전사 보관 기한 안에서만 리포트를 다시 만든다. 자동 재시도는 없다. 실패 전사의 만료 삭제는 worker가 돌아야 실행되므로 worker가 멈추면 늦어진다 | [로컬 작업]. 보관 변경은 PM 승인 대기 |
-| 세부 정보 음성 입력(6-6)의 처리 시간 상한은 실측 전이다 | [로컬 작업] |
+| 운영 서버 이미지가 10/25 빌드라 develop의 정정 뒤 카드 갱신이 운영에 없다. 운영 앱(versionCode 3)에는 프로필 사진 업로드 화면이 없다 | 운영 미반영 |
+| 녹음 원본의 24시간 상한을 운영에서 강제하지 못한다. 삭제 대기열 실행기와 기한 대조 도구는 PR {D2}에서 검토 중이고, 운영 배포, 주기 실행, 음성 버킷 Lifecycle 보조 규칙은 적용하지 않았다 | 운영 설정 남음 |
+| 사진 분석 동의를 계정별로 확인하는 필드가 DB에 없다. 프로필 사진 설명을 만드는 분석 worker도 없다 | [미구현] |
+| PR {C3}은 빈 전사를 리포트 생성 전에 거절하고, 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장하므로, 그 회차에는 이야기 후보, 주제 조정 제안, 카드별 요약이 없다. 화자가 확인된 회차의 리포트 문장 인물 귀속 전체를 코드로 검사하지는 않는다 | 검사와 모델 생략은 [PR 검토 중], 귀속 검사는 [미구현] |
+| 리포트와 변경 제안(PR {C1}), 카드 설명(PR {C2})에서 치료 효과를 직접 보장하는 표현을 정규식으로 검사한다. 모든 우회 표현을 판정하지는 않는다 | [PR 검토 중] |
+| PR {D1}은 녹음 원본 삭제가 실패해도 전사와 리포트는 계속 만들고 삭제 요청을 대기열에 남긴다 | [PR 검토 중] |
+| PR {D3}의 실패한 분석 수동 재요청(6-5)은 전사 보관 기한 안에서만 리포트를 다시 만든다. 자동 재시도는 없다. 실패 전사의 만료 삭제는 worker가 돌아야 실행되므로 worker가 멈추면 늦어진다 | [PR 검토 중] |
+| 세부 정보 음성 입력의 서버 API(6-6, PR {D4})는 처리 시간 상한을 실측하지 않았다 | [PR 검토 중] |
 | 발화량, 응답 지연 같은 관찰 수치는 계산하지 않는다. `docs/tech-spec.md`와 `docs/pm/presentation-qna.md`의 해당 내용은 과거 계획이다 | [미구현] |
-| 녹음 중 화면 켜짐은 화면이 꺼지지 않게만 한다. 전원 버튼으로 끄거나 다른 앱으로 옮긴 뒤의 녹음 유지는 보장하지 않는다 | 화면 켜짐은 [로컬 작업], 포그라운드 서비스는 [미구현] |
-| 릴리스 설정 오류 화면은 테스트에서 릴리스 여부를 인자로 넘겨 확인했다. 실제 `flutter build appbundle --release` 결과물에서 뜨는지는 실행하지 않았다 | [로컬 작업], 미검사 |
-| #116 실제 모델 점검은 합성 입력으로 생성 함수를 1회씩 직접 부른 소규모 기록이다. 사람 검수 전이며 backend 경로를 거치지 않았다 | [로컬 작업] |
+| 녹음 중 화면 켜짐(PR {F2})은 화면이 꺼지지 않게만 한다. 전원 버튼으로 끄거나 다른 앱으로 옮긴 뒤의 녹음 유지는 보장하지 않는다 | 화면 켜짐은 [PR 검토 중], 포그라운드 서비스는 [미구현] |
+| 릴리스 설정 오류 화면(PR {F4})은 테스트에서 릴리스 여부를 인자로 넘겨 확인했다. 실제 `flutter build appbundle --release` 결과물에서 뜨는지는 실행하지 않았다 | [PR 검토 중], 미검사 |
 | 실제 Android 마이크, 화면 잠금, 강제 종료, TalkBack 낭독, 실기기에서 두 번째 면회까지의 흐름은 검증하지 않았다 | 미검사 |
 
 ## 문서 지도
@@ -212,12 +208,10 @@
 | API, DB, worker, 실행 | [BE README](backend/README.md), [DB 스키마](backend/database/init.sql) | |
 | 카드, 리포트, 변경 제안 생성 | [AI README](ai/README.md), [카드 생성](ai/card_generation/README.md), [시뮬레이션](ai/simulation/README.md) | |
 | STT와 화자 분리 | [STT 서버 README](stt-server/README.md), [STT 파이프라인 설계](stt-server/docs/stt-pipeline.md) | |
-| 평가 자료 | [평가 README](evals/README.md), [#116 실제 모델 소규모 점검](evals/results/2026-11-03-real-model-spot-check.md) | 점검 기록은 [로컬 작업], 사람 검수 전 |
+| 평가 자료 | [평가 README](evals/README.md) | |
 | 앱과 BE, BE와 AI 사이 API | [API 명세](docs/architecture/api-spec.md), [데이터 계약](docs/architecture/data-contracts.md), [합성 목 데이터](docs/architecture/mock/README.md) | |
 | 카드 첫 생성과 다음 면회 반영 설계 | [주제 카드 전체 설계 검토안](docs/architecture/card-generation-flow.md) | |
-| PR 자동 테스트와 범위 | [제품 테스트 CI](docs/product-tests.md) | [로컬 작업] |
-| 전사와 리포트 안전 검사 | [전사 입력 검사](backend/docs/speech-input-safety.md), [리포트 안전 검사](backend/docs/report-safety.md), [화자 검사](backend/docs/speaker-fact-boundary.md) | [로컬 작업] |
-| 녹음 분석 복구와 삭제 | [수동 복구](backend/docs/speech-recovery.md), [삭제 실패 분리](backend/docs/audio-deletion-isolation.md), [짧은 음성 전사](backend/docs/short-speech-transcription.md) | [로컬 작업] |
+| 검토 중인 PR의 문서 | 제품 테스트 CI(PR {A1}), 리포트 의료 표현 검사(PR {C1}), 전사 입력과 화자 검사(PR {C3}), 삭제 실패 분리(PR {D1}), 삭제 대기열(PR {D2}), 수동 복구(PR {D3}), 짧은 음성 전사(PR {D4}) | 병합 뒤 링크를 단다 |
 | 기술 결정 | [ADR 목록](docs/architecture/decisions/README.md) | accepted는 구현 완료를 뜻하지 않는다 |
 | 개인정보와 동의 | [법률 검토](docs/legal/README.md), [동의안](docs/legal/consent-draft.md), [기능 대응표](docs/legal/consent-mapping.md) | |
 | 실제 환경 검증 기록 | [10/18 통합 검증](docs/pm/integration-verification-20261018.md) | |
