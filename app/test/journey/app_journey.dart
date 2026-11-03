@@ -50,7 +50,7 @@ Future<void> _startVisit(JourneyDriver app) async {
 
   await app.waitFor(find.text('네, 좋아요'));
   expect(find.text('소중한 대화 내용을\n놓치지 않게 녹음할게요'), findsOneWidget);
-  expect(find.text('녹음은 리포트를 만드는 데만 쓰고\n분석이 끝나면 바로 지워요.'), findsOneWidget);
+  // 보관 안내 문구는 바뀔 수 있어 여기서 문장을 고정하지 않는다. 문구는 화면 테스트가 확인한다.
   final sessionsBefore = app.server.sessionSetIds.length;
   final startsBefore = app.recorder.starts;
   expect(find.text('녹음 중이에요'), findsNothing, reason: '승인 전에는 녹음하지 않는다');
