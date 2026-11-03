@@ -167,6 +167,41 @@ def test_empty_claim_and_claim_exception_do_not_leave_activity(migrated_database
     run(scenario())
 
 
+def test_pause_waits_for_claim_commit_and_counts_the_started_job(migrated_database_url):
+    async def scenario():
+        started, finish_claim = asyncio.Event(), asyncio.Event()
+        async with connect(migrated_database_url) as connection:
+            async def claim():
+                started.set()
+                await finish_claim.wait()
+                return "job"
+            task = asyncio.create_task(gate.claim_job(connection, claim))
+            await asyncio.wait_for(started.wait(), 2)
+            pause = asyncio.create_task(control(migrated_database_url, "pause-all", confirm=True))
+            await asyncio.sleep(.1)
+            assert not pause.done()
+            finish_claim.set()
+            assert await task == "job"
+            status = await asyncio.wait_for(pause, 2)
+            assert status["counts"]["worker_executions"] == 1
+            assert not status["analysisDrained"]
+            await gate.finish_job(connection)
+            assert (await control(migrated_database_url))["analysisDrained"]
+    run(scenario())
+
+
+def test_disconnected_process_cannot_leave_activity_lock(migrated_database_url):
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            async def claim():
+                return "job"
+            await gate.claim_job(connection, claim)
+            assert (await control(migrated_database_url))["counts"]["worker_executions"] == 1
+            # 프로세스 종료에 따른 연결 종료와 같은 DB 세션 해제를 확인한다.
+        assert (await control(migrated_database_url))["counts"]["worker_executions"] == 0
+    run(scenario())
+
+
 def test_migration_downgrade_does_not_silently_reopen_paused_service(migrated_database_url, alembic_config):
     run(control(migrated_database_url, "pause-all", confirm=True))
     with pytest.raises(ProgrammingError, match="Resume deployment control"):
