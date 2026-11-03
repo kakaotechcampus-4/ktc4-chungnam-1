@@ -338,14 +338,19 @@ jobs:
           [ "$code" = "200" ] || { echo "READY_CHECK_FAILED http=$code"; exit 1; }
           echo "health/ready 200"
 
+          # 전체 결과(행 수 집계 포함)는 서버의 STATE_DIR에만 둔다. 공개 로그에는 판정에 쓴 값만 남긴다.
           dc exec -T api python -m app.ops.runtime_check > "$STATE_DIR/runtime-before.json" || true
-          cat "$STATE_DIR/runtime-before.json"
           "$PY" - "$STATE_DIR/runtime-before.json" <<'PY'
           import json
           import sys
 
-          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          try:
+              data = json.load(open(sys.argv[1], encoding="utf-8"))
+          except (OSError, ValueError):
+              print("PRECHECK_RUNTIME_CHECK_UNREADABLE")
+              sys.exit(1)
           issues = data.get("issues", [])
+          print("RUNTIME_ISSUES " + (",".join(sorted(issues)) or "none"))
           database = data.get("database") or {}
           blocking = {"DATABASE_INSPECTION_FAILED", "INVALID_CONFIGURATION", "DATABASE_NOT_CONFIGURED"}
           if blocking & set(issues) or not database:
@@ -382,17 +387,28 @@ jobs:
           cat > "$RUNNER_TEMP/step.sh" <<'HOST'
           mkdir -p "$BACKUP_DIR"
           chmod 700 "$BACKUP_DIR"
+          # 복원한 표의 행 수 같은 운영 정보는 공개 로그에 남기지 않는다. 전체 결과는 STATE_DIR/backup.json에 있다.
+          backup_summary() {
+            "$PY" -c 'import json, sys
+          keys = ("restoreVerified", "archive", "sha256", "stage", "errorCode", "error", "cleanupError")
+          try:
+              d = json.load(open(sys.argv[1], encoding="utf-8"))
+          except (OSError, ValueError):
+              print("BACKUP_RESULT_UNREADABLE")
+          else:
+              print(json.dumps({k: d[k] for k in keys if k in d}, ensure_ascii=False))' "$STATE_DIR/backup.json" || true
+          }
           # backend/docs/release-safety.md의 도구. 새 파일만 만들고 운영 DB에 쓰지 않는다.
           if ! "$PY" "$BACKEND_DIR/scripts/verify_database_backup.py" \
             --source-container "$DB_CONTAINER" \
             --source-database "$DB_NAME" \
             --source-user "$DB_USER" \
             --backup-dir "$BACKUP_DIR" > "$STATE_DIR/backup.json"; then
-            cat "$STATE_DIR/backup.json"
+            backup_summary
             echo "BACKUP_FAILED"
             exit 1
           fi
-          cat "$STATE_DIR/backup.json"
+          backup_summary
           archive=$("$PY" -c 'import json, sys; d = json.load(open(sys.argv[1], encoding="utf-8")); print(d["archive"] if d.get("restoreVerified") is True else "")' "$STATE_DIR/backup.json")
           [ -n "$archive" ] || { echo "BACKUP_NOT_VERIFIED"; exit 1; }
           state_set BACKUP_ARCHIVE "$archive"
@@ -494,12 +510,15 @@ jobs:
           wait_ok /health/ready
           head=$(state_get ALEMBIC_HEAD)
           dc exec -T api python -m app.ops.runtime_check --expected-revision "$head" > "$STATE_DIR/runtime-after.json" || true
-          cat "$STATE_DIR/runtime-after.json"
           "$PY" - "$STATE_DIR/runtime-after.json" <<'PY'
           import json
           import sys
 
-          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          try:
+              data = json.load(open(sys.argv[1], encoding="utf-8"))
+          except (OSError, ValueError):
+              print("POSTCHECK_RUNTIME_CHECK_UNREADABLE")
+              sys.exit(1)
           issues = set(data.get("issues", []))
           database = data.get("database") or {}
           if issues & {"MIGRATION_MISMATCH", "DATABASE_INSPECTION_FAILED", "INVALID_CONFIGURATION"}:
@@ -510,6 +529,7 @@ jobs:
               sys.exit(1)
           if issues:
               print("POSTCHECK_ATTENTION " + ",".join(sorted(issues)))
+          print("POSTCHECK_REVISION " + ",".join(database.get("revisions") or []))
           PY
           HOST
           ssm_run postcheck "$RUNNER_TEMP/step.sh" 600

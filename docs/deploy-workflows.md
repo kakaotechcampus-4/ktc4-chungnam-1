@@ -59,7 +59,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 | 6. 사후 점검 | `/health/live`, `/health/ready`를 2분까지 기다리고 `runtime_check --expected-revision <head>`가 일치해야 한다. 기한 지난 임대 같은 다른 경고는 출력만 한다 | 멈추고 되돌리기 안내를 출력한다 |
 | 7. 기록 | `scripts/capture_release.py` 결과를 `DEPLOY_RELEASE_DIR/release-<UTC>-<SHA 12자리>.json`에 저장한다. 모든 서비스가 실행 중이고 revision 라벨이 SHA와 같아야 한다 | override가 다른 이미지를 고정한 경우 등을 실패로 알린다 |
 
-서버 출력은 Actions 로그에 남으므로 서버 안에서 `127.0.0.1`로만 점검하고 `.env`와 `docker compose config` 원문을 출력하지 않는다. 백업과 배포 기록 파일은 0600 또는 0700 권한으로 만든다.
+서버 출력은 Actions 로그에 남으므로 서버 안에서 `127.0.0.1`로만 점검하고 `.env`와 `docker compose config` 원문을 출력하지 않는다. 백업 결과의 복원 행 수(`restoredRowCounts`)와 `runtime_check`의 상태별 집계도 운영 정보라 로그에 그대로 찍지 않는다. 로그에는 백업의 `restoreVerified`, `archive`, `sha256`, 단계와 오류 코드, `runtime_check`의 issues와 revision, 판정에 쓴 처리 중 작업 수만 남기고, 전체 JSON은 서버의 `DEPLOY_RELEASE_DIR/runs/<실행 번호>/`에만 둔다. 백업과 배포 기록 파일은 0600 또는 0700 권한으로 만든다.
 
 이 workflow로 한 번 배포한 서버는 커밋을 직접 가리키는 detached HEAD 상태가 된다. 이후 손으로 갱신할 때는 `git pull` 대신 `git fetch origin <SHA>`와 `git checkout --detach <SHA>`를 쓴다.
 
