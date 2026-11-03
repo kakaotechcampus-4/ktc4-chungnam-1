@@ -38,8 +38,8 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from uuid import UUID
 
-from pydantic import ValidationError
 from common.speaker_context import speaker_context
+from pydantic import ValidationError
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -289,6 +289,7 @@ def _unverified_speaker_notice(request: VisitReportRequest) -> VisitReportResult
 
 def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
     """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    reactions = {card.card_id: card.reaction for card in request.cards}
     # 후보별 근거 발화 연결이 없어 안전한 부분만 고를 수 없다.
     # 호출 경로가 달라져도 미확인 전사로 임의 해석이나 제안을 저장하지 못하게 한다.
     if _has_unverified_speech(request) and result != _unverified_speaker_notice(request):
@@ -296,7 +297,6 @@ def validate_result(request: VisitReportRequest, result: VisitReportResult) -> N
             status_code=502, error_code="UNVERIFIED_SPEAKER_FACT",
             message="화자를 확인하지 못한 전사의 해석이나 제안을 저장하지 않았습니다.",
         )
-    reactions = {card.card_id: card.reaction for card in request.cards}
 
     summary_cards = [summary.card_id for summary in result.card_summaries]
     if any(count > 1 for count in Counter(summary_cards).values()) or any(

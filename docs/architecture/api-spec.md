@@ -1155,6 +1155,9 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttCompleted`) → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
 
+- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
+- 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
+
 8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.
 
 미확인 발화가 있거나 라벨 수가 예상 인원보다 적으면 BE가 리포트와 제안의 모델 호출을 모두 생략한다.
@@ -1165,9 +1168,6 @@ worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttC
 검사 범위와 보수적인 제한은 [화자와 이야기 저장 검사](../../backend/docs/speaker-fact-boundary.md)를 참고한다.
 8-3 요청의 선택 항목 `participantCount`는 해당 분석 작업의 예상 참여 인원이다. 생략되면 미확인으로 다룬다.
 실제 화자 수나 보호자와 어르신의 역할을 검증한 값이 아니다. [전사 입력 검사](../../backend/docs/speech-input-safety.md)를 참고한다.
-
-- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
-- 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 ### 8-2. 카드 생성 — 삭제
 

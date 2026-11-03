@@ -354,10 +354,11 @@ BE는 인증, 필수 동의, 회차 소유권과 보호자 평가 제출 여부�
 worker는 PostgreSQL에서 `queued` 작업을 행 잠금으로 하나씩 가져오고 S3 Presigned GET
 URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`를 호출한다.
 `participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 S3 원본을 즉시 삭제하고,
-리포트 저장 후 작업을 `completed`로 바꾼다. 화자 미확인 발화나 예상 인원보다
-적은 라벨이 있으면 모델을 호출하지 않고 화자 미확인 안내만 저장한다. 이 경우도 기존
-상태는 `completed`이지만 AI 해석, 카드 요약과 두 종류의 제안은 없다. 제목과 본문에
-제한을 알리며 보호자의 기존 평가는 보존한다([화자 처리](docs/speaker-fact-boundary.md)).
+리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+
+화자 미확인 발화나 예상 인원보다 적은 라벨이 있으면 모델을 호출하지 않고 화자 미확인
+안내만 저장한다. 이 경우도 기존 상태는 `completed`이지만 AI 해석, 카드 요약과 두 종류의
+제안은 없다. 제목과 본문에 제한을 알리며 보호자의 기존 평가는 보존한다([화자 처리](docs/speaker-fact-boundary.md)).
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
 있다. worker는 STT 뒤 같은 작업에서 리포트 생성기(8-3, [평가와 리포트 API](#평가와-리포트-api))로
