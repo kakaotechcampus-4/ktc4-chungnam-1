@@ -10,8 +10,10 @@ on:
 permissions:
   contents: read
 
+# workflow_call로 불리면 github.workflow는 호출한 workflow 이름이다. 그룹을 나눠 두어
+# 같은 브랜치에서 Product tests를 수동 실행해도 Release build 안의 검사가 취소되지 않게 한다.
 concurrency:
-  group: product-tests-${{ github.event.pull_request.number || github.ref }}
+  group: product-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
