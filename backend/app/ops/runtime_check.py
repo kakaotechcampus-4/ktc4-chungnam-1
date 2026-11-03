@@ -88,7 +88,7 @@ async def probe_stt(url: str, *, transport=None) -> dict:
             and response.json().get("status") == "ok",
             "httpStatus": response.status_code,
         }
-    except (httpx.HTTPError, ValueError, TimeoutError):
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError, TimeoutError):
         return {"reachable": False, "httpStatus": None}
 
 
@@ -125,7 +125,7 @@ async def collect(
             ):
                 if snapshot["attention"][field]:
                     result["issues"].append(field.upper())
-        except (psycopg.Error, OSError, TimeoutError):
+        except (psycopg.Error, OSError, TimeoutError, RuntimeError):
             result["issues"].append("DATABASE_INSPECTION_FAILED")
     if check_stt:
         result["sttLiveness"] = await probe_stt(settings.ai_server_url)
