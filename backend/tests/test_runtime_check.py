@@ -29,7 +29,6 @@ def test_snapshot_reads_counts_without_changing_queue(migrated_database_url):
     assert result["readOnly"] is True
     assert result["database"]["revisionMatches"] is True
     assert result["database"]["attention"]["deletion_queue"] == 1
-    assert result["database"]["deploymentControl"]["counts"]["worker_executions"] == 0
     assert result["issues"] == ["DELETION_QUEUE"]
     assert result["workerProcessState"] == "not_inspected"
     assert result["sttLiveness"] is None
@@ -147,10 +146,3 @@ def test_invalid_stt_port_is_safe_error():
     assert run(runtime_check.probe_stt("http://synthetic-stt:not-a-port")) == {
         "reachable": False, "httpStatus": None,
     }
-
-
-def test_missing_control_row_is_not_reported_as_ready(migrated_database_url):
-    query(migrated_database_url, "DELETE FROM deployment_control RETURNING singleton")
-    result = run(runtime_check.collect(Settings(_env_file=None, database_url=migrated_database_url)))
-    assert result["status"] == "attention"
-    assert result["issues"] == ["DATABASE_INSPECTION_FAILED"]

@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.core.database import connect
 from app.ops.worker_status import inspect_workers
-from app.services.deployment_control import snapshot as deployment_snapshot
 
 
 async def database_snapshot(database_url: str, expected_revision: str | None) -> dict:
@@ -52,10 +51,6 @@ async def database_snapshot(database_url: str, expected_revision: str | None) ->
                       (SELECT count(*) FROM life_fact_proposals) AS story_candidates_present
         """)
         attention = await cursor.fetchone()
-        installed = await (await connection.execute(
-            "SELECT to_regclass('public.deployment_control') IS NOT NULL AS installed"
-        )).fetchone()
-        control = await deployment_snapshot(connection) if installed["installed"] else None
         return {
             "revisions": revisions,
             "revisionMatches": None
@@ -63,7 +58,6 @@ async def database_snapshot(database_url: str, expected_revision: str | None) ->
             else revisions == [expected_revision],
             "counts": counts,
             "attention": attention,
-            "deploymentControl": control,
         }
 
 
