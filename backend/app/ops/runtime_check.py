@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import json
-import os
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -177,9 +176,8 @@ def main() -> None:
                 expected_revision=args.expected_revision,
                 check_stt=args.probe_stt,
                 worker_targets=args.worker_container,
-                # #189 미통합 상태에서도 진단만 할 수 있다. 전환 설정이나 실행을 대신하지 않는다.
-                backup_stt_url=getattr(settings, "ai_server_backup_url", None)
-                    or os.environ.get("SAEROK_AI_SERVER_BACKUP_URL"),
+                # 예비 주소의 liveness만 본다. 전환 설정이나 실행을 대신하지 않는다.
+                backup_stt_url=settings.ai_server_backup_url,
                 check_ml=args.check_ml_config,
             ),
             loop_factory=asyncio.SelectorEventLoop,
