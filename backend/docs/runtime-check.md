@@ -88,3 +88,22 @@ worker가 정상이라고 결론 내리지 않는다. API, card-worker와 speech
 
 이 점검 도구의 경고가 바로 자동 삭제나 재시작을 허용하지 않는다. 운영 변경과
 실제 자료 삭제는 대상과 복구 방법을 확인한 후 별도 승인받는다.
+
+## 주기 실행과 알림
+
+`app.ops.runtime_alert`는 점검 결과를 읽어 문제 목록이 바뀌었을 때만 Discord 웹훅으로 알린다. 같은 문제가 이어지면 다시 보내지 않고, 문제가 모두 사라지면 해소 알림을 한 번 보낸다. 보내는 내용은 문제 코드, 시각, 서버 이름뿐이며 점검 결과의 다른 값, DB 건수와 주소는 보내지 않는다.
+
+```bash
+# 컨테이너 밖 호스트에서 5분마다 실행하는 예. 웹훅 주소는 root만 읽는 파일에 둔다.
+# /etc/saerok-runtime-alert.env: SAEROK_ALERT_WEBHOOK_URL=..., SAEROK_ALERT_HOST_LABEL=ec2-prod
+set -a; . /etc/saerok-runtime-alert.env; set +a
+docker compose -f compose.yml exec -T api python -m app.ops.runtime_check --probe-stt \
+  | docker compose -f compose.yml exec -T -e SAEROK_ALERT_WEBHOOK_URL -e SAEROK_ALERT_HOST_LABEL api \
+      python -m app.ops.runtime_alert --state /tmp/saerok-runtime-alert.json --ignore DELETION_QUEUE,OVERDUE_AUDIO
+```
+
+- worker 상태까지 보려면 Docker 읽기 권한이 있는 호스트 쪽에서 `--worker-container`를 붙여 실행한다. API 컨테이너에 Docker 소켓을 연결하지 않는다.
+- `--ignore`에는 이미 알고 있고 처리 일정이 정해진 코드만 넣는다. 삭제 대기열 실행기(#204)가 운영에 들어가면 `DELETION_QUEUE`, `OVERDUE_AUDIO`를 뺀다.
+- 종료 코드는 0(보낼 일 없음 또는 전송 성공), 1(전송 실패, 다음 실행에서 다시 보냄), 2(웹훅 미설정 또는 https가 아닌 주소)다.
+- 상태 파일이 컨테이너 안 `/tmp`에 있으면 컨테이너를 다시 만들 때 사라져 첫 실행처럼 동작한다. 그때 문제가 있으면 한 번 다시 알린다.
+- 운영 서버에 타이머를 설치하고 웹훅 주소를 넣는 일은 PM 승인 뒤 서버 담당이 한다. 이 문서 작성 시점에는 설치하지 않았다.
