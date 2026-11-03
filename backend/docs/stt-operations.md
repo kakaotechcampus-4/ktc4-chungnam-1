@@ -21,7 +21,7 @@ PR #190의 운영 파일([`ops/stt-backup/`](../ops/stt-backup/), [`ops/ck-backu
 | --- | --- | --- |
 | 이문영님의 개인 GPU와 Tailscale | 기본 STT | `SAEROK_AI_SERVER_URL`이 가리키는 주소. PC 전원, Tailscale 연결과 STT 앱을 각각 확인 |
 | `saerok-stt-backup.service`와 ck | 기본 서버 연결 실패 시 쓰는 예비 경로 | BE 호스트의 제한된 SSH 연결. worker가 접근 가능한 Docker bridge 사설 주소를 사용. ck에서는 Supervisor의 `saerok-ck-stt`만 관리 |
-| PR #157의 compose `stt-tunnel` | 과거 기본 GPU SSH 경로. PR은 미병합이며 서버 배포본에 남아 있을 수 있음 | 위 예비 서비스와 다르다. card-worker 등 남은 참조를 확인하고 대체 경로 검증을 마친 뒤 승인받아 정리 |
+| PR #157의 compose `stt-tunnel` | 기본 GPU로 가는 SSH 터널. PR은 미병합이고 유지 여부를 작성자와 확인 중. 서버 배포본에 남아 있을 수 있음 | 위 예비 서비스와 다르다. 정리 여부는 PR #157 작성자와 함께 정하고, card-worker 등 남은 참조를 확인한 뒤 진행 |
 
 컨테이너 내부 `127.0.0.1`은 그 컨테이너 자체다. 호스트에서 상태 확인이 됐다는 이유로
 speech-worker에서도 연결된다고 판단하지 않는다. 주소, 키 경로와 S3 서명 URL은 보고서에 복사하지 않는다.
