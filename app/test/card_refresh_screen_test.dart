@@ -1,5 +1,5 @@
 // 받은 뒤 프로필이나 일대기를 고친 카드 묶음(API 4절 `needsRefresh`)의 카드
-// 화면을 확인한다.
+// 화면을 확인한다. 옛 카드를 감추고 홈 버튼에서 새로 받도록 안내한다.
 //
 // `lib/features/cards/cards_screen.dart`. 서버 대신 `FakeCardApi` 와 목 묶음을
 // 쓰고 값은 모두 합성이다.
@@ -66,6 +66,10 @@ Future<void> _open(WidgetTester tester, FakeCardApi api) async {
     initialLocation: AppRoutes.cards,
     routes: [
       GoRoute(
+        path: AppRoutes.home,
+        builder: (context, state) => const Scaffold(body: Text('홈 화면')),
+      ),
+      GoRoute(
         path: AppRoutes.cards,
         builder: (context, state) => const CardsScreen(),
       ),
@@ -88,70 +92,54 @@ void main() {
     _mockSet = await const MockRepository().loadCardSet();
   });
 
-  testWidgets('고친 묶음은 카드를 보여주되 고르거나 시작하지 못하게 한다', (tester) async {
+  void expectSentHome(FakeCardApi api) {
+    expect(find.textContaining('어르신 정보가 바뀌었어요'), findsOneWidget);
+    expect(find.text('홈으로 가기'), findsOneWidget);
+    expect(find.text('눌러서 질문 보기'), findsNothing, reason: '옛 카드는 감춘다');
+    expect(find.text('대화 시작하기'), findsNothing, reason: '옛 카드로 시작하지 못한다');
+    expect(find.text('다음 대화 준비하기'), findsNothing, reason: '홈 버튼이 맡는다');
+    expect(api.calls, isNot(contains('request')), reason: '카드 화면에서 만들지 않는다');
+  }
+
+  testWidgets('고친 묶음은 옛 카드를 감추고 홈으로 안내한다', (tester) async {
+    final api = _PreloadedCardApi(
+      statuses: [CardGenerationStatus.needsRefresh],
+    );
+    await _open(tester, api);
+
+    expectSentHome(api);
+  });
+
+  testWidgets('상태는 ready 였어도 받은 묶음이 고친 묶음이면 홈으로 안내한다', (tester) async {
+    final api = _PreloadedCardApi(
+      statuses: [CardGenerationStatus.ready],
+      firstSetOutdated: true,
+    );
+    await _open(tester, api);
+
+    expectSentHome(api);
+  });
+
+  testWidgets('홈으로 가기를 누르면 홈으로 간다', (tester) async {
     await _open(
       tester,
       _PreloadedCardApi(statuses: [CardGenerationStatus.needsRefresh]),
     );
 
-    expect(find.textContaining('어르신 정보가 바뀌었어요'), findsOneWidget);
-    expect(find.text('다음 대화 준비하기'), findsOneWidget);
-    expect(find.text('대화 시작하기'), findsNothing);
-    expect(find.text('아직 고르지 않았어요'), findsNothing);
-    expect(find.text('눌러서 질문 보기'), findsWidgets, reason: '카드는 그대로 볼 수 있다');
-  });
-
-  testWidgets('다음 대화 준비하기를 누르면 새로 만들어 고를 수 있게 된다', (tester) async {
-    final api = _PreloadedCardApi(
-      statuses: [
-        CardGenerationStatus.needsRefresh,
-        CardGenerationStatus.running,
-        CardGenerationStatus.ready,
-      ],
-    );
-    await _open(tester, api);
-
-    await tester.tap(find.text('다음 대화 준비하기'));
+    await tester.tap(find.text('홈으로 가기'));
     await tester.pumpAndSettle();
 
-    expect(api.calls, [
-      'status',
-      'current',
-      'request',
-      'status',
-      'status',
-      'current',
-    ]);
+    expect(find.text('홈 화면'), findsOneWidget);
+  });
+
+  testWidgets('고치지 않은 묶음은 그대로 고를 수 있다', (tester) async {
+    await _open(
+      tester,
+      _PreloadedCardApi(statuses: [CardGenerationStatus.ready]),
+    );
+
     expect(find.text('대화 시작하기'), findsOneWidget);
     expect(find.text('아직 고르지 않았어요'), findsOneWidget);
-    expect(find.textContaining('어르신 정보가 바뀌었어요'), findsNothing);
-  });
-
-  testWidgets('상태는 ready 였어도 받은 묶음이 고친 묶음이면 다음 대화 준비로 새로 만든다', (tester) async {
-    final api = _PreloadedCardApi(
-      statuses: [
-        CardGenerationStatus.ready,
-        CardGenerationStatus.running,
-        CardGenerationStatus.ready,
-      ],
-      firstSetOutdated: true,
-    );
-    await _open(tester, api);
-
-    expect(find.text('다음 대화 준비하기'), findsOneWidget);
-
-    await tester.tap(find.text('다음 대화 준비하기'));
-    await tester.pumpAndSettle();
-
-    expect(api.calls, [
-      'status',
-      'current',
-      'request',
-      'status',
-      'status',
-      'current',
-    ], reason: '4-1 로 생성을 요청한다');
-    expect(find.text('대화 시작하기'), findsOneWidget);
     expect(find.textContaining('어르신 정보가 바뀌었어요'), findsNothing);
   });
 }
