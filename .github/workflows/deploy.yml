@@ -2,7 +2,11 @@ name: Deploy (manual)
 
 # 수동 배포. 자동으로 실행되지 않으며 workflow_dispatch로만 시작한다.
 #
-# 사용 전에 팀이 GitHub 설정에서 직접 준비해야 한다. 아래가 없으면 첫 단계에서 멈춘다.
+# 사용 전에 팀이 GitHub 설정에서 직접 준비해야 한다. 시크릿과 변수가 없으면 배포 작업 첫 단계에서 멈춘다.
+# 승인은 workflow 파일이 강제하지 못한다. production 환경을 처음 참조하면 보호 설정 없는 환경이
+# 자동으로 생기고, 같은 이름의 시크릿을 저장소 수준에 두면 승인 없이 배포된다. 그래서
+# Required reviewers를 먼저 지정한 뒤 시크릿과 변수를 Environment 수준에만 넣는다.
+# 요청 확인 작업은 production 환경에 Required reviewers가 없으면 멈춘다.
 # - Environment `production`: Required reviewers 지정, 배포 브랜치 제한
 # - Environment 시크릿: AWS_DEPLOY_ROLE_ARN, DEPLOY_INSTANCE_ID
 # - Environment 변수: AWS_REGION, DEPLOY_REPO_DIR, DEPLOY_BACKUP_DIR, DEPLOY_RELEASE_DIR
@@ -42,7 +46,8 @@ on:
 permissions:
   contents: read
 
-# 배포는 한 번에 하나만. 진행 중인 배포를 취소하지 않고 다음 요청이 기다린다.
+# 배포는 한 번에 하나만. 진행 중인 배포는 취소하지 않는다. GitHub는 대기 실행을 하나만 두므로
+# 대기 중에 새 요청이 오면 먼저 대기하던 요청이 취소된다.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -97,13 +102,26 @@ jobs:
             echo "::error::이 커밋의 성공한 Release build 실행이 없습니다. Release build를 먼저 실행합니다."
             exit 1
           fi
+      # 보호 설정 없이 자동 생성된 production 환경으로 승인 없이 배포되는 것을 막는다.
+      # 환경이 없거나 조회하지 못해도 멈춘다.
+      - name: Check that production requires reviewers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers=$(gh api "repos/${GITHUB_REPOSITORY}/environments/production" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' 2>/dev/null) || reviewers=0
+          if [ "${reviewers:-0}" -lt 1 ]; then
+            echo "::error::production 환경에 Required reviewers가 없거나 확인하지 못했습니다. 승인자를 먼저 지정합니다."
+            exit 1
+          fi
 
   deploy:
     name: Deploy to production
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 150
-    # Required reviewers 승인 전에는 이 작업이 시작되지 않는다. 환경 시크릿도 승인 후에만 주어진다.
+    # Required reviewers가 지정돼 있으면 승인 전에는 이 작업이 시작되지 않고, 환경 시크릿도 승인 후에만 주어진다.
+    # 지정 여부는 verify 작업이 확인한다. 저장소 수준 시크릿은 승인과 무관하게 주어지므로 쓰지 않는다.
     environment: production
     permissions:
       contents: read

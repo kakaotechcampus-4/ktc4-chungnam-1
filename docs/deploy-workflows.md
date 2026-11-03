@@ -46,11 +46,11 @@ CD는 수동 실행에 승인을 붙이는 방식이며 병합할 때 자동으�
 
 ## Deploy
 
-GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, `deploy <SHA 앞 12자리>`를 입력한다. `production` 승인 뒤 AWS SSM `AWS-RunShellScript`로 서버에서 단계별 명령을 실행한다. SSH 포트를 GitHub 실행기에 열지 않고, 장기 액세스 키 대신 GitHub OIDC로 짧은 자격증명을 받는다. 배포는 `deploy-production` 동시 실행 그룹으로 하나씩 진행되며, 진행 중인 배포를 취소하지 않는다.
+GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, `deploy <SHA 앞 12자리>`를 입력한다. `production` 승인 뒤 AWS SSM `AWS-RunShellScript`로 서버에서 단계별 명령을 실행한다. SSH 포트를 GitHub 실행기에 열지 않고, 장기 액세스 키 대신 GitHub OIDC로 짧은 자격증명을 받는다. 배포는 `deploy-production` 동시 실행 그룹으로 하나씩 진행되며, 진행 중인 배포를 취소하지 않는다. GitHub는 이 그룹에 대기 실행을 하나만 둔다. 배포가 진행 중이고 하나가 대기하는 상태에서 새 요청이 오면, 먼저 대기하던 요청은 취소되고 새 요청이 대기한다. 취소된 요청은 다시 실행한다.
 
 | 순서 | 하는 일 | 실패하면 |
 | --- | --- | --- |
-| 요청 확인 | SHA 형식, 확인 문자열, 대상 브랜치 포함 여부, 해당 SHA의 성공한 Release build | 승인 요청 전에 멈춘다 |
+| 요청 확인 | SHA 형식, 확인 문자열, 대상 브랜치 포함 여부, 해당 SHA의 성공한 Release build, `production` 환경의 Required reviewers 지정 여부 | 승인 요청 전에 멈춘다 |
 | 1. 사전 점검 | 도구와 Python 3.11 이상, 추적 파일 변경과 무시되지 않은 새 파일 없음(7단계 기록과 같은 `git status --porcelain` 기준), api 실행 중, `/health/ready` 200, `runtime_check`의 DB 조회 성공과 처리 중 작업 0건. 이전 커밋과 이전 이미지 ID를 기록하고 이전 이미지에 보존 태그를 붙인다 | 아무것도 바꾸지 않고 멈춘다 |
 | 2. 백업 | `scripts/verify_database_backup.py`로 새 백업과 격리 복원 검사. `restoreVerified`가 true여야 한다 | 멈춘다. 백업 파일은 남는다 |
 | 3. 빌드 | `git fetch origin <SHA>`, `git checkout --detach <SHA>`, `docker compose build --build-arg SOURCE_REVISION=<SHA> api`. revision 라벨과 단일 Alembic head를 확인하고 `saerok-backend:<SHA>` 태그를 붙인다 | 서버 체크아웃과 이미지 이름을 이전 상태로 되돌리고 멈춘다. 컨테이너는 그대로다 |
@@ -86,6 +86,12 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 | AWS IAM | GitHub OIDC 공급자 | Deploy | `token.actions.githubusercontent.com`, audience `sts.amazonaws.com` |
 | AWS IAM | 배포 역할의 신뢰 정책 | Deploy | `sub`를 `repo:kakaotechcampus-4/ktc4-chungnam-1:environment:production`으로 제한 |
 | AWS IAM | 배포 역할의 권한 | Deploy | 대상 인스턴스와 `AWS-RunShellScript` 문서에 대한 `ssm:SendCommand`, `ssm:GetCommandInvocation` |
+
+설정 순서를 지킨다. `production` 환경은 workflow가 처음 참조할 때 보호 설정 없이 자동으로 생길 수 있고, 같은 이름의 시크릿과 변수가 저장소 수준에 있으면 승인과 무관하게 배포 작업에 주어진다. IAM 신뢰 정책의 `sub`도 `environment:production`이라 그대로 통과한다.
+
+1. `production` 환경을 만들고 Required reviewers와 Deployment branches를 먼저 지정한다.
+2. 그다음 Deploy용 시크릿과 변수를 Environment 수준에만 넣는다. 저장소 수준에는 두지 않는다.
+3. Deploy의 요청 확인 작업은 GitHub API로 Required reviewers 지정 여부를 확인하고, 없거나 확인하지 못하면 멈춘다. 저장소 수준 시크릿 여부는 workflow가 확인하지 못하므로 설정한 사람이 확인한다.
 
 값에 따옴표, 공백(목록 구분 제외), `..`가 들어가면 서버 명령에 넣기 전에 거절한다. IAM 변경과 Environment 설정은 저장소 밖의 운영 변경이므로 담당자 승인 후 진행한다.
 
