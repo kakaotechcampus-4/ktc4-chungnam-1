@@ -50,7 +50,7 @@
 
 2026-11-03 [로컬 작업] 결과(이 브랜치): 호스트 `flutter test test/app_journey_test.dart test/journey_contract_test.dart` 6개 통과, 1개 건너뜀(여정 2, 계약 4. 분석 실패 후 다시 요청 여정은 #213 병합 전까지 건너뜀), `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 2개 통과, 1개 건너뜀, 전체 `flutter test` 761개 통과, 1개 건너뜀. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다. 그래서 기기에서 `Directory.systemTemp`에 합성 WAV를 쓰는 부분이 되는지도 확인하지 않았고, CI에는 에뮬레이터 작업이 없다. 원격 CI에서도 아직 돌리지 않았다.
 
-2026-11-03 [로컬 작업] 점검 갈래 추가 뒤: 호스트 전체 `flutter test` 774개 통과, 1개 실패, `flutter analyze` 문제 없음. 실패한 1개는 분석 실패 여정으로, 이 브랜치에 없는 분석 다시 요청 화면을 찾는다. 점검 갈래 여정은 통과했다. `integration_test`와 실제 기기에서는 점검 갈래를 돌리지 않았다.
+2026-11-03 [로컬 작업] 점검 갈래 추가 뒤: 호스트 `flutter test test/app_journey_test.dart test/journey_contract_test.dart` 7개 통과(점검 갈래 여정 포함), 전체 `flutter test` 774개 통과, 1개 건너뜀(위 분석 실패 여정), `flutter analyze` 문제 없음. `integration_test`와 실제 기기에서는 점검 갈래를 돌리지 않았다.
 
 ### Play 업로드용 빌드
 
