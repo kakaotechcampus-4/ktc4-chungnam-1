@@ -500,6 +500,23 @@ AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`
 
 ---
 
+### 3-4. `DELETE /api/v1/profile-photos/{photoId}` — 신규
+
+앨범에서 프로필 사진 한 장을 지운다. 면회 사진(5-2)은 대상이 아니다.
+
+본문 없음.
+
+응답 `204`
+
+- 사진 행을 지우고 S3 원본은 삭제 대기열로 지운다(`photos_queue_storage_deletion` 트리거).
+- 사진은 카드 생성 자료가 될 수 있으므로 이야기 삭제(2-9)처럼 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 된다. 이미 만든 카드와 면회 기록은 남는다.
+- 카드를 만드는 중이면 409로 거절한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_PHOTO_NOT_FOUND`(다른 계정의 사진, 면회 사진 포함) |
+| 409 | `CARD_GENERATION_IN_PROGRESS` |
+
 ## 4. 대화 카드
 
 ### 사실 정정 후 카드 갱신 기준
