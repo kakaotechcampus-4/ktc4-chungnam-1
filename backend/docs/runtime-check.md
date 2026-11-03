@@ -32,8 +32,9 @@ uv run python -m app.ops.runtime_check --probe-stt
 
 `--probe-stt`는 현재 설정의 기본 STT 주소에 `GET /health/live`만 보낸다.
 HTTP 200과 `status=ok`를 확인하며 녹음을 제출하거나 모델을 실행하지 않는다.
-기본 경로가 끊겨도 예비 경로로 실제 분석이 성공할 수 있다. 예비 경로의 계약은
-열린 PR #188~#190과 통합할 때 별도로 대조한다. 이 도구가 해당 PR의 설정을 대신하지 않는다.
+`SAEROK_AI_SERVER_BACKUP_URL`로 설정한 예비 STT는 조회하지 않는다. 기본 경로가 끊겨도
+예비 경로로 실제 분석이 성공할 수 있으므로 예비 경로 동작은 [STT 예비 서버 전환](stt-backup.md)과
+[ck 예비 서버 SSH 운영 연결](stt-backup-ssh.md) 기준으로 따로 확인한다.
 
 ## 확인하지 않는 것
 
