@@ -47,7 +47,7 @@
 
 앱에 없는 단계: 회차마다 받는 녹음 동의 체크는 없다. 녹음과 음성 처리 동의는 가입 때 받고(2026-10-13 팀 결정), 여정은 녹음 전 안내의 `네, 좋아요`를 녹음 전 승인으로 확인한다. `다음 대화 준비하기`는 받아 둔 묶음이 정정 뒤 `needsRefresh`일 때만 나오고, 평가를 마친 직후에는 카드 화면이 새 묶음을 자동으로 요청한다.
 
-2026-11-03 [로컬 작업] 결과(리뷰 반영 뒤): 호스트 `flutter test test/app_journey_test.dart test/journey_contract_test.dart` 7개 통과(여정 3, 계약 4), `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 3개 통과, 전체 `flutter test` 792개 통과. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다. 그래서 기기에서 `Directory.systemTemp`에 합성 WAV를 쓰는 부분이 되는지도 확인하지 않았고, CI에는 에뮬레이터 작업이 없다. 원격 CI에서도 아직 돌리지 않았다.
+2026-11-03 [로컬 작업] 결과(이 브랜치): 호스트 `flutter test test/app_journey_test.dart test/journey_contract_test.dart` 6개 통과, 1개 건너뜀(여정 2, 계약 4. 분석 실패 후 다시 요청 여정은 #213 병합 전까지 건너뜀), `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 2개 통과, 1개 건너뜀, 전체 `flutter test` 761개 통과, 1개 건너뜀. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다. 그래서 기기에서 `Directory.systemTemp`에 합성 WAV를 쓰는 부분이 되는지도 확인하지 않았고, CI에는 에뮬레이터 작업이 없다. 원격 CI에서도 아직 돌리지 않았다.
 
 ### Play 업로드용 빌드
 
