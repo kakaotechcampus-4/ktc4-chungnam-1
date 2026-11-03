@@ -86,6 +86,9 @@ class _FakeAccountServer {
   /// 세션이 만료된 것처럼 1-3 을 401 로 거절한다.
   bool meRejected = false;
 
+  /// 정해 두면 로그아웃(1-5)은 이 Future 가 끝난 뒤에 답한다.
+  Future<void>? logoutHold;
+
   AccountApi get api => AccountApi(
     ApiClient(
       authorization: () => 'Bearer fake-token',
@@ -226,7 +229,10 @@ void main() {
           authApiProvider.overrideWithValue(
             AuthApi(
               baseUrl: 'http://api.test',
-              client: MockClient((_) async => http.Response('', 401)),
+              client: MockClient((_) async {
+                await server.logoutHold;
+                return http.Response('', 401);
+              }),
             ),
           ),
           googleAuthenticatorProvider.overrideWithValue(_FakeGoogle()),
@@ -346,6 +352,27 @@ void main() {
         tester.element(find.byType(MaterialApp)),
       );
       expect(container.read(sessionProvider), isNull);
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        Uri.parse(AppRoutes.signIn).path,
+      );
+    });
+
+    testWidgets('로그아웃 응답이 늦어 화면이 바뀌어도 한 번에 로그인 화면으로 간다', (tester) async {
+      final answer = Completer<void>();
+      final server = _FakeAccountServer()
+        ..meRejected = true
+        ..logoutHold = answer.future;
+      final router = await open(tester, server);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, '로그아웃'));
+      // 응답을 기다리는 동안 세션이 지워져 설정 화면이 다시 그려진다.
+      await settle(tester);
+      expect(find.text('계정 정보를 불러오지 못했어요.'), findsNothing);
+
+      answer.complete();
+      await settle(tester);
+
       expect(
         router.routerDelegate.currentConfiguration.uri.path,
         Uri.parse(AppRoutes.signIn).path,
