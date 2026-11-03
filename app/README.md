@@ -23,6 +23,31 @@
 
 기존 검증 기록: 2026-09-06, Windows 11과 Galaxy S23+ (SM S916N), Android 15 (API 35), arm64 실기기에서 위 명령과 앱 실행을 확인했다.
 
+### 앱 전체 여정 테스트
+
+화면별 위젯 테스트와 별도로, 실제 앱(`SaerokApp`, `buildRouter`, 앱의 Riverpod provider)을 띄우고 보호자가 누르는 순서대로 핵심 흐름을 지나가는 테스트를 둔다. 여정 본문은 [test/journey/app_journey.dart](test/journey/app_journey.dart) 하나이고 두 곳에서 부른다.
+
+| 명령 | 실행 위치 |
+| --- | --- |
+| `flutter test` (또는 `flutter test test/app_journey_test.dart`) | 호스트, 화면 없음. CI의 `flutter test`가 변경마다 다시 실행한다 |
+| `flutter test integration_test/app_journey_test.dart` | 연결한 Android 기기나 에뮬레이터. `integration_test` 패키지를 쓴다 |
+| `flutter test test/journey_contract_test.dart` | 호스트. 가짜 서버 응답과 앱 요청 본문의 필드 이름을 `backend/app/schemas/*.py`와 비교한다 |
+
+다루는 흐름은 다음과 같다.
+
+- 로그인 세션이 보관된 보호자가 앱을 켠다 → 스플래시가 세션을 확인한다 → 서버의 어르신을 불러온 홈 → 카드 두 장 선택 → 사진 없이 시작 → 녹음 전 안내의 `네, 좋아요` → 녹음과 만남 끝내기 → 소감 → 평가(6-1) 후 녹음(6-2) 제출 → 홈의 `리포트를 만들고 있어요` → `리포트가 도착했어요` → 리포트 → 이야기 제안의 내용을 고쳐 승인(7-4)
+- 다음 대화 준비: 지난 묶음이 평가까지 끝났으므로 카드 화면이 새 묶음을 받는다. 승인한 이야기로 만든 카드가 들어 있다. 그 뒤 일대기에서 이야기 제목을 정정하면 받아 둔 묶음은 `어르신 정보가 바뀌었어요`와 `다음 대화 준비하기`만 보여주고 시작할 수 없다. 누르면 묶음 전체를 다시 만들고, 두 번째 면회는 새 묶음으로 회차(5-1)를 만든다
+- 분석 실패: 홈의 `리포트를 만들지 못했어요` → 분석 다시 요청(6-5) → 리포트 도착
+- 화자 미확인: 리포트 제목과 본문이 BE의 고정 안내이고 카드 요약, 변경 사항 확인 버튼, 점수나 비율이 없다
+
+바꾸는 것은 서버와 기기 경계뿐이다([journey_harness.dart](test/journey/journey_harness.dart)). 서버 HTTP는 상태를 가진 가짜 서버([journey_server.dart](test/journey/journey_server.dart))가 받고, 앱의 실제 API 코드가 JSON과 multipart를 주고받는다. 보안 저장소, 구글 SDK, 마이크(임시 폴더에 합성 무음 WAV), 카메라, 갤러리, 화면 켜짐 채널은 대역이다. 분석과 카드 생성을 다시 묻는 간격만 200ms로 줄였다. 자료는 모두 합성이다.
+
+확인하지 않는 것: 실제 마이크 녹음과 권한 창, 실제 STT, 화자 분리와 리포트 모델의 품질, 실제 BE와 DB, 운영 서버, 푸시 알림, 면회 사진 촬영과 업로드(여정은 `사진 없이 시작할게요`를 고른다), TalkBack 낭독과 실제 화면 크기별 배치. 가짜 서버는 BE 규칙을 줄여 옮긴 것이라 BE 구현을 검증하지 않는다. 필드 이름 비교는 타입과 enum 값을 보지 않는다.
+
+앱에 없는 단계: 회차마다 받는 녹음 동의 체크는 없다. 녹음과 음성 처리 동의는 가입 때 받고(2026-10-13 팀 결정), 여정은 녹음 전 안내의 `네, 좋아요`를 녹음 전 승인으로 확인한다. `다음 대화 준비하기`는 받아 둔 묶음이 정정 뒤 `needsRefresh`일 때만 나오고, 평가를 마친 직후에는 카드 화면이 새 묶음을 자동으로 요청한다.
+
+2026-11-03 [로컬 작업] 결과: 호스트 `flutter test test/app_journey_test.dart` 3개 통과, `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 3개 통과, `flutter test test/journey_contract_test.dart` 3개 통과. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다.
+
 ### Play 업로드용 빌드
 
 Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스 담당자만 가지며, 키 파일과 비밀번호는 저장소와 메신저에 두지 않는다. 담당자가 키를 저장소 밖에 두고 `android/key.properties`에 위치를 적는다. 두 파일 모두 `.gitignore` 대상이다.
