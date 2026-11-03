@@ -341,7 +341,8 @@ void defineAppJourneyTests() {
       );
       // 녹음 화면이 닫힐 때 기록을 다시 적을 수 있어 어느 목록인지는 보지 않는다.
       // 같은 파일이 기기에 남아 있는지만 본다.
-      final after = await app.uploads.find(sessionId, includeUploaded: true);
+      final after =
+          app.uploads.saved[sessionId] ?? app.uploads.uploaded[sessionId];
       expect(after?.audioPath, kept!.audioPath);
       expect(
         await tester.runAsync(() => File(kept.audioPath).exists()),
