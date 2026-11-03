@@ -106,6 +106,18 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   }
 }
 
+/// E-1 녹음 전 안내의 보관 문구.
+///
+/// 서버에 올린 녹음 사본은 STT 직후 지우지만, 기기의 녹음 파일은 다시 보내기를
+/// 위해 남긴다(`app/README.md` 의 녹음 보관, PR #117 리뷰). 그래서 "분석이 끝나면
+/// 바로 지워요" 처럼 모든 녹음을 지우는 것처럼 쓰지 않는다. 기기 파일을 언제
+/// 지우는지는 약속하지 않는다. 탈퇴 때 삭제를 시도하지만 실패해도 넘어가기
+/// 때문이다. 문구를 바꾸면 동의 화면의 보유 기간 문구와 함께 PM 확인을 받는다.
+const recordingRetentionNotice =
+    '녹음은 리포트를 만드는 데만 써요.\n'
+    '서버로 보낸 녹음은 분석 후 지우고,\n'
+    '휴대폰에는 다시 보낼 때를 위해 남겨요.';
+
 /// E-1. 녹음 전 안내.
 ///
 /// 회차마다 피보호자 동의를 확인하지 않는다. 녹음과 음성 처리 동의는 가입 때
@@ -137,7 +149,7 @@ class _Intro extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           const Text(
-            '녹음은 리포트를 만드는 데만 쓰고\n분석이 끝나면 바로 지워요.',
+            recordingRetentionNotice,
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
