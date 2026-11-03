@@ -14,6 +14,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -30,6 +31,30 @@ import 'package:saerok/data/visit_api.dart';
 
 final _baseUrl = Platform.environment['SAEROK_E2E_BASE_URL'];
 final _idToken = Platform.environment['SAEROK_E2E_ID_TOKEN'];
+
+/// 스크립트가 실제 모델 모드로 띄웠는지. 실제 모델이 쓴 글은 미리 알 수 없어 구조만 본다.
+final _realModels = Platform.environment['SAEROK_E2E_MODELS'] == 'real';
+
+/// 실제 STT 모드에서 올릴 합성 음성 파일. 없으면 0.1초 무음 WAV 를 만든다.
+final _audioFile = Platform.environment['SAEROK_E2E_AUDIO_FILE'];
+
+/// 카드 생성과 음성 분석을 기다리는 시간. 실제 모델은 한 번에 1~2분씩 걸린다.
+final _wait = _realModels
+    ? const Duration(minutes: 10)
+    : const Duration(seconds: 60);
+
+/// 이야기 제안을 고쳐 승인할 때 쓰는 제목. 스크립트가 다음 카드 생성 요청에서 이 제목을 찾는다.
+const _approvedTitle = 'E2E 고쳐서 승인한 이야기';
+
+/// 합성 카드 생성 함수는 이 제목의 이야기가 있으면 실패한다(스크립트의 `FAIL_CARDS_TITLE`).
+const _failCardsTitle = 'E2E 생성 실패 유도';
+
+/// 카드를 합성 함수로 만드는지. 실패 유도는 합성 함수에서만 한다.
+final _syntheticCards = Platform.environment['SAEROK_E2E_CARD_MODEL'] != 'real';
+
+/// 스크립트가 첫 리포트 생성을 일부러 실패시켰는지(6-5 가 있는 서버에서만).
+final _expectReportRetry =
+    Platform.environment['SAEROK_E2E_EXPECT_REPORT_RETRY'] == '1';
 
 void main() {
   final skip = _baseUrl == null || _idToken == null
@@ -101,6 +126,42 @@ void main() {
       expect(loaded.details.hobby, '합성 정원 가꾸기');
       expect(loaded.lifeFacts.map((f) => f.factId), [fact.factId]);
 
+      // 3-1, 3-2: 프로필 사진. 분석 worker 는 이 E2E 에 없어 대기 상태로 남는다.
+      final png = await _syntheticPng();
+      addTearDown(() => png.parent.delete(recursive: true));
+      final profilePhoto = await profiles.uploadPhoto(profileId, png.path);
+      expect(
+        (await profiles.photo(profilePhoto.photoId)).photoId,
+        profilePhoto.photoId,
+      );
+      expect(
+        (await profiles.get(profileId)).photos.map((p) => p.photoId),
+        contains(profilePhoto.photoId),
+      );
+
+      // 카드 생성이 실패하면 4-2 가 failed 를 주고, 원인을 지우면(2-9) 다시 요청할 수 있다.
+      if (_syntheticCards) {
+        final trigger = await profiles.createLifeFact(
+          profileId,
+          storyCategory: 'other',
+          title: _failCardsTitle,
+          content: '합성 실패 유도용 이야기',
+          imageNumber: 1,
+        );
+        expect(
+          await cards.requestGeneration(profileId),
+          CardGenerationStatus.running,
+        );
+        expect(
+          await _waitForCards(cards, profileId),
+          CardGenerationStatus.failed,
+        );
+        await profiles.deleteLifeFact(trigger.factId);
+        expect((await profiles.get(profileId)).lifeFacts.map((f) => f.factId), [
+          fact.factId,
+        ]);
+      }
+
       // 4-1, 4-2, 4-3: 카드 12장을 받는다.
       final firstSet = await _generate(cards, profileId);
       expect(firstSet.cards, hasLength(12));
@@ -155,6 +216,10 @@ void main() {
       );
       expect(session.sessionStatus, SessionStatus.evaluationPending);
       expect(session.selectedCardIds, picked);
+      final visitPhotoId = await visits.uploadPhoto(
+        session.sessionId,
+        photoPath: png.path,
+      );
       final withExtra = await visits.addCards(session.sessionId, [extra]);
       expect(withExtra.selectedCardIds, [...picked, extra]);
       expect(
@@ -193,61 +258,144 @@ void main() {
         audioPath: audio.path,
         participantCount: 2,
       );
-      expect(
-        await _waitForAnalysis(reports, analysisId),
-        AnalysisStatus.completed,
-      );
+      var analysisStatus = await _waitForAnalysis(reports, analysisId);
+      if (_expectReportRetry) {
+        // 스크립트가 첫 리포트 생성을 일부러 실패시켰다. 남은 전사로 리포트만 다시 만든다.
+        expect(analysisStatus, AnalysisStatus.failed);
+        final retried = await api.post(
+          '/api/v1/speech-analyses/$analysisId/retry',
+        );
+        final retriedId = retried['analysisId'] as String;
+        expect(retriedId, isNot(analysisId));
+        analysisStatus = await _waitForAnalysis(reports, retriedId);
+      }
+      expect(analysisStatus, AnalysisStatus.completed);
       expect(
         (await reports.latestSession(profileId))?.status,
         VisitStatus.completed,
       );
 
       // 7-1, 7-2: 리포트. 평가에서 쓴 카드의 요약만 들어 있다.
-      expect((await reports.reports(profileId)).map((r) => r.title), [
-        'E2E 합성 리포트',
-      ]);
+      final reportList = await reports.reports(profileId);
+      expect(reportList, hasLength(1));
       final report = await reports.report(session.sessionId);
-      expect(report.title, 'E2E 합성 리포트');
-      expect(report.cardSummaries.map((c) => c.cardId), [picked.first]);
+      expect(reportList.single.title, report.title);
+      expect(report.photoId, visitPhotoId);
+      expect(report.photoUrl, isNotNull);
+      if (_realModels) {
+        expect(report.title.trim(), isNotEmpty);
+        expect(report.summaryText.trim(), isNotEmpty);
+        expect(
+          report.cardSummaries.map((c) => c.cardId).toSet().difference({
+            picked.first,
+          }),
+          isEmpty,
+          reason: '평가에서 쓴 카드만 요약한다',
+        );
+      } else {
+        expect(report.title, 'E2E 합성 리포트');
+        expect(report.cardSummaries.map((c) => c.cardId), [picked.first]);
+      }
 
-      // 7-3, 7-4: 이야기 제안을 고쳐서 승인하고 주제 제안도 받아들인다.
+      // 7-3, 7-4: 첫 이야기 제안은 고쳐서 승인하고 나머지는 거절한다. 주제 제안은 제안대로 받는다.
       final proposal = await reports.proposals(session.sessionId);
-      expect(proposal.pendingLifeFacts, hasLength(1));
-      expect(proposal.pendingTopics, hasLength(1));
-      await reports.reviewProposals(
-        session.sessionId,
-        ProposalReview(
-          lifeFacts: [
-            LifeFactReview.accepted(
-              proposalId: proposal.pendingLifeFacts.single.proposalId,
-              title: 'E2E 고쳐서 승인한 이야기',
-              content: '한복 고름을 몇 번이나 다시 다셨어요.',
-            ),
-          ],
-          topics: [
-            TopicReview.accepted(
-              proposalId: proposal.pendingTopics.single.proposalId,
-              action: TopicAction.more,
+      if (!_realModels) {
+        expect(proposal.pendingLifeFacts, hasLength(1));
+        expect(proposal.pendingTopics, hasLength(1));
+      }
+      final approved = proposal.pendingLifeFacts.isNotEmpty;
+      if (!proposal.nothingPending) {
+        await reports.reviewProposals(
+          session.sessionId,
+          ProposalReview(
+            lifeFacts: [
+              for (final (i, p) in proposal.pendingLifeFacts.indexed)
+                i == 0
+                    ? LifeFactReview.accepted(
+                        proposalId: p.proposalId,
+                        title: _approvedTitle,
+                        content: '한복 고름을 몇 번이나 다시 다셨어요.',
+                      )
+                    : LifeFactReview.rejected(proposalId: p.proposalId),
+            ],
+            topics: [
+              for (final p in proposal.pendingTopics)
+                p.suggestedAction == null
+                    ? TopicReview.rejected(proposalId: p.proposalId)
+                    : TopicReview.accepted(
+                        proposalId: p.proposalId,
+                        action: p.suggestedAction!,
+                      ),
+            ],
+          ),
+        );
+        expect(
+          (await reports.proposals(session.sessionId)).nothingPending,
+          isTrue,
+        );
+      }
+      if (approved) {
+        expect(
+          (await profiles.get(profileId)).lifeFacts.map((f) => f.title),
+          containsAll(['합성 수선집', _approvedTitle]),
+        );
+      }
+
+      // 다음 대화 준비: 승인한 이야기가 다음 카드 생성 자료에 들어간다. 합성 생성 함수는 받은
+      // 이야기마다 카드 제목에 그 제목을, 설명에 출처를 적는다. 실제 모델 모드에서는 스크립트가
+      // 서버가 모델에 넘긴 요청에서 확인한다.
+      final next = await _generate(cards, profileId);
+      expect(next.cards, hasLength(12));
+      if (!_realModels) {
+        final approvedCard = next.cards.singleWhere(
+          (c) => c.cardTitle == 'E2E 이야기 카드: $_approvedTitle',
+        );
+        expect(approvedCard.description, contains('이야기 출처: visit'));
+      }
+      // 두 번째 면회: 승인한 이야기가 들어간 새 묶음으로 회차를 만들고 두 번째 리포트까지 받는다.
+      final secondSession = await visits.createSession(
+        setId: next.setId,
+        selectedCardIds: [next.cards.first.cardId],
+      );
+      await visits.submitEvaluation(
+        secondSession.sessionId,
+        EvaluationSubmission(
+          conversationSatisfaction: 5,
+          careRecipientReaction: CareRecipientReaction.calm,
+          cardReviews: [
+            CardReview(
+              cardId: next.cards.first.cardId,
+              wasUsed: true,
+              caregiverReaction: CaregiverReaction.neutral,
             ),
           ],
         ),
       );
-      expect(
-        (await reports.proposals(session.sessionId)).nothingPending,
-        isTrue,
+      final secondAnalysis = await visits.submitAudio(
+        secondSession.sessionId,
+        audioPath: audio.path,
+        participantCount: 2,
       );
       expect(
-        (await profiles.get(profileId)).lifeFacts.map((f) => f.title),
-        containsAll(['합성 수선집', 'E2E 고쳐서 승인한 이야기']),
+        await _waitForAnalysis(reports, secondAnalysis),
+        AnalysisStatus.completed,
+      );
+      expect(await reports.reports(profileId), hasLength(2));
+      expect(
+        (await reports.latestSession(profileId))?.sessionId,
+        secondSession.sessionId,
       );
 
-      // 다음 대화 준비: 승인한 이야기가 다음 카드 생성 자료에 들어간다. 합성 생성 함수는 받은
-      // 이야기마다 카드 제목에 그 제목을, 설명에 출처를 적는다.
-      final next = await _generate(cards, profileId);
-      final approvedCard = next.cards.singleWhere(
-        (c) => c.cardTitle == 'E2E 이야기 카드: E2E 고쳐서 승인한 이야기',
-      );
-      expect(approvedCard.description, contains('이야기 출처: visit'));
+      _writeOutcome({
+        'secondReport': true,
+        'reportRetry': _expectReportRetry,
+        'cardFailureRecovered': _syntheticCards,
+        'approved': approved,
+        'lifeFactProposals': proposal.lifeFactProposals.length,
+        'topicProposals': proposal.topicProposals.length,
+        'cardSummaries': report.cardSummaries.length,
+        'nextCards': next.cards.length,
+      });
 
       // 1-4: 로그아웃한 세션은 다시 쓰이지 않는다.
       await auth.logout(authorization);
@@ -276,12 +424,26 @@ void main() {
       );
     },
     skip: skip,
-    timeout: const Timeout(Duration(minutes: 3)),
+    timeout: Timeout(
+      _realModels ? const Duration(minutes: 40) : const Duration(minutes: 3),
+    ),
   );
 }
 
-/// 16kHz, 16비트 모노 0.1초 무음 WAV 를 임시 폴더에 쓴다. BE 테스트의 `synthetic_wav()` 와 같다.
+/// 스크립트가 넘긴 결과를 파일로 남긴다. 스크립트가 다음 카드 생성 요청과 맞춰 본다.
+void _writeOutcome(Map<String, Object?> outcome) {
+  final path = Platform.environment['SAEROK_E2E_REPORT_FILE'];
+  if (path != null) File(path).writeAsStringSync(jsonEncode(outcome));
+}
+
+/// 올릴 녹음. 스크립트가 합성 음성 파일을 넘기면 그것을, 아니면 16kHz, 16비트 모노 0.1초 무음
+/// WAV 를 임시 폴더에 쓴다. 무음은 BE 테스트의 `synthetic_wav()` 와 같다.
 Future<File> _syntheticWav() async {
+  final dir = await Directory.systemTemp.createTemp('saerok_e2e_');
+  final audioFile = _audioFile;
+  if (audioFile != null) {
+    return File(audioFile).copy('${dir.path}/synthetic.wav');
+  }
   const samples = 1600;
   const dataBytes = samples * 2;
   final header = ByteData(44)
@@ -298,7 +460,6 @@ Future<File> _syntheticWav() async {
     ..setUint16(34, 16, Endian.little)
     ..setUint32(36, 0x64617461) // data
     ..setUint32(40, dataBytes, Endian.little);
-  final dir = await Directory.systemTemp.createTemp('saerok_e2e_');
   final file = File('${dir.path}/synthetic.wav');
   await file.writeAsBytes([
     ...header.buffer.asUint8List(),
@@ -312,7 +473,7 @@ Future<AnalysisStatus?> _waitForAnalysis(
   ReportApi reports,
   String analysisId,
 ) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 60));
+  final deadline = DateTime.now().add(_wait);
   while (DateTime.now().isBefore(deadline)) {
     final status = await reports.analysis(analysisId);
     if (status == AnalysisStatus.completed || status == AnalysisStatus.failed) {
@@ -320,7 +481,7 @@ Future<AnalysisStatus?> _waitForAnalysis(
     }
     await Future<void>.delayed(const Duration(milliseconds: 300));
   }
-  fail('음성 분석이 60초 안에 끝나지 않았습니다');
+  fail('음성 분석이 ${_wait.inSeconds}초 안에 끝나지 않았습니다');
 }
 
 /// 4-1 로 요청하고 4-2 가 `ready` 가 될 때까지 기다린 뒤 4-3 으로 받는다.
@@ -329,12 +490,104 @@ Future<CardSet> _generate(ServerCardApi cards, String profileId) async {
     await cards.requestGeneration(profileId),
     CardGenerationStatus.running,
   );
-  final deadline = DateTime.now().add(const Duration(seconds: 60));
+  expect(
+    await _waitForCards(cards, profileId),
+    CardGenerationStatus.ready,
+    reason: '카드 생성이 실패했다',
+  );
+  return cards.current(profileId);
+}
+
+/// 4-2 가 `running` 에서 벗어날 때까지 기다린다.
+Future<CardGenerationStatus> _waitForCards(
+  ServerCardApi cards,
+  String profileId,
+) async {
+  final deadline = DateTime.now().add(_wait);
   while (DateTime.now().isBefore(deadline)) {
     final status = await cards.status(profileId);
-    if (status == CardGenerationStatus.ready) return cards.current(profileId);
-    expect(status, CardGenerationStatus.running);
+    if (status != CardGenerationStatus.running) return status;
     await Future<void>.delayed(const Duration(milliseconds: 300));
   }
-  fail('카드 생성이 60초 안에 끝나지 않았습니다');
+  fail('카드 생성이 ${_wait.inSeconds}초 안에 끝나지 않았습니다');
+}
+
+/// 1x1 PNG. 서버는 파일 앞부분의 시그니처로 형식을 본다.
+Future<File> _syntheticPng() async {
+  const bytes = <int>[
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x48,
+    0x44,
+    0x52,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x08,
+    0x06,
+    0x00,
+    0x00,
+    0x00,
+    0x1f,
+    0x15,
+    0xc4,
+    0x89,
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x44,
+    0x41,
+    0x54,
+    0x78,
+    0x9c,
+    0x63,
+    0xf8,
+    0xcf,
+    0xc0,
+    0xf0,
+    0x1f,
+    0x00,
+    0x05,
+    0x00,
+    0x01,
+    0xff,
+    0x89,
+    0x99,
+    0x3d,
+    0x1d,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x49,
+    0x45,
+    0x4e,
+    0x44,
+    0xae,
+    0x42,
+    0x60,
+    0x82,
+  ];
+  final dir = await Directory.systemTemp.createTemp('saerok_e2e_png_');
+  final file = File('${dir.path}/synthetic.png');
+  await file.writeAsBytes(bytes);
+  return file;
 }
