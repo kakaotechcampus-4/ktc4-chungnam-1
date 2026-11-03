@@ -56,8 +56,8 @@ from urllib.request import urlopen
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_DIR = BACKEND_DIR.parent
 APP_DIR = REPO_DIR / "app"
-# `python scripts/run_app_server_e2e.py`로 실행해도 `app` 패키지를 찾게 한다.
-sys.path.insert(0, str(BACKEND_DIR))
+# `python scripts/run_app_server_e2e.py`로 실행해도 `app` 패키지와 같은 저장소의 `ai` 패키지를 찾게 한다.
+sys.path[:0] = [str(BACKEND_DIR), str(REPO_DIR / "ai")]
 CLIENT_ID = "e2e-client-id.apps.googleusercontent.com"
 KEY_ID = "e2e-key-1"
 # 앱 쪽 테스트가 이야기 제안을 고쳐 승인할 때 쓰는 제목. 다음 카드 생성 요청에서 이 제목을 찾는다.
@@ -120,6 +120,26 @@ def _seed_account(base_url: str, id_token: str, name: str) -> None:
         {"storyCategory": "work", "title": "합성 수선집", "content": "합성 수선집에 단골손님이 많았어요.", "imageNumber": 3},
         token,
     )
+    # 앱은 첫 카드 생성 요청이 있어야 등록을 마친 분으로 본다(`setupStatus: completed`). 온보딩의 마지막
+    # 단계와 같이 첫 묶음을 요청하고 다 될 때까지 기다린다.
+    _post(f"{base_url}/api/v1/profiles/{profile_id}/card-generations", {}, token)
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        from urllib.request import Request
+
+        request = Request(
+            f"{base_url}/api/v1/profiles/{profile_id}/card-generations/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urlopen(request, timeout=15) as response:
+            status = json.loads(response.read())["status"]
+        if status == "ready":
+            break
+        if status != "running":
+            raise RuntimeError(f"SEED_CARD_GENERATION_{status.upper()}")
+        time.sleep(1)
+    else:
+        raise RuntimeError("SEED_CARD_GENERATION_TIMEOUT")
     # 로그인은 앱 화면에서 다시 한다. 여기서 받은 세션은 버린다.
     _post(f"{base_url}/auth/logout", {}, token)
 
@@ -552,6 +572,7 @@ def main(argv: list[str] | None = None) -> int:
                 "SAEROK_E2E_ID_TOKEN": token,
                 "SAEROK_E2E_PROFILE_NAME": profile_name,
                 "SAEROK_E2E_MODELS": models,
+                "SAEROK_E2E_EXPECT_REPORT_RETRY": "1" if fail_first_report else "0",
             }
             if args.audio_file:
                 audio_server, audio_port = _serve_file(args.audio_file)
