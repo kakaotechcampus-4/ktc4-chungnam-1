@@ -16,8 +16,10 @@ name: Deploy (manual)
 #   대상 인스턴스의 SSM Agent와 인스턴스 역할(AmazonSSMManagedInstanceCore)
 # 상세 설정, 되돌리기와 자동화 범위는 docs/deploy-workflows.md를 따른다.
 #
-# 순서: 요청 확인 -> 승인 -> 사전 점검 -> DB 백업과 격리 복원 검사 -> SHA 체크아웃과 빌드
-#       -> alembic upgrade -> compose up -> 사후 점검 -> 배포 기록. 실패하면 되돌리기 안내를 출력한다.
+# 순서: 요청 확인 -> 승인 -> 사전 점검 -> DB 백업과 격리 복원 검사 -> 분석 접수와 worker 임대 중지,
+#       실행 중 작업 0건 대기 -> SHA 체크아웃과 빌드 -> alembic upgrade -> compose up -> 사후 점검
+#       -> 접수와 임대 재개 -> 배포 기록. 실패하면 되돌리기 안내를 출력한다.
+# migration 전에 실패하면 접수와 임대를 다시 연다. migration이 시작된 뒤 실패하면 중지 상태로 두고 안내한다.
 # migration downgrade, DB 복원, 이미지 되돌리기는 자동으로 실행하지 않는다.
 #
 # 공개 저장소의 Actions 로그는 누구나 볼 수 있다. 서버 주소, 인스턴스 ID와 .env 값을
@@ -119,8 +121,9 @@ jobs:
     name: Deploy to production
     needs: verify
     runs-on: ubuntu-24.04
-    # 단계별 SSM 대기 한도(실행 한도 + 300초) 합계는 약 195분이다. 그보다 길게 둔다.
-    timeout-minutes: 210
+    # 정상 경로의 단계별 SSM 대기 한도(실행 한도 + 300초) 합계는 약 230분이다(접수 중지 25분, 재개 10분 포함).
+    # migration 전 실패 때의 재개 단계는 빌드 뒤 단계를 건너뛰는 경로에서만 돈다. 그보다 길게 둔다.
+    timeout-minutes: 245
     # Required reviewers가 지정돼 있으면 승인 전에는 이 작업이 시작되지 않고, 환경 시크릿도 승인 후에만 주어진다.
     # 지정 여부는 verify 작업이 확인한다. 저장소 수준 시크릿은 승인과 무관하게 주어지므로 쓰지 않는다.
     environment: production
@@ -416,6 +419,161 @@ jobs:
           HOST
           ssm_run backup "$RUNNER_TEMP/step.sh" 1800
 
+      # backend/docs/deployment-control.md의 2~5단계. 지금 실행 중인(배포 전) 버전의 내부 CLI로
+      # 새 분석 접수와 worker의 새 작업 임대를 멈추고, 실행 중 작업이 0건이 될 때까지 기다린다.
+      # - f95c2d7eb143을 처음 들여오는 배포에서는 실행 중인 이미지에 CLI가 없고 DB에 표도 없다.
+      #   그때는 바꾸지 않고 건너뛴다. 처리 중 작업 0건은 1단계가 이미 확인했다.
+      # - 코드와 표 중 하나만 있거나, 배포 전부터 이미 중지 상태면 사람이 확인하도록 바꾸지 않고 멈춘다.
+      # - 기한 안에 비지 않으면 이 단계에서 다시 열고 실패한다. 이 시점에는 체크아웃, 이미지, DB를 바꾸지 않았다.
+      - name: 2b. Pause analysis intake and wait until work drains
+        id: pause
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          # 접수를 멈춘 뒤 이미 대기 중인 녹음 분석과 카드 생성을 worker가 처리하게 두는 최대 시간(초).
+          # 대기 카드의 시작 제한 시간은 중지로 늘어나지 않으므로 먼저 비우려 한다. 남으면 건수를 남기고 진행한다.
+          QUEUE_WAIT=300
+          # worker 임대를 멈춘 뒤 실행 중 작업과 실행 연결이 0이 되기를 기다리는 최대 시간(초).
+          DRAIN_WAIT=600
+          POLL=10
+          control() { dc exec -T api python -m app.ops.deployment_control "$@"; }
+
+          # status 결과에서 판정에 쓰는 값만 출력한다. 0 조건 충족, 1 아직, 2 읽지 못함.
+          cat > "$STATE_DIR/control_check.py" <<'PY'
+          import json
+          import sys
+
+          KEYS = ("active_speech", "active_cards", "active_photos", "queued_speech", "queued_cards",
+                  "queued_photos", "worker_executions", "short_speech_executions")
+          try:
+              data = json.load(open(sys.argv[1], encoding="utf-8"))
+              counts = {key: int(data["counts"][key]) for key in KEYS}
+              flags = (data["admissionsPaused"], data["workerClaimsPaused"], data["analysisDrained"])
+          except (OSError, ValueError, KeyError, TypeError):
+              print("CONTROL_STATUS_UNREADABLE")
+              sys.exit(2)
+          if not all(isinstance(flag, bool) for flag in flags):
+              print("CONTROL_STATUS_UNREADABLE")
+              sys.exit(2)
+          admissions, claims, drained = flags
+          print("CONTROL_STATUS admissionsPaused=%s workerClaimsPaused=%s analysisDrained=%s %s" % (
+              str(admissions).lower(), str(claims).lower(), str(drained).lower(),
+              " ".join(f"{key}={counts[key]}" for key in KEYS)))
+          mode = sys.argv[2]
+          if mode == "open":
+              ok = not admissions and not claims
+          elif mode == "queue":
+              # 사진 업로드는 중지 대상이 아니라 queued_photos는 계속 늘 수 있다. 기다리는 조건에서 뺀다.
+              ok = admissions and all(counts[key] == 0 for key in KEYS if key != "queued_photos")
+          elif mode == "drain":
+              ok = drained
+          else:
+              sys.exit(2)
+          sys.exit(0 if ok else 1)
+          PY
+          control_check() {
+            control status > "$STATE_DIR/control-status.json" 2> "$STATE_DIR/control-status.err" || {
+              echo "CONTROL_STATUS_FAILED"
+              return 2
+            }
+            "$PY" "$STATE_DIR/control_check.py" "$STATE_DIR/control-status.json" "$1"
+          }
+
+          # 실행 중인 버전에 CLI가 있는지(3: 없음)와 DB에 설정 표가 있는지 본다.
+          module_rc=0
+          dc exec -T api python -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("app.ops.deployment_control") else 3)' || module_rc=$?
+          case "$module_rc" in
+            0) module=yes ;;
+            3) module=no ;;
+            *) echo "CONTROL_MODULE_CHECK_FAILED rc=$module_rc"; exit 1 ;;
+          esac
+          table=$(docker exec "$DB_CONTAINER" psql -X -A -t -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" \
+            -c "SELECT to_regclass('public.deployment_control') IS NOT NULL") || { echo "CONTROL_TABLE_CHECK_FAILED"; exit 1; }
+          case "$module:$table" in
+            no:f)
+              echo "CONTROL_SKIPPED: 실행 중인 버전에 배포 제어가 없습니다(f95c2d7eb143 도입 전). 접수 중지 없이 진행합니다."
+              echo "CONTROL_SKIPPED: 구버전 worker는 이 제어를 따르지 않습니다. 트래픽 제한이 필요하면 사람이 따로 합니다."
+              state_set CONTROL_MODE skipped
+              out CONTROL_MODE skipped
+              exit 0
+              ;;
+            yes:t) ;;
+            *)
+              echo "CONTROL_INCONSISTENT module=$module table=$table: 실행 중인 코드와 DB의 배포 제어가 맞지 않습니다. 아무것도 바꾸지 않고 멈춥니다"
+              exit 1
+              ;;
+          esac
+
+          rc=0
+          control_check open || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "CONTROL_NOT_OPEN_BEFORE_DEPLOY: 이미 중지 상태이거나 상태를 읽지 못했습니다. 누가 왜 멈췄는지 확인 전까지 바꾸지 않고 멈춥니다"
+            exit 1
+          fi
+
+          # 여기부터 실패하면 이 단계에서 다시 연다. 접수 중지 명령이 응답 전에 끊겨도 반영됐을 수 있어
+          # 명령을 보내기 전에 표시한다. resume-all은 이미 열린 상태에 다시 보내도 결과가 같다.
+          paused=no
+          on_exit() {
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ "$paused" = yes ]; then
+              if control resume-all --confirm-change > "$STATE_DIR/control-resume-on-failure.json" 2>&1; then
+                echo "CONTROL_RESUMED_AFTER_FAILURE: 접수와 worker 임대를 다시 열었습니다. 체크아웃, 이미지, DB는 바꾸지 않았습니다"
+                out CONTROL_AFTER_FAILURE resumed
+              else
+                echo "CONTROL_RESUME_FAILED: 접수와 worker 임대가 중지된 채 남았을 수 있습니다. 서버에서 status를 확인합니다"
+                out CONTROL_AFTER_FAILURE resume-failed
+              fi
+            fi
+            exit "$rc"
+          }
+          trap 'on_exit' EXIT
+
+          paused=yes
+          state_set CONTROL_MODE paused
+          out CONTROL_MODE paused
+          control pause-admissions --confirm-change > "$STATE_DIR/control-pause-admissions.json" 2>&1 || {
+            echo "CONTROL_PAUSE_ADMISSIONS_FAILED"
+            exit 1
+          }
+          echo "CONTROL_ADMISSIONS_PAUSED"
+
+          end=$(( $(date +%s) + QUEUE_WAIT ))
+          while :; do
+            rc=0
+            control_check queue || rc=$?
+            [ "$rc" -ne 0 ] || break
+            [ "$rc" -eq 1 ] || exit 1
+            if [ "$(date +%s)" -ge "$end" ]; then
+              echo "CONTROL_QUEUE_LEFT: 대기 또는 실행 중 작업이 남은 채 worker 임대를 멈춥니다. 남은 건수는 마지막 CONTROL_STATUS에 있습니다"
+              break
+            fi
+            sleep "$POLL"
+          done
+
+          control pause-workers --confirm-change > "$STATE_DIR/control-pause-workers.json" 2>&1 || {
+            echo "CONTROL_PAUSE_WORKERS_FAILED"
+            exit 1
+          }
+          echo "CONTROL_WORKER_CLAIMS_PAUSED"
+
+          end=$(( $(date +%s) + DRAIN_WAIT ))
+          while :; do
+            rc=0
+            control_check drain || rc=$?
+            [ "$rc" -ne 0 ] || break
+            [ "$rc" -eq 1 ] || exit 1
+            if [ "$(date +%s)" -ge "$end" ]; then
+              echo "CONTROL_NOT_DRAINED: ${DRAIN_WAIT}초 안에 실행 중 작업이 끝나지 않았습니다"
+              exit 1
+            fi
+            sleep "$POLL"
+          done
+          trap - EXIT
+          echo "CONTROL_DRAINED"
+          HOST
+          ssm_run pause "$RUNNER_TEMP/step.sh" 1200
+
       - name: 3. Check out the commit and build the image
         id: build
         run: |
@@ -534,6 +692,40 @@ jobs:
           HOST
           ssm_run postcheck "$RUNNER_TEMP/step.sh" 600
 
+      # backend/docs/deployment-control.md의 7, 8단계. 사후 점검을 통과한 새 이미지의 CLI로 worker 임대를
+      # 먼저 열고, 상태를 남긴 뒤 접수를 연다. 2b에서 건너뛰었으면(최초 도입) 새 표의 기본값이 허용이라 할 일이 없다.
+      # 문서가 두 명령 사이에 두는 대기 작업, STT와 ML 설정 확인과 옛 앱/새 앱 확인은 사람이 한다.
+      - name: 6b. Resume analysis intake
+        id: resume
+        if: steps.pause.outputs.CONTROL_MODE == 'paused'
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          control() { dc exec -T api python -m app.ops.deployment_control "$@"; }
+          control_check() {
+            control status > "$STATE_DIR/control-status.json" 2> "$STATE_DIR/control-status.err" || {
+              echo "CONTROL_STATUS_FAILED"
+              return 2
+            }
+            "$PY" "$STATE_DIR/control_check.py" "$STATE_DIR/control-status.json" "$1"
+          }
+          control resume-workers --confirm-change > "$STATE_DIR/control-resume-workers.json" 2>&1 || {
+            echo "CONTROL_RESUME_WORKERS_FAILED"
+            exit 1
+          }
+          echo "CONTROL_WORKER_CLAIMS_RESUMED"
+          control_check drain || true
+          control resume-all --confirm-change > "$STATE_DIR/control-resume-all.json" 2>&1 || {
+            echo "CONTROL_RESUME_ALL_FAILED: worker 임대만 열리고 접수는 중지 상태입니다"
+            exit 1
+          }
+          rc=0
+          control_check open || rc=$?
+          [ "$rc" -eq 0 ] || { echo "CONTROL_NOT_OPEN_AFTER_RESUME"; exit 1; }
+          echo "CONTROL_RESUMED"
+          HOST
+          ssm_run resume "$RUNNER_TEMP/step.sh" 300
+
       - name: 7. Record the release
         id: record
         run: |
@@ -582,6 +774,36 @@ jobs:
           HOST
           ssm_run record "$RUNNER_TEMP/step.sh" 300
 
+      # 접수를 멈춘 뒤 빌드에서 실패했다. migration을 시작하지 않아 DB와 실행 중인 컨테이너는 배포 전
+      # 그대로이므로 배포 전 버전의 CLI로 다시 연다. migration이 시작됐으면(성공, 실패 무관) DB 상태가
+      # 확실하지 않으므로 여기서 열지 않고 되돌리기 안내를 따른다. 취소, 시간 초과로 끝난 실행도 열지 않는다.
+      - name: Resume analysis intake after a failure before migration
+        id: resume_before_migration
+        if: >-
+          failure() &&
+          steps.pause.outcome == 'success' &&
+          steps.pause.outputs.CONTROL_MODE == 'paused' &&
+          steps.migrate.outcome == 'skipped'
+        run: |
+          source "$RUNNER_TEMP/deploy-lib.sh"
+          cat > "$RUNNER_TEMP/step.sh" <<'HOST'
+          control() { dc exec -T api python -m app.ops.deployment_control "$@"; }
+          control resume-all --confirm-change > "$STATE_DIR/control-resume-before-migration.json" 2>&1 || {
+            echo "CONTROL_RESUME_FAILED"
+            exit 1
+          }
+          control status > "$STATE_DIR/control-status.json" 2> "$STATE_DIR/control-status.err" || {
+            echo "CONTROL_STATUS_FAILED"
+            exit 1
+          }
+          "$PY" "$STATE_DIR/control_check.py" "$STATE_DIR/control-status.json" open || {
+            echo "CONTROL_NOT_OPEN_AFTER_RESUME"
+            exit 1
+          }
+          echo "CONTROL_RESUMED_BEFORE_MIGRATION"
+          HOST
+          ssm_run resume-before-migration "$RUNNER_TEMP/step.sh" 300
+
       - name: Write deploy summary
         if: always()
         env:
@@ -592,14 +814,18 @@ jobs:
           NEW_IMAGE_ID: ${{ steps.build.outputs.NEW_IMAGE_ID }}
           ALEMBIC_HEAD: ${{ steps.build.outputs.ALEMBIC_HEAD }}
           RELEASE_RECORD: ${{ steps.record.outputs.RELEASE_RECORD }}
+          CONTROL_MODE: ${{ steps.pause.outputs.CONTROL_MODE }}
           OUTCOMES: >-
             precheck=${{ steps.precheck.outcome }}
             backup=${{ steps.backup.outcome }}
+            pause=${{ steps.pause.outcome }}
             build=${{ steps.build.outcome }}
             migrate=${{ steps.migrate.outcome }}
             up=${{ steps.up.outcome }}
             postcheck=${{ steps.postcheck.outcome }}
             record=${{ steps.record.outcome }}
+            resume=${{ steps.resume.outcome }}
+            resume_before_migration=${{ steps.resume_before_migration.outcome }}
         run: |
           {
             echo "## 배포 ${SHA:0:12}"
@@ -614,6 +840,7 @@ jobs:
             echo "| Alembic head (새 이미지) | \`${ALEMBIC_HEAD:-없음}\` |"
             echo "| 백업 파일 | \`${BACKUP_ARCHIVE:-없음}\` |"
             echo "| 배포 기록 파일 | \`${RELEASE_RECORD:-없음}\` |"
+            echo "| 분석 접수 중지 | \`${CONTROL_MODE:-실행 안 함}\` (paused: 중지 후 진행, skipped: 배포 전 버전에 제어 없음) |"
             echo "| 단계 결과 | ${OUTCOMES} |"
             echo
             echo "- 기능 확인(로그인, 카드 생성, 녹음부터 리포트, 다음 카드)과 옛 앱/새 앱 확인은 이 workflow가 하지 않는다. release-safety.md 6, 7단계를 사람이 확인한다."
@@ -629,10 +856,16 @@ jobs:
           ROLLBACK_TAG: ${{ steps.precheck.outputs.ROLLBACK_TAG }}
           IMAGE_REF: ${{ steps.build.outputs.IMAGE_REF }}
           MIGRATE_OUTCOME: ${{ steps.migrate.outcome }}
+          PAUSE_OUTCOME: ${{ steps.pause.outcome }}
+          CONTROL_MODE: ${{ steps.pause.outputs.CONTROL_MODE }}
+          CONTROL_AFTER_FAILURE: ${{ steps.pause.outputs.CONTROL_AFTER_FAILURE }}
+          RESUME_OUTCOME: ${{ steps.resume.outcome }}
+          RESUME_BEFORE_MIGRATION_OUTCOME: ${{ steps.resume_before_migration.outcome }}
         run: |
           compose="docker compose"
           for f in $DEPLOY_COMPOSE_FILES; do compose="$compose -f $f"; done
           for p in $DEPLOY_COMPOSE_PROFILES; do compose="$compose --profile $p"; done
+          ctl="$compose exec -T api python -m app.ops.deployment_control"
           {
             echo "## 되돌리기 안내"
             echo
@@ -666,5 +899,60 @@ jobs:
               echo
               echo "- 빌드 단계에서 실패했다면 서버 체크아웃은 자동으로 이전 위치로 돌아갔다(출력의 CHECKOUT_RESTORED 확인)."
               echo "- 원인을 고친 뒤 같은 SHA로 다시 실행하거나, 이 실행을 기록만 남기고 끝낸다."
+            fi
+            echo
+            echo "### 분석 접수와 worker 임대 (backend/docs/deployment-control.md)"
+            echo
+            # 접수를 언제 다시 열지는 migration 상태로 정한다. migration이 시작됐으면 DB 상태를 확인하고
+            # 새 이미지를 유지할지, 이전 이미지로 되돌릴지 정한 뒤에 연다. 그 전에 열면 확인하지 않은
+            # 스키마와 코드 조합에서 새 분석을 받게 된다.
+            if [ -z "$PAUSE_OUTCOME" ] || [ "$PAUSE_OUTCOME" = "skipped" ]; then
+              echo "접수 중지 단계 전에 멈췄다. 접수와 worker 임대는 바꾸지 않았다."
+            elif [ "$CONTROL_MODE" = "skipped" ]; then
+              echo "배포 전 버전에 배포 제어가 없어 접수 중지를 건너뛰었다(f95c2d7eb143 도입 전). 다시 열 것이 없다. 새 migration이 적용됐다면 설정 표의 기본값은 허용이다."
+            elif [ "$PAUSE_OUTCOME" != "success" ]; then
+              if [ "$CONTROL_AFTER_FAILURE" = "resumed" ]; then
+                echo "중지 단계가 실패해 그 단계 안에서 접수와 worker 임대를 다시 열었다. 체크아웃, 이미지, DB는 바꾸지 않았다."
+              else
+                echo "중지 단계가 끝나지 않았다. 이 단계는 체크아웃, 이미지, DB를 바꾸지 않으므로 지금 다시 열어도 된다. 서버의 SSM 명령(설명 \`saerok deploy pause ${SHA:0:12}\`)이 끝난 것을 확인한 뒤 상태를 보고 중지 상태면 연다."
+                echo
+                echo '```bash'
+                echo "$ctl status"
+                echo "$ctl resume-all --confirm-change"
+                echo '```'
+              fi
+            elif [ "$RESUME_OUTCOME" = "success" ]; then
+              echo "사후 점검 뒤 접수와 worker 임대를 다시 열었다."
+            elif [ "$RESUME_BEFORE_MIGRATION_OUTCOME" = "success" ]; then
+              echo "migration 전에 실패해 배포 전 버전에서 접수와 worker 임대를 자동으로 다시 열었다."
+            elif [ -z "$MIGRATE_OUTCOME" ] || [ "$MIGRATE_OUTCOME" = "skipped" ]; then
+              echo "접수와 worker 임대가 중지된 채 migration 전에 멈췄다. DB와 실행 중인 컨테이너는 배포 전 그대로이므로 지금 다시 열어도 된다. 취소나 시간 초과로 끝났다면 마지막 SSM 명령이 끝난 것을 먼저 확인한다."
+              echo
+              echo '```bash'
+              echo "$ctl status"
+              echo "$ctl resume-all --confirm-change"
+              echo '```'
+            elif [ "$RESUME_OUTCOME" = "failure" ]; then
+              echo "사후 점검은 통과했지만 다시 여는 단계가 실패했다. 출력의 CONTROL_ 표시로 어디까지 열렸는지 보고, 상태를 확인한 뒤 남은 명령을 실행한다."
+              echo
+              echo '```bash'
+              echo "$ctl status"
+              echo "$ctl resume-workers --confirm-change"
+              echo "$ctl resume-all --confirm-change"
+              echo '```'
+            else
+              echo "접수와 worker 임대를 중지한 채로 두었다. migration 단계가 실행돼(결과: ${MIGRATE_OUTCOME}) DB 상태가 확실하지 않아 자동으로 열지 않았다."
+              echo
+              echo "1. 위의 되돌리기 안내대로 \`alembic current\`로 DB revision을 확인하고 새 이미지를 유지할지 이전 이미지로 되돌릴지 정한다. 정하기 전에는 열지 않는다."
+              echo "2. 새 이미지를 유지하면 \`/health/ready\`와 \`runtime_check --expected-revision\`이 맞는지 확인한 뒤 worker 임대를 먼저 열고, 대기 작업과 STT, ML 설정을 본 다음 접수를 연다."
+              echo "3. 이전 이미지로 되돌리면 되돌린 뒤 같은 확인을 하고 같은 순서로 연다. 이전 이미지에 배포 제어가 없으면 이 명령을 쓸 수 없고, 이전 코드는 이 설정을 읽지 않는다."
+              echo "4. f95c2d7eb143을 downgrade해야 한다면 먼저 resume-all로 연다. 중지 상태에서는 downgrade가 거절된다. downgrade 자체는 별도 승인 없이 하지 않는다."
+              echo
+              echo '```bash'
+              echo "$ctl status"
+              echo "$ctl resume-workers --confirm-change"
+              echo "$ctl status"
+              echo "$ctl resume-all --confirm-change"
+              echo '```'
             fi
           } | tee -a "$GITHUB_STEP_SUMMARY"
