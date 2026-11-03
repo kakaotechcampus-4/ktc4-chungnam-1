@@ -20,6 +20,7 @@ import 'journey_harness.dart';
 import 'journey_server.dart';
 
 const _homeCardsButton = '오늘의 대화카드 받기';
+const _cardsReadyNotice = '대화 카드가 준비됐어요';
 
 /// 이야기 제안을 승인하면서 보호자가 고친 내용.
 const _correctedContent = '두루마기를 주로 지으셨어요.';
@@ -170,10 +171,14 @@ void defineAppJourneyTests() {
       expect(server.lifeFacts.single['content'], _correctedContent);
       expect(find.text('리포트가 도착했어요'), findsNothing, reason: '확인을 마친 알림');
 
-      // 다음 대화 준비 1: 지난 묶음은 평가까지 끝나 서버가 새로 만든다.
+      // 다음 대화 준비 1: 지난 묶음은 평가까지 끝나 서버가 새로 만든다. 새로
+      // 만드는 동안은 홈에 머물고 다 되면 알림창으로 알린다(#222). 다시 누르면
+      // 카드 화면으로 간다.
+      await app.tap(find.text(_homeCardsButton));
+      await app.waitFor(find.textContaining(_cardsReadyNotice));
+      expect(server.setIds, hasLength(2));
       await app.tap(find.text(_homeCardsButton));
       await app.waitFor(find.text('오늘의 대화 카드'));
-      expect(server.setIds, hasLength(2));
       expect(
         find.text(journeyProposalTitle),
         findsOneWidget,
@@ -227,18 +232,18 @@ void defineAppJourneyTests() {
       }
       await app.waitFor(find.text(_homeCardsButton));
 
-      // 다음 대화 준비 2: 고친 뒤의 묶음은 볼 수만 있고 시작할 수 없다.
-      await app.tap(find.text(_homeCardsButton));
-      await app.waitFor(find.text('다음 대화 준비하기'));
-      expect(find.textContaining('어르신 정보가 바뀌었어요'), findsOneWidget);
-      expect(find.text('대화 시작하기'), findsNothing);
-      expect(_cardToggle(journeyProposalTitle), findsNothing);
+      // 다음 대화 준비 2: 고친 뒤의 묶음은 홈 버튼에서 12장을 모두 새로 만든다
+      // (#222). 누르기 전에는 다시 만들지 않는다. 고친 묶음을 카드 화면에서
+      // 감추는 것은 `card_refresh_screen_test.dart` 가 따로 확인한다.
       expect(server.setIds, hasLength(2), reason: '누르기 전에는 다시 만들지 않는다');
       expect(_cardRequests(server), requestsBeforeCorrections);
 
-      await app.tap(find.text('다음 대화 준비하기'));
-      await app.waitFor(find.text('대화 시작하기'));
+      await app.tap(find.text(_homeCardsButton));
+      await app.waitFor(find.textContaining('어르신 정보가 바뀌어서'));
+      await app.waitFor(find.textContaining(_cardsReadyNotice));
       expect(server.setIds, hasLength(3), reason: '묶음 전체를 한 번 다시 만든다');
+      await app.tap(find.text(_homeCardsButton));
+      await app.waitFor(find.text('대화 시작하기'));
       expect(
         _cardRequests(server),
         requestsBeforeCorrections + 1,
