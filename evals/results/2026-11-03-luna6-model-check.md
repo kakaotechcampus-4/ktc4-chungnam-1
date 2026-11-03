@@ -8,7 +8,8 @@
 - 작업 브랜치: `local/luna6-model-20261103`.
 - PM이 이미 정한 GPT-6 Luna 전환과 출력 상한 16000을 적용했다. 카드와 리포트의 BE 기본 설정 및 시뮬레이션을 맞췄다. 이전 모델을 명시한 작업은 계속 처리한다.
 - Responses API 스트리밍, 추론 `low`, 기존 시간 제한과 재시도 규칙은 유지한다. 프롬프트는 카드 v1, `report-2`, `proposals-4` 그대로다.
-- [기존 점검 7절](2026-11-03-real-model-spot-check.md)의 실행기와 합성 입력을 재사용했다. 새 `SPOT_CHECK_MODEL`로 모델만 선택하며 이전 출력 파일은 수정하지 않았다.
+- 원격 develop(`e465099`)의 프롬프트는 `report-1`, `proposals-1`이고 `participantCount`, `common.medical_claims`, `_QUIZ`가 없다. 이 출력은 develop 코드의 출력이 아니며, `run.py`와 `verify.py`는 화자 미확인 처리, 리포트 의료 효능 검사, 사진 맞히기 검사, 아픈 기억 제외 범위 수정이 들어간 코드에서만 실행된다.
+- [기존 점검](2026-11-03-real-model-spot-check.md)의 [실행기](2026-11-03-real-model-spot-check/README.md)와 합성 입력을 재사용했다. 새 `SPOT_CHECK_MODEL`로 모델만 선택하며 이전 출력 파일은 수정하지 않았다.
 - 실제 가족 대화, 운영 DB, STT, 앱과 S3는 사용하지 않았다. 사진 입력도 기존 합성 설명 텍스트만 사용했으므로 VLM 이미지 인식 검증은 아니다.
 - 모델 기능은 [공식 GPT-6 Luna 문서](https://developers.openai.com/api/docs/models/gpt-6-luna)를 참고했다. 중계 API 호출 호환은 아래 실제 요청으로 따로 확인했다. 모델 가중치는 배포하지 않으며 기존 ML API의 인증 및 이용 조건을 따른다. 호출 주소와 키는 이 기록에 넣지 않는다.
 
