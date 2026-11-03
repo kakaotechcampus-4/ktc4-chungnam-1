@@ -51,7 +51,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 | 순서 | 하는 일 | 실패하면 |
 | --- | --- | --- |
 | 요청 확인 | SHA 형식, 확인 문자열, 대상 브랜치 포함 여부, 해당 SHA의 성공한 Release build | 승인 요청 전에 멈춘다 |
-| 1. 사전 점검 | 도구와 Python 3.11 이상, 추적 파일 변경 없음, api 실행 중, `/health/ready` 200, `runtime_check`의 DB 조회 성공과 처리 중 작업 0건. 이전 커밋과 이전 이미지 ID를 기록하고 이전 이미지에 보존 태그를 붙인다 | 아무것도 바꾸지 않고 멈춘다 |
+| 1. 사전 점검 | 도구와 Python 3.11 이상, 추적 파일 변경과 무시되지 않은 새 파일 없음(7단계 기록과 같은 `git status --porcelain` 기준), api 실행 중, `/health/ready` 200, `runtime_check`의 DB 조회 성공과 처리 중 작업 0건. 이전 커밋과 이전 이미지 ID를 기록하고 이전 이미지에 보존 태그를 붙인다 | 아무것도 바꾸지 않고 멈춘다 |
 | 2. 백업 | `scripts/verify_database_backup.py`로 새 백업과 격리 복원 검사. `restoreVerified`가 true여야 한다 | 멈춘다. 백업 파일은 남는다 |
 | 3. 빌드 | `git fetch origin <SHA>`, `git checkout --detach <SHA>`, `docker compose build --build-arg SOURCE_REVISION=<SHA> api`. revision 라벨과 단일 Alembic head를 확인하고 `saerok-backend:<SHA>` 태그를 붙인다 | 서버 체크아웃과 이미지 이름을 이전 상태로 되돌리고 멈춘다. 컨테이너는 그대로다 |
 | 4. migration | `docker compose run --rm --no-deps api alembic upgrade head` | 멈추고 되돌리기 안내를 출력한다 |
@@ -81,7 +81,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 | Environment `production` 설정 | Required reviewers, Deployment branches | Deploy | 승인자 지정. 배포 브랜치를 `develop`과 `main`으로 제한한다. 수동 실행은 고른 브랜치의 workflow 파일을 쓰므로, 제한이 없으면 다른 브랜치에서 고친 workflow가 환경 시크릿을 받을 수 있다 |
 | Environment 시크릿 | `AWS_DEPLOY_ROLE_ARN` | Deploy | OIDC로 맡을 IAM 역할 |
 | Environment 시크릿 | `DEPLOY_INSTANCE_ID` | Deploy | 대상 EC2 인스턴스 ID. 로그에서 가리도록 시크릿으로 둔다 |
-| Environment 변수 | `AWS_REGION`, `DEPLOY_REPO_DIR`, `DEPLOY_BACKUP_DIR`, `DEPLOY_RELEASE_DIR` | Deploy | 리전, 서버 저장소 절대 경로, 저장소 밖의 백업 경로, 배포 기록 경로 |
+| Environment 변수 | `AWS_REGION`, `DEPLOY_REPO_DIR`, `DEPLOY_BACKUP_DIR`, `DEPLOY_RELEASE_DIR` | Deploy | 리전, 서버 저장소 절대 경로, 저장소 밖의 백업 경로, 저장소 밖의 배포 기록 경로. 두 경로가 저장소 안이면 시작 전에 거절한다 |
 | Environment 변수 | `DEPLOY_HOST_USER`(`ubuntu`), `DEPLOY_HOST_PYTHON`(`python3`), `DEPLOY_COMPOSE_FILES`(`compose.yml`), `DEPLOY_COMPOSE_PROFILES`(없음), `DEPLOY_SERVICES`(`api card-worker`), `DEPLOY_DB_CONTAINER`(`saerok-db-1`), `DEPLOY_DB_NAME`(`saerok`), `DEPLOY_DB_USER`(`saerok`) | 선택 | 괄호 안이 기본값 |
 | AWS IAM | GitHub OIDC 공급자 | Deploy | `token.actions.githubusercontent.com`, audience `sts.amazonaws.com` |
 | AWS IAM | 배포 역할의 신뢰 정책 | Deploy | `sub`를 `repo:kakaotechcampus-4/ktc4-chungnam-1:environment:production`으로 제한 |

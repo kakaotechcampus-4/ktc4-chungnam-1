@@ -165,6 +165,13 @@ jobs:
               fail=1
               ;;
           esac
+          # 배포 기록과 단계 상태 파일이 저장소 안에 생기면 7단계의 worktreeDirty 판정이 실패한다.
+          case "$DEPLOY_RELEASE_DIR/" in
+            "$DEPLOY_REPO_DIR"/*)
+              echo "::error::DEPLOY_RELEASE_DIR는 저장소 밖이어야 합니다."
+              fail=1
+              ;;
+          esac
           [ "$fail" = 0 ] || exit 1
 
           # 서버에서 단계마다 앞에 붙는 공통 부분. 값은 위에서 검사했다.
@@ -281,9 +288,13 @@ jobs:
           chmod 700 "$STATE_DIR"
           : > "$STATE_FILE"
 
-          # 추적 파일이 바뀐 서버에서는 배포하지 않는다. .env 같은 무시 파일은 보지 않는다.
-          if [ -n "$(git_read status --porcelain --untracked-files=no)" ]; then
-            echo "REPO_DIRTY: 서버 저장소의 추적 파일에 변경이 있습니다"
+          # 추적 파일 변경이나 무시되지 않은 새 파일이 있는 서버에서는 배포하지 않는다.
+          # 7단계의 capture_release.py와 같은 기준(git status --porcelain)이다. .env 같은 무시 파일은 보지 않는다.
+          dirty=$(git_read status --porcelain)
+          if [ -n "$dirty" ]; then
+            echo "REPO_DIRTY: 서버 저장소에 추적 파일 변경이나 무시되지 않은 새 파일이 있습니다"
+            # 공개 로그이므로 파일 이름은 출력하지 않고 개수만 남긴다. 서버에서 git status로 확인한다.
+            echo "REPO_DIRTY_COUNT $(printf '%s\n' "$dirty" | wc -l)"
             exit 1
           fi
           previous_sha=$(git_read rev-parse HEAD)
