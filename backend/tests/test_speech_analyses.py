@@ -595,7 +595,10 @@ def test_worker_keeps_audio_during_failover_and_finishes_one_job(backup_works) -
         return httpx.Response(200, json={
             "schemaVersion": 1, "analysisId": accepted["analysisId"],
             "language": "ko", "durationMs": 100,
-            "text": "합성 전사 결과", "segments": [],
+            "text": "합성 전사 결과", "segments": [{
+                "startMs": 0, "endMs": 100, "speakerLabel": "SPEAKER_00",
+                "text": "합성 전사 결과", "words": [],
+            }],
         })
 
     ai = AiServerClient(
