@@ -103,6 +103,7 @@ Deploy는 자동으로 되돌리지 않는다. 실패하면 요약에 이전 커
 - migration 단계가 실행됐다면 실패했더라도 `alembic current`로 DB revision을 먼저 확인한다. 이전 이미지가 새 스키마를 읽을 수 있다고 확인된 경우에만 보존 태그를 이미지 이름에 다시 붙이고 `docker compose up -d --no-build`로 되돌린다. 태그를 붙이기 전에 이미지 ID를 대조한다.
 - 새 migration이 들어간 배포 뒤에 이 workflow로 이전 SHA를 다시 배포하면 이전 코드에 없는 revision 때문에 `alembic upgrade head`가 실패한다. 이 경우는 위의 이미지 되돌리기와 [이상이 생겼을 때](../backend/docs/release-safety.md#이상이-생겼을-때)를 따른다.
 - `alembic downgrade`와 운영 DB 복원은 workflow에 넣지 않았다.
+- 배포 작업의 시간 한도는 210분이다. 단계별 SSM 대기 한도(실행 한도 + 300초) 합계 약 195분보다 길다. 대기 기한을 넘기거나 실행이 취소, 시간 초과로 끝나도 SSM 명령은 서버에서 계속 돌 수 있다. workflow는 SSM 명령을 취소하지 않는다. migration이나 컨테이너 교체를 중간에 끊으면 더 나쁜 상태가 남을 수 있어서다. 이때도 되돌리기 안내를 출력하며, 서버의 마지막 명령이 끝난 것을 확인하기 전에는 다시 배포하거나 되돌리지 않는다.
 
 ## 검증 범위
 
