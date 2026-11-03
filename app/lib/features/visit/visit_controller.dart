@@ -478,6 +478,9 @@ class VisitController extends AsyncNotifier<VisitState> {
     } on Exception {
       problem = VisitRecordingProblem.saveFailed;
     }
+    // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
+    // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
+    if (!ref.mounted) return;
 
     _update(
       (now) => now.copyWith(

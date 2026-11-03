@@ -3,6 +3,8 @@
 // 음성 형식과 저장 위치는 `VisitRecorder` 가 안고 있고, 여기서는 상태가 장치를
 // 부르는 순서와 실패했을 때의 화면 상태만 본다.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -357,6 +359,34 @@ void main() {
     });
   });
 
+  group('녹음 중에 정리될 때', () {
+    test('파일을 닫는 사이 컨테이너가 정리되면 상태를 건드리지 않고 끝낸다', () async {
+      // 앱을 통째로 정리하거나 로그아웃으로 provider 를 버리는 경우다. 파일
+      // 닫기(`stop`)가 끝나기 전에 정리되면, 끝난 뒤 정리된 ref 를 쓰지 않아야 한다.
+      final recorder = _SlowStopRecorder();
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...withMockCards,
+        ],
+      );
+      final cards = await container.read(cardsControllerProvider.future);
+      container
+          .read(cardsControllerProvider.notifier)
+          .toggleSelected(cards.cards.first.cardId);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      await controller.startRecording();
+
+      final stopping = controller.stopRecording(participantCount: 2);
+      expect(recorder.calls, contains('stop'));
+      container.dispose();
+      recorder.finishStop();
+
+      await expectLater(stopping, completes);
+    });
+  });
+
   group('음성 형식', () {
     // AI 영역이 형식을 확정하면 이 값이 바뀐다. 바뀌었는데 문서가 그대로면
     // 이 테스트가 먼저 알려 준다.
@@ -367,4 +397,18 @@ void main() {
       expect(VisitRecording.fileExtension, 'wav');
     });
   });
+}
+
+/// 파일 닫기를 테스트가 풀어 줄 때까지 붙잡아 두는 녹음 장치.
+class _SlowStopRecorder extends FakeVisitRecorder {
+  final _stopped = Completer<void>();
+
+  void finishStop() => _stopped.complete();
+
+  @override
+  Future<VisitRecording?> stop() async {
+    final saved = await super.stop();
+    await _stopped.future;
+    return saved;
+  }
 }
