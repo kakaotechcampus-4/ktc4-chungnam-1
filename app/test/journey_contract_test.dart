@@ -8,27 +8,38 @@
 // 검사라 스키마를 다른 방식으로 선언하면 따라 고쳐야 한다.
 //
 // 저장소 루트의 `backend/` 를 읽으므로 호스트의 `flutter test` 에서만 돈다.
-// 기기에서 도는 여정(`integration_test/`)에는 넣지 않는다.
+// 기기에서 도는 여정(`integration_test/`)에는 넣지 않는다. CI(`CI=true`)에서
+// `backend/` 를 찾지 못하면 건너뛰지 않고 실패한다.
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/models.dart';
+import 'package:saerok/data/profile_api.dart';
+import 'package:saerok/data/visit_api.dart';
 
 import 'journey/journey_server.dart';
 
 final _schemaDir = Directory('../backend/app/schemas');
+final _speechRoute = File('../backend/app/api/routes/speech_analyses.py');
 
 void main() {
-  final skip = _schemaDir.existsSync()
+  // 앱만 따로 받은 곳에서는 건너뛴다. CI 는 저장소 전체를 받으므로 없으면
+  // 경로가 바뀐 것이다. 조용히 초록으로 끝내지 않는다.
+  final inCi = Platform.environment['CI'] == 'true';
+  final skip = _schemaDir.existsSync() || inCi
       ? false
       : '저장소 루트의 backend/app/schemas 가 없다';
 
   late Map<String, _PyClass> schemas;
   setUpAll(() {
     if (skip != false) return;
+    if (!_schemaDir.existsSync()) {
+      fail('CI 에서 ${_schemaDir.absolute.path} 를 찾지 못했다');
+    }
     schemas = _parseSchemas(_schemaDir);
   });
 
@@ -128,6 +139,124 @@ void main() {
       at: '7-4',
     );
   }, skip: skip);
+
+  test('앱이 만드는 회차, 이야기 고치기, 녹음 요청이 BE 요청 형식을 따른다', () async {
+    // 앱의 실제 API 코드(ServerVisitApi, ProfileApi)로 가짜 서버를 부르고, 서버가
+    // 받은 본문을 비교한다.
+    final server = JourneyServer();
+    final client = ApiClient(
+      authorization: () => 'Bearer journey-token',
+      baseUrl: JourneyServer.baseUrl,
+      client: server.client,
+    );
+    final visits = ServerVisitApi(client);
+    final profiles = ProfileApi(client);
+
+    final setId = server.setIds.single;
+    final current = await client.get(
+      '/api/v1/profiles/${JourneyServer.profileId}/card-generations/current',
+    );
+    final cardIds = [
+      for (final card in (current['cards'] as List).take(2))
+        (card as Map)['cardId'] as String,
+    ];
+    final session = await visits.createSession(
+      setId: setId,
+      selectedCardIds: cardIds,
+    );
+    await visits.submitEvaluation(
+      session.sessionId,
+      EvaluationSubmission(
+        conversationSatisfaction: 4,
+        careRecipientReaction: CareRecipientReaction.pleased,
+        cardReviews: [
+          CardReview(
+            cardId: cardIds.first,
+            wasUsed: true,
+            caregiverReaction: CaregiverReaction.positive,
+          ),
+        ],
+        freeNote: null,
+      ),
+    );
+    final audioDir = Directory.systemTemp.createTempSync('saerok_contract_');
+    addTearDown(() => audioDir.deleteSync(recursive: true));
+    final audio = File('${audioDir.path}${Platform.pathSeparator}v.wav')
+      ..writeAsBytesSync(List.filled(44, 0));
+    await visits.submitAudio(
+      session.sessionId,
+      audioPath: audio.path,
+      participantCount: 2,
+    );
+
+    // 7-4 를 거치지 않고 일대기에 이야기 하나를 둔다. 고치기 요청만 본다.
+    server.lifeFacts.add({
+      'schemaVersion': 1,
+      'factId': '77777777-0000-4000-8000-000000000001',
+      'profileId': JourneyServer.profileId,
+      'storyCategory': 'other',
+      'title': '수선집 시절',
+      'content': '옷을 고치셨어요.',
+      'imageNumber': 1,
+      'createdAt': '2026-10-13T17:00:00+09:00',
+    });
+    await profiles.updateLifeFact(
+      '77777777-0000-4000-8000-000000000001',
+      storyCategory: 'other',
+      title: '고친 제목',
+      content: '고친 내용',
+      imageNumber: 1,
+    );
+
+    Object? bodyOf(String method, bool Function(String) path) => server.requests
+        .singleWhere((r) => r.method == method && path(r.path))
+        .body;
+
+    _expectShape(
+      schemas,
+      'CreateVisitSessionRequest',
+      bodyOf('POST', (p) => p == '/api/v1/visit-sessions'),
+      response: false,
+      at: '5-1',
+    );
+    _expectShape(
+      schemas,
+      'LifeFactUpdateRequest',
+      bodyOf('PATCH', (p) => p.startsWith('/api/v1/life-facts/')),
+      response: false,
+      at: '2-7',
+    );
+
+    // 6-2 는 pydantic 모델이 아니라 라우트의 File, Form 인자로 받는다.
+    final sent = (bodyOf('POST', (p) => p.endsWith('/speech-analyses'))! as Map)
+        .keys
+        .toSet();
+    expect(sent, _multipartNames(_speechRoute, 'submit_speech_analysis'));
+  }, skip: skip);
+}
+
+/// 라우트 함수 [function] 이 받는 multipart 이름. `File()` 인자는 인자 이름,
+/// `Form(alias=...)` 인자는 alias 를 쓴다.
+Set<String> _multipartNames(File route, String function) {
+  final source = route.readAsStringSync();
+  final start = source.indexOf('async def $function(');
+  expect(
+    start,
+    greaterThanOrEqualTo(0),
+    reason: '${route.path} 에 $function 이 없다',
+  );
+  final end = source.indexOf(') ->', start);
+  final params = source.substring(start, end);
+  final names = {
+    for (final m in RegExp(
+      r'(\w+): Annotated\[\s*UploadFile,\s*File\(\)',
+    ).allMatches(params))
+      m.group(1)!,
+    for (final m in RegExp(r'Form\(alias="(\w+)"').allMatches(params))
+      m.group(1)!,
+  };
+  expect(names, isNotEmpty, reason: '$function 의 File, Form 인자를 읽지 못했다');
+  return names;
 }
 
 /// 여정에서 앱이 부르는 순서대로 가짜 서버를 직접 부른다. 분석은 한 번 실패한
