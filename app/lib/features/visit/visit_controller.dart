@@ -303,9 +303,16 @@ class VisitController extends AsyncNotifier<VisitState> {
     } on ApiFailure catch (failure) {
       if (failure case ApiServerFailure(errorCode: 'CARD_SET_NEEDS_REFRESH')) {
         _fail(VisitRecordingProblem.cardsOutdated);
-        // 뒤에 있는 카드 화면이 다시 확인해 `다음 대화 준비하기` 를 보여주게
+        // 뒤에 있는 카드 화면이 다시 확인해 옛 카드를 감추고 홈으로 돌려보내게
         // 한다. 받아 둔 묶음은 버리지 않는다. 이 회차가 그 묶음을 보고 있다.
-        ref.invalidate(cardGenerationProvider);
+        // 지우면 시작하지 않은 상태로 남아 카드 화면이 기다리기만 하므로
+        // 다시 확인하게 한다.
+        final profileId = ref.read(serverProfileIdProvider).value;
+        if (profileId != null) {
+          unawaited(
+            ref.read(cardGenerationProvider(profileId).notifier).start(),
+          );
+        }
       } else {
         _fail(VisitRecordingProblem.sessionFailed);
       }
