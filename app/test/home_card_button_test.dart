@@ -32,7 +32,7 @@ const _needsRefresh = CardGenerationStatus.needsRefresh;
 const _poll = Duration(milliseconds: 50);
 const _button = '오늘의 대화카드 받기';
 const _making = '대화 카드를 만들고 있어요';
-const _remakingNotice = '카드를 받은 뒤 어르신 정보가 바뀌어서 대화 카드를 새로 만들고 있어요.';
+const _remakingNotice = '카드를 받은 뒤 어르신 정보가 바뀌어서';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -126,7 +126,11 @@ void main() {
       reason: '만드는 동안은 면을 조금 흐리게 한다',
     );
     expect(buttonColor(tester), isNot(AppColors.line), reason: '비활성 회색과 다르다');
-    expect(find.text(_remakingNotice), findsNothing, reason: '고친 묶음이 아니다');
+    expect(
+      find.textContaining(_remakingNotice),
+      findsNothing,
+      reason: '고친 묶음이 아니다',
+    );
 
     await tester.pump(_poll);
     await tester.pump(_poll);
@@ -195,14 +199,14 @@ void main() {
     await tester.pump();
 
     expect(location(router), AppRoutes.home, reason: '옛 카드를 보여주지 않는다');
-    expect(find.text(_remakingNotice), findsOneWidget);
+    expect(find.textContaining(_remakingNotice), findsOneWidget);
     expect(api.calls, contains('request'));
 
     await tester.pump(_poll);
     await tester.pump(_poll);
     await tester.pump();
 
-    expect(find.text(_remakingNotice), findsNothing);
+    expect(find.textContaining(_remakingNotice), findsNothing);
     expect(find.textContaining('대화 카드가 준비됐어요'), findsOneWidget);
   });
 
@@ -236,6 +240,77 @@ void main() {
     expect(find.textContaining('서버에 연결하지 못했어요'), findsOneWidget);
     expect(location(router), AppRoutes.home);
     expect(spinnerInButton(), findsNothing);
+  });
+
+  testWidgets('다 만든 것은 알림창, 실패는 버튼 아래 글로 남고 다시 누르면 지운다', (tester) async {
+    final api = FakeCardApi(statuses: [_none, _failed, _none, _ready]);
+    await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump(_poll);
+    await tester.pump();
+
+    expect(find.byType(SnackBar), findsNothing, reason: '알림창은 버튼을 가린다');
+    expect(find.textContaining('대화 카드를 만들지 못했어요'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 10));
+    expect(
+      find.textContaining('대화 카드를 만들지 못했어요'),
+      findsOneWidget,
+      reason: '저절로 사라지지 않는다',
+    );
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    expect(find.textContaining('대화 카드를 만들지 못했어요'), findsNothing);
+
+    await tester.pump(_poll);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.textContaining('대화 카드가 준비됐어요'),
+      ),
+      findsOneWidget,
+      reason: '다른 화면에 있어도 보이게 알림창으로 알린다',
+    );
+  });
+
+  testWidgets('실패와 연결 끊김은 빨간 글로 알린다', (tester) async {
+    await openHome(tester, _OfflineCardApi());
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump();
+
+    final text = tester.widget<Text>(find.textContaining('서버에 연결하지 못했어요'));
+    expect(text.style?.color, AppColors.danger);
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('새로 만드는 까닭은 i 기호와 함께 회색 상자에 둔다', (tester) async {
+    final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
+    await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump();
+
+    final box = find.ancestor(
+      of: find.textContaining(_remakingNotice),
+      matching: find.byType(Container),
+    );
+    expect(
+      find.descendant(of: box.first, matching: find.byIcon(Icons.info_outline)),
+      findsOneWidget,
+    );
+    final decoration = tester.widget<Container>(box.first).decoration;
+    expect((decoration! as BoxDecoration).color, AppColors.surface);
+    expect(find.textContaining('다른 화면을 봐도 괜찮아요'), findsNothing);
+
+    await tester.pump(_poll);
+    await tester.pump(_poll);
+    await tester.pump();
   });
 }
 

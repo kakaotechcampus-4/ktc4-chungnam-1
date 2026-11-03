@@ -411,6 +411,7 @@ void forgetCareProfiles(WidgetRef ref) {
   ref
     ..invalidate(cardGenerationProvider)
     ..invalidate(cardMakingProvider)
+    ..invalidate(cardNoticeProvider)
     ..invalidate(careProfilesProvider)
     ..invalidate(setupControllerProvider)
     ..invalidate(pendingSetupsProvider)

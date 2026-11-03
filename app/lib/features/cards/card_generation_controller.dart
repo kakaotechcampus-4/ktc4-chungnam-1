@@ -190,3 +190,35 @@ class CardMakingStage extends Notifier<CardMaking> {
   // ignore: use_setters_to_change_properties
   void set(CardMaking stage) => state = stage;
 }
+
+/// 홈 버튼 아래에 남기는 실패 안내다. 알림창은 버튼을 가려서 글로 둔다. 다 만든
+/// 것은 다른 화면에서도 보이게 알림창으로 알리므로 여기 두지 않는다.
+enum CardNotice {
+  /// 만들다 실패했다(4-2 `failed`).
+  failed,
+
+  /// 서버에 닿지 못했다.
+  offline,
+
+  /// 서버가 거절했거나 응답을 읽지 못했다.
+  error,
+}
+
+/// 어르신마다 둔다. 다른 분으로 바꾸면 그분의 안내를 보여준다. 버튼을 다시
+/// 누르면 지운다.
+final cardNoticeProvider =
+    NotifierProvider.family<CardNoticeState, CardNotice?, String>(
+      CardNoticeState.new,
+    );
+
+class CardNoticeState extends Notifier<CardNotice?> {
+  CardNoticeState(this.profileId);
+
+  final String profileId;
+
+  @override
+  CardNotice? build() => null;
+
+  // ignore: use_setters_to_change_properties
+  void set(CardNotice? notice) => state = notice;
+}

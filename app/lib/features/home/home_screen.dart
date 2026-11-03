@@ -172,11 +172,13 @@ class HomeScreen extends ConsumerWidget {
 ///
 /// 바로 쓸 묶음이 있으면 카드 화면으로 간다. 만들어야 하면(처음, 다 쓴 뒤,
 /// 받은 뒤 정보를 고친 뒤) 이 버튼이 도는 표시로 바뀌고, 그동안 일대기나
-/// 프로필을 볼 수 있다. 다 되면 하단 알림으로 알리고 카드 화면으로 데려가지
+/// 프로필을 볼 수 있다. 다 되면 알림창으로 알리고 카드 화면으로 데려가지
 /// 않는다. 보호자가 다른 화면에 있을 수 있어서다. 다시 누르면 들어간다.
+/// 실패는 버튼 아래 빨간 글로 남긴다. 알림창은 버튼을 가린다.
 ///
 /// 받은 뒤 정보를 고친 묶음이면 옛 카드를 보여주지 않고 12장을 모두 새로
-/// 만든다(2026-11-01 #171 에서 PM 확인). 만드는 동안 버튼 아래에 까닭을 둔다.
+/// 만든다(2026-11-01 #171 에서 PM 확인). 만드는 동안 버튼 아래 회색 상자에
+/// 까닭을 둔다.
 ///
 /// 버튼은 지금 고른 어르신의 상태를 보여준다. 다른 분으로 바꿔도 앞의 분은
 /// 서버와 앱 모두에서 이어서 만든다.
@@ -198,6 +200,11 @@ class _CardButton extends ConsumerWidget {
         ? ref.watch(cardMakingProvider(profileId!))
         : CardMaking.checking;
     final making = stage != CardMaking.checking;
+    // 만드는 동안은 지난 결과를 보이지 않는다.
+    final notice = profileId == null || loading
+        ? null
+        : ref.watch(cardNoticeProvider(profileId));
+    final name = ref.watch(profileProvider).value?.profile.name;
 
     return Column(
       children: [
@@ -208,11 +215,10 @@ class _CardButton extends ConsumerWidget {
         ),
         if (stage == CardMaking.remaking) ...[
           const SizedBox(height: AppSpacing.md),
-          const Text(
-            '카드를 받은 뒤 어르신 정보가 바뀌어서 대화 카드를 새로 만들고 있어요.',
-            style: AppTypography.sub,
-            textAlign: TextAlign.center,
-          ),
+          const _RemakingNotice(),
+        ] else if (notice != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _CardResult(notice: notice, name: name),
         ],
       ],
     );
@@ -226,6 +232,7 @@ class _CardButton extends ConsumerWidget {
     if (profileId == null || !context.mounted) return;
     final name = ref.read(profileProvider).value?.profile.name;
     final provider = cardGenerationProvider(profileId);
+    final notice = ref.read(cardNoticeProvider(profileId).notifier)..set(null);
 
     final waited = await ref.read(provider.notifier).prepare();
     if (!context.mounted) return;
@@ -244,21 +251,83 @@ class _CardButton extends ConsumerWidget {
       return;
     }
 
-    final who = name == null ? '' : '$name 어르신의 ';
-    final message = switch (result) {
-      AsyncError(error: ApiNetworkFailure()) =>
-        '서버에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.',
-      AsyncError() => '대화 카드를 불러오지 못했어요. 잠시 후 다시 눌러주세요.',
-      // 4-2 는 실패 이유를 주지 않으므로 공통 문구만 둔다.
-      _ when status == CardGenerationStatus.failed =>
-        '$who대화 카드를 만들지 못했어요. 다시 누르면 새로 만들어요.',
-      _ when opens => '$who대화 카드가 준비됐어요.',
+    // 다 만든 것은 알림창으로 알린다. 기다리는 동안 다른 화면에 있어도 보인다.
+    if (opens) {
+      final who = name == null ? '' : '$name 어르신의 ';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$who대화 카드가 준비됐어요.')));
+      return;
+    }
+
+    // 실패는 버튼 아래에 빨간 글로 남긴다. 알림창은 버튼을 가려 "다시 누르면"
+    // 이라고 하는 동안 누를 버튼이 보이지 않았다.
+    notice.set(switch (result) {
+      AsyncError(error: ApiNetworkFailure()) => CardNotice.offline,
+      AsyncError() => CardNotice.error,
+      _ when status == CardGenerationStatus.failed => CardNotice.failed,
       _ => null,
+    });
+  }
+}
+
+/// 받은 뒤 정보를 고친 묶음을 새로 만드는 까닭이다. 버튼 바로 아래 연한 회색
+/// 상자에 둔다(#171 코멘트의 예시 화면).
+class _RemakingNotice extends StatelessWidget {
+  const _RemakingNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 22, color: AppColors.textSub),
+          SizedBox(width: AppSpacing.md),
+          // 낱말 가운데서 줄이 바뀌지 않게 끊을 곳을 정한다.
+          Expanded(
+            child: Text(
+              '카드를 받은 뒤 어르신 정보가 바뀌어서\n'
+              '대화 카드를 새로 만들고 있어요.',
+              style: AppTypography.sub,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 버튼을 누른 결과다. 실패와 연결 끊김은 경고라 빨간 글로 쓴다.
+class _CardResult extends StatelessWidget {
+  const _CardResult({required this.notice, required this.name});
+
+  final CardNotice notice;
+  final String? name;
+
+  @override
+  Widget build(BuildContext context) {
+    final who = name == null ? '' : '$name 어르신의 ';
+    final message = switch (notice) {
+      // 4-2 는 실패 이유를 주지 않으므로 공통 문구만 둔다.
+      CardNotice.failed => '$who대화 카드를 만들지 못했어요.\n다시 누르면 새로 만들어요.',
+      CardNotice.offline => '서버에 연결하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+      CardNotice.error => '대화 카드를 불러오지 못했어요.\n잠시 후 다시 눌러주세요.',
     };
-    if (message == null) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    return Semantics(
+      liveRegion: true,
+      child: Text(
+        message,
+        style: AppTypography.sub.copyWith(color: AppColors.danger),
+        textAlign: TextAlign.center,
+      ),
+    );
   }
 }
 
