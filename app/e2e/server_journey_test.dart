@@ -388,6 +388,7 @@ void main() {
 
       _writeOutcome({
         'secondReport': true,
+        'cardRetries': _cardRetries,
         'reportRetry': _expectReportRetry,
         'cardFailureRecovered': _syntheticCards,
         'approved': approved,
@@ -484,18 +485,26 @@ Future<AnalysisStatus?> _waitForAnalysis(
   fail('음성 분석이 ${_wait.inSeconds}초 안에 끝나지 않았습니다');
 }
 
+/// 실제 모델 모드에서 카드 생성이 실패해 다시 요청한 횟수.
+var _cardRetries = 0;
+
 /// 4-1 로 요청하고 4-2 가 `ready` 가 될 때까지 기다린 뒤 4-3 으로 받는다.
+///
+/// 실제 모델은 외부 API 가 늦어 제한 시간에 걸릴 수 있다(`LLM_UNAVAILABLE`). 그때는 보호자가
+/// 다시 누르는 것처럼 한 번만 더 요청하고 그 횟수를 결과에 남긴다. 합성 모드에서는 다시 요청하지 않는다.
 Future<CardSet> _generate(ServerCardApi cards, String profileId) async {
-  expect(
-    await cards.requestGeneration(profileId),
-    CardGenerationStatus.running,
-  );
-  expect(
-    await _waitForCards(cards, profileId),
-    CardGenerationStatus.ready,
-    reason: '카드 생성이 실패했다',
-  );
-  return cards.current(profileId);
+  for (var attempt = 1; ; attempt++) {
+    expect(
+      await cards.requestGeneration(profileId),
+      CardGenerationStatus.running,
+    );
+    final status = await _waitForCards(cards, profileId);
+    if (status == CardGenerationStatus.ready) return cards.current(profileId);
+    if (!_realModels || attempt >= 2) {
+      fail('카드 생성이 $status 로 끝났다');
+    }
+    _cardRetries++;
+  }
 }
 
 /// 4-2 가 `running` 에서 벗어날 때까지 기다린다.
