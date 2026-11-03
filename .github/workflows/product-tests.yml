@@ -33,6 +33,20 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+  python-lint:
+    name: Python syntax and undefined names
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+      # 문법 오류와 정의되지 않은 이름만 본다. 형식과 스타일 규칙은 기존 코드 정리 뒤에 넓힌다.
+      - run: uvx ruff@0.17.3 check --select E9,F63,F7,F82 backend ai stt-server
+
   backend:
     name: Backend and PostgreSQL tests
     runs-on: ubuntu-24.04

@@ -1,7 +1,7 @@
 # 제품 테스트 CI
 
 `.github/workflows/product-tests.yml`은 develop과 main 대상 PR, 수동 실행에서
-Flutter 정적 검사와 테스트, BE 테스트, AI 단위 테스트, STT 계약과 파이프라인 테스트를 각각 실행한다.
+Flutter 정적 검사와 테스트, Python 정적 검사, BE 테스트, AI 단위 테스트, STT 계약과 파이프라인 테스트를 각각 실행한다.
 기존 운영진의 멘토 배정, PR 형식 확인과 디스코드 알림 workflow는 수정하지 않는다.
 
 ## 범위와 실행
@@ -12,6 +12,7 @@ Flutter 정적 검사와 테스트, BE 테스트, AI 단위 테스트, STT 계�
 | `backend/` | `uv sync --locked`, `uv run --locked pytest -ra` | API, 서비스, migration과 실제 PostgreSQL 저장 검사 |
 | `ai/` | `uv sync --locked`, `uv run --locked pytest -ra` | 카드, 리포트와 변경 제안의 단위 테스트 및 카드 자료 조회 DB 검사 |
 | `stt-server/` | `uv sync --locked`, `PYTHONPATH=src uv run --locked python -m unittest discover -s tests -v` | 입력 검증, 화자 정렬, 오류 처리와 합성 응답을 사용하는 파이프라인 검사 |
+| 저장소 루트 | `uvx ruff@0.17.3 check --select E9,F63,F7,F82 backend ai stt-server` | Python 문법 오류, 정의되지 않은 이름, 잘못된 비교 같은 실행 전에 알 수 있는 오류. 형식과 스타일 규칙은 아직 넣지 않음 |
 
 Flutter 3.44.8, Python 3.12와 uv 0.11.26을 사용한다. Python과 Dart 의존성은
 저장소의 lockfile을 따른다. action은 확인한 커밋에 고정했다.
