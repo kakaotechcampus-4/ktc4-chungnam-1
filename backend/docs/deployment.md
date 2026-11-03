@@ -79,6 +79,7 @@ uv run pytest
 
    | 항목 | 값 |
    | --- | --- |
+   | `SAEROK_ENVIRONMENT` | `production`. 자동 API 문서(`/docs`, `/redoc`, `/openapi.json`)를 닫는다 |
    | `SAEROK_POSTGRES_PASSWORD` | db 컨테이너를 쓸 때 새로 만든 비밀번호 |
    | `SAEROK_DATABASE_URL` | db 컨테이너면 `postgresql+psycopg://saerok:<비밀번호>@db:5432/saerok` |
    | `SAEROK_SESSION_SECRET` | `openssl rand -base64 48`로 만든 값. 로컬 개발의 값과 다르게 둔다 |
