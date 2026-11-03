@@ -464,6 +464,10 @@ class VisitController extends AsyncNotifier<VisitState> {
         (now) =>
             now.copyWith(recording: false, participantCount: participantCount),
       );
+      // 화면을 떠날 때는 새로 적을 것이 없다. 파일은 닫을 때 이미 적었고, 그
+      // 사이 제출이 끝나 보냈다고 적었을 수 있다. 다시 적으면 보낸 녹음이
+      // 보낼 녹음으로 돌아가 앱을 다시 켰을 때 또 보내려 든다.
+      if (deferStateChange) return;
       await _rememberUpload();
       return;
     }

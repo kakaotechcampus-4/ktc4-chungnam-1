@@ -262,6 +262,36 @@ void main() {
       expect(recorder.calls, isNot(contains('stop')));
     });
 
+    test('보낸 녹음은 화면을 떠날 때 다시 보낼 녹음으로 돌아가지 않는다', () async {
+      // 제출이 끝나 보냈다고 적은 뒤 녹음 화면이 늦게 정리되는 경우다. 다시
+      // 적으면 앱을 다시 켰을 때 같은 녹음을 또 보내려 든다.
+      final recorder = FakeVisitRecorder();
+      final uploads = FakePendingUploads();
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...mockCardsWith(pendingUploads: uploads),
+        ],
+      );
+      addTearDown(container.dispose);
+      final cards = await container.read(cardsControllerProvider.future);
+      container
+          .read(cardsControllerProvider.notifier)
+          .toggleSelected(cards.cards.first.cardId);
+      await container.read(visitControllerProvider.future);
+      final visit = container.read(visitControllerProvider.notifier);
+
+      await visit.startRecording();
+      await visit.stopRecording(participantCount: 2);
+      final pending = uploads.saved[FakeVisitApi.sessionId]!;
+      await uploads.markUploaded(pending);
+
+      await visit.stopRecordingOnLeave();
+
+      expect(uploads.saved, isEmpty);
+      expect(uploads.uploaded[FakeVisitApi.sessionId]?.participantCount, 2);
+    });
+
     testWidgets('녹음 전 안내에서 나가도 상태 수정 오류가 나지 않는다', (tester) async {
       final (container, _, recorder) = await showScreen(tester, start: false);
       expect(find.text('네, 좋아요'), findsOneWidget);
