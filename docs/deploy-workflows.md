@@ -75,7 +75,6 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 SHA, 대상 브랜치, 
 - 3단계 빌드에서 실패하면 migration을 시작하지 않았으므로 배포 전 버전의 CLI로 다시 연다.
 - 4단계부터 실패하면 자동으로 열지 않는다. migration이 일부 적용됐을 수 있어, DB revision을 확인하고 새 이미지를 유지할지 되돌릴지 정한 뒤 여는 순서를 되돌리기 안내에 출력한다. 취소나 시간 초과로 끝난 실행도 자동으로 열지 않는다.
 - 사후 점검을 통과하면 6b가 `resume-workers`, `status`, `resume-all` 순서로 연다. BE 문서가 두 명령 사이에 두는 대기 작업, STT와 ML 설정 확인과 옛 앱/새 앱 확인은 사람이 한다.
-- 접수 중지 중에는 앱이 녹음과 입력을 지우지 않고 점검 안내를 보여준다([앱의 점검 응답 처리](../app/README.md#배포-중-점검-응답)).
 
 서버 출력은 Actions 로그에 남으므로 서버 안에서 `127.0.0.1`로만 점검하고 `.env`와 `docker compose config` 원문을 출력하지 않는다. 백업 결과의 복원 행 수(`restoredRowCounts`)와 `runtime_check`의 상태별 집계도 운영 정보라 로그에 그대로 찍지 않는다. 로그에는 백업의 `restoreVerified`, `archive`, `sha256`, 단계와 오류 코드, `runtime_check`의 issues와 revision, 판정에 쓴 처리 중 작업 수만 남기고, 전체 JSON은 서버의 `DEPLOY_RELEASE_DIR/runs/<실행 번호>/`에만 둔다. 백업과 배포 기록 파일은 0600 또는 0700 권한으로 만든다.
 
@@ -140,7 +139,7 @@ Deploy는 실행할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saer
 
 ## 검증 범위
 
-11월 3일 로컬에서 확인한 것과 확인하지 않은 것이다.
+11월 3일 로컬 통합 브랜치에서 확인한 것과 확인하지 않은 것이다. 그 브랜치에는 이 PR에 없는 다른 미병합 변경(백업 도구, 배포 중 접수 중지, 이미지 패키지 검사 등)이 함께 들어 있었다.
 
 - actionlint 1.7.12로 저장소의 workflow 일곱 개 전체를 검사했다. `product-tests.yml`과 `release-build.yml`은 shellcheck 0.11.0 연동까지 통과했다. `deploy.yml`은 Windows에서 shellcheck 연동 실행이 끝나지 않아, 두 새 workflow의 `run` 스크립트와 서버에 보낼 스크립트를 따로 꺼내 shellcheck로 검사했다.
 - 로컬 Docker에서 Release build와 같은 buildx 명령으로 이미지를 만들고, revision 라벨, Alembic head `e84b1c6da032`와 `tests/test_container_packages.py`(2개 통과)를 확인했다.
