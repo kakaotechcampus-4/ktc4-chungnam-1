@@ -20,8 +20,8 @@ final cardPollIntervalProvider = Provider<Duration>(
 /// - `ready`, `inVisit`, `needsRefresh` 면 그 상태로 끝낸다.
 ///
 /// `needsRefresh` 는 [start] 에서 다시 만들지 않는다. 고칠 때마다 만들지 않고
-/// 보호자가 `다음 대화 준비하기` 를 눌렀을 때 모아서 만든다([refresh], PM 기준
-/// 사실 정정과 다음 면회 카드 반영).
+/// 보호자가 홈 버튼을 눌렀을 때 모아서 만든다([prepare], PM 기준 사실 정정과
+/// 다음 면회 카드 반영).
 ///
 /// 상태는 `null`(아직 시작하지 않음)에서 시작하고, 묻는 동안은 loading 이다.
 /// 화면에 묶이지 않아서 보호자가 다른 화면에 가 있어도 다 될 때까지 묻는다.
@@ -32,8 +32,9 @@ final cardPollIntervalProvider = Provider<Duration>(
 /// 화면은 공통 문구만 보여준다. 다시 받기도 [start] 로 한다.
 ///
 /// 홈의 `오늘의 대화카드 받기` 는 [prepare] 를 부른다. [start] 와 같되
-/// `needsRefresh` 도 새로 만든다. 홈 버튼이 `다음 대화 준비` 를 맡는다
-/// (2026-11-01 #171 에서 PM 확인).
+/// `needsRefresh` 도 4-1 로 12장을 모두 새로 만든다. 홈 버튼이 `다음 대화
+/// 준비` 를 맡는다(2026-11-01 #171 에서 PM 확인). 카드 화면은 [start] 로
+/// 상태만 다시 확인한다.
 class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   CardGenerationController(this.profileId);
 
@@ -64,31 +65,6 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     return ref.mounted && _stage != CardMaking.checking;
   }
 
-  /// `다음 대화 준비하기`. 받은 뒤 고친 묶음을 버리고 새로 만든다.
-  ///
-  /// 4-2 가 `ready` 였어도 이어서 받은 묶음(4-3)이 `needsRefresh` 면 다시
-  /// 만든다. 상태를 물은 뒤 묶음을 받기 전에 정보를 고친 경우다. 화면도 두 값
-  /// 중 하나라도 `needsRefresh` 면 이 버튼을 보여준다.
-  ///
-  /// 4-1 을 부르면 서버는 예전 묶음을 더는 주지 않는다. 만드는 동안은 loading
-  /// 이고, 실패하면 `failed` 로 끝나 실패 화면의 다시 받기로 이어진다. 만드는
-  /// 중에 다시 누르면 무시한다.
-  Future<void> refresh() async {
-    if (state.isLoading) return;
-    // 묶음을 아직 받지 않았으면 여기서 받으러 가지 않는다.
-    final setOutdated =
-        ref.exists(currentCardSetProvider) &&
-        (ref.read(currentCardSetProvider).value?.needsRefresh ?? false);
-    final outdated =
-        state.value == CardGenerationStatus.needsRefresh ||
-        (state.value == CardGenerationStatus.ready && setOutdated);
-    if (!outdated) return;
-    await _begin((api, run) {
-      _mark(run, CardMaking.remaking);
-      return _generate(api, run);
-    });
-  }
-
   /// [flow] 를 새 흐름으로 돌리고 끝나면 상태에 담는다.
   Future<void> _begin(
     Future<CardGenerationStatus> Function(CardApi api, int run) flow,
@@ -109,7 +85,7 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     bool remake = false,
   }) async {
     final status = await api.status(profileId);
-    if (remake && status == CardGenerationStatus.needsRefresh) {
+    if (remake && _outdated(status)) {
       _mark(run, CardMaking.remaking);
       return _generate(api, run);
     }
@@ -119,6 +95,17 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
       CardGenerationStatus.running => _wait(api, run, status),
       _ => status,
     };
+  }
+
+  /// 받은 뒤 정보를 고친 묶음인지. 4-2 가 `ready` 여도 받아 둔 묶음(4-3)이
+  /// `needsRefresh` 면 그렇다. 상태를 물은 뒤 묶음을 받기 전에 고친 경우다.
+  /// 이때 새로 만들지 않으면 카드 화면이 홈으로 돌려보내고 홈은 다시 카드
+  /// 화면으로 보내 오가기만 한다. 묶음을 아직 받지 않았으면 받으러 가지 않는다.
+  bool _outdated(CardGenerationStatus status) {
+    if (status == CardGenerationStatus.needsRefresh) return true;
+    if (status != CardGenerationStatus.ready) return false;
+    return ref.exists(currentCardSetProvider) &&
+        (ref.read(currentCardSetProvider).value?.needsRefresh ?? false);
   }
 
   /// 4-1 로 만들어 달라고 한 뒤 다 될 때까지 기다린다.

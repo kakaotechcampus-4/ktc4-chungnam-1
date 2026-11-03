@@ -136,41 +136,98 @@ void main() {
     final container = makeContainer(api);
 
     expect(await run(container), _needsRefresh);
-    expect(api.calls, ['status'], reason: '보호자가 다음 대화 준비를 누를 때 만든다');
+    expect(api.calls, ['status'], reason: '보호자가 홈 버튼을 누를 때 만든다');
   });
 
-  test('다음 대화 준비를 누르면 새로 만들고 받아 둔 묶음을 버린다', () async {
-    final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
-    final container = makeContainer(api);
-    await container.read(currentCardSetProvider.future);
-    expect(await run(container), _needsRefresh);
+  group('홈 버튼(prepare)', () {
+    test('쓸 묶음이 있으면 기다리지 않았다고 알린다', () async {
+      final api = FakeCardApi(statuses: [_ready]);
+      final container = makeContainer(api);
 
-    await container.read(generation.notifier).refresh();
+      expect(await container.read(generation.notifier).prepare(), isFalse);
+      expect(container.read(generation).value, _ready);
+      expect(api.calls, ['status']);
+    });
 
-    expect(container.read(generation).value, _ready);
-    expect(api.calls.where((c) => c == 'request'), hasLength(1));
-    await container.read(currentCardSetProvider.future);
-    expect(api.calls.where((c) => c == 'current'), hasLength(2));
-  });
+    test('만들어야 하면 기다렸다고 알린다', () async {
+      final api = FakeCardApi(statuses: [_none, _running, _ready]);
+      final container = makeContainer(api);
 
-  test('다시 만들다 실패하면 실패로 끝난다', () async {
-    final api = FakeCardApi(statuses: [_needsRefresh, _failed]);
-    final container = makeContainer(api);
-    await run(container);
+      expect(await container.read(generation.notifier).prepare(), isTrue);
+      expect(container.read(generation).value, _ready);
+    });
 
-    await container.read(generation.notifier).refresh();
+    test('만드는 중이었어도 기다렸다고 알린다', () async {
+      final api = FakeCardApi(statuses: [_running, _ready]);
+      final container = makeContainer(api);
 
-    expect(container.read(generation).value, _failed);
-  });
+      expect(await container.read(generation.notifier).prepare(), isTrue);
+      expect(api.calls, isNot(contains('request')));
+    });
 
-  test('다시 만들 묶음이 아니면 다음 대화 준비는 아무것도 하지 않는다', () async {
-    final api = FakeCardApi(statuses: [_ready]);
-    final container = makeContainer(api);
-    await run(container);
+    test('받은 뒤 정보를 고친 묶음이면 새로 만들고 받아 둔 묶음을 버린다', () async {
+      final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
+      final container = makeContainer(api);
+      await container.read(currentCardSetProvider.future);
 
-    await container.read(generation.notifier).refresh();
+      expect(await container.read(generation.notifier).prepare(), isTrue);
 
-    expect(api.calls, ['status']);
+      expect(container.read(generation).value, _ready);
+      expect(api.calls.where((c) => c == 'request'), hasLength(1));
+      await container.read(currentCardSetProvider.future);
+      expect(api.calls.where((c) => c == 'current'), hasLength(2));
+    });
+
+    test('상태는 ready 여도 받아 둔 묶음이 고친 묶음이면 새로 만든다', () async {
+      // 카드 화면이 홈으로 돌려보낸 경우다. 다시 만들지 않으면 오가기만 한다.
+      final api = _OutdatedSetCardApi(statuses: [_ready, _running, _ready]);
+      final container = makeContainer(api);
+      await container.read(currentCardSetProvider.future);
+
+      await container.read(generation.notifier).prepare();
+
+      expect(api.calls.where((c) => c == 'request'), hasLength(1));
+      expect(container.read(generation).value, _ready);
+    });
+
+    test('묶음을 아직 받지 않았으면 받으러 가지 않는다', () async {
+      final api = FakeCardApi(statuses: [_ready]);
+      final container = makeContainer(api);
+
+      await container.read(generation.notifier).prepare();
+
+      expect(api.calls, ['status']);
+    });
+
+    test('다시 만들다 실패하면 실패로 끝난다', () async {
+      final api = FakeCardApi(statuses: [_needsRefresh, _failed]);
+      final container = makeContainer(api);
+
+      await container.read(generation.notifier).prepare();
+
+      expect(container.read(generation).value, _failed);
+    });
+
+    test('어디까지 왔는지 남긴다', () async {
+      final making = cardMakingProvider(sampleProfileId);
+      final seen = <CardMaking>[];
+
+      Future<void> watch(List<CardGenerationStatus> statuses) async {
+        final container = makeContainer(FakeCardApi(statuses: statuses));
+        container.listen(making, (_, next) => seen.add(next));
+        await container.read(generation.notifier).prepare();
+        seen.add(container.read(making));
+      }
+
+      await watch([_ready]);
+      expect(seen.last, CardMaking.checking, reason: '묻기만 했다');
+
+      await watch([_none, _ready]);
+      expect(seen.last, CardMaking.making);
+
+      await watch([_needsRefresh, _running, _ready]);
+      expect(seen.last, CardMaking.remaking, reason: '만드는 중으로 낮추지 않는다');
+    });
   });
 
   test('생성 요청이 이미 쓸 묶음이 있다고 거절되면 그 상태로 끝낸다', () async {
@@ -287,6 +344,27 @@ void main() {
     expect(api.profileIds, everyElement('server-profile-1'));
     expect(api.profileIds, isNot(contains(sampleProfileId)));
   });
+}
+
+/// 받아 둔 묶음(4-3)이 받은 뒤 정보를 고친 묶음이다. 다시 만든 뒤에는
+/// 고치지 않은 묶음을 준다.
+class _OutdatedSetCardApi extends FakeCardApi {
+  _OutdatedSetCardApi({required super.statuses});
+
+  var _first = true;
+
+  @override
+  Future<CardSet> current(String profileId) async {
+    final set = await super.current(profileId);
+    if (!_first) return set;
+    _first = false;
+    return CardSet(
+      setId: set.setId,
+      usedBySessionId: set.usedBySessionId,
+      cards: set.cards,
+      needsRefresh: true,
+    );
+  }
 }
 
 /// 서버에 닿지 못한다.

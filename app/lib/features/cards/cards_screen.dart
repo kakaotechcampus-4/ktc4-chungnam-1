@@ -86,11 +86,8 @@ class _GenerationState extends ConsumerState<_Generation> {
         onRetry: controller.start,
       ),
       data: (status) => switch (status) {
-        CardGenerationStatus.ready => _Cards(profileId: widget.profileId),
-        CardGenerationStatus.needsRefresh => _Cards(
-          profileId: widget.profileId,
-          outdated: true,
-        ),
+        CardGenerationStatus.ready => const _Cards(),
+        CardGenerationStatus.needsRefresh => const _Outdated(),
         // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
         // 못하므로 공통 문구만 보여준다.
         CardGenerationStatus.failed => ErrorStateView(
@@ -118,20 +115,17 @@ String _failureMessage(Object error) => switch (error) {
 
 /// 쓸 묶음이 준비된 뒤의 카드 고르기.
 ///
-/// [outdated] 면 받은 뒤 프로필이나 일대기를 고친 묶음이다. 카드는 보여주되
-/// 고르거나 면회를 시작하지 못하게 하고 `다음 대화 준비하기` 를 둔다. 받아 둔
-/// 묶음(4-3)이 그렇다고 해도 같다.
+/// 받은 묶음(4-3)이 `needsRefresh` 면 카드를 보여주지 않고 [_Outdated] 로
+/// 홈에 돌려보낸다. 4-2 는 `ready` 였지만 그 사이에 정보를 고친 경우다.
 class _Cards extends ConsumerWidget {
-  const _Cards({required this.profileId, this.outdated = false});
-
-  final String profileId;
-  final bool outdated;
+  const _Cards();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cards = ref.watch(cardsControllerProvider);
     final setOutdated =
         ref.watch(currentCardSetProvider).value?.needsRefresh ?? false;
+    if (setOutdated) return const _Outdated();
 
     return cards.when(
       loading: () => const LoadingView(message: '오늘의 대화 카드를 불러오고 있어요'),
@@ -140,25 +134,36 @@ class _Cards extends ConsumerWidget {
         // 실패한 묶음 조회를 버려야 다시 받는다.
         onRetry: () => ref.invalidate(currentCardSetProvider),
       ),
-      data: (state) => _Body(
-        profileId: profileId,
-        state: state,
-        outdated: outdated || setOutdated,
-      ),
+      data: (state) => _Body(state: state),
+    );
+  }
+}
+
+/// 받은 뒤 프로필이나 일대기를 고친 묶음이다.
+///
+/// 옛 카드는 보여주지 않고 고르거나 면회를 시작하지 못하게 한다. 새 카드는
+/// 홈의 `오늘의 대화카드 받기` 에서 12장을 모두 다시 만든다(2026-11-01 #171
+/// 에서 PM 확인). 만드는 동안 다른 화면을 볼 수 있게 하려는 것이다.
+class _Outdated extends StatelessWidget {
+  const _Outdated();
+
+  @override
+  Widget build(BuildContext context) {
+    return EmptyStateView(
+      message:
+          '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n'
+          '홈에서 오늘의 대화카드 받기를 누르면\n새로 만들어요.',
+      icon: Icons.style_outlined,
+      actionLabel: '홈으로 가기',
+      onAction: () => context.go(AppRoutes.home),
     );
   }
 }
 
 class _Body extends ConsumerStatefulWidget {
-  const _Body({
-    required this.profileId,
-    required this.state,
-    required this.outdated,
-  });
+  const _Body({required this.state});
 
-  final String profileId;
   final CardsState state;
-  final bool outdated;
 
   @override
   ConsumerState<_Body> createState() => _BodyState();
@@ -201,7 +206,6 @@ class _BodyState extends ConsumerState<_Body> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    final outdated = widget.outdated;
     final controller = ref.read(cardsControllerProvider.notifier);
 
     if (state.cards.isEmpty) {
@@ -218,34 +222,27 @@ class _BodyState extends ConsumerState<_Body> {
       },
       child: ScreenBody(
         scrollable: true,
-        bottom: outdated
-            ? PrimaryButton(
-                label: '다음 대화 준비하기',
-                onPressed: ref
-                    .read(cardGenerationProvider(widget.profileId).notifier)
-                    .refresh,
-              )
-            : PrimaryButton(
-                label: '대화 시작하기',
-                // 한 장도 고르지 않으면 시작하지 않는다.
-                onPressed: state.canStart
-                    ? () {
-                        // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
-                        // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
-                        // (visit_photos.dart). 못 지워도 면회는 시작한다.
-                        ref.invalidate(visitControllerProvider);
-                        ref.invalidate(reviewControllerProvider);
-                        ref.invalidate(visitPhotoProvider);
-                        unawaited(
-                          ref
-                              .read(visitPhotosProvider)
-                              .tidy()
-                              .catchError((Object _) {}),
-                        );
-                        context.push(AppRoutes.visitPhoto);
-                      }
-                    : null,
-              ),
+        bottom: PrimaryButton(
+          label: '대화 시작하기',
+          // 한 장도 고르지 않으면 시작하지 않는다.
+          onPressed: state.canStart
+              ? () {
+                  // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
+                  // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
+                  // (visit_photos.dart). 못 지워도 면회는 시작한다.
+                  ref.invalidate(visitControllerProvider);
+                  ref.invalidate(reviewControllerProvider);
+                  ref.invalidate(visitPhotoProvider);
+                  unawaited(
+                    ref
+                        .read(visitPhotosProvider)
+                        .tidy()
+                        .catchError((Object _) {}),
+                  );
+                  context.push(AppRoutes.visitPhoto);
+                }
+              : null,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -255,21 +252,15 @@ class _BodyState extends ConsumerState<_Body> {
             const Text('오늘은 어떤 이야기를 나눠볼까요?', style: AppTypography.body),
             const SizedBox(height: AppSpacing.xl),
 
-            if (outdated)
-              const _OutdatedNotice()
-            else
-              _SelectionSummary(count: state.selectedIds.length),
+            _SelectionSummary(count: state.selectedIds.length),
             const SizedBox(height: AppSpacing.xl),
 
             for (final card in state.visibleCards) ...[
               _CardTile(
                 card: card,
-                // 고친 묶음은 고를 수 없다. 앞서 고른 표시도 남기지 않는다.
-                selected: !outdated && state.selectedIds.contains(card.cardId),
+                selected: state.selectedIds.contains(card.cardId),
                 expanded: state.expandedId == card.cardId,
-                onToggleSelected: outdated
-                    ? null
-                    : () => controller.toggleSelected(card.cardId),
+                onToggleSelected: () => controller.toggleSelected(card.cardId),
                 onToggleExpanded: () => controller.toggleExpanded(card.cardId),
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -322,23 +313,6 @@ class _SelectionSummary extends StatelessWidget {
   }
 }
 
-/// 받은 뒤 정보를 고친 묶음이라는 안내. 선택 수 자리에 둔다.
-class _OutdatedNotice extends StatelessWidget {
-  const _OutdatedNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurfaceBox(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: const Text(
-        '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n'
-        '바뀐 정보로 대화 카드를 다시 준비해주세요.',
-        style: AppTypography.body,
-      ),
-    );
-  }
-}
-
 /// 카드 한 장. 접힌 상태에서는 주제와 안내 문장을, 펼치면 질문까지 보여준다.
 class _CardTile extends StatelessWidget {
   const _CardTile({
@@ -352,9 +326,7 @@ class _CardTile extends StatelessWidget {
   final ConversationCard card;
   final bool selected;
   final bool expanded;
-
-  /// `null` 이면 고를 수 없는 카드라 선택 표시를 두지 않는다.
-  final VoidCallback? onToggleSelected;
+  final VoidCallback onToggleSelected;
   final VoidCallback onToggleExpanded;
 
   @override
@@ -382,18 +354,16 @@ class _CardTile extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: AppSpacing.md),
               // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다.
-              if (onToggleSelected case final onTap?) ...[
-                const SizedBox(width: AppSpacing.md),
-                GestureDetector(
-                  onTap: onTap,
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    child: SelectionMark(selected: selected),
-                  ),
+              GestureDetector(
+                onTap: onToggleSelected,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: SelectionMark(selected: selected),
                 ),
-              ],
+              ),
             ],
           ),
 
