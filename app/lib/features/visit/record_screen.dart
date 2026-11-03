@@ -119,8 +119,8 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
 /// 반영된다.
 const recordingRetentionNotice =
     '녹음은 리포트와 다음 대화 준비에만 써요.\n'
-    '서버로 보낸 녹음은 분석 후 지우고,\n'
-    '휴대폰에는 다시 보낼 때를 위해 남겨요.';
+    '서버로 보낸 녹음 파일은 분석 후 바로 지워요.\n'
+    '이 휴대폰에는 다시 보낼 때를 위해 녹음이 남아요.';
 
 /// E-1. 녹음 전 안내.
 ///
