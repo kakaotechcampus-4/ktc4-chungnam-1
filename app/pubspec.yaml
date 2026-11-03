@@ -51,6 +51,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 앱 전체 여정(test/journey/)을 기기나 에뮬레이터에서 돌린다. integration_test/ 참고.
+  integration_test:
+    sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
