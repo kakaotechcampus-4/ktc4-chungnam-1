@@ -85,10 +85,10 @@ jobs:
             ai/uv.lock
       - run: uv sync --locked
       - run: uv run --locked pytest -ra
-      # 타입 검사는 운영 도구(app/ops)부터 시작한다. 처음 결과를 확인하기 전까지는 실패해도 막지 않는다.
-      - name: Type check app/ops (informational)
+      # BE 코드 전체의 타입 검사. 처음 결과로 오류 수를 본 뒤 범위와 막을지를 정한다. 그 전까지는 실패해도 막지 않는다.
+      - name: Type check app (informational)
         continue-on-error: true
-        run: uv run --locked --with mypy==2.2.0 mypy --follow-imports=silent --ignore-missing-imports app/ops
+        run: uv run --locked --with mypy==2.2.0 mypy --follow-imports=silent --ignore-missing-imports app
       # 서버가 만드는 API 스키마를 결과물로 남긴다. 손으로 쓴 명세(docs/architecture/api-spec.md)와 함께 본다.
       - name: Export OpenAPI schema
         run: uv run --locked python -c "import json; from app.main import app; print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))" > openapi.json
