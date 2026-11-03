@@ -29,24 +29,25 @@
 
 | 명령 | 실행 위치 |
 | --- | --- |
-| `flutter test` (또는 `flutter test test/app_journey_test.dart`) | 호스트, 화면 없음. CI의 `flutter test`가 변경마다 다시 실행한다 |
+| `flutter test` (또는 `flutter test test/app_journey_test.dart`) | 호스트, 화면 없음. CI(`product-tests.yml`)의 `flutter test`가 develop과 main으로 가는 PR마다, 그리고 수동 실행 때 다시 돈다. push에서는 돌지 않는다 |
 | `flutter test integration_test/app_journey_test.dart` | 연결한 Android 기기나 에뮬레이터. `integration_test` 패키지를 쓴다 |
-| `flutter test test/journey_contract_test.dart` | 호스트. 가짜 서버 응답과 앱 요청 본문의 필드 이름을 `backend/app/schemas/*.py`와 비교한다 |
+| `flutter test test/journey_contract_test.dart` | 호스트. 가짜 서버 응답과 앱 요청 본문(6-1, 7-4, 5-1, 2-7)의 필드 이름을 `backend/app/schemas/*.py`와 비교하고, 6-2 multipart 이름은 BE 라우트의 `File`, `Form` 인자와 비교한다. `CI=true`에서 `backend/`를 찾지 못하면 건너뛰지 않고 실패한다 |
 
 다루는 흐름은 다음과 같다.
 
 - 로그인 세션이 보관된 보호자가 앱을 켠다 → 스플래시가 세션을 확인한다 → 서버의 어르신을 불러온 홈 → 카드 두 장 선택 → 사진 없이 시작 → 녹음 전 안내의 `네, 좋아요` → 녹음과 만남 끝내기 → 소감 → 평가(6-1) 후 녹음(6-2) 제출 → 홈의 `리포트를 만들고 있어요` → `리포트가 도착했어요` → 리포트 → 이야기 제안의 내용을 고쳐 승인(7-4)
-- 다음 대화 준비: 지난 묶음이 평가까지 끝났으므로 카드 화면이 새 묶음을 받는다. 승인한 이야기로 만든 카드가 들어 있다. 그 뒤 일대기에서 이야기 제목을 정정하면 받아 둔 묶음은 `어르신 정보가 바뀌었어요`와 `다음 대화 준비하기`만 보여주고 시작할 수 없다. 누르면 묶음 전체를 다시 만들고, 두 번째 면회는 새 묶음으로 회차(5-1)를 만든다
+- 다음 대화 준비: 지난 묶음이 평가까지 끝났으므로 카드 화면이 새 묶음을 받는다. 가짜 서버는 1번 카드를 가장 최근 이야기로 만들므로, 여기서는 가짜 서버가 넣어 준 그 카드를 앱이 보여주는지 확인한다. BE나 AI가 승인한 이야기를 실제로 카드에 넣는지는 검증하지 않는다. 그 뒤 일대기에서 이야기 제목과 내용을 차례로 두 번 정정하면 각 정정은 바로 저장되고 묶음은 다시 만들지 않는다. 받아 둔 묶음은 받아 둔 묶음은 `어르신 정보가 바뀌었어요`와 `다음 대화 준비하기`만 보여주고 시작할 수 없다. 누르면 두 정정을 모아 묶음 생성 요청(`POST card-generations`)을 한 번만 보내 묶음 전체를 다시 만들고, 두 번째 면회는 새 묶음으로 회차(5-1)를 만든다
 - 분석 실패: 홈의 `리포트를 만들지 못했어요` → 분석 다시 요청(6-5) → 리포트 도착
-- 화자 미확인: 리포트 제목과 본문이 BE의 고정 안내이고 카드 요약, 변경 사항 확인 버튼, 점수나 비율이 없다
+- 화자 미확인: 리포트 제목과 본문이 BE의 고정 안내이고 카드 요약, 변경 사항 확인 버튼, 점수나 비율이 없다. 보호자가 카드를 썼다고 답했으므로 `이번 만남에서 다룬 카드가 없어요.` 대신 `이번 리포트에는 카드별 요약이 없어요.`를 보여준다(임시 문구, PM 또는 FE 확인 필요)
+- 녹음 전 승인: `네, 좋아요`를 누르기 전에는 마이크 대역의 `start`가 한 번도 불리지 않는다
 
 바꾸는 것은 서버와 기기 경계뿐이다([journey_harness.dart](test/journey/journey_harness.dart)). 서버 HTTP는 상태를 가진 가짜 서버([journey_server.dart](test/journey/journey_server.dart))가 받고, 앱의 실제 API 코드가 JSON과 multipart를 주고받는다. 보안 저장소, 구글 SDK, 마이크(임시 폴더에 합성 무음 WAV), 카메라, 갤러리, 화면 켜짐 채널은 대역이다. 분석과 카드 생성을 다시 묻는 간격만 200ms로 줄였다. 자료는 모두 합성이다.
 
-확인하지 않는 것: 실제 마이크 녹음과 권한 창, 실제 STT, 화자 분리와 리포트 모델의 품질, 실제 BE와 DB, 운영 서버, 푸시 알림, 면회 사진 촬영과 업로드(여정은 `사진 없이 시작할게요`를 고른다), TalkBack 낭독과 실제 화면 크기별 배치. 가짜 서버는 BE 규칙을 줄여 옮긴 것이라 BE 구현을 검증하지 않는다. 필드 이름 비교는 타입과 enum 값을 보지 않는다.
+확인하지 않는 것: 실제 마이크 녹음과 권한 창, 실제 STT, 화자 분리와 리포트 모델의 품질, 실제 BE와 DB, 운영 서버, 푸시 알림, 면회 사진 촬영과 업로드(여정은 `사진 없이 시작할게요`를 고른다), TalkBack 낭독과 실제 화면 크기별 배치. 가짜 서버는 BE 규칙을 줄여 옮긴 것이라 BE 구현을 검증하지 않는다. 필드 이름 비교는 타입과 enum 값을 보지 않는다. 가짜 서버의 이야기 고치기(2-7)는 받은 본문을 그대로 합치며 BE의 값 검사를 옮기지 않았다.
 
 앱에 없는 단계: 회차마다 받는 녹음 동의 체크는 없다. 녹음과 음성 처리 동의는 가입 때 받고(2026-10-13 팀 결정), 여정은 녹음 전 안내의 `네, 좋아요`를 녹음 전 승인으로 확인한다. `다음 대화 준비하기`는 받아 둔 묶음이 정정 뒤 `needsRefresh`일 때만 나오고, 평가를 마친 직후에는 카드 화면이 새 묶음을 자동으로 요청한다.
 
-2026-11-03 [로컬 작업] 결과: 호스트 `flutter test test/app_journey_test.dart` 3개 통과, `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 3개 통과, `flutter test test/journey_contract_test.dart` 3개 통과. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다.
+2026-11-03 [로컬 작업] 결과(리뷰 반영 뒤): 호스트 `flutter test test/app_journey_test.dart test/journey_contract_test.dart` 7개 통과(여정 3, 계약 4), `flutter test integration_test/app_journey_test.dart -d flutter-tester`(integration_test 바인딩, 화면 없는 호스트 장치) 3개 통과, 전체 `flutter test` 792개 통과. 실제 Android 기기와 에뮬레이터에서는 아직 실행하지 않았다. 그래서 기기에서 `Directory.systemTemp`에 합성 WAV를 쓰는 부분이 되는지도 확인하지 않았고, CI에는 에뮬레이터 작업이 없다. 원격 CI에서도 아직 돌리지 않았다.
 
 ### Play 업로드용 빌드
 

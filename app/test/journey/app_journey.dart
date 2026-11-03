@@ -2,7 +2,8 @@
 //
 // 같은 여정을 두 곳에서 부른다.
 // - `test/app_journey_test.dart`: `flutter test` 로 호스트에서 화면 없이 돈다.
-//   CI 의 `flutter test` 가 변경마다 다시 실행한다.
+//   CI(`product-tests.yml`)는 develop 과 main 으로 가는 PR 과 수동 실행에서
+//   `flutter test` 로 다시 돌린다. push 에서는 돌지 않는다.
 // - `integration_test/app_journey_test.dart`: 연결한 기기나 에뮬레이터에서
 //   `flutter test integration_test/app_journey_test.dart` 로 돈다.
 //
