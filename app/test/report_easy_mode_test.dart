@@ -20,6 +20,7 @@ void main() {
     WidgetTester tester, {
     bool noChanges = false,
     List<CardReview>? cardReviews,
+    bool noCardSummaries = false,
   }) async {
     tester.view.physicalSize = const Size(1236, 2751);
     tester.view.devicePixelRatio = 3;
@@ -30,11 +31,26 @@ void main() {
       final base = await const MockRepository().loadCaregiverEvaluation();
       // 고른 카드는 목 회차에서 읽는다. 화면이 읽기 전에 실제 시간에서 넣어 둔다.
       final session = await const MockRepository().loadVisitSession();
+      final report = await const MockRepository().loadVisitReport();
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             visitSessionProvider.overrideWith((ref) async => session),
+            // 화자를 확인하지 못한 리포트처럼 카드 요약이 비어 있다.
+            if (noCardSummaries)
+              visitReportProvider.overrideWith(
+                (ref) async => VisitReport(
+                  reportId: report.reportId,
+                  sessionId: report.sessionId,
+                  reportStatus: report.reportStatus,
+                  title: report.title,
+                  visitDate: report.visitDate,
+                  mood: report.mood,
+                  summaryText: report.summaryText,
+                  cardSummaries: const [],
+                ),
+              ),
             // 확인할 제안이 없으면 변경 사항 버튼을 두지 않는다.
             if (noChanges)
               changeProposalProvider.overrideWith(
@@ -219,6 +235,27 @@ void main() {
       expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsOneWidget);
       expect(find.text('평가하지 않은 카드 4장'), findsOneWidget);
       expect(find.textContaining('다루지 않은 카드'), findsNothing);
+    });
+
+    testWidgets('쓴 카드가 있는데 요약이 없으면 다룬 카드가 없다고 하지 않는다', (tester) async {
+      await openReport(
+        tester,
+        noCardSummaries: true,
+        cardReviews: const [
+          CardReview(
+            cardId: 'card_demo_001',
+            wasUsed: true,
+            caregiverReaction: CaregiverReaction.positive,
+          ),
+        ],
+      );
+
+      expect(
+        find.text('이번 만남에서 다룬 카드가 없어요.'),
+        findsNothing,
+        reason: '보호자는 카드를 썼다고 답했다',
+      );
+      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsOneWidget);
     });
 
     testWidgets('모두 쓰고 평가했으면 장 수를 적지 않는다', (tester) async {
