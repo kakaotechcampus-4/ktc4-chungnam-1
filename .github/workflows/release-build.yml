@@ -5,7 +5,7 @@ name: Release build
 # - 이미지는 레지스트리에 올리지 않는다. 서버는 deploy.yml이 같은 SHA로 다시 빌드한다.
 # - 업로드 키 시크릿이 없으면 디버그 키로 서명한 앱을 만들고 요약에 적는다. Play에 올릴 수 없다.
 # - 운영 서버, DB, S3, ML API에는 접속하지 않는다.
-# 사용법과 설정 항목은 backend/docs/deployment.md의 "배포 후보 빌드와 수동 배포 workflow"를 따른다.
+# 사용법과 설정 항목은 docs/deploy-workflows.md를 따른다.
 
 on:
   push:

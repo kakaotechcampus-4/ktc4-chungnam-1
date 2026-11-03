@@ -10,8 +10,7 @@ name: Deploy (manual)
 #    DEPLOY_SERVICES, DEPLOY_DB_CONTAINER, DEPLOY_DB_NAME, DEPLOY_DB_USER)
 # - AWS: GitHub OIDC 공급자, 이 저장소의 production 환경만 맡을 수 있는 IAM 역할,
 #   대상 인스턴스의 SSM Agent와 인스턴스 역할(AmazonSSMManagedInstanceCore)
-# 상세 설정, 되돌리기와 자동화 범위는 backend/docs/deployment.md의
-# "배포 후보 빌드와 수동 배포 workflow"를 따른다.
+# 상세 설정, 되돌리기와 자동화 범위는 docs/deploy-workflows.md를 따른다.
 #
 # 순서: 요청 확인 -> 승인 -> 사전 점검 -> DB 백업과 격리 복원 검사 -> SHA 체크아웃과 빌드
 #       -> alembic upgrade -> compose up -> 사후 점검 -> 배포 기록. 실패하면 되돌리기 안내를 출력한다.
