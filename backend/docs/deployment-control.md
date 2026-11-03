@@ -19,8 +19,10 @@ DB revision은 `f95c2d7eb143`, 부모는 `e84b1c6da032`다. 기본값은 접수 
 
 ```json
 {
+  "schemaVersion": 1,
   "errorCode": "SERVICE_MAINTENANCE",
   "message": "서비스 점검 중입니다. 잠시 후 다시 시도해 주세요.",
+  "requestId": "req_01",
   "retryable": true
 }
 ```
