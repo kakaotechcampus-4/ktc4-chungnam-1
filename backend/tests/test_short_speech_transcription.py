@@ -206,5 +206,5 @@ def test_downgrade_refuses_to_remove_active_upload_guard(alembic_config, test_da
     db = _Db(test_database_url)
     db.execute("INSERT INTO storage_deletion_request_queue (s3_object_key,not_before) VALUES ('synthetic',now()+interval '1 hour')")
     with pytest.raises(Exception, match="Pending short speech uploads"):
-        command.downgrade(alembic_config, "d73f0b5ca921")
+        command.downgrade(alembic_config, "a49d71b28c36")
     assert db.execute("SELECT not_before IS NOT NULL AS kept FROM storage_deletion_request_queue") == [{"kept": True}]
