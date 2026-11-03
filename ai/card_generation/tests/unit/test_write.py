@@ -16,7 +16,7 @@ def test_blank_description_is_sent_back():
     assert _problems(result, [1, 2]) == ["2번: 설명이 비어 있다."]
 
 
-@pytest.mark.parametrize("description", ["치매를 치료합니다.", "증상을 완화합니다.", "치료 효과가 있어요."])
+@pytest.mark.parametrize("description", ["이 카드는 치매를 치료합니다.", "이 카드에는 치료 효과가 있습니다.", "치료 효과가 있어요."])
 def test_description_rejects_direct_medical_effect_claim(description):
     problems = _problems(_WritingResult(cards=[_text(1, description)]), [1])
     assert len(problems) == 1 and "설명" in problems[0]
@@ -41,7 +41,7 @@ def test_unsafe_description_is_rewritten_once_or_fails(monkeypatch, still_unsafe
     def invoke(*args):
         calls.append(args)
         unsafe = len(calls) == 1 or still_unsafe
-        return _WritingResult(cards=[_text(1, "치매를 치료합니다." if unsafe else "노래 이야기예요.")])
+        return _WritingResult(cards=[_text(1, "이 카드는 치매를 치료합니다." if unsafe else "노래 이야기예요.")])
 
     monkeypatch.setattr(write, "invoke_structured", invoke)
     if still_unsafe:
