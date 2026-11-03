@@ -27,6 +27,14 @@ const _correctedContent = '두루마기를 주로 지으셨어요.';
 /// 일대기에서 다시 고친 이야기 제목.
 const _correctedTitle = '두루마기 짓던 시절';
 
+/// 제목을 고친 뒤 이어서 고친 이야기 내용.
+const _correctedAgainContent = '명절 앞에는 두루마기를 밤새 지으셨어요.';
+
+/// 카드 묶음을 만들어 달라는 요청(2-5) 수.
+int _cardRequests(JourneyServer server) => server.requests
+    .where((r) => r.method == 'POST' && r.path.endsWith('/card-generations'))
+    .length;
+
 Finder _cardToggle(String title) => find.byWidgetPredicate(
   (w) => w is SelectionToggle && w.label == cardSelectLabel(title),
 );
@@ -43,11 +51,14 @@ Future<void> _startVisit(JourneyDriver app) async {
   expect(find.text('소중한 대화 내용을\n놓치지 않게 녹음할게요'), findsOneWidget);
   expect(find.text('녹음은 리포트를 만드는 데만 쓰고\n분석이 끝나면 바로 지워요.'), findsOneWidget);
   final sessionsBefore = app.server.sessionSetIds.length;
+  final startsBefore = app.recorder.starts;
   expect(find.text('녹음 중이에요'), findsNothing, reason: '승인 전에는 녹음하지 않는다');
+  expect(app.recorder.starts, startsBefore, reason: '승인 전에는 마이크를 켜지 않는다');
 
   await app.tap(find.text('네, 좋아요'));
   await app.waitFor(find.text('녹음 중이에요'));
   expect(app.server.sessionSetIds, hasLength(sessionsBefore + 1));
+  expect(app.recorder.starts, startsBefore + 1);
 }
 
 Future<void> _pickCards(JourneyDriver app, List<String> titles) async {
@@ -182,10 +193,34 @@ void defineAppJourneyTests() {
       await app.tap(find.text(journeyProposalTitle));
       await app.tap(find.byTooltip('이야기 수정'));
       await app.waitFor(find.text('수정 완료'));
+      final requestsBeforeCorrections = _cardRequests(server);
       await tester.enterText(find.byType(TextField).at(0), _correctedTitle);
       await app.tap(find.text('수정 완료'));
       await app.waitFor(find.text('이야기를 고쳤어요.'));
       expect(server.lifeFacts.single['title'], _correctedTitle);
+
+      // 같은 이야기를 한 번 더 고친다. 정정은 바로 저장하고 묶음은 다시 만들지 않는다.
+      await app.tap(find.byTooltip('이야기 수정'));
+      await app.waitFor(find.text('수정 완료'));
+      await tester.enterText(
+        find.byType(TextField).at(1),
+        _correctedAgainContent,
+      );
+      await app.tap(find.text('수정 완료'));
+      await app.waitUntilGone(find.text('수정 완료'));
+      expect(server.lifeFacts.single['title'], _correctedTitle);
+      expect(server.lifeFacts.single['content'], _correctedAgainContent);
+      expect(
+        server.requests.where(
+          (r) => r.method == 'PATCH' && r.path.contains('/life-facts/'),
+        ),
+        hasLength(2),
+      );
+      expect(
+        _cardRequests(server),
+        requestsBeforeCorrections,
+        reason: '정정할 때마다 묶음을 다시 만들지 않는다',
+      );
       for (var i = 0; i < 6; i++) {
         if (find.text(_homeCardsButton).evaluate().isNotEmpty) break;
         await app.back();
@@ -198,10 +233,17 @@ void defineAppJourneyTests() {
       expect(find.textContaining('어르신 정보가 바뀌었어요'), findsOneWidget);
       expect(find.text('대화 시작하기'), findsNothing);
       expect(_cardToggle(journeyProposalTitle), findsNothing);
+      expect(server.setIds, hasLength(2), reason: '누르기 전에는 다시 만들지 않는다');
+      expect(_cardRequests(server), requestsBeforeCorrections);
 
       await app.tap(find.text('다음 대화 준비하기'));
       await app.waitFor(find.text('대화 시작하기'));
       expect(server.setIds, hasLength(3), reason: '묶음 전체를 한 번 다시 만든다');
+      expect(
+        _cardRequests(server),
+        requestsBeforeCorrections + 1,
+        reason: '두 번 고친 것을 모아 한 번만 요청한다',
+      );
       expect(find.text(_correctedTitle), findsOneWidget);
       expect(find.text(journeyProposalTitle), findsNothing);
 
@@ -243,6 +285,10 @@ void defineAppJourneyTests() {
       expect(
         server.requests.where((r) => r.path.endsWith('/retry')),
         hasLength(1),
+      );
+      expect(
+        server.responses.singleWhere((r) => r.path.endsWith('/retry')).status,
+        202,
       );
       await app.tap(find.text('홈으로'));
 

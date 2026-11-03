@@ -479,8 +479,8 @@ class JourneyServer {
     if (analysis.steps.first != 'failed') {
       return _error(409, 'ANALYSIS_ALREADY_COMPLETED');
     }
-    final reply = _startAnalysis(analysis.session, AnalysisPlan.success);
-    return _Reply(200, reply.body);
+    // BE 처럼 새 분석 ID 로 202 를 돌려준다(`speech_analyses.py`).
+    return _startAnalysis(analysis.session, AnalysisPlan.success);
   }
 
   void _writeReport(_Session session, AnalysisPlan plan) {

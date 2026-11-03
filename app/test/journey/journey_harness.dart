@@ -55,12 +55,14 @@ import 'journey_server.dart';
 
 /// 실제 앱을 띄우고 화면을 눌러 가며 확인한다.
 class JourneyDriver {
-  JourneyDriver._(this.tester, this.server, this.uploads, this._audioDir);
+  JourneyDriver._(this.tester, this.server, this.uploads, this.recorder);
 
   final WidgetTester tester;
   final JourneyServer server;
   final FakePendingUploads uploads;
-  final Directory _audioDir;
+
+  /// 앱이 쓰는 마이크 대역. 녹음을 언제 시작했는지 센다.
+  final JourneyRecorder recorder;
 
   /// 로그인한 보호자가 앱을 켠 상태로 시작한다. 스플래시가 보관한 세션을
   /// 서버(`GET /auth/me`)로 확인하고 홈으로 넘어간다.
@@ -78,7 +80,12 @@ class JourneyDriver {
       if (audioDir.existsSync()) audioDir.deleteSync(recursive: true);
     });
     final uploads = FakePendingUploads();
-    final driver = JourneyDriver._(tester, server, uploads, audioDir);
+    final driver = JourneyDriver._(
+      tester,
+      server,
+      uploads,
+      JourneyRecorder(audioDir),
+    );
 
     // 앱에 묶인 합성 목 자료(asset)는 실제 시간에서 먼저 읽는다. `rootBundle`
     // 은 읽은 Future 를 기억하는데, 가짜 시계 안에서 처음 읽으면 다음 테스트에서
@@ -118,7 +125,7 @@ class JourneyDriver {
       );
     }),
     selectedProfileStoreProvider.overrideWithValue(FakeSelectedProfileStore()),
-    visitRecorderProvider.overrideWithValue(JourneyRecorder(_audioDir)),
+    visitRecorderProvider.overrideWithValue(recorder),
     pendingUploadsProvider.overrideWith((ref) => uploads),
     visitPhotosProvider.overrideWith((ref) => FakeVisitPhotos()),
     visitCameraProvider.overrideWithValue(FakeVisitCamera()),
@@ -261,11 +268,15 @@ class JourneyRecorder implements VisitRecorder {
   int _files = 0;
   String? _path;
 
+  /// [start] 를 부른 횟수. 녹음 전 승인보다 먼저 녹음하지 않았는지 본다.
+  int starts = 0;
+
   @override
   Future<bool> hasPermission() async => true;
 
   @override
   Future<VisitRecording> start() async {
+    starts++;
     final path = '${_dir.path}${Platform.pathSeparator}visit-${++_files}.wav';
     File(path).writeAsBytesSync(_silentWav());
     _path = path;
