@@ -379,6 +379,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 ```
 
 - `model`, `promptVersion`은 BE 설정값이며 작업을 만들 때 저장한 값을 그대로 넘긴다. `promptVersion`은 정수다.
+- 11/3 로컬 전환본의 새 작업 기본 모델은 `gpt-6-luna`다. 위 예시의 이전 모델도 명시적으로 선택할 수 있으며 이미 저장된 작업의 모델은 바꾸지 않는다. 모델 전환으로 요청 필드와 응답 형식은 바꾸지 않는다.
 - `ageRange`는 BE가 생년월일로 계산한 값이다. 피보호자의 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - `profileFacts`는 [Profile](#프로필-profile)의 세부 정보 네 항목이다.
 - `lifeFacts.source`는 면회 제안을 승인해 생긴 이야기면 `visit`, 직접 넣은 이야기면 `caregiver`다.

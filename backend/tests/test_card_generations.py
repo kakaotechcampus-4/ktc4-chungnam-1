@@ -43,7 +43,7 @@ def test_request_creates_one_running_set(migrated_database_url):
     assert first.json() == {"schemaVersion": 1, "status": "running", "needsRefresh": False}
     assert again.status_code == 202 and again.json()["status"] == "running"
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "gpt-5.6-luna", "prompt_version": "1"}
+        {"status": "running", "model": "gpt-6-luna", "prompt_version": "1"}
     ]
 
 

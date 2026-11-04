@@ -642,7 +642,7 @@ def test_connected_generator_saves_the_combined_ai_result(migrated_database_url,
     assert [call["kind"] for call in calls] == ["report", "proposals"]
     for call in calls:
         assert isinstance(call["request"], ai_visit_report.VisitReportRequest)
-        assert call["model"] == "gpt-5.6-luna"
+        assert call["model"] == "gpt-6-luna"
         assert call["api_key"] == "synthetic-key"
     sent = calls[0]["request"]
     assert sent.analysis_id == ANALYSIS_ID
