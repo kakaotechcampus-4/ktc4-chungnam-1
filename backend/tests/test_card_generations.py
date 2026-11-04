@@ -358,7 +358,8 @@ def test_session_set_is_returned_before_and_after_evaluation(migrated_database_u
 
     body = _session_set(migrated_database_url, user_id, session_id).json()
 
-    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "cards"}
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "needsRefresh", "cards"}
+    assert body["needsRefresh"] is False, "4-4는 회차에 쓴 묶음이라 다시 만들 대상이 아니다"
     assert body["setId"] == str(set_id) and body["usedBySessionId"] == str(session_id)
     assert [card["position"] for card in body["cards"]] == list(range(1, 13))
     assert [card["selected"] for card in body["cards"][:3]] == [False, True, False]
