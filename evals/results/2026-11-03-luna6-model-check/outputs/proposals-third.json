@@ -1,0 +1,12 @@
+{
+  "model": "gpt-6-luna",
+  "promptVersion": "proposals-4",
+  "lifeFactProposals": [],
+  "topicProposals": [
+    {
+      "cardId": "rc-7",
+      "suggestedAction": "more",
+      "reason": "군자란의 물 주기와 분갈이 방법, 꽃 색을 구체적으로 이야기하고 보호자도 다음에 꽃 사진을 가져오겠다고 했습니다."
+    }
+  ]
+}
