@@ -539,7 +539,7 @@ def test_worker_fails_the_job_on_an_invalid_report_without_partial_save(
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "INVALID_AI_RESPONSE",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
     user_id = records.scalar(
@@ -971,7 +971,7 @@ def test_worker_fails_a_timed_out_job_and_ignores_the_late_result(migrated_datab
     ai.release.set()
     _finish_generation_threads()
 
-    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": True}
+    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": False}
     assert after_timeout == expected
     assert _job(records, analysis_id) == expected
     assert _saved_rows(records, visit) == NOTHING_SAVED
@@ -1058,7 +1058,7 @@ def test_result_after_another_worker_expired_the_lease_is_not_saved(migrated_dat
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
@@ -1078,7 +1078,7 @@ def test_result_after_the_lease_ended_is_not_saved_before_cleanup(migrated_datab
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 

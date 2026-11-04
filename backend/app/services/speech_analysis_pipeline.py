@@ -102,8 +102,8 @@ class SpeechAnalysisSubmissionService:
             if reserved.status == SpeechAnalysisStatus.FAILED:
                 raise AppError(
                     status_code=409,
-                    error_code="ANALYSIS_ALREADY_FAILED",
-                    message="이 면회의 음성 분석 작업이 이미 실패했습니다.",
+                    error_code="REPORT_RETRY_AVAILABLE",
+                    message="전사가 남아 있습니다. 녹음을 다시 보내지 말고 리포트를 다시 요청해 주세요.",
                 )
             if reserved.status == SpeechAnalysisStatus.COMPLETED:
                 raise AppError(
@@ -179,9 +179,11 @@ class SpeechAnalysisQueue:
     name = "speech_analysis"
     unexpected_error_code = "SPEECH_ANALYSIS_FAILED"
 
-    def __init__(self, *, jobs_for: JobsFor, audio_storage: AudioStorage) -> None:
+    def __init__(self, *, jobs_for: JobsFor, audio_storage: AudioStorage,
+                 resume_reports: bool = False) -> None:
         self._jobs_for = jobs_for
         self._audio_storage = audio_storage
+        self._resume_reports = resume_reports
 
     async def expire_leases(self, connection: DbConnection) -> int:
         jobs = self._jobs_for(connection)
@@ -190,7 +192,9 @@ class SpeechAnalysisQueue:
     async def claim(
         self, connection: DbConnection, *, lease_seconds: int
     ) -> SpeechAnalysisJob | None:
-        return await self._jobs_for(connection).claim_next(lease_seconds=lease_seconds)
+        return await self._jobs_for(connection).claim_next(
+            lease_seconds=lease_seconds, include_reports=self._resume_reports,
+        )
 
     async def fail(
         self, connection: DbConnection, job: SpeechAnalysisJob, *, error_code: str
@@ -218,6 +222,25 @@ class SpeechAnalysisProcessor:
 
     async def __call__(self, connection: DbConnection, job: SpeechAnalysisJob) -> None:
         jobs = self._jobs_for(connection)
+        if job.status == SpeechAnalysisStatus.GENERATING_REPORT:
+            if self._report_generator is None:
+                raise AppError(status_code=503, error_code="REPORT_GENERATOR_UNAVAILABLE",
+                               message="리포트 생성기가 준비되지 않았습니다.")
+            transcript = job.transcript or {}
+            speech = SpeechAnalysisResult.model_validate({
+                "schemaVersion": 1, "analysisId": job.analysis_id, "language": "ko",
+                "durationMs": transcript.get("durationMs", 0),
+                "text": "",
+                "segments": [
+                    {**segment, "words": []} for segment in transcript.get("segments", [])
+                ],
+            })
+            if not any(segment.text.strip() for segment in speech.segments):
+                raise AppError(status_code=422, error_code="EMPTY_TRANSCRIPT",
+                               message="다시 분석할 발화를 확인하지 못했습니다.")
+            await self._report_generator.generate(connection, session_id=job.session_id, speech=speech)
+            await jobs.mark_completed(analysis_id=job.analysis_id)
+            return
         speech = await self._transcribe(job)
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
         # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
@@ -289,7 +312,8 @@ def create_speech_worker(
     report_generator: ReportGenerator | None = None,
 ) -> Worker[SpeechAnalysisJob]:
     return Worker(
-        queue=SpeechAnalysisQueue(jobs_for=jobs_for, audio_storage=audio_storage),
+        queue=SpeechAnalysisQueue(jobs_for=jobs_for, audio_storage=audio_storage,
+                                  resume_reports=report_generator is not None),
         process=SpeechAnalysisProcessor(
             jobs_for=jobs_for,
             audio_storage=audio_storage,
@@ -306,6 +330,8 @@ async def _delete_audio_or_queue(
     audio_storage: AudioStorage,
     job: SpeechAnalysisJob,
 ) -> None:
+    if job.audio_deleted_at is not None:
+        return
     # DB 기록 실패는 삼키지 않는다. 삭제 대기열에 남겼다고 확인하지 못한 상태를
     # 정상적인 삭제 재처리 접수로 취급할 수 없다.
     await jobs.queue_audio_deletion(analysis_id=job.analysis_id)

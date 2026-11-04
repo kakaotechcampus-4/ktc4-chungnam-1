@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from psycopg.types.json import Jsonb
 
@@ -15,7 +15,10 @@ from app.core.errors import AppError
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업에 임시 저장한다.
-# 리포트를 저장하면 지우고, 늦어도 STT 완료 후 이 시간이 지나면 지운다(API 8-1).
+# 최초 STT 저장 시 만료 시각을 정하며 실패나 리포트 재요청으로 기한을 연장하지 않는다.
+# 완료 시 즉시 지우며, 실패 시에는 남은 기한 동안만 재처리에 쓴다(2026-11-03 PM 승인).
+# 만료분의 실제 삭제는 expire_transcripts 또는 상태 전이에서 실행된다. worker가
+# 중단되거나 다른 작업을 처리 중이면 정리가 늦어질 수 있어 별도 삭제 지연 감시가 필요하다.
 TRANSCRIPT_RETENTION_SECONDS = 24 * 60 * 60
 
 
@@ -46,6 +49,8 @@ class SpeechAnalysisJob:
     error_code: str | None = None
     audio_deleted_at: datetime | None = None
     stt_completed_at: datetime | None = None
+    transcript: dict[str, Any] | None = field(default=None, repr=False)
+    transcript_expires_at: datetime | None = None
 
 
 class SpeechAnalysisJobRepository(Protocol):
@@ -60,6 +65,8 @@ class SpeechAnalysisJobRepository(Protocol):
         self,
         job: SpeechAnalysisJob,
     ) -> tuple[SpeechAnalysisJob, bool]: ...
+
+    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob: ...
 
     async def mark_queued(
         self,
@@ -78,7 +85,7 @@ class SpeechAnalysisJobRepository(Protocol):
         account_id: str,
     ) -> SpeechAnalysisJob | None: ...
 
-    async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None: ...
+    async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None: ...
 
     async def mark_generating_report(self, *, analysis_id: str) -> bool:
         """끝나지 않은 작업을 `generatingReport`로 바꾼다. 바꿨으면 `True`."""
@@ -111,7 +118,7 @@ class InMemorySpeechAnalysisJobRepository:
     """합성 데이터 테스트와 로컬 계약 검증용 저장소.
 
     `allow_session` 으로 등록한 회차는 그 계정이 소유하고 보호자 평가를 마친 회차로
-    본다. 전사문은 보관하지 않는다.
+    본다. 합성 전사문은 테스트 메모리에만 보관한다.
     """
 
     def __init__(self) -> None:
@@ -119,6 +126,7 @@ class InMemorySpeechAnalysisJobRepository:
         self._by_session: dict[str, str] = {}
         self._sessions: dict[str, str] = {}
         self.pending_audio_deletions: set[str] = set()
+        self._report_retries: set[str] = set()
         self._lock = asyncio.Lock()
 
     def allow_session(self, *, account_id: str, session_id: str) -> None:
@@ -144,10 +152,39 @@ class InMemorySpeechAnalysisJobRepository:
         async with self._lock:
             existing_id = self._by_session.get(job.session_id)
             if existing_id is not None:
-                return self._jobs[existing_id], False
+                existing = self._jobs[existing_id]
+                if existing.status != SpeechAnalysisStatus.FAILED or existing.transcript is not None:
+                    return existing, False
             self._jobs[job.analysis_id] = job
             self._by_session[job.session_id] = job.analysis_id
             return job, True
+
+    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob:
+        old = await self.get_for_account(analysis_id=analysis_id, account_id=account_id)
+        if old is None:
+            raise AppError(status_code=404, error_code="SPEECH_ANALYSIS_NOT_FOUND",
+                           message="음성 분석 작업을 찾을 수 없습니다.")
+        async with self._lock:
+            current = self._jobs[self._by_session[old.session_id]]
+            if current.status == SpeechAnalysisStatus.COMPLETED:
+                raise AppError(status_code=409, error_code="ANALYSIS_ALREADY_COMPLETED",
+                               message="리포트가 이미 만들어졌습니다.")
+            if current.status == SpeechAnalysisStatus.UPLOADING:
+                raise AppError(status_code=409, error_code="ANALYSIS_SUBMISSION_IN_PROGRESS",
+                               message="녹음을 전송하고 있습니다.", retryable=True)
+            if current.status != SpeechAnalysisStatus.FAILED:
+                return current
+            if (not old.transcript or old.transcript_expires_at is None
+                    or old.transcript_expires_at <= datetime.now(UTC)):
+                raise AppError(status_code=409, error_code="RECORDING_REQUIRED",
+                               message="기기에 남아 있는 녹음을 다시 보내 주세요.")
+            new = replace(old, analysis_id=str(uuid4()), status=SpeechAnalysisStatus.STT_COMPLETED,
+                          error_code=None)
+            self._jobs[old.analysis_id] = replace(old, transcript=None)
+            self._jobs[new.analysis_id] = new
+            self._report_retries.add(new.analysis_id)
+            self._by_session[new.session_id] = new.analysis_id
+            return new
 
     async def mark_queued(
         self,
@@ -183,20 +220,26 @@ class InMemorySpeechAnalysisJobRepository:
             return None
         return job
 
-    async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None:
+    async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None:
         del lease_seconds
         async with self._lock:
             job = next(
                 (
                     item
                     for item in self._jobs.values()
-                    if item.status == SpeechAnalysisStatus.QUEUED
+                    if item.status == SpeechAnalysisStatus.QUEUED or (
+                        include_reports and item.status == SpeechAnalysisStatus.STT_COMPLETED
+                        and item.analysis_id in self._report_retries
+                        and item.transcript_expires_at is not None
+                        and item.transcript_expires_at > datetime.now(UTC)
+                    )
                 ),
                 None,
             )
             if job is None:
                 return None
-            claimed = replace(job, status=SpeechAnalysisStatus.TRANSCRIBING)
+            claimed = replace(job, status=(SpeechAnalysisStatus.GENERATING_REPORT
+                if job.status == SpeechAnalysisStatus.STT_COMPLETED else SpeechAnalysisStatus.TRANSCRIBING))
             self._jobs[job.analysis_id] = claimed
             return claimed
 
@@ -209,13 +252,14 @@ class InMemorySpeechAnalysisJobRepository:
     async def mark_stt_completed(
         self, *, analysis_id: str, transcript: Mapping[str, Any]
     ) -> bool:
-        del transcript
         if self._jobs[analysis_id].status != SpeechAnalysisStatus.TRANSCRIBING:
             return False
         self._jobs[analysis_id] = replace(
             self._jobs[analysis_id],
             status=SpeechAnalysisStatus.STT_COMPLETED,
             stt_completed_at=datetime.now(UTC),
+            transcript=dict(transcript),
+            transcript_expires_at=datetime.now(UTC) + timedelta(seconds=TRANSCRIPT_RETENTION_SECONDS),
         )
         return True
 
@@ -256,7 +300,10 @@ class InMemorySpeechAnalysisJobRepository:
         analysis_id: str,
         status: SpeechAnalysisStatus,
     ) -> None:
-        self._jobs[analysis_id] = replace(self._jobs[analysis_id], status=status)
+        self._jobs[analysis_id] = replace(
+            self._jobs[analysis_id], status=status,
+            transcript=None if status == SpeechAnalysisStatus.COMPLETED else self._jobs[analysis_id].transcript,
+        )
 
 
 class PostgresSpeechAnalysisJobRepository:
@@ -308,17 +355,24 @@ class PostgresSpeechAnalysisJobRepository:
     ) -> tuple[SpeechAnalysisJob, bool]:
         session_id = UUID(job.session_id)
         async with self._connection.transaction():
-            # 접수 후 실패한 회차는 다시 받지 않는다. 업로드 단계의 실패는 작업을
-            # 지우므로(`discard_upload`) 남은 실패 작업은 모두 접수된 작업이다.
+            # 재제출과 리포트 재요청을 회차별로 직렬화한다.
+            await self._connection.execute(
+                "SELECT 1 FROM visit_sessions WHERE session_id=%s FOR UPDATE", (session_id,)
+            )
+            # 전사가 아직 남아 있다면 다시 STT에 보내지 않고 리포트 재요청을 안내한다.
             cursor = await self._connection.execute(
                 """
                 SELECT * FROM speech_analysis_jobs
                  WHERE session_id = %s AND status = 'failed'
-                   AND size_bytes IS NOT NULL
+                   AND transcript IS NOT NULL AND transcript_expires_at > clock_timestamp()
+                   AND NOT EXISTS (
+                       SELECT 1 FROM speech_analysis_jobs active
+                        WHERE active.session_id=%s AND active.status <> 'failed'
+                   )
                  ORDER BY created_at DESC
                  LIMIT 1
                 """,
-                (session_id,),
+                (session_id, session_id),
             )
             failed = await cursor.fetchone()
             if failed is not None:
@@ -357,6 +411,56 @@ class PostgresSpeechAnalysisJobRepository:
             # 충돌한 작업이 그 사이 실패로 바뀐 경우다. 접수했다고 꾸미지 않는다.
             raise RuntimeError("충돌한 음성 분석 작업을 다시 읽지 못했습니다.")
         return self._from_row(existing), False
+
+    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob:
+        old = await self.get_for_account(analysis_id=analysis_id, account_id=account_id)
+        if old is None:
+            raise AppError(status_code=404, error_code="SPEECH_ANALYSIS_NOT_FOUND",
+                           message="음성 분석 작업을 찾을 수 없습니다.")
+        await self.assert_session_access(account_id=account_id, session_id=old.session_id)
+        async with self._connection.transaction():
+            await self._connection.execute(
+                "SELECT 1 FROM visit_sessions WHERE session_id=%s FOR UPDATE", (UUID(old.session_id),)
+            )
+            active = await (await self._connection.execute(
+                "SELECT * FROM speech_analysis_jobs WHERE session_id=%s AND status <> 'failed'",
+                (UUID(old.session_id),),
+            )).fetchone()
+            if active is not None:
+                if active["status"] == "uploading":
+                    raise AppError(status_code=409, error_code="ANALYSIS_SUBMISSION_IN_PROGRESS",
+                                   message="녹음을 전송하고 있습니다.", retryable=True)
+                if active["status"] == "completed":
+                    raise AppError(status_code=409, error_code="ANALYSIS_ALREADY_COMPLETED",
+                                   message="리포트가 이미 만들어졌습니다.")
+                return self._from_row(active)
+            previous_retry = await (await self._connection.execute(
+                "SELECT 1 FROM speech_analysis_jobs WHERE retry_of_analysis_id=%s",
+                (UUID(analysis_id),),
+            )).fetchone()
+            if previous_retry:
+                raise AppError(status_code=409, error_code="ANALYSIS_ALREADY_FAILED",
+                               message="재요청한 작업도 종료됐습니다. 최신 처리 상태를 확인해 주세요.")
+            # 보관 기한은 연장하지 않는다. 새 ID로 분리해 이전 작업의 늦은 결과를 막는다.
+            new_id = uuid4()
+            row = await (await self._connection.execute(
+                "INSERT INTO speech_analysis_jobs "
+                "(analysis_id,session_id,status,participant_count,s3_object_key,data_expires_at,"
+                "size_bytes,sha256,audio_deleted_at,stt_completed_at,transcript,transcript_expires_at,retry_of_analysis_id) "
+                "SELECT %s,session_id,'sttCompleted',participant_count,s3_object_key,data_expires_at,"
+                "size_bytes,sha256,audio_deleted_at,stt_completed_at,transcript,transcript_expires_at,analysis_id "
+                "FROM speech_analysis_jobs WHERE analysis_id=%s AND status='failed' "
+                "AND transcript IS NOT NULL AND transcript_expires_at > clock_timestamp() RETURNING *",
+                (new_id, UUID(analysis_id)),
+            )).fetchone()
+            if row is None:
+                raise AppError(status_code=409, error_code="RECORDING_REQUIRED",
+                               message="분석에 쓸 전사가 남아 있지 않습니다. 기기의 녹음을 다시 보내 주세요.")
+            await self._connection.execute(
+                "UPDATE speech_analysis_jobs SET transcript=NULL, transcript_deleted_at=now(), updated_at=now() "
+                "WHERE analysis_id=%s", (UUID(analysis_id),),
+            )
+        return self._from_row(row)
 
     async def mark_queued(
         self,
@@ -413,19 +517,22 @@ class PostgresSpeechAnalysisJobRepository:
             (UUID(analysis_id),),
         )
 
-    async def claim_next(self, *, lease_seconds: int) -> SpeechAnalysisJob | None:
+    async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None:
         cursor = await self._connection.execute(
             """
             WITH candidate AS (
                 SELECT analysis_id
                   FROM speech_analysis_jobs
-                 WHERE status = 'queued'
+                 WHERE status = 'queued' OR (
+                     %s AND status = 'sttCompleted' AND retry_of_analysis_id IS NOT NULL
+                     AND transcript_expires_at > clock_timestamp()
+                 )
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1
             )
             UPDATE speech_analysis_jobs AS job
-               SET status = 'transcribing',
+               SET status = CASE WHEN job.status='sttCompleted' THEN 'generatingReport' ELSE 'transcribing' END,
                    attempt_count = attempt_count + 1,
                    lease_expires_at = now() + (%s * interval '1 second'),
                    updated_at = now()
@@ -433,7 +540,7 @@ class PostgresSpeechAnalysisJobRepository:
              WHERE job.analysis_id = candidate.analysis_id
             RETURNING job.*
             """,
-            (lease_seconds,),
+            (include_reports, lease_seconds),
         )
         row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
@@ -454,6 +561,7 @@ class PostgresSpeechAnalysisJobRepository:
                    transcript_expires_at = now() + (%s * interval '1 second'),
                    lease_expires_at = NULL, updated_at = now()
              WHERE analysis_id = %s AND status = 'transcribing'
+               AND lease_expires_at > clock_timestamp()
             """,
             (
                 Jsonb(dict(transcript)),
@@ -517,8 +625,8 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def expire_transcripts(self) -> int:
-        # 리포트를 저장하기 전에 보관 기한이 지났다. 전사문 없이는 리포트를 만들 수
-        # 없으므로 작업을 실패로 끝낸다.
+        # 이미 failed인 작업도 포함한다. 재시도하지 않고 남겨 둔 전사가 누락되면 안 된다.
+        # worker가 작업을 가져오기 전에 호출한다. DB 자체 TTL이나 상시 타이머는 아니다.
         cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
@@ -548,9 +656,9 @@ class PostgresSpeechAnalysisJobRepository:
                 WITH expired AS (
                 UPDATE speech_analysis_jobs
                    SET status = 'failed', error_code = %s,
-                       transcript = NULL,
+                       transcript = CASE WHEN transcript_expires_at > clock_timestamp() THEN transcript END,
                        transcript_deleted_at = CASE
-                           WHEN transcript IS NOT NULL THEN now()
+                           WHEN transcript IS NOT NULL AND transcript_expires_at <= clock_timestamp() THEN now()
                            ELSE transcript_deleted_at
                        END,
                        lease_expires_at = NULL, completed_at = now(),
@@ -584,6 +692,8 @@ class PostgresSpeechAnalysisJobRepository:
             error_code=row["error_code"],
             audio_deleted_at=row["audio_deleted_at"],
             stt_completed_at=row["stt_completed_at"],
+            transcript=row["transcript"],
+            transcript_expires_at=row["transcript_expires_at"],
         )
 
 
@@ -610,7 +720,7 @@ async def _update_status(
     lease_seconds: int,
 ) -> bool:
     # 회차 상태는 저장하지 않고 작업 상태로 계산하므로 회차는 바꾸지 않는다.
-    # 리포트 생성 단계는 임대가 필요하고, 끝난 작업에는 전사문을 남기지 않는다.
+    # 완료한 리포트의 전사는 지운다. 생성 실패 시 기존 보관 기한까지만 남긴다.
     # `completed`는 `generatingReport`에서만, 끝난 작업(`completed`, `failed`)은 바꾸지 않는다.
     cursor = await connection.execute(
         """
@@ -621,11 +731,11 @@ async def _update_status(
                    THEN now() + (%(lease_seconds)s * interval '1 second')
                END,
                transcript = CASE
-                   WHEN %(status)s::text IN ('completed', 'failed') THEN NULL
+                   WHEN %(status)s::text = 'completed' OR transcript_expires_at <= clock_timestamp() THEN NULL
                    ELSE transcript
                END,
                transcript_deleted_at = CASE
-                   WHEN %(status)s::text IN ('completed', 'failed')
+                   WHEN (%(status)s::text = 'completed' OR transcript_expires_at <= clock_timestamp())
                         AND transcript IS NOT NULL THEN now()
                    ELSE transcript_deleted_at
                END,
@@ -637,6 +747,9 @@ async def _update_status(
          WHERE analysis_id = %(analysis_id)s
            AND status NOT IN ('completed', 'failed')
            AND (%(status)s::text <> 'completed' OR status = 'generatingReport')
+           AND (%(status)s::text <> 'generatingReport' OR (
+               status='sttCompleted' AND transcript_expires_at > clock_timestamp()
+           ))
         """,
         {
             "status": status.value,

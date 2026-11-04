@@ -49,7 +49,8 @@ abstract interface class PendingUploads {
 
   /// 아직 보내지 못한 회차의 녹음을 찾는다. 기록이 없거나, 이미 보냈거나,
   /// 파일이 사라졌으면 `null` 이다.
-  Future<PendingUpload?> find(String sessionId);
+  /// [includeUploaded]는 서버 분석 실패 후 원본 재제출에만 쓴다.
+  Future<PendingUpload?> find(String sessionId, {bool includeUploaded = false});
 
   /// 서버가 받았거나 다시 받지 않는 회차의 녹음이라고 적는다. 녹음 파일과 계정,
   /// 회차 연결은 남기고 다시 보낼 목록에서만 뺀다. 기록이 없었으면 보낸 것으로
@@ -111,12 +112,14 @@ class DevicePendingUploads implements PendingUploads {
   }
 
   @override
-  Future<PendingUpload?> find(String sessionId) async {
+  Future<PendingUpload?> find(
+    String sessionId, {
+    bool includeUploaded = false,
+  }) async {
     final directory = await _directory();
     for (final entry in await _read(directory)) {
       if (entry['sessionId'] != sessionId || !_mine(entry)) continue;
-      // 보낸 녹음은 남겨 두되 다시 보내지 않는다.
-      if (entry['uploaded'] == true) return null;
+      if (entry['uploaded'] == true && !includeUploaded) return null;
       final name = entry['fileName'];
       final count = entry['participantCount'];
       if (name is! String || name.contains('/') || name.contains('\\')) {

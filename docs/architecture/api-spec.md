@@ -964,17 +964,18 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 변경 사항
 
-- `audioPending` 상태의 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
-- 업로드 단계에서 실패한 작업만 있으면 새 작업을 만든다.
+- 보호자 평가를 제출한 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
+- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다.
+- 유효한 전사가 남은 실패 작업은 `REPORT_RETRY_AVAILABLE`로 6-5 사용을 안내한다.
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
-- 접수 후 실패했거나 완료된 회차는 다시 받지 않는다.
-- 앱은 `202`를 받으면 단말의 WAV 파일을 삭제한다.
+- 완료한 회차는 다시 받지 않는다.
+- 앱은 `202`를 받아도 단말 WAV와 회차 연결을 남긴다. 실패 후 재전송에 사용한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` |
 | 404 | `VISIT_SESSION_NOT_FOUND` |
-| 409 | `EVALUATION_REQUIRED` (신규), `ANALYSIS_SUBMISSION_IN_PROGRESS`, `ANALYSIS_ALREADY_FAILED`, `ANALYSIS_ALREADY_COMPLETED` |
+| 409 | `EVALUATION_REQUIRED`, `ANALYSIS_SUBMISSION_IN_PROGRESS`, `REPORT_RETRY_AVAILABLE`, `ANALYSIS_ALREADY_COMPLETED` |
 | 413 | `AUDIO_TOO_LARGE` |
 | 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` |
 | 503 | `AUDIO_STORAGE_UNAVAILABLE`, `SPEECH_ANALYSIS_NOT_CONFIGURED` |
@@ -1032,6 +1033,26 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 <br>
 
 ---
+
+### 6-5. `POST /api/v1/speech-analyses/{analysisId}/retry` — 신규
+
+실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
+기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
+동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
+
+응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
+이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
+
+| HTTP | errorCode | 처리 |
+| --- | --- | --- |
+| 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 재전송으로 우회하지 않고 동의 상태 확인 |
+| 404 | `SPEECH_ANALYSIS_NOT_FOUND` | 다른 계정 또는 없는 작업 |
+| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출 |
+| 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
+| 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
+| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
+
+전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 
 ## 7. 리포트와 변경 제안
 
@@ -1199,7 +1220,7 @@ worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본
 
 S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
 
-- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
+- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 실패 전사는 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다(2026-11-03 PM 승인). 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.

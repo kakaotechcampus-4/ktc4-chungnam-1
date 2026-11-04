@@ -26,6 +26,56 @@ void main() {
 
   File record() => File('${dir.path}/${DevicePendingUploads.fileName}');
 
+  test('전송한 녹음은 분석 복구 때만 찾고 다른 계정에는 보이지 않는다', () async {
+    final path = await wav('retained.wav');
+    final owner = DevicePendingUploads(
+      accountId: 'owner',
+      directory: () async => dir,
+    );
+    await owner.markUploaded(
+      PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
+    );
+    expect(await owner.find('s1'), isNull);
+    final restarted = DevicePendingUploads(
+      accountId: 'owner',
+      directory: () async => dir,
+    );
+    expect(
+      (await restarted.find('s1', includeUploaded: true))?.audioPath,
+      path,
+    );
+    final other = DevicePendingUploads(
+      accountId: 'other',
+      directory: () async => dir,
+    );
+    expect(await other.find('s1', includeUploaded: true), isNull);
+    expect(await File(path).exists(), isTrue);
+  });
+
+  test('전송한 기기 녹음은 오래됐다는 이유로 삭제하지 않는다', () async {
+    final path = await wav('old-uploaded.wav');
+    await File(path).setLastModified(DateTime.utc(2020));
+    final owner = DevicePendingUploads(
+      accountId: 'owner',
+      directory: () async => dir,
+    );
+    await owner.markUploaded(
+      PendingUpload(sessionId: 's1', audioPath: path, participantCount: 2),
+    );
+
+    final restarted = DevicePendingUploads(
+      accountId: 'owner',
+      directory: () async => dir,
+    );
+    expect(await restarted.find('s1'), isNull);
+    expect(
+      (await restarted.find('s1', includeUploaded: true))?.audioPath,
+      path,
+    );
+    expect(await File(path).exists(), isTrue);
+    expect((await File(path).lastModified()).year, 2020);
+  });
+
   test('회차 ID 로 녹음 파일과 참여자 수를 다시 찾는다', () async {
     final path = await wav('visit-a.wav');
     await store.save(
