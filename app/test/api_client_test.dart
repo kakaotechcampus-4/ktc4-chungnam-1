@@ -201,6 +201,91 @@ void main() {
     await expectLater(slow.get('/x'), throwsA(isA<ApiNetworkFailure>()));
   });
 
+  group('앱이 서버와 맞지 않아 보이는 실패', () {
+    Future<List<ApiFailure>> reported(http.Response response) async {
+      final mismatches = <ApiFailure>[];
+      final api = ApiClient(
+        authorization: () => _auth,
+        baseUrl: 'http://api.test/',
+        client: MockClient((_) async => response),
+        onContractMismatch: mismatches.add,
+      );
+      try {
+        await api.get('/api/v1/anything');
+      } on ApiFailure {
+        // 실패는 그대로 던진다. 여기서는 알렸는지만 본다.
+      }
+      return mismatches;
+    }
+
+    Map<String, Object> error(String code) => {
+      'schemaVersion': 1,
+      'errorCode': code,
+      'retryable': false,
+    };
+
+    test('모르는 경로, 형식 오류, 업데이트 요구와 읽지 못한 응답은 알린다', () async {
+      expect(await reported(_json(error('NOT_FOUND'), 404)), hasLength(1));
+      expect(await reported(_json(error('HTTP_ERROR'), 405)), hasLength(1));
+      expect(
+        await reported(_json(error('INVALID_REQUEST'), 422)),
+        hasLength(1),
+      );
+      expect(await reported(_json(error('UPGRADE'), 426)), hasLength(1));
+      expect(await reported(_json([1, 2], 200)), hasLength(1));
+    });
+
+    test('업무상 거절, 서버 장애와 연결 실패는 알리지 않는다', () async {
+      expect(
+        await reported(_json(error('VISIT_SESSION_NOT_FOUND'), 404)),
+        isEmpty,
+      );
+      expect(
+        await reported(_json(error('REQUIRED_CONSENT_MISSING'), 422)),
+        isEmpty,
+      );
+      expect(await reported(_json(error('CARD_SET_READY'), 409)), isEmpty);
+      expect(
+        await reported(_json(error('INTERNAL_SERVER_ERROR'), 500)),
+        isEmpty,
+      );
+      expect(await reported(http.Response('<html>', 404)), isEmpty);
+    });
+
+    test('426 만 업데이트가 필요하다고 단정한다', () {
+      expect(isUpdateRequired(const ApiServerFailure(statusCode: 426)), isTrue);
+      expect(
+        isUpdateRequired(
+          const ApiServerFailure(statusCode: 404, errorCode: 'NOT_FOUND'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('응답을 읽다가 모양이 다르면 실패로 바꾸고 알린다', () {
+      final mismatches = <ApiFailure>[];
+      final api = ApiClient(
+        authorization: () => _auth,
+        client: MockClient((_) async => http.Response('', 200)),
+        onContractMismatch: mismatches.add,
+      );
+
+      expect(
+        () => api.read('회차', () => ({'id': 1})['id'] as String),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
+      );
+      expect(
+        () => api.read(
+          '상태',
+          () => throw const ApiUnexpectedResponseFailure('모르는 status'),
+        ),
+        throwsA(isA<ApiUnexpectedResponseFailure>()),
+      );
+      expect(() => api.unexpected('id 가 없다'), returnsNormally);
+      expect(mismatches, hasLength(3));
+    });
+  });
+
   test('성공 응답이 객체가 아니면 성공으로 넘기지 않는다', () async {
     final api = _client((_) async => _json([1, 2], 200));
 
