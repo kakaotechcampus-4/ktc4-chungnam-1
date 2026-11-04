@@ -8,14 +8,25 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/app_version.dart';
 import '../../data/auth_api.dart';
+import '../app_update/app_update.dart';
 import 'auth_messages.dart';
 import 'auth_session.dart';
 import 'google_authenticator.dart';
 import 'session_store.dart';
 
 final authApiProvider = Provider<AuthApi>((ref) {
-  final api = AuthApi();
+  final api = AuthApi(
+    appVersionCode: ref.read(appVersionCodeProvider),
+    onContractMismatch: (failure) => ref
+        .read(appUpdateControllerProvider.notifier)
+        .suspectOutdated(
+          certain:
+              failure is AuthServerFailure &&
+              isUpdateRequiredStatus(failure.statusCode),
+        ),
+  );
   ref.onDispose(api.close);
   return api;
 });
