@@ -266,7 +266,17 @@ class SpeechAnalysisProcessor:
             },
             dataExpiresAt=job.data_expires_at,
         )
-        return await self._ai_server.analyze_speech(payload)
+        result = await self._ai_server.analyze_speech(payload)
+        # 리포트는 전체 text가 아니라 segments만 받는다. 빈 구간 목록이나 공백뿐인
+        # 전사로 보호자 소감만 사용해 녹음 분석 결과를 만들어서는 안 된다.
+        if not any(segment.text.strip() for segment in result.segments):
+            raise AppError(
+                status_code=422,
+                error_code="EMPTY_TRANSCRIPT",
+                message="녹음에서 분석할 발화를 확인하지 못했습니다.",
+                retryable=False,
+            )
+        return result
 
 
 def create_speech_worker(
