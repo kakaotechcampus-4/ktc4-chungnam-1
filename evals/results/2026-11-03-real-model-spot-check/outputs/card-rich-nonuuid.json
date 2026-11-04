@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "cards": [
+    {
+      "position": 1,
+      "topic": {
+        "topicId": "t-anchovy",
+        "title": null,
+        "description": null,
+        "evidence": null
+      },
+      "cardTitle": "멸치 말리던 아침",
+      "description": "어린 시절 바닷가에서 어머니와 멸치를 널던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "어린 시절 바닷가에서 어머니와 멸치를 널어 보셨어요?",
+      "followUpQuestions": [
+        "바닷가에서는 어떤 일을 하셨어요?",
+        "그때 바닷바람은 어떻게 느껴지셨어요?",
+        "멸치를 말릴 때 어떤 냄새가 났어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "f-market"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "existing",
+        "angle": "어린 시절 여수 바닷가에서 어머니와 멸치를 널던 아침의 바람과 냄새",
+        "pickReason": "기존 주제. 점수 1.00, 뽑힐 확률 88%",
+        "agentReason": "보호자가 더 자주를 선택했고 지난 카드와 다른 감각 장면이다.",
+        "matchReason": "어린 시절 여수 바닷가에서 어머니와 멸치를 말리던 중심 경험이 기존 주제와 같다."
+      }
+    },
+    {
+      "position": 2,
+      "topic": {
+        "topicId": null,
+        "title": "양복점을 열고 가꾸던 일",
+        "description": "여수 시내 양복점을 처음 열고 간판을 달며 가게 앞에 서 있던 이야기",
+        "evidence": [
+          {
+            "factId": "f-refuge"
+          }
+        ]
+      },
+      "cardTitle": "양복점 첫날",
+      "description": "처음 양복점을 열고 가게를 가꾸던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "양복점을 처음 열어 보셨어요?",
+      "followUpQuestions": [
+        "가게 안에는 무엇이 놓여 있었어요?",
+        "가게를 열던 날 어떤 일을 하셨어요?",
+        "가게 앞에는 어떤 모습이 보였어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "f-refuge"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "여수 시내 양복점의 첫날과 가게 안에 놓인 물건",
+        "pickReason": "새 이야기",
+        "agentReason": "덜 다뤄진 생애 사실을 중심 경험별 새 주제로 제시한다.",
+        "matchReason": "여수 시내 양복점을 처음 열고 가게를 꾸리던 경험으로, 기존 주제와 같은 중심 경험이 없다."
+      }
+    },
+    {
+      "position": 3,
+      "topic": {
+        "topicId": "t-trot",
+        "title": null,
+        "description": null,
+        "evidence": null
+      },
+      "cardTitle": "트로트 반주",
+      "description": "좋아하시던 트로트와 집에서 음악을 듣던 시간을 여쭤보는 카드입니다.",
+      "primaryQuestion": "트로트를 들을 때 어떤 점이 좋으셨어요?",
+      "followUpQuestions": [
+        "어떤 가수의 노래를 즐겨 들으셨어요?",
+        "노래를 들을 때 박자를 어떻게 타셨어요?",
+        "집에서 음악을 들으며 무엇을 하셨어요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "hobby"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "existing",
+        "angle": "즐겨 듣던 트로트의 반주와 박자, 집에서 듣던 때",
+        "pickReason": "기존 주제. 점수 -1.00, 뽑힐 확률 100%",
+        "agentReason": "취미 근거가 있고 기존 질문과 가수 이름을 반복하지 않는다.",
+        "matchReason": "집에서 즐겨 듣던 트로트의 반주와 박자는 기존의 트로트 감상 이야기와 같다."
+      }
+    },
+    {
+      "position": 4,
+      "topic": {
+        "topicId": null,
+        "title": "새벽 기차로 원단 사러 가던 길",
+        "description": "양복 원단을 사러 새벽 기차를 타고 부산 국제시장에 가던 이야기",
+        "evidence": [
+          {
+            "factId": "f-anchovy"
+          }
+        ]
+      },
+      "cardTitle": "새벽 기차와 원단",
+      "description": "양복 원단을 사러 부산 국제시장에 가던 길을 여쭤보는 카드입니다.",
+      "primaryQuestion": "양복 원단을 사러 새벽 기차를 타고 가 보셨어요?",
+      "followUpQuestions": [
+        "기차 안에서는 무엇을 하셨어요?",
+        "기차가 가는 동안 창밖으로 무엇이 보였어요?",
+        "시장에 도착하면 먼저 무엇을 하셨어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "f-anchovy"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "양복 원단을 사러 새벽 기차를 타고 부산 국제시장에 가던 길",
+        "pickReason": "새 이야기",
+        "agentReason": "아직 카드로 다루지 않은 구체적인 일 경험이다.",
+        "matchReason": "양복 원단을 사러 새벽 기차로 부산 국제시장에 가던 경험은 양복점 운영의 다른 중심 경험이다."
+      }
+    },
+    {
+      "position": 5,
+      "topic": {
+        "topicId": null,
+        "title": "여름날 대나무 부채",
+        "description": "더운 여름날 대나무 부채를 부치며 시원한 자리에 있던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "대나무 부채",
+      "description": "더운 여름날 대나무 부채를 부치며 지내던 모습을 여쭤보는 카드입니다.",
+      "primaryQuestion": "더운 여름날 대나무 부채를 부쳐 보셨어요?",
+      "followUpQuestions": [
+        "부채는 어떤 모양이었어요?",
+        "어디에 앉아 부채질을 하셨어요?",
+        "부채를 부치면 어떻게 시원했어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "더운 여름날 손에 쥐고 부치던 부채의 모양과 시원한 자리",
+        "pickReason": "새 이야기",
+        "agentReason": "친숙하고 부담 없는 계절 감각 회상이다.",
+        "matchReason": "여름날 대나무 부채를 부치던 경험은 기존 주제와 연결되지 않는 별도의 이야기다."
+      }
+    },
+    {
+      "position": 6,
+      "topic": {
+        "topicId": null,
+        "title": "겨울날 군고구마",
+        "description": "겨울날 따뜻한 군고구마를 들고 먹던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "군고구마 봉투",
+      "description": "겨울날 따뜻한 군고구마를 먹던 장면을 여쭤보는 카드입니다.",
+      "primaryQuestion": "겨울에 군고구마를 먹어 보셨어요?",
+      "followUpQuestions": [
+        "군고구마는 어떻게 들고 드셨어요?",
+        "껍질을 벗기면 어떤 냄새가 났어요?",
+        "군고구마와 함께 무엇을 드셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "겨울날 따뜻한 군고구마를 들고 먹던 장면과 냄새",
+        "pickReason": "새 이야기",
+        "agentReason": "따뜻한 음식과 냄새를 활용한 편안한 옛 추억이다.",
+        "matchReason": "겨울날 군고구마를 먹던 경험은 별도의 계절 음식 이야기다."
+      }
+    },
+    {
+      "position": 7,
+      "topic": {
+        "topicId": null,
+        "title": "명절에 송편 빚기",
+        "description": "명절에 송편 모양을 만들고 속재료를 넣던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "송편 빚는 손",
+      "description": "명절에 송편을 빚으며 손으로 모양을 만들던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "명절에 송편을 빚어 보셨어요?",
+      "followUpQuestions": [
+        "송편은 어떤 모양으로 만드셨어요?",
+        "송편 속에는 무엇을 넣으셨어요?",
+        "송편을 빚을 때 누가 함께했어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "명절에 송편 모양을 만들던 손놀림과 속재료",
+        "pickReason": "새 이야기",
+        "agentReason": "손으로 하는 익숙한 활동이라 자연스럽게 대화하기 좋다.",
+        "matchReason": "명절에 송편을 빚던 경험은 별도의 명절 음식 이야기다."
+      }
+    },
+    {
+      "position": 8,
+      "topic": {
+        "topicId": null,
+        "title": "장독대에서 장 살피기",
+        "description": "햇볕 좋은 날 장독대 뚜껑을 열고 장을 살피던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "장독대 햇볕",
+      "description": "햇볕 좋은 날 장독대에서 장을 살피던 모습을 여쭤보는 카드입니다.",
+      "primaryQuestion": "햇볕 좋은 날 장독대의 장을 살펴보셨어요?",
+      "followUpQuestions": [
+        "장독대 뚜껑은 어떻게 여셨어요?",
+        "장독대 주변에는 무엇이 있었어요?",
+        "장을 살필 때 어떤 냄새가 났어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "햇볕 좋은 날 장독대 뚜껑을 열고 장을 살피던 모습",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "냄새와 햇볕 등 구체적 감각으로 회상할 수 있다.",
+        "matchReason": "장독대에서 장을 살피던 경험은 기존 주제와 다른 별도의 이야기다."
+      }
+    },
+    {
+      "position": 9,
+      "topic": {
+        "topicId": null,
+        "title": "동네 우물 두레박",
+        "description": "동네 우물에서 두레박과 물동이를 사용하던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "우물 두레박",
+      "description": "동네 우물에서 두레박과 물동이를 사용하던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "동네 우물에서 두레박으로 물을 길어 보셨어요?",
+      "followUpQuestions": [
+        "두레박은 어떻게 올리셨어요?",
+        "물동이는 어떻게 옮기셨어요?",
+        "우물가에는 누가 함께 있었어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "동네 우물의 두레박과 물동이를 사용하던 장면",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "옛 동네 풍경을 물건 중심으로 편안하게 묻는다.",
+        "matchReason": "동네 우물에서 두레박과 물동이를 사용하던 경험은 별도의 생활 장면이다."
+      }
+    },
+    {
+      "position": 10,
+      "topic": {
+        "topicId": null,
+        "title": "라디오 주파수 맞추기",
+        "description": "라디오 다이얼을 돌려 주파수를 맞추고 음악을 듣던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "라디오 다이얼",
+      "description": "라디오 다이얼을 돌려 주파수를 맞추고 음악을 듣던 시간을 여쭤보는 카드입니다.",
+      "primaryQuestion": "라디오 다이얼을 돌려 음악을 들어 보셨어요?",
+      "followUpQuestions": [
+        "다이얼을 돌릴 때 어떤 소리가 났어요?",
+        "어떤 음악이 들리면 좋으셨어요?",
+        "라디오는 어디에 놓고 들으셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "라디오 주파수를 맞추고 음악을 듣던 시간과 소리",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "트로트 가수 질문과 겹치지 않게 라디오라는 물건을 다룬다.",
+        "matchReason": "라디오 다이얼을 맞추며 음악을 듣던 경험은 트로트 감상과 특정되지 않은 별도의 이야기로 본다."
+      }
+    },
+    {
+      "position": 11,
+      "topic": {
+        "topicId": null,
+        "title": "담장 너머로 보던 꽃",
+        "description": "봄날 담장이나 길가에서 눈에 들어오던 꽃을 바라보던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "담장 너머 꽃",
+      "description": "봄날 담장이나 길가에서 보았던 꽃과 색깔을 여쭤보는 카드입니다.",
+      "primaryQuestion": "봄날 담장이나 길가의 꽃을 바라보셨어요?",
+      "followUpQuestions": [
+        "어떤 색깔의 꽃이 눈에 들어왔어요?",
+        "꽃은 어디에서 보셨어요?",
+        "꽃을 보며 어떤 생각이 드셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "봄날 담장이나 길가에서 눈에 들어오던 꽃과 색깔",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "부담 없는 계절 풍경으로 대화를 연다.",
+        "matchReason": "봄날 담장이나 길가의 꽃을 바라보던 경험은 별도의 계절 풍경 이야기다."
+      }
+    },
+    {
+      "position": 12,
+      "topic": {
+        "topicId": null,
+        "title": "장날 시장 국밥",
+        "description": "장날 시장에서 국밥을 먹으며 시장 소리를 듣던 이야기",
+        "evidence": []
+      },
+      "cardTitle": "장날 국밥",
+      "description": "장날 시장에서 국밥을 먹으며 느꼈던 맛과 시장 소리를 여쭤보는 카드입니다.",
+      "primaryQuestion": "장날 시장에서 국밥을 먹어 보셨어요?",
+      "followUpQuestions": [
+        "국물은 어떤 맛이었어요?",
+        "국밥에는 무엇이 들어 있었어요?",
+        "시장에서는 어떤 소리가 들렸어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "장날 시장에서 국밥을 먹던 때의 국물 맛과 시장 소리",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "시장 풍경과 음식 감각을 결합한 별개의 추억이다.",
+        "matchReason": "장날 시장에서 국밥을 먹던 경험은 기존 주제와 다른 별도의 시장 음식 이야기다."
+      }
+    }
+  ],
+  "log": {
+    "candidates": 17,
+    "toolCalls": 9,
+    "rejectedSubmissions": 1,
+    "refills": [],
+    "dropped": [
+      {
+        "no": 2,
+        "card_title": "멸치 그물 손질",
+        "reason": "같은 주제의 1번 후보가 먼저 있음"
+      },
+      {
+        "no": 5,
+        "card_title": "형님이 쓴 간판",
+        "reason": "같은 주제의 4번 후보가 먼저 있음"
+      },
+      {
+        "no": 6,
+        "card_title": "가게 앞 사진",
+        "reason": "같은 주제의 4번 후보가 먼저 있음"
+      },
+      {
+        "no": 16,
+        "card_title": "처마 끝 빗소리",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 17,
+        "card_title": "설날 한복",
+        "reason": "12장이 다 참"
+      }
+    ],
+    "selectionSeed": 116,
+    "writingFirstProblems": [],
+    "seconds": 57.7
+  }
+}

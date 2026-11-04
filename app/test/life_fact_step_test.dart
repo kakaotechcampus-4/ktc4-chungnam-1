@@ -495,6 +495,87 @@ void main() {
     });
   });
 
+  group('화면 낭독기 이름 (#180, 접근성 보고서 7쪽, 13쪽)', () {
+    testWidgets('마이크 버튼은 지금 누르면 하는 일을 이름으로 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 시작')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+
+      tester.semantics.tap(find.semantics.byLabel('음성 입력 시작'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(find.bySemanticsLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 종료')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('옮기는 중과 보내지 못했을 때는 마이크를 누를 수 있는 버튼으로 읽지 않는다', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      final speech = _FixedSpeech(
+        const SpeechHeard('합성 문장입니다'),
+        const Duration(milliseconds: 200),
+        queued: [const SpeechFailed(canResend: true)],
+      );
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+
+      // 옮기는 중: 마이크는 누를 수 없으므로 상태 문구만 읽는다.
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(find.semantics.byLabel('음성 입력 종료'), findsNothing);
+      expect(find.semantics.byLabel('말씀을 글로 옮기고 있어요'), findsOne);
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // 보내지 못함: 할 일은 재시도 하나로 읽는다.
+      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('재시도')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('직접 입력칸은 쓰기 전후 모두 항목 이름을 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await tester.tap(find.text('글로 답하기'));
+      await tester.pump();
+
+      final field = find.byType(TextField);
+      expect(tester.getSemantics(field), isSemantics(isTextField: true));
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+
+      await tester.enterText(field, '합성 문장입니다');
+      await tester.pump();
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+      handle.dispose();
+    });
+  });
+
   group('적어 둔 답', () {
     // 합성 문장이다. 실제 어르신의 생애 정보가 아니다.
     const saved = '합성 예시 답입니다';
@@ -1021,87 +1102,6 @@ void main() {
 
       expect(find.byType(TextField), findsOneWidget);
       expect(screen.calls, isEmpty);
-    });
-  });
-
-  group('화면 낭독기 이름 (#180, 접근성 보고서 7쪽, 13쪽)', () {
-    testWidgets('마이크 버튼은 지금 누르면 하는 일을 이름으로 읽는다', (tester) async {
-      final handle = tester.ensureSemantics();
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
-
-      expect(
-        tester.getSemantics(find.bySemanticsLabel('음성 입력 시작')),
-        isSemantics(isButton: true, hasTapAction: true),
-      );
-
-      tester.semantics.tap(find.semantics.byLabel('음성 입력 시작'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('듣고 있어요'), findsOneWidget);
-      expect(find.bySemanticsLabel('음성 입력 시작'), findsNothing);
-      expect(
-        tester.getSemantics(find.bySemanticsLabel('음성 입력 종료')),
-        isSemantics(isButton: true, hasTapAction: true),
-      );
-      handle.dispose();
-    });
-
-    testWidgets('옮기는 중과 보내지 못했을 때는 마이크를 누를 수 있는 버튼으로 읽지 않는다', (
-      tester,
-    ) async {
-      final handle = tester.ensureSemantics();
-      _useReferenceScreen(tester);
-      final speech = _FixedSpeech(
-        const SpeechHeard('합성 문장입니다'),
-        const Duration(milliseconds: 200),
-        queued: [const SpeechFailed(canResend: true)],
-      );
-      await tester.pumpWidget(
-        _wrap(outcome: const SpeechNotHeard(), speech: speech),
-      );
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pump();
-      await tester.tap(find.text('다 말했어요'));
-      await tester.pump();
-
-      // 옮기는 중: 마이크는 누를 수 없으므로 상태 문구만 읽는다.
-      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
-      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
-      expect(find.semantics.byLabel('음성 입력 종료'), findsNothing);
-      expect(find.semantics.byLabel('말씀을 글로 옮기고 있어요'), findsOne);
-
-      await tester.pump(const Duration(milliseconds: 300));
-
-      // 보내지 못함: 할 일은 재시도 하나로 읽는다.
-      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsOneWidget);
-      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
-      expect(
-        tester.getSemantics(find.bySemanticsLabel('재시도')),
-        isSemantics(isButton: true, hasTapAction: true),
-      );
-      handle.dispose();
-    });
-
-    testWidgets('직접 입력칸은 쓰기 전후 모두 항목 이름을 읽는다', (tester) async {
-      final handle = tester.ensureSemantics();
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-      await tester.tap(find.text('글로 답하기'));
-      await tester.pump();
-
-      final field = find.byType(TextField);
-      expect(tester.getSemantics(field), isSemantics(isTextField: true));
-      expect(tester.getSemantics(field).label, startsWith(_step.label));
-
-      await tester.enterText(field, '합성 문장입니다');
-      await tester.pump();
-      expect(tester.getSemantics(field).label, startsWith(_step.label));
-      handle.dispose();
     });
   });
 }

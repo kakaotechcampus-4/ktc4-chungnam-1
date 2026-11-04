@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart';
 import '../../data/visit_api.dart';
 import '../visit/pending_uploads.dart';
 
@@ -11,6 +12,9 @@ import '../visit/pending_uploads.dart';
 enum UploadRetryOutcome {
   /// 서버가 녹음을 받았다.
   sent,
+
+  /// 녹음을 다시 올리지 않고 저장된 전사로 리포트 생성을 요청했다.
+  reportRequested,
 
   /// 이 기기에 그 회차의 녹음 기록이나 파일이 없다.
   notFound,
@@ -28,10 +32,11 @@ enum UploadRetryOutcome {
 /// ([PendingUploads])에서 녹음 파일과 참여자 수를 찾아 6-2 로 보낸다. 들어오자마자
 /// 보낸다. 보호자가 배너에서 이미 다시 보내기를 골랐기 때문이다.
 class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
-  UploadRetryController(this.sessionId);
+  UploadRetryController(this.sessionId, {this.analysisId});
 
   /// 홈 배너가 넘긴 회차. 주소에 없으면 `null` 이다.
   final String? sessionId;
+  final String? analysisId;
 
   @override
   Future<UploadRetryOutcome> build() async {
@@ -40,8 +45,36 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
       return UploadRetryOutcome.notFound;
     }
 
+    if (analysisId != null) {
+      try {
+        final newId = await ref
+            .read(reportApiProvider)
+            .retryAnalysis(analysisId!);
+        if (ref.mounted) {
+          ref
+              .read(reportNoticeProvider.notifier)
+              .startGenerating(analysisId: newId);
+        }
+        return UploadRetryOutcome.reportRequested;
+      } on ApiServerFailure catch (failure) {
+        if (failure.errorCode == 'ANALYSIS_ALREADY_COMPLETED' ||
+            failure.errorCode == 'ANALYSIS_ALREADY_FAILED') {
+          if (ref.mounted) ref.read(reportNoticeProvider.notifier).retry();
+          return UploadRetryOutcome.alreadyClosed;
+        }
+        if (failure.statusCode != 409 ||
+            failure.errorCode != 'RECORDING_REQUIRED') {
+          rethrow;
+        }
+      }
+      if (!ref.mounted) return UploadRetryOutcome.notFound;
+    }
+
     final uploads = ref.read(pendingUploadsProvider);
-    final pending = await uploads.find(sessionId);
+    final pending = await uploads.find(
+      sessionId,
+      includeUploaded: analysisId != null,
+    );
     if (pending == null) return UploadRetryOutcome.notFound;
     final participantCount = pending.participantCount;
     if (participantCount == null ||
@@ -50,9 +83,9 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
       return UploadRetryOutcome.participantCountRequired;
     }
 
-    final String analysisId;
+    final String submittedAnalysisId;
     try {
-      analysisId = await ref
+      submittedAnalysisId = await ref
           .read(visitApiProvider)
           .submitAudio(
             sessionId,
@@ -71,7 +104,7 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
     if (ref.mounted) {
       ref
           .read(reportNoticeProvider.notifier)
-          .startGenerating(analysisId: analysisId);
+          .startGenerating(analysisId: submittedAnalysisId);
     }
     return UploadRetryOutcome.sent;
   }
@@ -121,5 +154,16 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
 final uploadRetryProvider = AsyncNotifierProvider.autoDispose
     .family<UploadRetryController, UploadRetryOutcome, String?>(
       UploadRetryController.new,
+      retry: (_, _) => null,
+    );
+
+typedef AnalysisRetryTarget = ({String? sessionId, String analysisId});
+
+final analysisRetryProvider = AsyncNotifierProvider.autoDispose
+    .family<UploadRetryController, UploadRetryOutcome, AnalysisRetryTarget>(
+      (target) => UploadRetryController(
+        target.sessionId,
+        analysisId: target.analysisId,
+      ),
       retry: (_, _) => null,
     );

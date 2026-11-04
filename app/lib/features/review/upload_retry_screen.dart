@@ -15,13 +15,23 @@ import 'upload_retry_controller.dart';
 /// `/visit/upload?session=<회차 ID>` 로 연다. 들어오자마자 보내고, 결과에 따라
 /// 안내와 버튼만 바꾼다.
 class UploadRetryScreen extends ConsumerWidget {
-  const UploadRetryScreen({required this.sessionId, super.key});
+  const UploadRetryScreen({
+    required this.sessionId,
+    this.analysisId,
+    super.key,
+  });
 
   final String? sessionId;
+  final String? analysisId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = uploadRetryProvider(sessionId);
+    final provider = analysisId == null
+        ? uploadRetryProvider(sessionId)
+        : analysisRetryProvider((
+            sessionId: sessionId,
+            analysisId: analysisId!,
+          ));
     final result = ref.watch(provider);
     void goHome() => context.go(AppRoutes.home);
 
@@ -30,31 +40,26 @@ class UploadRetryScreen extends ConsumerWidget {
       // 다시 보내기를 누르면 지난 실패 대신 보내는 중을 다시 보여준다.
       body: result.when(
         skipLoadingOnRefresh: false,
-        loading: () => const StatusNotice(
+        loading: () => StatusNotice(
           loading: true,
-          title: '녹음을 보내고 있어요',
+          title: analysisId == null ? '녹음을 보내고 있어요' : '분석을 다시 요청하고 있어요',
           body: '잠시만 기다려 주세요',
         ),
         error: (error, _) => StatusNotice(
           danger: true,
-          title: '녹음을 보내지 못했어요.',
+          title: analysisId == null ? '녹음을 보내지 못했어요.' : '분석을 요청하지 못했어요.',
           body: error is ApiNetworkFailure
               ? '인터넷 연결을 확인한 뒤 다시 보내주세요.'
               : '잠시 후 다시 보내주세요.',
-          primaryLabel: '다시 보내기',
+          primaryLabel: '다시 시도하기',
           onPrimary: ref.read(provider.notifier).retry,
           onHome: goHome,
         ),
         data: (outcome) => switch (outcome) {
-          UploadRetryOutcome.participantCountRequired => StatusNotice(
-            title: '녹음이 기기에 남아 있어요',
-            body: '함께 대화한 사람 수를 확인하면 이 녹음으로 리포트를 만들 수 있어요.',
-            primaryLabel: '참여자 수 확인하기',
-            onPrimary: () async {
-              final count = await showRecordingParticipantDialog(context);
-              if (count == null || !context.mounted) return;
-              await ref.read(provider.notifier).confirmParticipantCount(count);
-            },
+          UploadRetryOutcome.reportRequested => StatusNotice(
+            icon: Icons.check_circle_outline,
+            title: '리포트를 다시 만들고 있어요',
+            body: '저장된 전사를 사용합니다. 완료되면 홈에서 확인할 수 있어요.',
             onHome: goHome,
           ),
           UploadRetryOutcome.sent => StatusNotice(
@@ -74,6 +79,17 @@ class UploadRetryScreen extends ConsumerWidget {
           UploadRetryOutcome.alreadyClosed => StatusNotice(
             title: '이미 처리된 면회예요.',
             body: '결과는 홈에서 확인해 주세요.',
+            onHome: goHome,
+          ),
+          UploadRetryOutcome.participantCountRequired => StatusNotice(
+            title: '녹음이 기기에 남아 있어요',
+            body: '함께 대화한 사람 수를 확인하면 이 녹음으로 리포트를 만들 수 있어요.',
+            primaryLabel: '참여자 수 확인하기',
+            onPrimary: () async {
+              final count = await showRecordingParticipantDialog(context);
+              if (count == null || !context.mounted) return;
+              await ref.read(provider.notifier).confirmParticipantCount(count);
+            },
             onHome: goHome,
           ),
         },

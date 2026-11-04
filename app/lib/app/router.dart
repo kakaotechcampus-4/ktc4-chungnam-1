@@ -116,6 +116,7 @@ GoRouter buildRouter() {
         builder: (context, state) => _NeedsProfile(
           child: UploadRetryScreen(
             sessionId: state.uri.queryParameters['session'],
+            analysisId: state.uri.queryParameters['analysis'],
           ),
         ),
       ),

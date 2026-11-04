@@ -58,6 +58,8 @@ python make_invalid_files.py         # 06_empty_file.wav, 07_corrupted_file.wav
 | `scripts/` | 향후 채점 코드 위치, 아직 없음 |
 | `results/baseline/` | 향후 합의된 비교 기준 위치 |
 | `results/local/` | 향후 개인 결과 위치, GitHub 반입 금지 |
+| [results/2026-11-03-real-model-spot-check.md](results/2026-11-03-real-model-spot-check.md) | #116 카드, 리포트, 변경 제안의 실제 모델 소규모 점검 기록. 합성 입력만 사용, 사람 검수 전. 입력, 실행기, 원본 출력은 [같은 이름 폴더](results/2026-11-03-real-model-spot-check/) |
+| [human-review/2026-11-04-card-human-review.md](human-review/2026-11-04-card-human-review.md) | 실제 모델 카드 20장의 사람 검수표. 근거, 사진 단정, 기억 시험, 의료 표현, 자연스러움 기준. 채점 전 양식 |
 
 ## 케이스 최소 필드
 

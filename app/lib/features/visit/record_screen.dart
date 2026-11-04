@@ -228,7 +228,7 @@ class _ProblemNotice extends StatelessWidget {
     VisitRecordingProblem.sessionFailed =>
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
     VisitRecordingProblem.cardsOutdated =>
-      '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n대화 카드 화면으로 돌아가 다음 대화를 준비해주세요.',
+      '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
   };
 
   @override

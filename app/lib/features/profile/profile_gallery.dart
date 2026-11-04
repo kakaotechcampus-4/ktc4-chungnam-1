@@ -155,9 +155,10 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                       ? _GalleryTile(
                           photo: photos[start + col],
                           number: start + col + 1,
-                          edited: edited.containsKey(
-                            _keyOf(photos[start + col]),
-                          ),
+                          edited:
+                              edited.containsKey(_keyOf(photos[start + col])) ||
+                              photos[start + col].descriptionSource ==
+                                  'caregiver',
                           selected: photos[start + col].photoId == _selectedId,
                           onTap: () => _toggle(photos[start + col]),
                         )
@@ -179,7 +180,9 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
           const SizedBox(height: AppSpacing.lg),
           _DescriptionPanel(
             photo: selected,
-            edited: edited.containsKey(_keyOf(selected)),
+            edited:
+                edited.containsKey(_keyOf(selected)) ||
+                selected.descriptionSource == 'caregiver',
             controller: _text,
             current: _currentDescription(selected) ?? '',
             saving: _savingIds.contains(selected.photoId),
@@ -312,7 +315,7 @@ class _DescriptionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = photo.analysisStatus;
     final failed = status == PhotoAnalysisStatus.failed;
-    if (status != PhotoAnalysisStatus.completed && !failed) {
+    if (status != PhotoAnalysisStatus.completed && !failed && !edited) {
       return const _PanelNotice('사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.');
     }
 
@@ -326,10 +329,7 @@ class _DescriptionPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (failed && !edited) ...[
-          const _PanelNotice(
-            'AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.',
-            danger: true,
-          ),
+          const _PanelNotice('AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.', danger: true),
           const SizedBox(height: AppSpacing.lg),
         ],
         AppTextField(
@@ -411,7 +411,10 @@ class ProfilePhotoImage extends StatelessWidget {
     Widget fallback(BuildContext context, Object error, StackTrace? stack) =>
         const ColoredBox(
           color: AppColors.surface,
-          child: Icon(Icons.broken_image_outlined, color: AppColors.textDisabled),
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: AppColors.textDisabled,
+          ),
         );
 
     if (url.startsWith(_assetScheme)) {
