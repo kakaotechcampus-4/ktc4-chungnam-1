@@ -10,11 +10,13 @@ from app.api.routes.profile_photos import router as profile_photos_router
 from app.api.routes.profiles import router as profiles_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.speech_analyses import router as speech_analyses_router
+from app.api.routes.speech_transcriptions import router as speech_transcriptions_router
 from app.api.routes.visit_sessions import router as visit_sessions_router
 
 # 앱이 부르는 경로. 최소 지원 버전보다 낮은 앱은 인증 전에 426 으로 거절한다.
 app_router = APIRouter(dependencies=[Depends(require_supported_app_version)])
 app_router.include_router(speech_analyses_router)
+app_router.include_router(speech_transcriptions_router)
 app_router.include_router(auth_router)
 app_router.include_router(profiles_router)
 app_router.include_router(life_facts_router)

@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 # 엘리스 ML API는 모델마다 주소가 다름. 쓸 수 있는 모델과 주소를 여기 적어 둠
 # 새 모델은 엘리스 콘솔에서 주소를 확인해 추가
 ENDPOINTS = {
+    "gpt-6-luna": "https://mlapi.run/2b112090-5609-4dde-87fb-161933470bde/v1",
     "gpt-5.6-luna": "https://mlapi.run/286e9158-d32e-436d-a23d-36b43fc8e68a/v1",
 }
 
@@ -27,7 +28,7 @@ class ChatConfig:
     timeout: int = 300
     # 엘리스 프록시가 스트리밍이 아닌 응답의 출력을 2,000토큰으로 막음(시뮬레이션에서 400 응답으로 확인, 2026-10-05).
     # 후보 제출이 잘려서 스트리밍으로 받고 상한을 늘림
-    max_tokens: int = 8000
+    max_tokens: int = 16000
 
     @property
     def name(self) -> str:

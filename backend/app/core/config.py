@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # 카드 생성(API 4-1). 모델과 promptVersion은 작업을 만들 때 저장하고 생성 함수에 넘김.
     # ML API 키가 비어 있으면 4-1은 503.
-    card_generation_model: str = "gpt-5.6-luna"
+    card_generation_model: str = "gpt-6-luna"
     card_generation_prompt_version: int = Field(default=1, ge=1)
     ml_api_key: SecretStr = SecretStr("")
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
     # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
-    report_generation_model: str = "gpt-5.6-luna"
+    report_generation_model: str = "gpt-6-luna"
     # 리포트 생성 전체(요청 조립 → 리포트·변경 제안 생성 → 검증) 제한 시간. 넘기면
     # AI_SERVER_TIMEOUT. 저장과 완료 처리까지 음성 작업 임대 안에 끝나도록 임대보다
     # 60초 이상 짧아야 하며, 아니면 음성 worker가 시작하지 않음.

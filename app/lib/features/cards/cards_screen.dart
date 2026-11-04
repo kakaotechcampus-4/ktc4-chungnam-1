@@ -334,6 +334,7 @@ class _CardTile extends StatelessWidget {
     return AppCard(
       selected: selected,
       onTap: onToggleExpanded,
+      expanded: expanded,
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,13 +357,11 @@ class _CardTile extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.md),
               // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다.
-              GestureDetector(
+              // 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+              SelectionToggle(
+                label: cardSelectLabel(card.cardTitle),
+                selected: selected,
                 onTap: onToggleSelected,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: SelectionMark(selected: selected),
-                ),
               ),
             ],
           ),
@@ -398,3 +397,6 @@ class _CardTile extends StatelessWidget {
     );
   }
 }
+
+/// 카드 고르기 표시를 화면 낭독기가 읽는 이름이다. 카드 추가 화면도 같은 이름을 쓴다.
+String cardSelectLabel(String cardTitle) => '$cardTitle 카드 고르기';

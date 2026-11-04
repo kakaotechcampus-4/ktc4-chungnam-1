@@ -13,7 +13,10 @@ remote_port=${SAEROK_STT_BACKUP_REMOTE_PORT:-18001}
 python3 -c 'import ipaddress,sys; a=ipaddress.IPv4Address(sys.argv[1]); assert a.is_private and not a.is_unspecified and not a.is_multicast, "BE bind address must be private"' "$SAEROK_STT_BACKUP_BIND_HOST"
 for port in "$ssh_port" "$local_port" "$remote_port"; do
     case "$port" in ''|*[!0-9]*) echo 'Invalid port' >&2; exit 1;; esac
-    test "$port" -ge 1 && test "$port" -le 65535
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        echo 'Port out of range' >&2
+        exit 1
+    fi
 done
 test -r "$SAEROK_STT_BACKUP_SSH_KEY_FILE"
 test -r "$SAEROK_STT_BACKUP_KNOWN_HOSTS_FILE"

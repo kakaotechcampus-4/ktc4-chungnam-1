@@ -1,6 +1,6 @@
 """문안 작성(④). 고른 12장에 설명, 첫 질문, 꼬리 질문 3개를 씀(판의 writing_topics.md).
 
-코드가 빈 설명, 꼬리 질문 개수, 물음표, 금지 표현(기억 시험, 최근 일, 의료 표현)을 검사함.
+코드가 빈 설명, 꼬리 질문 개수, 물음표, 카드의 직접적인 치료 효과 주장, 사진 속 대상을 맞히게 하는 질문(_QUIZ)을 검사함.
 꼬리 질문 3개는 API 명세 4절(#87). 금지 표현은 PM이 저장소 규칙(CLAUDE.md)에 정해 둔 "최근 기억을 시험하는 질문, 의료 진단 금지" 기준.
 걸리면 걸린 곳을 알려 주고 한 번 다시 쓰게 함. 또 걸리면 실패.
 """
@@ -15,10 +15,8 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from card_generation._steps.deadline import Deadline
+from card_generation._steps.text_checks import has_card_treatment_claim
 from common.structured import invoke_structured
-
-_BANNED = [r"기억\s*나세요", r"기억\s*하세요", r"기억하시", r"기억나시", r"요즘", r"오늘", r"어제", r"방금", r"지난주",
-          r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
 
 
 class WritingFailed(RuntimeError):
@@ -61,8 +59,17 @@ def write_cards(model: BaseChatModel, profile: dict[str, Any], cards: list[dict[
     return result, first
 
 
+# 사진 속 사물, 사람, 장소를 맞히게 하는 질문. 정답이 있는 시험식 형태만 좁게 잡음.
+# "이 사진은 어디서 찍으셨어요?", "사진 속 텃밭에서는 무엇을 기르셨어요?", "누구랑 하셨어요?"는 걸리지 않게 둠.
+_QUIZ = [
+    re.compile(r"사진\s*(?:속|에|안)[^?]{0,20}?(?<!에서)(?:은|는|이|가)\s*"
+               r"(?:무엇|뭐|뭘|누구(?:예요|세요|인가요|일까요|에요|였어요|였나요|인지))"),
+    re.compile(r"(?:(?:누구|무엇|어디)인지|(?:누군|뭔|어딘)지)\s*(?:아세요|아시겠|아십니까|아시나요|아실까요|맞혀|맞춰)"),
+]
+
+
 def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
-    """문안 검사. 카드 위치가 입력과 같은지, 설명이 비지 않았는지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 금지 표현(_BANNED)이 없는지.
+    """문안 검사. 카드 위치가 입력과 같은지, 설명이 비지 않았는지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 맞히기 질문(_QUIZ)과 명백한 금지 구문이 없는지.
     걸린 것을 문장 목록으로 돌려주고, 이 문장을 그대로 모델에게 보내 고치게 함.
     """
     out = []
@@ -76,7 +83,10 @@ def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
         for q in [c.primary_question, *c.follow_up_questions]:
             if not q.strip().endswith("?"):
                 out.append(f"{c.position}번: 질문이 물음표로 끝나지 않는다: {q}")
-            hit = next((b for b in _BANNED if re.search(b, q)), None)
-            if hit:
-                out.append(f"{c.position}번: 쓰면 안 되는 표현({hit})이 있다: {q}")
+            if any(p.search(q) for p in _QUIZ):
+                out.append(f"{c.position}번: 사진 속 사물, 사람, 장소를 맞히게 하는 시험식 질문이다. 그때의 경험이나 느낌을 여쭤라: {q}")
+        for field, text in [("설명", c.description), ("첫 질문", c.primary_question),
+                            *((f"꼬리 질문 {i}", q) for i, q in enumerate(c.follow_up_questions, 1))]:
+            if has_card_treatment_claim(text):
+                out.append(f"{c.position}번: {field}에 명백한 의료 효과 주장이 있다.")
     return out
