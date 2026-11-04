@@ -102,3 +102,47 @@ def test_stt_timeout_is_reported_without_url():
         )
     )
     assert result == {"reachable": False, "httpStatus": None}
+
+
+@pytest.mark.parametrize("url", ["http://user:secret@stt", "http://stt?key=secret", "http://stt#secret", "file:///secret"])
+def test_stt_probe_rejects_embedded_credentials(url):
+    def fail(request):
+        pytest.fail("must not send credentials")
+    assert run(runtime_check.probe_stt(url, transport=httpx.MockTransport(fail))) == {
+        "reachable": False, "httpStatus": None,
+    }
+
+
+def test_worker_and_primary_backup_stt_status_are_independent(monkeypatch):
+    async def workers(targets):
+        assert targets == ["speech=synthetic-worker"]
+        return {"speech": {"state": "exited", "running": False, "restartCount": 12,
+                           "processingVerified": False}}
+    async def stt(url):
+        return {"reachable": url == "http://backup", "httpStatus": 200 if url == "http://backup" else None}
+    monkeypatch.setattr(runtime_check, "inspect_workers", workers)
+    monkeypatch.setattr(runtime_check, "probe_stt", stt)
+    result = run(runtime_check.collect(Settings(_env_file=None), check_stt=True,
+                                       backup_stt_url="http://backup", worker_targets=["speech=synthetic-worker"]))
+    assert result["workerProcessState"] == "attention"
+    assert result["backupSttLiveness"]["reachable"]
+    assert not result["sttLiveness"]["reachable"] and not result["sttAnalysisVerified"]
+    assert "PRIMARY_STT_UNREACHABLE" in result["issues"]
+    assert "SPEECH_WORKER_NOT_RUNNING_OR_UNINSPECTED" in result["issues"]
+
+
+@pytest.mark.parametrize("key,configured", [("", False), ("  ", False), ("synthetic-secret", True)])
+def test_ml_check_never_calls_provider_or_reports_unverified_quota(monkeypatch, key, configured):
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: pytest.fail("no provider call"))
+    result = run(runtime_check.collect(Settings(_env_file=None, ml_api_key=key), check_ml=True))
+    assert result["mlApi"]["keyConfigured"] is configured
+    assert result["mlApi"]["authentication"] == "not_checked"
+    assert result["mlApi"]["remainingQuota"] == "not_checked"
+    assert result["mlApi"]["generationVerified"] is False
+    assert "synthetic-secret" not in json.dumps(result)
+
+
+def test_invalid_stt_port_is_safe_error():
+    assert run(runtime_check.probe_stt("http://synthetic-stt:not-a-port")) == {
+        "reachable": False, "httpStatus": None,
+    }
