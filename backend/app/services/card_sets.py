@@ -245,16 +245,41 @@ async def _rows(connection: DbConnection, sql: str, profile_id: UUID) -> list[di
     return await cursor.fetchall()
 
 
-def _without_deleted_facts(
-    evidence: list[dict[str, str]], fact_ids: set[str]
+def _without_missing_evidence(
+    evidence: list[dict[str, str]], fact_ids: set[str], photo_ids: set[str]
 ) -> list[dict[str, str]]:
-    """지금 없는 생애 정보를 가리키는 근거 항목을 뺌.
+    """context에 없는 이야기나 사진을 가리키는 근거 항목을 뺌.
 
-    보호자가 일대기에서 지운 이야기(API 2-9)도 주제와 지난 카드의 근거에는 남아 있음(FK 없는
-    JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시 써서 결과 검증에서 실패함. 저장된 근거는
-    고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는 미정(작업 D 문서 미정 D3).
+    보호자가 일대기에서 지운 이야기(API 2-9)와 제외한 주제의 근거 이야기, 사진([`_excluded_evidence`])도
+    주제와 지난 카드의 근거에는 남아 있음(FK 없는 JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시
+    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는
+    미정(작업 D 문서 미정 D3).
     """
-    return [item for item in evidence if "factId" not in item or item["factId"] in fact_ids]
+    return [
+        item
+        for item in evidence
+        if ("factId" not in item or item["factId"] in fact_ids)
+        and ("photoId" not in item or item["photoId"] in photo_ids)
+    ]
+
+
+def _excluded_evidence(
+    topics: list[dict[str, Any]], feedback_by_topic: dict[UUID, list[TopicFeedback]]
+) -> set[tuple[str, str]]:
+    """보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진. 다음 카드 생성 입력에서 뺌.
+
+    제외는 주제 하나에 걸림. 근거 이야기가 입력에 남아 있으면 생성 함수가 그 이야기로 이름만
+    다른 새 주제를 만들어, 어르신이 거절한 내용이 카드로 다시 나올 수 있음. 세부 정보 네 칸
+    (`profileField`)은 칸 전체가 빠지면 같은 칸의 다른 주제까지 사라지므로 남김.
+    """
+    return {
+        (key, item[key])
+        for row in topics
+        if any(f.action == "exclude" for f in feedback_by_topic.get(row["topic_id"], []))
+        for item in row["evidence"]
+        for key in ("factId", "photoId")
+        if key in item
+    }
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -313,12 +338,16 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         " ORDER BY v.started_at, c.position",
         profile_id,
     )
-    fact_ids = {str(row["fact_id"]) for row in facts}
     feedback_by_topic: dict[UUID, list[TopicFeedback]] = {}
     for row in feedback:
         feedback_by_topic.setdefault(row["topic_id"], []).append(
             TopicFeedback(action=row["action"], decided_at=row["decided_at"])
         )
+    excluded = _excluded_evidence(topics, feedback_by_topic)
+    facts = [row for row in facts if ("factId", str(row["fact_id"])) not in excluded]
+    photos = [row for row in photos if ("photoId", str(row["photo_id"])) not in excluded]
+    fact_ids = {str(row["fact_id"]) for row in facts}
+    photo_ids = {str(row["photo_id"]) for row in photos}
     return CardContext(
         age_range=f"{profile['decade']}s",
         profile_facts=ProfileFacts(**{field: profile[field] for field in PROFILE_FIELDS}),
@@ -338,7 +367,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=_without_deleted_facts(row["evidence"], fact_ids),
+                evidence=_without_missing_evidence(row["evidence"], fact_ids, photo_ids),
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -356,7 +385,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 position=row["position"],
                 card_title=row["card_title"],
                 primary_question=row["primary_question"],
-                evidence=_without_deleted_facts(row["evidence"], fact_ids),
+                evidence=_without_missing_evidence(row["evidence"], fact_ids, photo_ids),
                 selected=row["selected"],
                 review_reaction=row["review_reaction"],
             )
