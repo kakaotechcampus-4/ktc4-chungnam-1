@@ -97,13 +97,44 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
             error_code="CARD_GENERATION_NOT_FOUND",
             message="쓸 수 있는 카드 묶음이 없습니다.",
         )
+    return await _card_set(
+        connection,
+        latest["set_id"],
+        latest["session_id"],
+        needs_refresh=_needs_refresh(latest),
+    )
+
+
+async def session_card_set(connection: DbConnection, session_id: UUID) -> CardSet:
+    """4-4. 회차에 쓴 묶음. 평가가 끝난 회차도 줌. 읽기만 하며 면회에 다시 쓰게 하지 않음."""
+    cursor = await connection.execute(
+        "SELECT set_id FROM card_sets WHERE session_id = %s", (session_id,)
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        raise AppError(
+            status_code=404,
+            error_code="CARD_GENERATION_NOT_FOUND",
+            message="회차에 쓴 카드 묶음이 없습니다.",
+        )
+    return await _card_set(connection, row["set_id"], session_id)
+
+
+async def _card_set(
+    connection: DbConnection,
+    set_id: UUID,
+    session_id: UUID | None,
+    *,
+    needs_refresh: bool = False,
+) -> CardSet:
     cursor = await connection.execute(
         "SELECT c.card_id, c.position, c.topic_id, t.title, t.description,"
         "       c.card_title, c.description AS card_description, c.primary_question,"
-        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected"
+        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected,"
+        "       c.liked_at IS NOT NULL AS liked"
         "  FROM conversation_cards c JOIN profile_topics t ON t.topic_id = c.topic_id"
         " WHERE c.set_id = %s ORDER BY c.position",
-        (latest["set_id"],),
+        (set_id,),
     )
     cards = [
         Card(
@@ -119,15 +150,34 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
             evidence_source=EVIDENCE_SOURCE[row["evidence_source"]],
             evidence=row["evidence"],
             selected=row["selected"],
+            liked=row["liked"],
         )
         for row in await cursor.fetchall()
     ]
     return CardSet(
-        set_id=latest["set_id"],
-        used_by_session_id=latest["session_id"],
-        needs_refresh=_needs_refresh(latest),
+        set_id=set_id,
+        used_by_session_id=session_id,
+        needs_refresh=needs_refresh,
         cards=cards,
     )
+
+
+async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool) -> None:
+    """4-5, 4-6. 카드의 "좋았어요" 표시를 켜거나 끔. 같은 요청을 다시 보내도 결과가 같음.
+
+    이미 켠 카드를 다시 켜면 처음 켠 시각을 그대로 둠. 보호자 평가(`review_reaction`)와 리포트는
+    바꾸지 않음.
+    """
+    if liked:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = now()"
+            " WHERE card_id = %s AND liked_at IS NULL",
+            (card_id,),
+        )
+    else:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = NULL WHERE card_id = %s", (card_id,)
+        )
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
