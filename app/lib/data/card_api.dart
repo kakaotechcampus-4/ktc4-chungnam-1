@@ -73,7 +73,10 @@ class ServerCardApi implements CardApi {
   Future<CardGenerationStatus> requestGeneration(String profileId) async {
     try {
       final body = await _client.post(_base(profileId));
-      return CardGenerationStatus.parse(body['status']);
+      return _client.read<CardGenerationStatus>(
+        '카드 생성',
+        () => CardGenerationStatus.parse(body['status']),
+      );
     } on ApiServerFailure catch (failure) {
       // 새로 만들 수 없는 까닭이 이미 쓸 묶음이 있어서라면 실패가 아니다.
       if (failure.statusCode == 409) {
@@ -91,20 +94,19 @@ class ServerCardApi implements CardApi {
   @override
   Future<CardGenerationStatus> status(String profileId) async {
     final body = await _client.get('${_base(profileId)}/status');
-    return CardGenerationStatus.parse(
-      body['status'],
-      needsRefresh: body['needsRefresh'] == true,
+    return _client.read<CardGenerationStatus>(
+      '카드 생성 상태',
+      () => CardGenerationStatus.parse(
+        body['status'],
+        needsRefresh: body['needsRefresh'] == true,
+      ),
     );
   }
 
   @override
   Future<CardSet> current(String profileId) async {
     final body = await _client.get('${_base(profileId)}/current');
-    try {
-      return CardSet.fromJson(body);
-    } on TypeError {
-      throw const ApiUnexpectedResponseFailure('카드 묶음 형식이 다르다');
-    }
+    return _client.read<CardSet>('카드 묶음', () => CardSet.fromJson(body));
   }
 }
 
