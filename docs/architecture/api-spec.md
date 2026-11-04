@@ -987,6 +987,22 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `EVALUATION_NOT_FOUND` |
 
+### 6-6. `POST /api/v1/speech-transcriptions` — 프로필 입력용 전사
+
+인증된 계정이 multipart의 `audio` 파일 하나를 보낸다. 프로필과 회차 ID는 받지 않는다.
+WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
+`{"schemaVersion": 1, "text": "..."}`이며 인식 결과가 비었으면 `text`도 빈 문자열이다.
+
+동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
+`AUDIO_TOO_LARGE` 413, 형식과 손상은 `INVALID_AUDIO_FORMAT` 또는 `INVALID_AUDIO` 422다.
+STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
+
+원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
+먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
+삭제 실패가 전사 성공을 취소하지 않는다. 큐 실행과 Lifecycle만으로 정확한 24시간 이내 삭제를
+보장한다고 설명하지 않는다. 처리 시간과 오류 코드 선택의 남은 확인은
+[프로필 음성 입력](../../backend/docs/short-speech-transcription.md)을 따른다.
+
 <br>
 
 ---

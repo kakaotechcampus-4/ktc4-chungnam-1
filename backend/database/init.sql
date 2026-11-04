@@ -17,6 +17,7 @@ DROP FUNCTION IF EXISTS delete_orphan_topic();
 CREATE TABLE storage_deletion_request_queue (
     s3_object_key VARCHAR(255) PRIMARY KEY,
     requested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    not_before    TIMESTAMPTZ NOT NULL DEFAULT now(),
     attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     last_attempt_at TIMESTAMPTZ,
     last_error_code VARCHAR(64)

@@ -178,6 +178,7 @@ async def process_deletions(
             await connection.execute(
                 """
             SELECT s3_object_key FROM storage_deletion_request_queue
+             WHERE not_before <= clock_timestamp()
              ORDER BY last_attempt_at NULLS FIRST, requested_at, s3_object_key
              LIMIT %s
         """,
