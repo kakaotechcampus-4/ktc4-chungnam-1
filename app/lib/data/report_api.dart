@@ -252,15 +252,7 @@ class ReportApi {
   }
 
   /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
-  static T _read<T>(T Function() parse) {
-    try {
-      return parse();
-    } on TypeError catch (error) {
-      throw ApiUnexpectedResponseFailure('리포트 응답 모양이 다르다: $error');
-    } on FormatException catch (error) {
-      throw ApiUnexpectedResponseFailure(error.message);
-    }
-  }
+  T _read<T>(T Function() parse) => _client.read('리포트', parse);
 }
 
 /// 리포트와 변경 제안 처리 실패를 보호자에게 보여줄 문구로 옮긴다.
