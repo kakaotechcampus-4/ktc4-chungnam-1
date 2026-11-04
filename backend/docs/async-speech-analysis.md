@@ -47,8 +47,8 @@ BE worker
   ├─ participantCount → speakerCount
   ├─ AI 서버 동기 API 호출
   ├─ SpeechAnalysisResult 및 analysisId 검증
-  ├─ S3 원본 삭제
-  └─ 전사문 임시 저장과 sttCompleted 기록
+  ├─ 전사문 임시 저장과 sttCompleted 기록
+  └─ 원본 삭제 요청 기록과 S3 삭제 시도 (실패 시 대기열 유지)
 
 Flutter
   └─ analysisId 상태 조회
@@ -70,7 +70,7 @@ uploading → queued → transcribing → sttCompleted
 | `uploading` | 요청 안에서 S3 업로드 중인 내부 상태 | 202 이전이므로 표시하지 않음 |
 | `queued` | 서버가 원본과 작업을 인수함 | 리포트를 만들고 있어요 |
 | `transcribing` | worker가 AI 서버에 STT 요청 중 | 리포트를 만들고 있어요 |
-| `sttCompleted` | AI 응답 검증 및 S3 원본 삭제 완료 | 리포트를 만들고 있어요 |
+| `sttCompleted` | AI 응답 검증과 전사문 임시 저장 완료. 원본 삭제 여부는 별도 기록 | 리포트를 만들고 있어요 |
 | `generatingReport` | 리포트 생성 중 | 리포트를 만들고 있어요 |
 | `completed` | 리포트 저장까지 완료 | 완성된 리포트 타일 |
 | `failed` | 정상 결과를 만들지 못함 | 실패 안내 및 후속 동작 |
@@ -239,7 +239,7 @@ SAEROK_SPEECH_AUDIO_S3_REGION=ap-northeast-2
 SAEROK_SPEECH_AUDIO_S3_PREFIX=temporary/speech
 SAEROK_SPEECH_AUDIO_S3_ENCRYPTION=AES256
 SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS=900
-SAEROK_SPEECH_AUDIO_RETENTION_SECONDS=86400
+SAEROK_SPEECH_AUDIO_RETENTION_SECONDS=86100
 SAEROK_MAX_AUDIO_BYTES=536870912
 
 SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS=900
@@ -258,7 +258,8 @@ AWS 자격증명은 실행 환경의 IAM 역할 또는 표준 AWS SDK 자격증�
 - 객체 ACL 비공개
 - 서버 측 암호화 적용
 - BE 역할에 필요한 버킷 및 접두사 범위의 업로드·조회 URL 발급·삭제 권한만 부여
-- `temporary/speech/` 객체가 업로드 후 최대 24시간 이내 제거되는 Lifecycle 적용
+- `temporary/speech/` 객체의 `data_expires_at` 기한 삭제와 실패 대기열 실행을 별도 운영
+- Lifecycle은 누락 방지용 보조 규칙. 일 단위 만료만으로 업로드 후 24시간 이내 삭제를 보장하지 않음
 - 정상 처리에서는 Lifecycle을 기다리지 않고 STT 응답 직후 삭제
 
 Lifecycle은 애플리케이션 환경 변수만으로 만들어지지 않는다. 실제 버킷 설정에서 별도로
@@ -355,7 +356,7 @@ uv run alembic upgrade head
 
 현재 AI 구현의 Whisper 실행 장치는 CUDA로 고정되어 있다. GPU가 없는 BE 개발 PC에 AI
 브랜치를 체크아웃하고 `uv sync`하는 것만으로는 실제 STT를 실행할 수 없다. 실제 통합
-테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 내부 주소를
+테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 GPU 서버의 Tailscale 기본 주소를
 공유한다. 원격 GPU 서버를 사용할 때 BE 개발 PC에는 AI 의존성을 설치할 필요가 없다.
 
 AI 서버가 제공하는 실제 API는 다음과 같다.
@@ -371,8 +372,8 @@ http://127.0.0.1:8001/internal/v1/speech-analyses
 SAEROK_AI_SERVER_URL=http://127.0.0.1:8001
 ```
 
-AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 내부 IP 또는 내부
-도메인을 사용한다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
+AI 서버가 다른 장비에 있으면 `127.0.0.1` 대신 BE에서 접근 가능한 GPU 서버의 Tailscale 기본 주소(`http://<GPU 서버의 Tailscale IP>:8001`)를 사용한다. 현재 배포 절차는
+[STT 운영 안내](../../stt-server/README.md#개인-gpu와-tailscale-운영)를 따른다. AI 서버는 외부에 인증 없이 공개하지 않으며 실제 사용자 자료를 외부
 AI 서비스로 보내지 않는다. worker를 실행하기 전에 다음 생존 확인이 성공해야 한다.
 
 ```powershell
@@ -386,7 +387,7 @@ GPU가 없으면 고정된 합성 `SpeechAnalysisResult`를 반환하는 Mock AI
 
 ```text
 FE 업로드 → BE API → S3 → PostgreSQL → worker
-→ Mock AI 응답 → S3 원본 삭제 → sttCompleted → FE 상태 조회
+→ Mock AI 응답 → 전사 저장(sttCompleted) → 원본 삭제 시도 → FE 상태 조회
 ```
 
 Mock은 실제 Whisper 전사 품질, 화자 분리와 GPU 실행 환경을 검증하지 않는다. 현재
@@ -539,8 +540,9 @@ error_code = null
 테스트에 사용한 `analysisId`의 임시 객체가 남아 있지 않아야 한다. 객체 목록 전체나
 다른 작업 키를 로그 및 캡처에 남기지 말고 해당 합성 작업 하나만 확인한다.
 
-정상 경로에서 즉시 삭제됐는지 확인하고, 별도로 버킷 Lifecycle이 24시간 상한으로
-설정됐는지 AWS 관리 설정에서 확인한다.
+정상 경로에서 즉시 삭제됐는지 확인한다. 실패하면 삭제 대기열에 남고
+`audio_deleted_at`이 비어 있어야 한다. 기한 삭제 실행기와 Lifecycle 보조 규칙도
+별도로 확인한다. 대기열 등록이나 Lifecycle 설정만으로 삭제 완료를 판단하지 않는다.
 
 ## 12. 필수 실패 시나리오
 
@@ -561,8 +563,12 @@ error_code = null
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
+| 리포트 생성 중 모델 연결 실패, 시간 초과 | 작업 `failed`, `AI_SERVER_UNAVAILABLE`, 저장 없음 |
+| 리포트 생성 중 그 밖의 호출 실패, 잘린 응답, JSON 오류 | 작업 `failed`, `AI_SERVER_ERROR`, 저장 없음 |
+| 카드 요약, 이야기 후보와 주제 조정이 모두 0건 | 작업 `completed`, 리포트만 저장(정상 완료) |
+| 리포트 모델이 `ai/common/llm.py`의 `ENDPOINTS`에 없음 | worker 시작 안 함(`--stt-only` 제외) |
 | 응답 `analysisId` 불일치 | 작업 `failed`, `INVALID_AI_RESPONSE` |
-| S3 삭제 실패 | 작업을 STT 완료로 표시하지 않음, Lifecycle 삭제 대상 |
+| S3 삭제만 실패 | 전사 저장과 리포트 생성은 계속. 삭제 대기열 유지, `audio_deleted_at` 미기록 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |
 | STT 완료 후 24시간 안에 리포트 미저장 | 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 

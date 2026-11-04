@@ -300,6 +300,8 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
 
+잘린 응답이나 JSON 처리 오류처럼 연결 문제가 아닌 모델 호출 실패는 `CARD_GENERATION_FAILED`, 후보를 하나도 못 찾으면 `NOT_ENOUGH_TOPICS`다. 카드는 12장을 채워야 하므로 0장 정상 완료는 없다(#143 검사). `SAEROK_CARD_GENERATION_MODEL`이 `ai/common/llm.py`의 `ENDPOINTS`에 없으면 카드 생성 worker가 시작하지 않는다.
+
 **구현 메모**
 
 - 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝난 프로필 사진, `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.

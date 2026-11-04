@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from app.api.deps import CurrentAccountDep, DbConnectionDep
+from app.api.deps import CurrentAccountDep, DbConnectionDep, SettingsDep
 from app.api.routes.profiles import to_life_fact_response
 from app.schemas.common import ErrorResponse
 from app.schemas.profiles import (
@@ -27,6 +27,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필, 생애 정보 또는 계정 없음",
+        409: "카드를 만드는 중이라 고칠 수 없음",
         422: "요청 형식 오류",
         503: "DB 설정 미완료",
     }
@@ -70,13 +71,14 @@ async def add_life_fact(
     "/life-facts/{fact_id}",
     summary="생애 정보 수정",
     response_model=LifeFactResponse,
-    responses=_errors(401, 404, 422, 503),
+    responses=_errors(401, 404, 409, 422, 503),
 )
 async def update_life_fact(
     fact_id: UUID,
     payload: LifeFactUpdateRequest,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
 ) -> LifeFactResponse:
     """생애 정보 중 보낸 필드(`storyCategory`, `title`, `content`, `imageNumber`)만 수정.
 
@@ -88,6 +90,7 @@ async def update_life_fact(
         fact_id,
         account_id=account.account_id,
         changes=payload.column_changes(),
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
     return to_life_fact_response(fact)
 
@@ -97,19 +100,23 @@ async def update_life_fact(
     summary="생애 정보 삭제",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
-    responses=_errors(401, 404, 503),
+    responses=_errors(401, 404, 409, 503),
 )
 async def delete_life_fact(
     fact_id: UUID,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
 ) -> Response:
-    """일대기에서 생애 정보 삭제. 이미 만든 카드와 주제는 남는다.
+    """일대기에서 생애 정보 삭제. 이미 만든 카드와 주제는 남는다. 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다.
 
     API 명세 2-9
     """
 
     await life_facts.delete_life_fact(
-        connection, fact_id, account_id=account.account_id
+        connection,
+        fact_id,
+        account_id=account.account_id,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

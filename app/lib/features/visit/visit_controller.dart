@@ -7,6 +7,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
+import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
 import 'visit_camera.dart';
@@ -28,6 +29,10 @@ enum VisitRecordingProblem {
 
   /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
   sessionFailed,
+
+  /// 카드를 받은 뒤 프로필이나 일대기를 고쳐 5-1 이 그 묶음을 받지 않았다
+  /// (`CARD_SET_NEEDS_REFRESH`). 다시 눌러도 같으므로 카드를 다시 준비해야 한다.
+  cardsOutdated,
 }
 
 /// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
@@ -295,8 +300,22 @@ class VisitController extends AsyncNotifier<VisitState> {
       // 녹음은 사진을 기다리지 않는다.
       unawaited(_uploadPhoto(retryOnce: true));
       return true;
-    } on ApiFailure {
-      _fail(VisitRecordingProblem.sessionFailed);
+    } on ApiFailure catch (failure) {
+      if (failure case ApiServerFailure(errorCode: 'CARD_SET_NEEDS_REFRESH')) {
+        _fail(VisitRecordingProblem.cardsOutdated);
+        // 뒤에 있는 카드 화면이 다시 확인해 옛 카드를 감추고 홈으로 돌려보내게
+        // 한다. 받아 둔 묶음은 버리지 않는다. 이 회차가 그 묶음을 보고 있다.
+        // 지우면 시작하지 않은 상태로 남아 카드 화면이 기다리기만 하므로
+        // 다시 확인하게 한다.
+        final profileId = ref.read(serverProfileIdProvider).value;
+        if (profileId != null) {
+          unawaited(
+            ref.read(cardGenerationProvider(profileId).notifier).start(),
+          );
+        }
+      } else {
+        _fail(VisitRecordingProblem.sessionFailed);
+      }
       return false;
     } finally {
       _creatingSession = false;
@@ -420,21 +439,46 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// [participantCount] 는 종료 모달에서 보호자가 확인해 준 사람 수다. 모달을
   /// 거치지 않고 화면을 떠난 경우에는 넘기지 않는다. 확인받지 않은 수를 대신
   /// 지어내지 않는다.
-  Future<void> stopRecording({int? participantCount}) async {
+  ///
+  /// 녹음 화면의 `dispose` 에서는 [stopRecordingOnLeave] 를 쓴다.
+  Future<void> stopRecording({int? participantCount}) =>
+      _stop(participantCount: participantCount, deferStateChange: false);
+
+  /// 녹음 화면이 사라질 때(`State.dispose`) 부른다.
+  ///
+  /// 열린 파일은 [stopRecording] 처럼 이 호출 안에서 바로 닫기 시작한다. 닫을
+  /// 파일이 없을 때의 상태 변경만 다음 microtask 로 미룬다. `dispose` 는 위젯
+  /// 트리를 정리하는 중에 불리므로, 거기서 상태를 바로 바꾸면 디버그 빌드의
+  /// Riverpod 이 `Tried to modify a provider while the widget tree was
+  /// building` 을 던진다. 파일을 닫은 뒤의 상태 변경은 `await` 다음이라 이미
+  /// 정리가 끝난 뒤다.
+  Future<void> stopRecordingOnLeave() =>
+      _stop(participantCount: null, deferStateChange: true);
+
+  Future<void> _stop({
+    required int? participantCount,
+    required bool deferStateChange,
+  }) async {
     _stopTicker();
-    final current = state.value;
-    if (current == null) return;
+    if (state.value == null) return;
 
     if (!_fileOpen) {
-      state = AsyncData(
-        current.copyWith(
-          recording: false,
-          participantCount: participantCount,
-        ),
+      if (deferStateChange) {
+        await Future<void>.microtask(() {});
+        if (!ref.mounted) return;
+      }
+      _update(
+        (now) =>
+            now.copyWith(recording: false, participantCount: participantCount),
       );
+      // 화면을 떠날 때는 새로 적을 것이 없다. 파일은 닫을 때 이미 적었고, 그
+      // 사이 제출이 끝나 보냈다고 적었을 수 있다. 다시 적으면 보낸 녹음이
+      // 보낼 녹음으로 돌아가 앱을 다시 켰을 때 또 보내려 든다.
+      if (deferStateChange) return;
       await _rememberUpload();
       return;
     }
+    final current = state.value!;
     _fileOpen = false;
 
     VisitRecording? saved;
@@ -445,6 +489,9 @@ class VisitController extends AsyncNotifier<VisitState> {
     } on Exception {
       problem = VisitRecordingProblem.saveFailed;
     }
+    // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
+    // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
+    if (!ref.mounted) return;
 
     _update(
       (now) => now.copyWith(
@@ -459,7 +506,7 @@ class VisitController extends AsyncNotifier<VisitState> {
   }
 
   /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수
-  /// 있게 하려는 것이다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+  /// 있게 하려는 것이다. 참여자 수를 아직 확인하지 않았어도 파일 연결은 남긴다.
   ///
   /// 적지 못해도 면회는 막지 않는다. 앱이 켜져 있는 동안은 이 상태가 파일과
   /// 참여자 수를 들고 있다.
@@ -468,7 +515,11 @@ class VisitController extends AsyncNotifier<VisitState> {
     final sessionId = now?.sessionId;
     final path = now?.recordingPath;
     final count = now?.participantCount;
-    if (sessionId == null || path == null || count == null) return;
+    if (sessionId == null ||
+        path == null ||
+        now?.problem == VisitRecordingProblem.saveFailed) {
+      return;
+    }
 
     try {
       await ref

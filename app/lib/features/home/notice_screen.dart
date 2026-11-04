@@ -71,6 +71,13 @@ class NoticeScreen extends ConsumerWidget {
                           ReportNotice.audioPending => AppRoutes.visitUploadOf(
                             id,
                           ),
+                          ReportNotice.failed =>
+                            info.analysisId == null
+                                ? AppRoutes.home
+                                : AppRoutes.analysisRetryOf(
+                                    id,
+                                    info.analysisId!,
+                                  ),
                           _ => AppRoutes.reportOf(id),
                         });
                       },
@@ -128,14 +135,14 @@ class _NoticeRow extends StatelessWidget {
     final (title, hint) = switch (notice) {
       ReportNotice.generating => ('리포트를 만들고 있어요', '조금만 기다려 주세요'),
       ReportNotice.ready => ('리포트가 도착했어요', '눌러서 확인하기'),
-      ReportNotice.failed => ('리포트를 만들지 못했어요', null),
+      ReportNotice.failed => ('리포트를 만들지 못했어요', '눌러서 분석 다시 요청하기'),
       ReportNotice.evaluationPending => ('평가 이어서 하기', '평가를 마치면 리포트를 만들어요'),
       ReportNotice.audioPending => ('음성 다시 보내기', '녹음을 보내면 리포트를 만들어요'),
       ReportNotice.checkFailed => ('리포트 상태를 확인하지 못했어요', '눌러서 다시 확인하기'),
     };
-    // 만드는 중과 실패는 들어갈 곳이 없다.
+    // 만드는 중에는 결과 화면을 열지 않는다.
     final onTap = switch (notice) {
-      ReportNotice.generating || ReportNotice.failed => null,
+      ReportNotice.generating => null,
       _ => onOpen,
     };
 
@@ -154,10 +161,8 @@ class _NoticeRow extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                 ],
                 Text(title, style: AppTypography.body),
-                if (hint != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(hint, style: AppTypography.sub),
-                ],
+                const SizedBox(height: AppSpacing.xs),
+                Text(hint, style: AppTypography.sub),
               ],
             ),
           ),

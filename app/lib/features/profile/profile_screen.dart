@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/account_api.dart';
+import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -26,6 +28,9 @@ import 'profile_gallery.dart';
 ///
 /// 등록한 어르신이 없으면 어르신 항목을 모두 감추고 계정 약관 동의, 저장하기,
 /// 로그아웃과 회원탈퇴만 보여준다.
+///
+/// 계정 정보를 읽지 못해도 로그아웃은 둔다. 세션이 만료돼 다시 시도해도 같은
+/// 오류가 나면 로그아웃한 뒤 다시 로그인할 길이 있어야 한다.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -43,10 +48,23 @@ class ProfileScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(profileProvider),
         ),
         data: (bundle) => account.when(
+          // 체크 상태는 처음 받은 값에서 시작하므로, 저장 뒤 다시 읽는 중에는
+          // 이전 값을 보여주지 않고 기다린다.
+          skipLoadingOnRefresh: false,
           loading: () => const LoadingView(),
-          error: (error, _) => ErrorStateView(
-            message: '계정 정보를 불러오지 못했어요.',
-            onRetry: () => ref.invalidate(accountProvider),
+          error: (error, _) => Column(
+            children: [
+              Expanded(
+                child: ErrorStateView(
+                  message: '계정 정보를 불러오지 못했어요.',
+                  onRetry: () => ref.invalidate(accountProvider),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(AppSpacing.screen),
+                child: _SignOutButton(),
+              ),
+            ],
           ),
           data: (account) => _Body(bundle: bundle, account: account),
         ),
@@ -55,7 +73,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatefulWidget {
+class _Body extends ConsumerStatefulWidget {
   const _Body({required this.bundle, required this.account});
 
   /// 등록한 어르신이 없으면 `null` 이다.
@@ -63,10 +81,10 @@ class _Body extends StatefulWidget {
   final Account account;
 
   @override
-  State<_Body> createState() => _BodyState();
+  ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<_Body> {
+class _BodyState extends ConsumerState<_Body> {
   /// 지금 화면에서 동의한 항목의 키. `widget.account.consent` 에서 시작해
   /// 수정하기 전까지는 회원가입 때 고른 값과 같다.
   late final Set<String> _agreed;
@@ -85,6 +103,57 @@ class _BodyState extends State<_Body> {
       .every((term) => _agreed.contains(term.key));
 
   bool get _allAgreed => _agreed.length == consentTerms.length;
+
+  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
+  bool _saving = false;
+
+  /// 처음 값과 달라진 선택 동의. 필수 동의는 1-6 으로 바꿀 수 없어 담지 않는다.
+  Map<String, bool> get _changedOptional => {
+    for (final term in consentTerms)
+      if (!term.required &&
+          _agreed.contains(term.key) !=
+              (widget.account.consent[term.key]?.granted ?? false))
+        term.key: _agreed.contains(term.key),
+  };
+
+  /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 바꾼 것이 없거나
+  /// 로그인하지 않았으면 그대로 닫는다. 저장하지 못하면 알리고 화면에 남는다.
+  ///
+  /// 저장하는 동안 화면을 떠나도 저장되면 계정을 다시 읽는다. 저장을 마쳤을 때
+  /// 이 화면이 맨 위가 아니면 닫지 않는다. 그사이 연 화면을 닫지 않기 위해서다.
+  Future<void> _save() async {
+    final changes = _changedOptional;
+    final online = ref.read(sessionProvider) != null;
+    if (!online || changes.isEmpty) {
+      await Navigator.maybePop(context);
+      return;
+    }
+
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    // 화면을 떠난 뒤에는 ref 를 쓸 수 없어 미리 잡아 둔다.
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await ref.read(accountApiProvider).updateConsents(changes);
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
+      return;
+    }
+    // 다음에 열 때 서버의 새 동의 이력을 읽는다.
+    container.invalidate(accountProvider);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('동의를 저장했어요.')));
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ModalRoute.of(context)?.isCurrent ?? true) {
+      await Navigator.maybePop(context);
+    }
+  }
 
   void _toggleAll(bool? value) {
     setState(() {
@@ -206,10 +275,11 @@ class _BodyState extends State<_Body> {
       // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
       const SizedBox(height: AppSpacing.section),
 
+      // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+      // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
       _Section(
         title: '갤러리',
-        onEdit: () {},
-        child: ProfileGallery(photos: bundle.photos),
+        child: _Gallery(mockPhotos: bundle.photos),
       ),
       const SizedBox(height: AppSpacing.section),
     ];
@@ -272,11 +342,9 @@ class _BodyState extends State<_Body> {
           const SizedBox(height: AppSpacing.section),
 
           PrimaryButton(
-            label: '저장하기',
+            label: _saving ? '저장하는 중이에요' : '저장하기',
             // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
-            onPressed: _requiredAgreed
-                ? () => Navigator.maybePop(context)
-                : null,
+            onPressed: _requiredAgreed && !_saving ? _save : null,
           ),
           const SizedBox(height: AppSpacing.lg),
 
@@ -331,12 +399,16 @@ class _SignOutButton extends ConsumerStatefulWidget {
 class _SignOutButtonState extends ConsumerState<_SignOutButton> {
   bool _busy = false;
 
+  /// 세션을 지우면 계정 정보가 바뀌어 설정 화면이 다시 그려지고, 이 버튼은
+  /// 서버 응답을 기다리는 동안 사라질 수 있다. 그래도 한 번의 로그아웃으로
+  /// 로그인 화면까지 가도록 필요한 것을 미리 잡아 둔다.
   Future<void> _signOut() async {
     setState(() => _busy = true);
-    await ref.read(sessionProvider.notifier).signOut();
-    if (!mounted) return;
-    forgetCareProfiles(ref);
-    context.go(AppRoutes.signIn);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final router = GoRouter.of(context);
+    await container.read(sessionProvider.notifier).signOut();
+    forgetCareProfilesIn(container);
+    router.go(AppRoutes.signIn);
   }
 
   @override
@@ -348,16 +420,48 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
   }
 }
 
+/// 갤러리의 사진. 서버에 저장한 분은 서버의 사진(2-3)을, 로그인 없이 들어온
+/// 분은 목 사진을 보여준다.
+///
+/// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
+class _Gallery extends ConsumerWidget {
+  const _Gallery({required this.mockPhotos});
+
+  final List<ProfilePhoto> mockPhotos;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final server = ref.watch(serverProfilePhotosProvider);
+    return server.when(
+      data: (photos) => ProfileGallery(photos: photos ?? mockPhotos),
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('사진을 불러오지 못했어요.', style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            label: '다시 시도',
+            onPressed: () => ref.invalidate(serverProfilePhotosProvider),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.child,
-    required this.onEdit,
-  });
+  const _Section({required this.title, required this.child, this.onEdit});
 
   final String title;
   final Widget child;
-  final VoidCallback onEdit;
+
+  /// `null` 이면 머리글에 수정하기를 두지 않는다. 눌러도 갈 곳이 없는 버튼을
+  /// 보이지 않기 위해서다.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -367,15 +471,16 @@ class _Section extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            TextButton.icon(
-              onPressed: onEdit,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSub,
-                minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+            if (onEdit case final onEdit?)
+              TextButton.icon(
+                onPressed: onEdit,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSub,
+                  minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('수정하기', style: AppTypography.caption),
               ),
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('수정하기', style: AppTypography.caption),
-            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

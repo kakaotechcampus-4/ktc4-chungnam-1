@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
 import '../../data/providers.dart';
+import '../../data/selected_profile_store.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -80,6 +81,7 @@ class _BodyState extends ConsumerState<_Body> {
     final accountId = ref.read(sessionProvider)?.account.accountId;
     final uploads = ref.read(pendingUploadsProvider);
     final photos = ref.read(visitPhotosProvider);
+    final selectedProfile = ref.read(selectedProfileStoreProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -105,6 +107,8 @@ class _BodyState extends ConsumerState<_Body> {
       } on Exception {
         // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
       }
+      // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
+      await selectedProfile.clear(accountId);
     }
 
     if (!mounted) return;

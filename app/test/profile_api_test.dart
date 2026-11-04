@@ -324,6 +324,19 @@ void main() {
       );
     });
 
+    test('카드를 만드는 중이라 고치지 못하면 기다렸다 하라고 알린다', () {
+      // 2-4, 2-7, 2-9 가 같은 오류로 거절한다.
+      expect(
+        profileFailureMessage(
+          const ApiServerFailure(
+            statusCode: 409,
+            errorCode: 'CARD_GENERATION_IN_PROGRESS',
+          ),
+        ),
+        '대화 카드를 만드는 중이라 지금은 바꿀 수 없어요. 카드가 준비된 뒤 다시 시도해주세요.',
+      );
+    });
+
     test('이야기 응답 모양이 다르면 성공으로 넘기지 않는다', () async {
       final missingTitle = _fact()..remove('title');
       final textNumber = {..._fact(), 'imageNumber': '3'};

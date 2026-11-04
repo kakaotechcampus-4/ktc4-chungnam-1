@@ -1,0 +1,131 @@
+{
+  "analysisId": "a-synth-1",
+  "visitDate": "2026-10-03",
+  "evaluation": {
+    "conversationSatisfaction": 4,
+    "careRecipientReaction": "pleased",
+    "freeNote": "바닷가 얘기에 많이 웃으셨다. 부산 얘기 끝에 잠깐 표정이 어두워지셨다."
+  },
+  "cards": [
+    {
+      "cardId": "rc-1",
+      "cardTitle": "바닷가의 멸치",
+      "topic": {
+        "topicId": "t-anchovy",
+        "title": "바닷가에서 멸치 말리기"
+      },
+      "reaction": "positive"
+    },
+    {
+      "cardId": "rc-2",
+      "cardTitle": "양복점 간판",
+      "topic": {
+        "topicId": "t-shop",
+        "title": "양복점을 열던 때"
+      },
+      "reaction": "positive"
+    },
+    {
+      "cardId": "rc-3",
+      "cardTitle": "새벽 기차와 원단",
+      "topic": {
+        "topicId": "t-market",
+        "title": "국제시장 원단"
+      },
+      "reaction": "neutral"
+    },
+    {
+      "cardId": "rc-4",
+      "cardTitle": "좋아하던 노래",
+      "topic": {
+        "topicId": "t-trot",
+        "title": "좋아하는 트로트 가수"
+      },
+      "reaction": "notUsed"
+    }
+  ],
+  "profileFacts": {
+    "occupation": "양복점 재단사",
+    "hometown": "전남 여수",
+    "hobby": "트로트 듣기",
+    "family": "아들 둘, 딸 하나"
+  },
+  "lifeFacts": [
+    {
+      "factId": "f-anchovy",
+      "title": "통영 바닷가에서 멸치 말리던 일",
+      "content": "어린 시절 어머니와 함께 통영 바닷가에서 멸치를 널어 말렸다."
+    },
+    {
+      "factId": "f-shop",
+      "title": "양복점을 연 일",
+      "content": "젊은 시절 작은 양복점을 열었다."
+    }
+  ],
+  "transcript": {
+    "durationMs": 60000,
+    "segments": [
+      {
+        "startMs": 0,
+        "endMs": 4000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "아버지, 오늘은 바닷가 얘기 해 볼까요? 어릴 때 멸치 말리셨다면서요."
+      },
+      {
+        "startMs": 5000,
+        "endMs": 9000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "그럼, 어머니랑 바닷가에 멸치를 널었지. 근데 거기 통영 아니고 여수야. 통영은 고모네 집이 있던 데고."
+      },
+      {
+        "startMs": 10000,
+        "endMs": 14000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "아, 제가 예전에 통영이라고 적었었네요."
+      },
+      {
+        "startMs": 15000,
+        "endMs": 19000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "멸치 널 때 갈매기가 자꾸 와서 내가 장대 들고 쫓았어. 그게 내 일이었지. 하하."
+      },
+      {
+        "startMs": 20000,
+        "endMs": 24000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "양복점은 몇 살 때 여셨어요?"
+      },
+      {
+        "startMs": 25000,
+        "endMs": 29000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "스물아홉에 열었나, 서른이었나. 간판은 형님이 붓으로 써 줬어."
+      },
+      {
+        "startMs": 30000,
+        "endMs": 34000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "국제시장에서 원단 떼 오셨던 얘기도 해 주세요."
+      },
+      {
+        "startMs": 35000,
+        "endMs": 39000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "부산 가면 새벽 기차 타고 갔지. 근데 부산 얘기 하니까 피란 때 생각이 나네. 그건 그만하자."
+      },
+      {
+        "startMs": 40000,
+        "endMs": 44000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "네, 그럼 다른 얘기 해요."
+      },
+      {
+        "startMs": 45000,
+        "endMs": 49000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "응."
+      }
+    ]
+  },
+  "participantCount": 2
+}

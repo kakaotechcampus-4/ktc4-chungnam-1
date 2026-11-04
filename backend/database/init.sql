@@ -16,8 +16,16 @@ DROP FUNCTION IF EXISTS delete_orphan_topic();
 
 CREATE TABLE storage_deletion_request_queue (
     s3_object_key VARCHAR(255) PRIMARY KEY,
-    requested_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    requested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    not_before    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    last_attempt_at TIMESTAMPTZ,
+    last_error_code VARCHAR(64)
 );
+
+CREATE INDEX storage_deletion_attempt_order_idx
+    ON storage_deletion_request_queue
+    (last_attempt_at NULLS FIRST, requested_at, s3_object_key);
 
 CREATE FUNCTION queue_storage_deletion() RETURNS trigger AS $$
 BEGIN
@@ -123,13 +131,17 @@ CREATE TABLE card_sets (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
     lease_expires_at TIMESTAMPTZ,
     attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    -- 카드 묶음을 받은 뒤 프로필이나 일대기를 고친 시각. 값이 있으면 이 묶음으로 면회를 시작할 수 없다.
+    stale_at         TIMESTAMPTZ,
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     UNIQUE (set_id, profile_id),
     CHECK ((status = 'failed') = (error_code IS NOT NULL)),
     CHECK ((status = 'running') = (generation_log IS NULL)),
     CHECK (session_id IS NULL OR status = 'completed'),
-    CONSTRAINT card_sets_lease_check CHECK (lease_expires_at IS NULL OR status = 'running')
+    CONSTRAINT card_sets_lease_check CHECK (lease_expires_at IS NULL OR status = 'running'),
+    CONSTRAINT card_sets_stale_check
+        CHECK (stale_at IS NULL OR (status = 'completed' AND session_id IS NULL))
 );
 CREATE INDEX idx_card_sets_profile ON card_sets(profile_id, created_at DESC);
 
@@ -187,6 +199,8 @@ CREATE TABLE photos (
     session_id      UUID,
     s3_object_key   VARCHAR(255) NOT NULL UNIQUE,
     description     TEXT,
+    user_description TEXT,
+    description_updated_at TIMESTAMPTZ,
     analysis_status VARCHAR(12)  NOT NULL DEFAULT 'pending'
                       CHECK (analysis_status IN ('pending', 'processing', 'completed', 'failed')),
     error_code      VARCHAR(50),
@@ -202,7 +216,11 @@ CREATE TABLE photos (
                 THEN description IS NOT NULL AND model IS NOT NULL AND prompt_version IS NOT NULL
                 ELSE description IS NULL AND model IS NULL AND prompt_version IS NULL END),
     CONSTRAINT photos_lease_check
-        CHECK ((analysis_status = 'processing') = (lease_expires_at IS NOT NULL))
+        CHECK ((analysis_status = 'processing') = (lease_expires_at IS NOT NULL)),
+    CONSTRAINT photos_user_description_check CHECK (
+        (user_description IS NULL AND description_updated_at IS NULL)
+        OR (user_description IS NOT NULL AND length(btrim(user_description)) > 0
+            AND description_updated_at IS NOT NULL))
 );
 CREATE INDEX idx_photos_profile ON photos(profile_id, created_at);
 CREATE INDEX idx_photos_pending ON photos(created_at) WHERE analysis_status = 'pending';
@@ -235,13 +253,15 @@ CREATE TABLE speech_analysis_jobs (
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     completed_at      TIMESTAMPTZ,
+    retry_of_analysis_id UUID REFERENCES speech_analysis_jobs(analysis_id) ON DELETE SET NULL,
+    CONSTRAINT uq_speech_analysis_retry_parent UNIQUE (retry_of_analysis_id),
     CHECK (CASE WHEN status = 'uploading' THEN size_bytes IS NULL AND sha256 IS NULL
                 WHEN status = 'failed' AND size_bytes IS NULL THEN sha256 IS NULL
                 ELSE size_bytes IS NOT NULL AND size_bytes > 0
                      AND sha256 IS NOT NULL AND sha256 ~ '^[0-9a-f]{64}$' END),
     CHECK (status <> 'failed' OR error_code IS NOT NULL),
     CHECK (status NOT IN ('uploading', 'transcribing', 'generatingReport') OR lease_expires_at IS NOT NULL),
-    CHECK (transcript IS NULL OR status IN ('sttCompleted', 'generatingReport')),
+    CHECK (transcript IS NULL OR status IN ('sttCompleted', 'generatingReport', 'failed')),
     CHECK (status <> 'sttCompleted' OR transcript IS NOT NULL),
     CHECK (transcript IS NULL OR transcript_expires_at IS NOT NULL),
     CHECK (transcript_deleted_at IS NULL OR transcript IS NULL)

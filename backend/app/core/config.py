@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     service_version: str = "0.1.0"
     ai_server_url: str = "http://127.0.0.1:8001"
     ai_server_timeout_seconds: float = 600.0
+    ai_server_backup_url: str | None = None
+    ai_server_failover_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     database_url: str | None = None
 
     # 면회 음성은 비공개 S3 버킷에 임시 저장한다. 버킷과 DB가 모두 설정돼야
@@ -34,14 +36,16 @@ class Settings(BaseSettings):
     speech_audio_s3_prefix: str = "temporary/speech"
     speech_audio_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
     speech_audio_presigned_ttl_seconds: int = Field(default=900, ge=60)
-    speech_audio_retention_seconds: int = Field(default=86400, ge=60, le=86400)
+    # STT 상한(24시간)과 서버 시계 차이를 감안해 기본 23시간 55분. 86100초보다 길게 줘도
+    # 접수 서비스가 86100초로 맞춘다(`speech_analysis_pipeline.STT_MAX_DATA_SECONDS`).
+    speech_audio_retention_seconds: int = Field(default=86100, ge=60, le=86400)
     max_audio_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     speech_analysis_lease_seconds: int = Field(default=900, ge=60)
     speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 카드 생성(API 4-1). 모델과 promptVersion은 작업을 만들 때 저장하고 생성 함수에 넘김.
     # ML API 키가 비어 있으면 4-1은 503.
-    card_generation_model: str = "gpt-5.6-luna"
+    card_generation_model: str = "gpt-6-luna"
     card_generation_prompt_version: int = Field(default=1, ge=1)
     ml_api_key: SecretStr = SecretStr("")
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
@@ -51,7 +55,7 @@ class Settings(BaseSettings):
     card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
     # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
-    report_generation_model: str = "gpt-5.6-luna"
+    report_generation_model: str = "gpt-6-luna"
     # 리포트 생성 전체(요청 조립 → 리포트·변경 제안 생성 → 검증) 제한 시간. 넘기면
     # AI_SERVER_TIMEOUT. 저장과 완료 처리까지 음성 작업 임대 안에 끝나도록 임대보다
     # 60초 이상 짧아야 하며, 아니면 음성 worker가 시작하지 않음.
@@ -96,6 +100,13 @@ class Settings(BaseSettings):
     def _reject_short_secret(cls, value: str) -> str:
         if value and len(value.encode("utf-8")) < 32:
             raise ValueError("session_secret 은 32바이트 이상이어야 한다")
+        return value
+
+    @field_validator("ai_server_backup_url", mode="before")
+    @classmethod
+    def _empty_backup_url_is_disabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
         return value
 
     @field_validator("google_client_ids", mode="before")

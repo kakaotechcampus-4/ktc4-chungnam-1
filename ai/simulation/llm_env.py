@@ -9,7 +9,7 @@ import os
 
 from common.llm import ChatConfig
 
-MODEL = "gpt-5.6-luna"
+MODEL = "gpt-6-luna"
 API_KEY_ENV = "ML_API_KEY"
 
 

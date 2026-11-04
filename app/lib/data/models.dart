@@ -236,8 +236,8 @@ enum PhotoAnalysisStatus {
 
 /// 프로필 사진 한 장이다(`docs/architecture/data-contracts.md` 의 ProfilePhoto).
 ///
-/// [description] 은 AI 가 만든 후보이며 확인된 사실이 아니다. 보호자가 확인하는
-/// 방식(API 3-3)은 아직 정해지지 않았다.
+/// [description]은 사진 설명이다. AI 원문인지 보호자가 고친 설명인지
+/// [descriptionSource]로 구분한다. 생애 사실로 자동 저장하지 않는다.
 class ProfilePhoto {
   const ProfilePhoto({
     required this.photoId,
@@ -247,6 +247,7 @@ class ProfilePhoto {
     required this.createdAt,
     this.imageUrlExpiresAt,
     this.description,
+    this.descriptionSource,
     this.errorCode,
   });
 
@@ -261,6 +262,7 @@ class ProfilePhoto {
         json['analysisStatus'] as String,
       ),
       description: json['description'] as String?,
+      descriptionSource: json['descriptionSource'] as String?,
       errorCode: error?['errorCode'] as String?,
       createdAt: json['createdAt'] as String,
     );
@@ -276,8 +278,11 @@ class ProfilePhoto {
   /// 모르는 값이면 `null` 이다. 화면은 분석이 끝나지 않은 것으로 다룬다.
   final PhotoAnalysisStatus? analysisStatus;
 
-  /// [PhotoAnalysisStatus.completed] 일 때만 있다.
+  /// AI 분석 완료 또는 보호자가 직접 적은 설명이 있으면 채운다.
   final String? description;
+
+  /// ai 또는 caregiver. 이전 서버의 응답에는 없어도 된다.
+  final String? descriptionSource;
 
   /// [PhotoAnalysisStatus.failed] 일 때의 `error.errorCode` 다.
   final String? errorCode;
@@ -293,6 +298,7 @@ class ProfilePhoto {
     imageUrlExpiresAt: imageUrlExpiresAt,
     analysisStatus: analysisStatus,
     description: description,
+    descriptionSource: descriptionSource,
     errorCode: errorCode,
     createdAt: createdAt,
   );
@@ -344,11 +350,14 @@ class CardSet {
     required this.setId,
     required this.usedBySessionId,
     required this.cards,
+    this.needsRefresh = false,
   });
 
   factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
     setId: json['setId'] as String,
     usedBySessionId: json['usedBySessionId'] as String?,
+    // 이 값을 주기 전의 서버와 목 묶음은 다시 만들 일이 없는 묶음이다.
+    needsRefresh: json['needsRefresh'] as bool? ?? false,
     cards:
         (json['cards'] as List)
             .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
@@ -363,6 +372,10 @@ class CardSet {
 
   /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
   final String? usedBySessionId;
+
+  /// 받은 뒤 프로필이나 일대기를 고쳤는지. `true` 면 볼 수만 있고 이 묶음으로
+  /// 면회를 시작할 수 없다(API 4절).
+  final bool needsRefresh;
 
   /// 12장. [ConversationCard.position] 순서다.
   final List<ConversationCard> cards;

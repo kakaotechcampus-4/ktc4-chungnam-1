@@ -10,20 +10,31 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
 import 'report_api.dart';
+import 'selected_profile_store.dart';
 
 final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
 );
 
-final accountProvider = FutureProvider<Account>(
-  (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
-);
+/// 로그인한 계정과 가장 최근 동의 이력(1-3). 로그인하지 않았으면 목 계정이다.
+///
+/// 계정이 바뀌면 다시 읽는다.
+final accountProvider = FutureProvider<Account>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  if (accountId == null) {
+    return ref.watch(mockRepositoryProvider).loadAccount();
+  }
+  return ref.watch(accountApiProvider).me();
+});
 
 /// 환자 정보 입력에서 받은 기본 정보다.
 class EnteredBasicInfo {
@@ -204,7 +215,11 @@ class CareProfiles {
 ///
 /// 로그인 세션 없이 들어오면(구글 설정이 없는 디버그 빌드의 임시 건너뛰기)
 /// 서버를 부르지 않고 앱이 켜져 있는 동안만 기억한다. 단말 보관 범위가 정해지지
-/// 않았으므로(`data-contracts.md`, 이슈 18) 단말 저장소에는 쓰지 않는다.
+/// 않았으므로(`data-contracts.md`, 이슈 18) 목록은 단말 저장소에 쓰지 않는다.
+///
+/// 고른 분의 서버 ID 하나만 계정마다 단말에 기억해(이슈 144) 앱을 다시 켜면
+/// 그 분으로 연다([SelectedProfileStore]). 서버 목록을 불러온 뒤에만 기억하고,
+/// 불러오는 중이거나 실패했을 때는 건드리지 않는다.
 class CareProfilesNotifier extends Notifier<CareProfiles> {
   int _nextId = 0;
 
@@ -219,6 +234,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     if (accountId == null) {
       return const CareProfiles(entries: [], selectedId: null);
     }
+    listenSelf((previous, next) => _remember(accountId, previous, next));
     // build 안에서는 상태를 바꿀 수 없어 다음 차례에 불러온다.
     Future.microtask(reload);
     return const CareProfiles(
@@ -229,6 +245,10 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   }
 
   /// 서버에서 목록을 다시 불러온다(2-1, 2-3). 고른 분은 남아 있으면 그대로 둔다.
+  /// 고른 분이 없으면(앱을 막 켰을 때) 이 계정이 마지막으로 고른 분을 연다.
+  ///
+  /// 기억한 분을 읽은 뒤에 목록을 내보낸다. 첫 분이 잠깐 골라졌다가 바뀌면 그
+  /// 사이에 다른 어르신으로 면회를 시작할 수 있다.
   ///
   /// 서버의 `inProgress` 는 첫 카드 생성 전이라는 뜻이라 `입력 중` 으로 둔다.
   Future<void> reload() async {
@@ -236,11 +256,17 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final previous = state.selectedId;
     state = state.copyWith(load: CareProfilesLoad.loading);
     final api = ref.read(profileApiProvider);
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    // 서버를 기다리는 동안 함께 읽는다. 저장소는 실패해도 `null` 을 준다.
+    final remembered = previous == null && accountId != null
+        ? ref.read(selectedProfileStoreProvider).read(accountId)
+        : Future<String?>.value();
     try {
       final summaries = await api.list();
       final profiles = await Future.wait([
         for (final summary in summaries) api.get(summary.profileId),
       ]);
+      final rememberedId = await remembered;
       if (!ref.mounted || round != _loadRound) return;
       final entries = [
         for (final profile in profiles)
@@ -252,11 +278,12 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
             pending: profile.setupStatus != SetupStatus.completed,
           ),
       ];
+      String? readyId(String? id) =>
+          entries.where((e) => e.id == id && !e.pending).firstOrNull?.id;
+      // 기억한 분이 지워졌거나 입력 중이면 첫 분으로 연다.
       state = CareProfiles(
         entries: entries,
-        selectedId: entries.any((e) => e.id == previous && !e.pending)
-            ? previous
-            : null,
+        selectedId: readyId(previous) ?? readyId(rememberedId),
         load: CareProfilesLoad.loaded,
       );
     } on ApiFailure {
@@ -400,6 +427,26 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     );
   }
 
+  /// 고른 분이 바뀌면 단말에 기억한다. 남은 분이 없으면 기억을 지운다.
+  ///
+  /// 서버 목록을 불러온 상태에서만 쓴다. 불러오는 중이거나 실패하면 고른 분이
+  /// 비어 보이지만, 그건 지운 게 아니므로 기억을 남긴다.
+  void _remember(String accountId, CareProfiles? previous, CareProfiles next) {
+    if (next.load != CareProfilesLoad.loaded) return;
+    final wasLoaded = previous?.load == CareProfilesLoad.loaded;
+    final before = wasLoaded ? previous?.selected : null;
+    final selected = next.selected;
+    final store = ref.read(selectedProfileStoreProvider);
+    if (selected == null) {
+      if (!wasLoaded || before != null) store.clear(accountId);
+      return;
+    }
+    // 서버에 저장하기 전인 분은 다시 켜면 목록에 없으므로 기억하지 않는다.
+    final remoteId = selected.remoteId;
+    if (remoteId == null || remoteId == before?.remoteId) return;
+    store.write(accountId, remoteId);
+  }
+
   String _newId() => 'local-${_nextId++}';
 }
 
@@ -460,14 +507,19 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
 /// 기본 정보와 세부 정보 네 항목은 입력한 값이다. 그 밖의 생애 정보는 아직 목
-/// 데이터 그대로다. 사진은 목 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
-/// 올린 사진으로 바뀐다.
+/// 데이터 그대로다.
+///
+/// 서버에 저장한 분의 사진은 여기 담지 않는다. 갤러리가
+/// [serverProfilePhotosProvider] 로 따로 읽는다. 사진을 읽지 못해도 이름과 정보는
+/// 보여야 해서다. 로그인 없이 들어온 분은 목 사진을 이 분의 `photos[]` 로 붙인다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
   final entered = selected?.basicInfo;
   if (selected == null || entered == null) return null;
 
+  final online = ref.watch(sessionProvider.select((s) => s != null));
+  final onServer = online && selected.remoteId != null;
   final mock = bundle.profile;
   final details = selected.details;
   return ProfileBundle(
@@ -480,7 +532,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,
-      photoIds: mock.photoIds,
+      photoIds: onServer ? const [] : mock.photoIds,
       occupation: details.occupation,
       hometown: details.hometown,
       hobby: details.hobby,
@@ -488,9 +540,87 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
+    photos: onServer
+        ? const []
+        : [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
+
+/// 사진 분석(3-2)이 끝났는지 다시 묻는 간격. 테스트는 짧게 바꾼다.
+///
+/// 명세는 간격을 정하지 않는다. 리포트 상태를 묻는 간격과 같게 둔다.
+final photoAnalysisPollIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
+/// 서버에 저장한 지금 어르신의 프로필 사진(2-3). 올린 순서대로다.
+///
+/// 로그인하지 않았거나 서버에 저장하지 않은 분이면 `null` 이고, 갤러리는
+/// [profileProvider] 의 목 사진을 쓴다.
+///
+/// 분석이 끝나지 않은 사진(`pending`, `processing`)은 3-2 로 끝날 때까지 묻고 그
+/// 자리를 바꾼다. 묻지 못하면 다음 차례에 다시 묻는다. 갤러리를 떠나면 묻지
+/// 않고, 다시 열면 처음부터 읽는다. `imageUrl` 은 수명이 짧아 다시 열 때 새로
+/// 받는다.
+class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
+  /// 읽을 때마다 올라간다. 지난 읽기의 폴링은 버린다.
+  int _round = 0;
+
+  @override
+  Future<List<ProfilePhoto>?> build() async {
+    final round = ++_round;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) return null;
+
+    final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
+    if (!_stale(round) && photos.any(_analyzing)) {
+      // 상태를 돌려준 뒤에 묻기 시작한다.
+      Future<void>(() => _poll(round));
+    }
+    return photos;
+  }
+
+  static bool _analyzing(ProfilePhoto photo) => switch (photo.analysisStatus) {
+    PhotoAnalysisStatus.completed || PhotoAnalysisStatus.failed => false,
+    _ => true,
+  };
+
+  bool _stale(int round) => !ref.mounted || round != _round;
+
+  Future<void> _poll(int round) async {
+    if (_stale(round)) return;
+    final interval = ref.read(photoAnalysisPollIntervalProvider);
+    final api = ref.read(profileApiProvider);
+    while (true) {
+      await Future<void>.delayed(interval);
+      if (_stale(round)) return;
+      final photos = state.value;
+      if (photos == null || !photos.any(_analyzing)) return;
+
+      final next = [...photos];
+      for (var i = 0; i < next.length; i++) {
+        if (!_analyzing(next[i])) continue;
+        try {
+          next[i] = await api.photo(next[i].photoId);
+        } on ApiFailure {
+          // 이번에는 묻지 못했다. 다음 차례에 다시 묻는다.
+        }
+        if (_stale(round)) return;
+      }
+      state = AsyncData(next);
+    }
+  }
+}
+
+final serverProfilePhotosProvider =
+    AsyncNotifierProvider.autoDispose<
+      ServerProfilePhotosNotifier,
+      List<ProfilePhoto>?
+    >(ServerProfilePhotosNotifier.new);
 
 /// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
 String ageRangeOf(String birthDate, DateTime today) {
@@ -647,7 +777,7 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
@@ -660,6 +790,7 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
   });
@@ -673,6 +804,7 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
@@ -916,6 +1048,7 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
     );
