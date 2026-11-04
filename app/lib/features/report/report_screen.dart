@@ -121,6 +121,7 @@ class _CardSection {
     required this.summaries,
     required this.notUsed,
     required this.unevaluated,
+    required this.noCardUsed,
   });
 
   /// 보호자의 답을 보고 나눈다.
@@ -134,7 +135,12 @@ class _CardSection {
     List<String>? selectedCardIds,
   ) {
     if (reviews == null) {
-      return _CardSection(summaries: summaries, notUsed: 0, unevaluated: 0);
+      return _CardSection(
+        summaries: summaries,
+        notUsed: 0,
+        unevaluated: 0,
+        noCardUsed: false,
+      );
     }
     bool used(String cardId) =>
         reviews.any((r) => r.cardId == cardId && r.wasUsed);
@@ -149,10 +155,23 @@ class _CardSection {
       unevaluated: selectedCardIds == null
           ? 0
           : selectedCardIds.where((id) => !answered.contains(id)).length,
+      noCardUsed: !reviews.any((r) => r.wasUsed),
     );
   }
 
   final List<CardSummary> summaries;
+
+  /// 보호자의 답을 읽었고 쓴 카드가 하나도 없다.
+  ///
+  /// 요약이 비어도 쓴 카드가 있으면 `false` 다. 리포트가 카드 요약을 만들지
+  /// 않았을 때(예: 화자를 확인하지 못한 대화) 다룬 카드가 없다고 적으면 보호자의
+  /// 답과 다른 말을 하게 된다. 답을 읽지 못했을 때도 `false` 로 두어 다룬 카드가
+  /// 없다고 단정하지 않는다.
+  final bool noCardUsed;
+
+  /// 요약이 없을 때 보여줄 안내.
+  String get emptyMessage =>
+      noCardUsed ? '이번 만남에서 다룬 카드가 없어요.' : '이번 리포트에는 카드별 요약이 없어요.';
 
   /// 쓰지 않았다고 답한 카드 수.
   final int notUsed;
@@ -249,8 +268,8 @@ class _BodyState extends ConsumerState<_Body> {
               const SizedBox(height: AppSpacing.lg),
 
               if (cards.summaries.isEmpty)
-                const EmptyStateView(
-                  message: '이번 만남에서 다룬 카드가 없어요.',
+                EmptyStateView(
+                  message: cards.emptyMessage,
                   icon: Icons.style_outlined,
                 )
               else
