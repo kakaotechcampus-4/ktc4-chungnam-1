@@ -521,12 +521,16 @@ class _ActionOption extends StatelessWidget {
               ),
               child: Row(
                 children: [
+                  // 고르지 않은 빈 원은 흰 면과 3:1 이상 구분되는 회색으로
+                  // 그린다(접근성 보고서 14쪽). 줄의 테두리는 그대로 둔다.
                   Icon(
                     selected
                         ? Icons.check_circle
                         : Icons.radio_button_unchecked,
                     size: 22,
-                    color: selected ? AppColors.background : AppColors.line,
+                    color: selected
+                        ? AppColors.background
+                        : AppColors.textDisabled,
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
