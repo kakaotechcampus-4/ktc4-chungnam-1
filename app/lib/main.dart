@@ -3,12 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
 import 'app/routes.dart';
+import 'data/app_version.dart';
 import 'design/theme.dart';
+import 'features/app_update/app_update_watcher.dart';
 import 'features/auth/session_refresher.dart';
 import 'features/profile_setup/setup_controller.dart';
 
-void main() {
-  runApp(const ProviderScope(child: SaerokApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 요청마다 서버에 알릴 앱 버전. 읽지 못하면 헤더 없이 보낸다.
+  final versionCode = await readAppVersionCode();
+  runApp(
+    ProviderScope(
+      overrides: [appVersionCodeProvider.overrideWithValue(versionCode)],
+      child: const SaerokApp(),
+    ),
+  );
 }
 
 class SaerokApp extends ConsumerStatefulWidget {
@@ -42,6 +52,10 @@ class _SaerokAppState extends ConsumerState<SaerokApp> {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       routerConfig: _router,
+      builder: (context, child) => AppUpdateWatcher(
+        router: _router,
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }
