@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.deps import require_supported_app_version
 from app.api.routes.auth import router as auth_router
 from app.api.routes.card_generations import router as card_generations_router
 from app.api.routes.evaluations import router as evaluations_router
@@ -11,14 +12,19 @@ from app.api.routes.reports import router as reports_router
 from app.api.routes.speech_analyses import router as speech_analyses_router
 from app.api.routes.visit_sessions import router as visit_sessions_router
 
+# 앱이 부르는 경로. 최소 지원 버전보다 낮은 앱은 인증 전에 426 으로 거절한다.
+app_router = APIRouter(dependencies=[Depends(require_supported_app_version)])
+app_router.include_router(speech_analyses_router)
+app_router.include_router(auth_router)
+app_router.include_router(profiles_router)
+app_router.include_router(life_facts_router)
+app_router.include_router(profile_photos_router)
+app_router.include_router(card_generations_router)
+app_router.include_router(visit_sessions_router)
+app_router.include_router(evaluations_router)
+app_router.include_router(reports_router)
+
 api_router = APIRouter()
+# 서버 점검(compose 헬스체크)은 앱 버전과 상관없이 응답한다.
 api_router.include_router(health_router)
-api_router.include_router(speech_analyses_router)
-api_router.include_router(auth_router)
-api_router.include_router(profiles_router)
-api_router.include_router(life_facts_router)
-api_router.include_router(profile_photos_router)
-api_router.include_router(card_generations_router)
-api_router.include_router(visit_sessions_router)
-api_router.include_router(evaluations_router)
-api_router.include_router(reports_router)
+api_router.include_router(app_router)
