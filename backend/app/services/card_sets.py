@@ -130,7 +130,8 @@ async def _card_set(
     cursor = await connection.execute(
         "SELECT c.card_id, c.position, c.topic_id, t.title, t.description,"
         "       c.card_title, c.description AS card_description, c.primary_question,"
-        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected"
+        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected,"
+        "       c.liked_at IS NOT NULL AS liked"
         "  FROM conversation_cards c JOIN profile_topics t ON t.topic_id = c.topic_id"
         " WHERE c.set_id = %s ORDER BY c.position",
         (set_id,),
@@ -149,6 +150,7 @@ async def _card_set(
             evidence_source=EVIDENCE_SOURCE[row["evidence_source"]],
             evidence=row["evidence"],
             selected=row["selected"],
+            liked=row["liked"],
         )
         for row in await cursor.fetchall()
     ]
@@ -158,6 +160,24 @@ async def _card_set(
         needs_refresh=needs_refresh,
         cards=cards,
     )
+
+
+async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool) -> None:
+    """4-5, 4-6. 카드의 "좋았어요" 표시를 켜거나 끔. 같은 요청을 다시 보내도 결과가 같음.
+
+    이미 켠 카드를 다시 켜면 처음 켠 시각을 그대로 둠. 보호자 평가(`review_reaction`)와 리포트는
+    바꾸지 않음.
+    """
+    if liked:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = now()"
+            " WHERE card_id = %s AND liked_at IS NULL",
+            (card_id,),
+        )
+    else:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = NULL WHERE card_id = %s", (card_id,)
+        )
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
