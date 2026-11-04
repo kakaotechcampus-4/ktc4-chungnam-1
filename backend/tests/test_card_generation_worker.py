@@ -159,13 +159,24 @@ def _process(database_url, generate, *, actions=("more",)):
 def test_context_has_only_what_card_generation_may_see(migrated_database_url):
     async def build(connection):
         profile_id, _, old_set, topic_id = await _seed(connection)
+        # 허용한 생성 시각에 생년과 같은 숫자가 있어도 개인정보 유출은 아니다.
+        await connection.execute(
+            "UPDATE profile_topics SET created_at = '2026-11-03T00:00:00.541943Z' "
+            "WHERE profile_id = %s", (profile_id,),
+        )
         return await build_context(connection, profile_id), old_set, topic_id
 
     context, old_set, topic_id = with_db(migrated_database_url, build)
 
     text = context.model_dump_json(by_alias=True)
-    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943"):
+    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943-04-01"):
         assert hidden not in text, hidden
+    assert set(context.model_dump(by_alias=True)) == {
+        "ageRange", "profileFacts", "lifeFacts", "photos", "topics", "visits", "pastCards",
+    }
+    assert set(context.profile_facts.model_dump(by_alias=True)) == {
+        "occupation", "hometown", "hobby", "family",
+    }
     assert context.age_range == "80s" and context.profile_facts.hobby == "합성 취미"
     assert [fact.source for fact in context.life_facts] == ["caregiver"]
     assert [photo.description for photo in context.photos] == ["합성 사진 설명"]
