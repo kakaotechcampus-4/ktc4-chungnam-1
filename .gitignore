@@ -99,6 +99,13 @@ models/
 /stt-server/tests/results/local/
 /stt-server/:memory:.ses
 
+# ck 예비 STT 서버의 비공개 설정과 실행 중 생성 파일
+/backend/ops/ck-backup/runtime.env
+/backend/ops/ck-backup/audio-temp/
+/backend/ops/ck-backup/logs/
+/backend/ops/ck-backup/supervisor.sock
+/backend/ops/ck-backup/supervisord.pid
+
 # ── Java / Kotlin / Gradle ──────────────────────────
 target/
 .gradle/
