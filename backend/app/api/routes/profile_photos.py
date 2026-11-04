@@ -19,7 +19,7 @@ from app.api.deps import (
 )
 from app.api.routes.profiles import to_profile_photo_response
 from app.schemas.common import ErrorResponse
-from app.schemas.profiles import ProfilePhotoResponse
+from app.schemas.profiles import ProfilePhotoResponse, PhotoDescriptionRequest, PhotoDescriptionResponse
 from app.services import profile_photos
 
 logger = logging.getLogger("saerok.profile_photos")
@@ -32,7 +32,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필, 프로필 사진 또는 계정 없음",
-        409: "프로필당 사진 수 초과",
+        409: "프로필당 사진 수 초과 또는 카드 생성 중 수정 거절",
         413: "사진 크기 초과",
         422: "요청 형식 오류 또는 JPEG, PNG가 아닌 사진",
         503: "DB 또는 사진 저장소 설정 미완료, 사진 저장소 사용 불가",
@@ -84,3 +84,19 @@ async def read_profile_photo(
         connection, photo_id, account_id=account.account_id
     )
     return await to_profile_photo_response(photo, storage)
+
+
+@router.patch(
+    "/profile-photos/{photo_id}/description", response_model=PhotoDescriptionResponse,
+    responses=_errors(401, 404, 409, 422, 503),
+)
+async def edit_profile_photo_description(
+    photo_id: UUID, body: PhotoDescriptionRequest, account: CurrentAccountDep,
+    connection: DbConnectionDep, settings: SettingsDep,
+) -> PhotoDescriptionResponse:
+    # 저장 성공을 사진 URL 발급 성공에 종속시키지 않는다. 이 API는 S3를 부르지 않는다.
+    row = await profile_photos.update_description(
+        connection, photo_id, account_id=account.account_id, description=body.description,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
+    return PhotoDescriptionResponse(**row)

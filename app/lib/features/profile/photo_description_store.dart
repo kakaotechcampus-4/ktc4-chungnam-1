@@ -1,10 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/api_client.dart';
+import '../auth/auth_providers.dart';
 
 /// 보호자가 고친 사진 설명을 저장한다.
 ///
-/// **저장 API 는 아직 없다.** AI 가 만든 설명을 보호자가 확인하거나 고치는 방식과
-/// 확인 여부의 저장 위치(`docs/architecture/api-spec.md` 3-3)는 PM 확인 뒤 정한다.
-/// 그때까지는 [MockPhotoDescriptionStore] 가 앱 안에서만 저장한 것으로 친다.
+/// 로그인 상태에서는 API 3-3의 저장 응답을 확인한다. 목 저장은 로그인 없이
+/// 화면만 확인하는 모드에만 쓴다. 설명 수정을 별도 승인 단계로 만들지 않는다.
 abstract interface class PhotoDescriptionStore {
   /// 실패하면 예외를 던진다.
   Future<void> save({required String photoId, required String description});
@@ -22,8 +23,31 @@ class MockPhotoDescriptionStore implements PhotoDescriptionStore {
 }
 
 final photoDescriptionStoreProvider = Provider<PhotoDescriptionStore>(
-  (ref) => const MockPhotoDescriptionStore(),
+  (ref) => ref.watch(sessionProvider) == null
+      ? const MockPhotoDescriptionStore()
+      : ServerPhotoDescriptionStore(ref.watch(apiClientProvider)),
 );
+
+class ServerPhotoDescriptionStore implements PhotoDescriptionStore {
+  const ServerPhotoDescriptionStore(this.client);
+  final ApiClient client;
+
+  @override
+  Future<void> save({
+    required String photoId,
+    required String description,
+  }) async {
+    final response = await client.patch(
+      '/api/v1/profile-photos/$photoId/description',
+      {'description': description.trim()},
+    );
+    if (response['photoId'] != photoId ||
+        response['description'] != description.trim() ||
+        response['descriptionSource'] != 'caregiver') {
+      throw const ApiUnexpectedResponseFailure('사진 설명 저장 응답 불일치');
+    }
+  }
+}
 
 /// 고친 설명 하나가 속한 자리. 같은 휴대폰을 쓰는 계정과 어르신마다 따로 둔다.
 ///
