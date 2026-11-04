@@ -44,10 +44,11 @@ class Card(CamelModel):
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: list[dict[str, str]]
     selected: bool
+    liked: bool  # 보호자의 "좋았어요" 표시(4-5, 4-6)
 
 
 class CardSet(CamelModel):
-    """4-3 응답. 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음."""
+    """4-3, 4-4 응답. 4-3은 고르기 전이거나 평가 전 회차에 쓰는 중인 묶음, 4-4는 회차에 쓴 묶음."""
 
     schema_version: Literal[1] = 1
     set_id: UUID

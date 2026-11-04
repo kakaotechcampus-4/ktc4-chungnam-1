@@ -22,7 +22,7 @@ from fastapi import UploadFile
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
-from app.services import ownership
+from app.services import card_sets, ownership
 from app.services.image_storage import ImageStorage
 from app.services.image_validation import validate_image
 
@@ -43,11 +43,12 @@ class ProfilePhoto:
     description: str | None
     error_code: str | None
     created_at: datetime
+    description_source: Literal["ai", "caregiver"] | None = None
 
 
 _COLUMNS = (
     "photo_id, profile_id, s3_object_key, analysis_status, description, "
-    "error_code, created_at"
+    "error_code, created_at, user_description"
 )
 
 
@@ -132,6 +133,49 @@ async def get_profile_photo(
     return _to_photo(row)
 
 
+async def delete_profile_photo(
+    connection: DbConnection,
+    photo_id: UUID,
+    *,
+    account_id: str,
+    start_timeout_seconds: int,
+) -> None:
+    """프로필 사진 한 장을 지운다(API 3-4). 면회 사진은 없는 사진과 같은 404다.
+
+    사진 행을 지우면 `photos_queue_storage_deletion` 트리거가 S3 원본 삭제를 대기열에 넣는다.
+    사진은 카드 생성 자료가 될 수 있으므로 이야기 삭제(2-9)처럼 아직 면회에 안 쓴 카드 묶음을
+    새로 만들어야 하는 묶음으로 바꾼다(`card_sets.mark_stale`). 이미 만든 카드는 기록으로 남는다.
+    """
+    await ownership.require_owned(
+        connection, ownership.PROFILE_PHOTO, photo_id, account_id=account_id
+    )
+    async with connection.transaction():
+        cursor = await connection.execute(
+            "SELECT profile_id FROM photos WHERE photo_id = %s AND session_id IS NULL",
+            (photo_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise _photo_not_found()
+        # 2-8, 2-9, 4-1처럼 프로필을 먼저 잠근다(mark_stale 안에서 잠금).
+        await card_sets.mark_stale(
+            connection, row["profile_id"], start_timeout_seconds=start_timeout_seconds
+        )
+        cursor = await connection.execute(
+            "DELETE FROM photos WHERE photo_id = %s AND session_id IS NULL", (photo_id,)
+        )
+        if cursor.rowcount == 0:
+            raise _photo_not_found()
+
+
+def _photo_not_found() -> AppError:
+    return AppError(
+        status_code=404,
+        error_code=ownership.PROFILE_PHOTO.error_code,
+        message=ownership.PROFILE_PHOTO.message,
+    )
+
+
 async def _count_profile_photos(connection: DbConnection, profile_id: UUID) -> int:
     cursor = await connection.execute(
         "SELECT count(*) AS n FROM photos "
@@ -139,6 +183,37 @@ async def _count_profile_photos(connection: DbConnection, profile_id: UUID) -> i
         (profile_id,),
     )
     return (await cursor.fetchone())["n"]
+
+
+async def update_description(connection: DbConnection, photo_id: UUID, *,
+                             account_id: str, description: str,
+                             start_timeout_seconds: int) -> dict:
+    """선택적 수정. AI 결과는 보존하고 다음 카드 입력에 보호자의 설명을 우선한다."""
+    profile_id = await ownership.require_owned(
+        connection, ownership.PROFILE_PHOTO, photo_id, account_id=account_id
+    )
+    description = description.strip()
+    if not description:
+        raise AppError(status_code=422, error_code="INVALID_REQUEST", message="설명을 입력해 주세요.")
+    async with connection.transaction():
+        await card_sets.lock_profile(connection, profile_id)
+        before = await (await connection.execute(
+            "SELECT COALESCE(user_description, description) AS effective "
+            "FROM photos WHERE photo_id = %s AND session_id IS NULL FOR UPDATE",
+            (photo_id,),
+        )).fetchone()
+        if before is None:
+            raise AppError(status_code=404, error_code="PROFILE_PHOTO_NOT_FOUND",
+                           message="프로필 사진을 찾을 수 없습니다.")
+        if before["effective"] != description:
+            await card_sets.mark_stale(connection, profile_id,
+                                       start_timeout_seconds=start_timeout_seconds)
+        row = await (await connection.execute(
+            "UPDATE photos SET user_description = %s, description_updated_at = now() "
+            "WHERE photo_id = %s RETURNING photo_id, user_description AS description, "
+            "description_updated_at AS updated_at", (description, photo_id),
+        )).fetchone()
+    return row
 
 
 async def _discard_upload(
@@ -169,7 +244,9 @@ def _to_photo(row: dict[str, Any]) -> ProfilePhoto:
         profile_id=row["profile_id"],
         object_key=row["s3_object_key"],
         analysis_status=row["analysis_status"],
-        description=row["description"],
+        description=row["user_description"] if row["user_description"] is not None else row["description"],
+        description_source=("caregiver" if row["user_description"] is not None
+                            else "ai" if row["description"] is not None else None),
         error_code=row["error_code"],
         created_at=row["created_at"],
     )

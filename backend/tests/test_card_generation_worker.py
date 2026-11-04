@@ -4,6 +4,7 @@
 """
 
 import json
+from types import SimpleNamespace
 
 import card_generation as ai
 import card_generation.generate as card_generation_module
@@ -28,6 +29,7 @@ from app.services.card_sets import (
     CardGenerationError,
     CardGenerationProcessor,
     build_context,
+    result_problems,
 )
 from app.workers.card_generation import card_generator, create_worker
 from tests.card_fixtures import (
@@ -159,13 +161,24 @@ def _process(database_url, generate, *, actions=("more",)):
 def test_context_has_only_what_card_generation_may_see(migrated_database_url):
     async def build(connection):
         profile_id, _, old_set, topic_id = await _seed(connection)
+        # 허용한 생성 시각에 생년과 같은 숫자가 있어도 개인정보 유출은 아니다.
+        await connection.execute(
+            "UPDATE profile_topics SET created_at = '2026-11-03T00:00:00.541943Z' "
+            "WHERE profile_id = %s", (profile_id,),
+        )
         return await build_context(connection, profile_id), old_set, topic_id
 
     context, old_set, topic_id = with_db(migrated_database_url, build)
 
     text = context.model_dump_json(by_alias=True)
-    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943"):
+    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943-04-01"):
         assert hidden not in text, hidden
+    assert set(context.model_dump(by_alias=True)) == {
+        "ageRange", "profileFacts", "lifeFacts", "photos", "topics", "visits", "pastCards",
+    }
+    assert set(context.profile_facts.model_dump(by_alias=True)) == {
+        "occupation", "hometown", "hobby", "family",
+    }
     assert context.age_range == "80s" and context.profile_facts.hobby == "합성 취미"
     assert [fact.source for fact in context.life_facts] == ["caregiver"]
     assert [photo.description for photo in context.photos] == ["합성 사진 설명"]
@@ -214,6 +227,79 @@ def test_context_drops_evidence_of_deleted_life_facts(migrated_database_url):
     assert card.evidence == [{"factId": str(kept)}]
     assert str(deleted) not in context.model_dump_json(by_alias=True)
     assert stored == [{"factId": str(deleted)}, {"profileField": "hobby"}]
+
+
+def test_context_drops_stories_and_photos_behind_excluded_topics(migrated_database_url):
+    """보호자가 제외한 주제의 근거 이야기와 사진은 다음 생성 입력에서 빠짐.
+
+    같은 이야기로 이름만 다른 새 주제가 다시 나오지 않게 함. 세부 정보 칸, 다른 이야기,
+    제외한 주제 자체와 결정, 저장된 근거는 그대로."""
+
+    async def build(connection):
+        profile_id, _, old_set, topic_id = await _seed(connection, ("exclude",))
+        refused = await value(
+            connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
+        )
+        photo = await value(
+            connection,
+            "SELECT photo_id FROM photos WHERE profile_id = %s AND analysis_status = 'completed'",
+            (profile_id,),
+        )
+        other = await value(
+            connection,
+            "INSERT INTO life_facts (profile_id, title, content)"
+            " VALUES (%s, '다른 제목', '다른 이야기') RETURNING fact_id",
+            (profile_id,),
+        )
+        excluded_evidence = [{"factId": str(refused)}, {"photoId": str(photo)}, {"profileField": "hobby"}]
+        await connection.execute(
+            "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+            (Jsonb(excluded_evidence), topic_id),
+        )
+        # 제외하지 않은 다른 주제가 같은 이야기와 다른 이야기를 함께 근거로 씀
+        kept_topic = await value(
+            connection,
+            "SELECT topic_id FROM conversation_cards WHERE set_id = %s AND position = 2",
+            (old_set,),
+        )
+        await connection.execute(
+            "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+            (Jsonb([{"factId": str(refused)}, {"factId": str(other)}]), kept_topic),
+        )
+        await connection.execute(
+            "UPDATE conversation_cards SET evidence_source = 'life_fact', evidence = %s"
+            " WHERE set_id = %s AND topic_id = %s",
+            (Jsonb([{"factId": str(refused)}]), old_set, topic_id),
+        )
+        context = await build_context(connection, profile_id)
+        stored = await value(
+            connection, "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topic_id,)
+        )
+        return context, old_set, topic_id, kept_topic, refused, photo, other, stored, excluded_evidence
+
+    context, old_set, topic_id, kept_topic, refused, photo, other, stored, excluded_evidence = with_db(
+        migrated_database_url, build
+    )
+
+    assert [fact.fact_id for fact in context.life_facts] == [other]
+    assert context.photos == []
+    assert context.profile_facts.hobby == "합성 취미"
+    topics = {topic.topic_id: topic for topic in context.topics}
+    assert [f.action for f in topics[topic_id].feedback] == ["exclude"]
+    assert topics[topic_id].evidence == [{"profileField": "hobby"}]
+    assert topics[kept_topic].evidence == [{"factId": str(other)}]
+    card = next(c for c in context.past_cards if c.set_id == old_set and c.topic_id == topic_id)
+    assert card.evidence == []
+    text = context.model_dump_json(by_alias=True)
+    assert str(refused) not in text and str(photo) not in text
+    assert stored == excluded_evidence
+
+    # 생성 함수가 그래도 그 이야기를 근거로 쓰면 결과 검증에서 거절
+    result = fake_result(SimpleNamespace(model="synthetic-model", prompt_version="2"))
+    result.cards[2] = result.cards[2].model_copy(
+        update={"evidence_source": "lifeFact", "evidence": [{"factId": str(refused)}]}
+    )
+    assert any(problem.startswith("3번") for problem in result_problems(result, context))
 
 
 def test_generated_cards_and_new_topics_are_saved(migrated_database_url):

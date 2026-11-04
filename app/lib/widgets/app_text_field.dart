@@ -6,6 +6,10 @@ import '../design/tokens.dart';
 ///
 /// 필수 항목은 이름표 옆에 붉은 별표를 붙인다. `app/DESIGN.md` 상 붉은색을
 /// 쓰는 몇 안 되는 자리다.
+///
+/// 화면 낭독기에는 이름표를 입력칸에 붙여 읽는다. 안내 문구는 글을 쓰면
+/// 사라지므로 이름표가 있어야 쓰기 전후 모두 무엇을 적는 칸인지 알 수 있다
+/// (접근성 보고서 13쪽). 같은 이름을 두 번 읽지 않게 위의 이름표는 읽지 않는다.
 class AppTextField extends StatelessWidget {
   const AppTextField({
     required this.label,
@@ -48,37 +52,42 @@ class AppTextField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FieldLabel(label, required: required),
+        ExcludeSemantics(child: FieldLabel(label, required: required)),
         const SizedBox(height: AppSpacing.md),
-        TextField(
-          controller: controller,
-          obscureText: obscureText,
-          keyboardType: keyboardType,
-          onChanged: onChanged,
-          maxLength: maxLength,
-          minLines: minLines,
-          maxLines: maxLines,
-          style: AppTypography.body,
-          decoration: InputDecoration(
-            counterStyle: AppTypography.caption,
-            hintText: hintText,
-            hintStyle: AppTypography.body.copyWith(
-              color: AppColors.textDisabled,
+        Semantics(
+          label: fieldSemanticsLabel(label, required: required),
+          child: TextField(
+            controller: controller,
+            obscureText: obscureText,
+            keyboardType: keyboardType,
+            onChanged: onChanged,
+            maxLength: maxLength,
+            minLines: minLines,
+            maxLines: maxLines,
+            style: AppTypography.body,
+            decoration: InputDecoration(
+              counterStyle: AppTypography.caption,
+              hintText: hintText,
+              hintStyle: AppTypography.body.copyWith(
+                color: AppColors.textDisabled,
+              ),
+              errorText: errorText,
+              errorStyle: AppTypography.caption.copyWith(
+                color: AppColors.danger,
+              ),
+              suffixIcon: suffix,
+              filled: true,
+              fillColor: AppColors.background,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.lg,
+              ),
+              border: _border(AppColors.line),
+              enabledBorder: _border(AppColors.line),
+              focusedBorder: _border(AppColors.ink, width: 2),
+              errorBorder: _border(AppColors.danger),
+              focusedErrorBorder: _border(AppColors.danger, width: 2),
             ),
-            errorText: errorText,
-            errorStyle: AppTypography.caption.copyWith(color: AppColors.danger),
-            suffixIcon: suffix,
-            filled: true,
-            fillColor: AppColors.background,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.lg,
-            ),
-            border: _border(AppColors.line),
-            enabledBorder: _border(AppColors.line),
-            focusedBorder: _border(AppColors.ink, width: 2),
-            errorBorder: _border(AppColors.danger),
-            focusedErrorBorder: _border(AppColors.danger, width: 2),
           ),
         ),
       ],
@@ -93,6 +102,11 @@ class AppTextField extends StatelessWidget {
   }
 }
 
+/// 화면 낭독기가 읽는 입력 항목 이름. 필수 항목은 별표 대신 `필수 입력` 을
+/// 붙인다(접근성 보고서 6쪽). 필수 조건 자체는 각 화면이 그대로 정한다.
+String fieldSemanticsLabel(String label, {required bool required}) =>
+    required ? '$label, 필수 입력' : label;
+
 /// 입력 항목의 이름표다. 선택 상자나 직접 만든 입력에도 같은 모양으로 쓴다.
 class FieldLabel extends StatelessWidget {
   const FieldLabel(this.label, {this.required = false, super.key});
@@ -102,17 +116,21 @@ class FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(label, style: AppTypography.bodyStrong),
-        if (required) ...[
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            '*',
-            style: AppTypography.bodyStrong.copyWith(color: AppColors.danger),
-          ),
+    return Semantics(
+      label: fieldSemanticsLabel(label, required: required),
+      excludeSemantics: true,
+      child: Row(
+        children: [
+          Text(label, style: AppTypography.bodyStrong),
+          if (required) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              '*',
+              style: AppTypography.bodyStrong.copyWith(color: AppColors.danger),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

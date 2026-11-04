@@ -24,6 +24,12 @@
 전환 로그는 `speech_analysis_backup_used reason=connect_failure`만 남긴다.
 요청 본문, 전사문, URL, 객체 키와 연결 예외 메시지는 넣지 않는다.
 
+예비 STT 서버도 기본 서버와 같은 보관 금지 규칙을 따른다. 음성과 전사문을 서버에 저장하지
+않고, 내려받은 임시 음성은 STT 성공 여부와 관계없이 요청이 끝날 때 삭제한다. Presigned URL과
+전사 내용은 로그에 남기지 않는다. 기준은 [STT 서버 README](../../stt-server/README.md)와 같으며,
+예비 서버라는 이유로 디버깅용 보관이나 별도 기록을 추가하지 않는다. ck에서는
+`ops/ck-backup/run-stt.sh`가 임시 파일 위치를 0700 권한의 `audio-temp/`로 지정한다.
+
 2026-11-03 KST 검증: Python 3.12의 잠금 의존성과 PostgreSQL 17 임시 DB에서 BE 전체
 429건 통과. 테스트의 리포트 생성기는 대체 객체를 사용하며 실제 ML API 실행과 구분한다.
 실제 BE 컨테이너에서 합성 S3 입력과 ck 모델을 사용해 정상 우선, 연결 실패 시

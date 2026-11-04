@@ -40,6 +40,18 @@ async def _seed(connection, google_sub: str) -> dict[str, UUID]:
         "VALUES (%s, 'running', 'synthetic-model', 'card-v1') RETURNING set_id",
         (ids["profile"],),
     )
+    topic_id = await insert(
+        "INSERT INTO profile_topics (profile_id, title, description) "
+        "VALUES (%s, '합성 주제', '합성 주제 설명') RETURNING topic_id",
+        (ids["profile"],),
+    )
+    ids["card"] = await insert(
+        "INSERT INTO conversation_cards (set_id, profile_id, topic_id, card_title, position,"
+        " description, primary_question, follow_up_questions, evidence_source) "
+        "VALUES (%s, %s, %s, '합성 카드', 1, '합성 설명', '합성 질문이었어요?',"
+        " ARRAY['하나?', '둘?', '셋?'], 'none') RETURNING card_id",
+        (ids["set"], ids["profile"], topic_id),
+    )
     ids["session"] = await insert(
         "INSERT INTO visit_sessions (profile_id) VALUES (%s) RETURNING session_id",
         (ids["profile"],),
@@ -70,6 +82,7 @@ RESOURCES = [
     (ownership.LIFE_FACT, "fact"),
     (ownership.PROFILE_PHOTO, "profile_photo"),
     (ownership.CARD_SET, "set"),
+    (ownership.CARD, "card"),
     (ownership.VISIT_SESSION, "session"),
     (ownership.SPEECH_ANALYSIS, "analysis"),
 ]

@@ -3,6 +3,8 @@
 // 음성 형식과 저장 위치는 `VisitRecorder` 가 안고 있고, 여기서는 상태가 장치를
 // 부르는 순서와 실패했을 때의 화면 상태만 본다.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,9 +13,12 @@ import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
+import 'package:saerok/features/visit/pending_uploads.dart';
 
 import 'fake_card_api.dart';
 import 'fake_visit_recorder.dart';
+import 'fake_pending_uploads.dart';
+import 'fake_visit_api.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -120,10 +125,11 @@ void main() {
     testWidgets('끝내기를 누르지 않고 나가도 파일을 닫는다', (tester) async {
       // 닫지 않으면 WAV 헤더가 쓰이지 않아 재생할 수 없는 파일이 남는다.
       final recorder = FakeVisitRecorder();
+      final uploads = FakePendingUploads();
       final container = ProviderContainer(
         overrides: [
           visitRecorderProvider.overrideWithValue(recorder),
-          ...withMockCards,
+          ...mockCardsWith(pendingUploads: uploads),
         ],
       );
       addTearDown(container.dispose);
@@ -160,11 +166,158 @@ void main() {
       await tester.pump();
 
       expect(recorder.calls, contains('stop'));
+      expect(uploads.saved[FakeVisitApi.sessionId]?.audioPath, isNotNull);
+      expect(uploads.saved[FakeVisitApi.sessionId]?.participantCount, isNull);
       expect(
         container.read(visitControllerProvider).value!.participantCount,
         isNull,
         reason: '확인받지 않은 사람 수를 대신 지어내지 않는다',
       );
+    });
+
+    // 디버그 빌드에서 열린 파일 없이 화면을 떠나면 dispose 안에서 상태를 바로
+    // 바꿔 Riverpod 이 `Tried to modify a provider while the widget tree was
+    // building` 을 던지던 경로다. 같은 컨테이너를 유지한 채 화면만 내린다.
+    Future<(ProviderContainer, VisitController, FakeVisitRecorder)> showScreen(
+      WidgetTester tester, {
+      required bool start,
+    }) async {
+      final recorder = FakeVisitRecorder();
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...mockCardsWith(pendingUploads: FakePendingUploads()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      late VisitController visit;
+      await tester.runAsync(() async {
+        final cards = await container.read(cardsControllerProvider.future);
+        container
+            .read(cardsControllerProvider.notifier)
+            .toggleSelected(cards.cards.first.cardId);
+
+        await container.read(visitControllerProvider.future);
+        visit = container.read(visitControllerProvider.notifier);
+        if (start) await visit.startRecording();
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(home: RecordScreen()),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      });
+      await tester.pump();
+      return (container, visit, recorder);
+    }
+
+    Future<void> leaveScreen(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: SizedBox.shrink()),
+        ),
+      );
+      await tester.pump();
+    }
+
+    test('화면을 떠날 때도 열린 파일은 그 호출 안에서 바로 닫기 시작한다', () async {
+      final recorder = FakeVisitRecorder();
+      final (container, visit) = await startVisit(recorder);
+      await visit.startRecording();
+
+      final leaving = visit.stopRecordingOnLeave();
+      expect(recorder.calls.last, 'stop', reason: '닫기를 미루지 않는다');
+
+      await leaving;
+      expect(read(container).recording, isFalse);
+      expect(read(container).recordingPath, isNotNull);
+    });
+
+    test('닫을 파일이 없으면 상태 변경만 다음 microtask 로 미룬다', () async {
+      final recorder = FakeVisitRecorder();
+      final (container, visit) = await startVisit(recorder);
+      await visit.startRecording();
+      await visit.stopRecording();
+      recorder.calls.clear();
+      var notified = 0;
+      final sub = container.listen(
+        visitControllerProvider,
+        (_, _) => notified++,
+      );
+      addTearDown(sub.close);
+
+      final leaving = visit.stopRecordingOnLeave();
+      expect(notified, 0, reason: '호출 안에서는 상태를 바꾸지 않는다');
+
+      await leaving;
+      expect(notified, greaterThan(0), reason: '미룬 변경은 결국 닿는다');
+      expect(read(container).recording, isFalse);
+      expect(recorder.calls, isNot(contains('stop')));
+    });
+
+    test('보낸 녹음은 화면을 떠날 때 다시 보낼 녹음으로 돌아가지 않는다', () async {
+      // 제출이 끝나 보냈다고 적은 뒤 녹음 화면이 늦게 정리되는 경우다. 다시
+      // 적으면 앱을 다시 켰을 때 같은 녹음을 또 보내려 든다.
+      final recorder = FakeVisitRecorder();
+      final uploads = FakePendingUploads();
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...mockCardsWith(pendingUploads: uploads),
+        ],
+      );
+      addTearDown(container.dispose);
+      final cards = await container.read(cardsControllerProvider.future);
+      container
+          .read(cardsControllerProvider.notifier)
+          .toggleSelected(cards.cards.first.cardId);
+      await container.read(visitControllerProvider.future);
+      final visit = container.read(visitControllerProvider.notifier);
+
+      await visit.startRecording();
+      await visit.stopRecording(participantCount: 2);
+      final pending = uploads.saved[FakeVisitApi.sessionId]!;
+      await uploads.markUploaded(pending);
+
+      await visit.stopRecordingOnLeave();
+
+      expect(uploads.saved, isEmpty);
+      expect(uploads.uploaded[FakeVisitApi.sessionId]?.participantCount, 2);
+    });
+
+    testWidgets('녹음 전 안내에서 나가도 상태 수정 오류가 나지 않는다', (tester) async {
+      final (container, _, recorder) = await showScreen(tester, start: false);
+      expect(find.text('네, 좋아요'), findsOneWidget);
+
+      await leaveScreen(tester, container);
+
+      expect(tester.takeException(), isNull);
+      expect(recorder.calls, isNot(contains('stop')), reason: '닫을 파일이 없다');
+      expect(read(container).recording, isFalse);
+    });
+
+    testWidgets('녹음을 끝낸 뒤 나가도 상태 수정 오류가 나지 않는다', (tester) async {
+      final (container, visit, recorder) = await showScreen(
+        tester,
+        start: true,
+      );
+      await tester.runAsync(visit.stopRecording);
+      await tester.pump();
+      recorder.calls.clear();
+
+      await leaveScreen(tester, container);
+
+      expect(tester.takeException(), isNull);
+      expect(recorder.calls, isNot(contains('stop')), reason: '이미 닫았다');
+      expect(read(container).recording, isFalse);
+      expect(read(container).recordingPath, isNotNull);
     });
   });
 
@@ -217,6 +370,12 @@ void main() {
       final state = read(container);
       expect(state.recording, isFalse);
       expect(state.problem, VisitRecordingProblem.saveFailed);
+      expect(
+        await container
+            .read(pendingUploadsProvider)
+            .find(FakeVisitApi.sessionId),
+        isNull,
+      );
     });
 
     test('끝냈는데 파일이 없으면 저장 실패로 알린다', () async {
@@ -230,6 +389,34 @@ void main() {
     });
   });
 
+  group('녹음 중에 정리될 때', () {
+    test('파일을 닫는 사이 컨테이너가 정리되면 상태를 건드리지 않고 끝낸다', () async {
+      // 앱을 통째로 정리하거나 로그아웃으로 provider 를 버리는 경우다. 파일
+      // 닫기(`stop`)가 끝나기 전에 정리되면, 끝난 뒤 정리된 ref 를 쓰지 않아야 한다.
+      final recorder = _SlowStopRecorder();
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...withMockCards,
+        ],
+      );
+      final cards = await container.read(cardsControllerProvider.future);
+      container
+          .read(cardsControllerProvider.notifier)
+          .toggleSelected(cards.cards.first.cardId);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      await controller.startRecording();
+
+      final stopping = controller.stopRecording(participantCount: 2);
+      expect(recorder.calls, contains('stop'));
+      container.dispose();
+      recorder.finishStop();
+
+      await expectLater(stopping, completes);
+    });
+  });
+
   group('음성 형식', () {
     // AI 영역이 형식을 확정하면 이 값이 바뀐다. 바뀌었는데 문서가 그대로면
     // 이 테스트가 먼저 알려 준다.
@@ -240,4 +427,18 @@ void main() {
       expect(VisitRecording.fileExtension, 'wav');
     });
   });
+}
+
+/// 파일 닫기를 테스트가 풀어 줄 때까지 붙잡아 두는 녹음 장치.
+class _SlowStopRecorder extends FakeVisitRecorder {
+  final _stopped = Completer<void>();
+
+  void finishStop() => _stopped.complete();
+
+  @override
+  Future<VisitRecording?> stop() async {
+    final saved = await super.stop();
+    await _stopped.future;
+    return saved;
+  }
 }

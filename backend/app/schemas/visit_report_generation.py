@@ -81,6 +81,9 @@ class VisitReportRequest(ApiModel):
     profile_facts: ReportProfileFacts = Field(alias="profileFacts")
     life_facts: list[ReportLifeFact] = Field(alias="lifeFacts")
     transcript: ReportTranscript
+    # 녹음 제출 당시 예상 인원. 라벨 개수와 비교하되 사람의 역할을 뜻하지 않는다.
+    # 이전 호출자는 생략할 수 있다. 생략을 2명으로 추측하지 않는다.
+    participant_count: int | None = Field(default=None, alias="participantCount", ge=1, le=8)
 
 
 class GeneratedCardSummary(ApiModel):

@@ -1,0 +1,156 @@
+{
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "context": {
+    "ageRange": "80s",
+    "profileFacts": {
+      "occupation": "양복점 재단사",
+      "hometown": "전남 여수",
+      "hobby": "트로트 듣기, 베란다 화초 가꾸기",
+      "family": "아들 둘, 딸 하나"
+    },
+    "lifeFacts": [
+      {
+        "factId": "f-anchovy",
+        "title": "여수 바닷가에서 멸치 말리던 일",
+        "content": "어린 시절 어머니와 함께 여수 바닷가에서 멸치를 널어 말렸다. (보호자 정정: 처음에 통영으로 적었으나 여수가 맞다)",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "f-refuge",
+        "title": "부산 피란",
+        "content": "전쟁 때 가족과 부산으로 피란 가서 한동안 천막에서 지냈다.",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "f-market",
+        "title": "국제시장에서 원단 떼 오던 일",
+        "content": "양복점을 하던 때 새벽 기차로 부산 국제시장에 가서 양복 원단을 떼어 왔다.",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "f-shop",
+        "title": "여수에 양복점을 연 일",
+        "content": "젊은 시절 여수 시내에 작은 양복점을 열었다. 간판은 형님이 써 주었다.",
+        "createdAt": "2026-09-10T00:00:00Z",
+        "source": "visit"
+      }
+    ],
+    "photos": [
+      {
+        "photoId": "p-shopfront",
+        "description": "흑백 사진. 양복 차림의 남성이 가게 앞에 서 있다. 간판 글자는 흐릿해 읽기 어렵다."
+      }
+    ],
+    "topics": [
+      {
+        "topicId": "t-anchovy",
+        "title": "바닷가에서 멸치 말리기",
+        "description": "어린 시절 어머니와 바닷가에서 멸치를 말리던 이야기",
+        "evidence": [
+          {
+            "factId": "f-anchovy"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "more",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "topicId": "t-refuge",
+        "title": "피란 시절 부산",
+        "description": "전쟁 때 가족과 부산으로 피란 갔던 이야기",
+        "evidence": [
+          {
+            "factId": "f-refuge"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "exclude",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "topicId": "t-trot",
+        "title": "좋아하는 트로트 가수",
+        "description": "즐겨 듣던 트로트와 가수 이야기",
+        "evidence": [
+          {
+            "profileField": "hobby"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "less",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      }
+    ],
+    "visits": [
+      {
+        "sessionId": "v-1",
+        "startedAt": "2026-09-19T05:00:00Z",
+        "setId": "s-1"
+      }
+    ],
+    "pastCards": [
+      {
+        "cardId": "pc-1",
+        "setId": "s-1",
+        "topicId": "t-anchovy",
+        "position": 1,
+        "cardTitle": "통영 바닷가의 멸치",
+        "primaryQuestion": "통영 바닷가에서 멸치를 널 때 어떤 냄새가 났어요?",
+        "evidence": [
+          {
+            "factId": "f-anchovy"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "positive"
+      },
+      {
+        "cardId": "pc-2",
+        "setId": "s-1",
+        "topicId": "t-refuge",
+        "position": 2,
+        "cardTitle": "피란 가던 길",
+        "primaryQuestion": "부산으로 피란 가실 때 길은 어떠셨어요?",
+        "evidence": [
+          {
+            "factId": "f-refuge"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "negative"
+      },
+      {
+        "cardId": "pc-3",
+        "setId": "s-1",
+        "topicId": "t-trot",
+        "position": 3,
+        "cardTitle": "즐겨 부르던 노래",
+        "primaryQuestion": "흥얼거리시던 노래 한 소절 들려주실래요?",
+        "evidence": [
+          {
+            "profileField": "hobby"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "neutral"
+      }
+    ]
+  }
+}

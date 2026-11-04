@@ -61,6 +61,11 @@ abstract final class AppRoutes {
   static String visitUploadOf(String sessionId) =>
       '$visitUpload?session=$sessionId';
 
+  static String analysisRetryOf(String sessionId, String analysisId) => Uri(
+    path: visitUpload,
+    queryParameters: {'session': sessionId, 'analysis': analysisId},
+  ).toString();
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
 

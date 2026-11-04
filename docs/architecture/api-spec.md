@@ -11,6 +11,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 항목 | 기준 |
 | --- | --- |
 | 인증 | `/auth/google`, `/auth/consent`를 제외한 모든 공개 API는 `Authorization: Bearer <accessToken>` |
+| 앱 버전 | 앱은 모든 공개 API에 `X-App-Version-Code: <안드로이드 versionCode>`를 싣는다. 서버 설정(`SAEROK_MIN_ANDROID_VERSION_CODE`)보다 낮으면 인증보다 먼저 `426 APP_UPDATE_REQUIRED`로 거절한다. 헤더가 없거나 숫자가 아니면 검사하지 않는다. `/health/*`는 검사하지 않는다 |
 | 본문 | JSON, 필드는 `lowerCamelCase`. 파일 업로드만 `multipart/form-data` |
 | 버전 | 응답 최상위에 `schemaVersion: 1` |
 | ID | UUID 문자열 |
@@ -39,6 +40,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 401 | `SESSION_EXPIRED` | 세션 만료 |
 | 404 | `ACCOUNT_NOT_FOUND` | 세션의 계정이 없음 |
 | 422 | `INVALID_REQUEST` | 요청 형식 오류 |
+| 426 | `APP_UPDATE_REQUIRED` | 앱 버전(`X-App-Version-Code`)이 최소 지원 버전보다 낮음. 로그인 전 API 포함 |
 | 500 | `INTERNAL_SERVER_ERROR` | 서버 내부 오류 |
 | 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
 
@@ -70,9 +72,13 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 앨범에서 사진 설명 수정 | | | 수정 API 미정, 필수 승인 없음 |
+| 3-4 | 앨범에서 사진 삭제 | `DELETE` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 4-1 | 홈 | `POST` | `/api/v1/profiles/{profileId}/card-generations` | 신규 |
 | 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 |
 | 4-3 | 대화 카드 선택 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 |
+| 4-4 | 지난 대화 카드 보기 | `GET` | `/api/v1/visit-sessions/{sessionId}/card-set` | 신규 |
+| 4-5 | 지난 대화 카드 보기 | `PUT` | `/api/v1/cards/{cardId}/like` | 신규 |
+| 4-6 | 지난 대화 카드 보기 | `DELETE` | `/api/v1/cards/{cardId}/like` | 신규 |
 | 5-1 | 녹음 시작 | `POST` | `/api/v1/visit-sessions` | 신규 |
 | 5-2 | 면회 사진 | `POST` | `/api/v1/visit-sessions/{sessionId}/photo` | 신규 |
 | 5-3 | 대화 카드 보충 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 |
@@ -102,7 +108,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
     [카드 선택]   4-3 → 면회 사진 촬영(단말)
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
     [평가]        6-1 → 6-2 → 6-3 폴링
-    [리포트]      7-2, 6-4 → 7-3 → 7-4
+    [리포트]      7-2, 6-4 → 7-3 → 7-4. 회차의 카드 전체 보기: 4-4, 좋았어요 표시: 4-5, 4-6
     [일대기]      2-3, 2-6, 2-7, 2-9
     [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
 
@@ -480,17 +486,42 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 <a id="3-3-사진-설명-확인--미정"></a>
 
-### 3-3. 앨범에서 사진 설명 수정 — API 미정
+<a id="3-3-앨범에서-사진-설명-수정--api-미정"></a>
+
+### 3-3. `PATCH /api/v1/profile-photos/{photoId}/description` — 사진 설명 수정
 
 9월 23일 회의와 10월 6일 BE 논의에서 정한 대로, AI 사진 설명은 별도 승인 없이 카드 생성에 사용한다. 사용자는 원할 때 앨범에서 확인하거나 수정한다. 사진 등록과 카드 선택에 필수 확인 단계를 넣지 않으며, 수정 API가 정해지기 전이라는 이유로 설명 사용을 막지 않는다.
 
 사진 설명을 질문의 입력으로 쓰는 것과 승인된 생애 사실을 저장하는 것은 다르다. 사진 설명이나 카드 선택만으로 `life_facts`에 저장하지 않는다. 사진 분석 동의도 별도로 확인한다. 기존 결정을 확인한 [PR #97 의견](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/97#discussion_r4183313066), [상세 흐름](card-generation-flow.md#4-사진-설명은-바로-사용하고-앨범에서-선택적으로-수정)을 참고한다.
 
-남은 사항은 설명 수정의 경로와 요청 형식, 분석 중 수정 및 늦게 도착한 결과의 처리다. 새 승인 여부 컬럼을 필수 조건으로 정한 것은 아니다.
+요청은 `{"description": "보호자가 고친 사진 설명"}`이다. 비어 있거나 공백뿐인 설명은 422로 거절한다. 소유 계정의 프로필 사진만 수정할 수 있으며 면회 사진과 다른 계정 사진은 404다.
+
+성공 응답은 200이며 `schemaVersion`, `photoId`, 저장한 `description`, `descriptionSource: "caregiver"`, `updatedAt`을 돌려준다. 이 저장 API는 S3 주소 발급을 호출하지 않는다.
+
+AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`에 따로 둔다. 조회와 다음 카드 입력에서는 보호자 설명을 우선한다. AI 분석 상태와 모델 기록은 바꾸지 않으며 늦게 도착한 AI 결과도 보호자 설명을 덮지 않는다. 2-3, 3-1, 3-2의 `ProfilePhoto`에는 선택 필드 `descriptionSource`를 추가한다(`ai`, `caregiver`, 설명 없으면 `null`). AI 분석에 실패했어도 보호자 설명은 조회할 수 있다.
+
+설명이 바뀌면 기존 정정 처리처럼 미사용 카드 묶음에 `needsRefresh`를 표시한다. 수정할 때마다 생성하지 않고 다음 대화 준비에서 12장을 다시 만든다. 카드 생성 중이면 409 `CARD_GENERATION_IN_PROGRESS`이며 설명을 부분 저장하지 않는다. 앱은 입력을 남기고 카드 준비 후 다시 저장할 수 있게 한다. 별도 승인 여부나 사진 메타데이터를 새로 요구하지 않는다.
 
 <br>
 
 ---
+
+### 3-4. `DELETE /api/v1/profile-photos/{photoId}` — 신규
+
+앨범에서 프로필 사진 한 장을 지운다. 면회 사진(5-2)은 대상이 아니다.
+
+본문 없음.
+
+응답 `204`
+
+- 사진 행을 지우고 S3 원본은 삭제 대기열로 지운다(`photos_queue_storage_deletion` 트리거).
+- 사진은 카드 생성 자료가 될 수 있으므로 이야기 삭제(2-9)처럼 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 된다. 이미 만든 카드와 면회 기록은 남는다.
+- 카드를 만드는 중이면 409로 거절한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_PHOTO_NOT_FOUND`(다른 계정의 사진, 면회 사진 포함) |
+| 409 | `CARD_GENERATION_IN_PROGRESS` |
 
 ## 4. 대화 카드
 
@@ -739,6 +770,48 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND`, `CARD_GENERATION_NOT_FOUND`(쓸 묶음이 없음) |
 
+### 4-4. `GET /api/v1/visit-sessions/{sessionId}/card-set` — 신규
+
+회차에 쓴 카드 묶음이다. 평가를 마쳐 4-3에서 더는 나오지 않는 묶음도 보호자가 다시 볼 수 있게 한다. 평가 전 회차면 4-3과 같은 묶음을 준다.
+
+응답 `200` — [CardSet](#cardset)
+
+- 읽기만 한다. 이 묶음으로 면회를 다시 시작하지 않으며, 회차에 쓸 수 있는 묶음은 여전히 4-3의 가장 최근 묶음 하나뿐이다.
+- `usedBySessionId`는 요청한 `sessionId`다. `selected`는 그 회차에서 고르거나 보충한 카드다.
+- 카드와 근거는 저장된 그대로 준다. 이후 정정되거나 지워진 생애 정보를 반영하지 않는다. 정정 표시는 PM 결정 뒤 정한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `VISIT_SESSION_NOT_FOUND`, `CARD_GENERATION_NOT_FOUND`(회차에 쓴 묶음이 없음) |
+
+### 4-5. `PUT /api/v1/cards/{cardId}/like` — 신규
+
+보호자가 지난 카드를 다시 보며 마음에 드는 카드에 "좋았어요"를 표시한다. 모든 카드를 평가하게 하지 않고 원하는 카드에만 선택적으로 남긴다. 본문 없음.
+
+응답 `204`
+
+- 보호자 평가(6-1)와 따로 저장한다(`conversation_cards.liked_at`). 6-1의 `cardReviews`, 리포트(7-2)와 회차 상태는 바꾸지 않는다. 평가를 마친 뒤에도 표시할 수 있다.
+- 회차에서 고르지 않은 카드에도 표시할 수 있다. 서버는 카드의 회차 상태로 막지 않으며, 표시 버튼을 어느 화면에 둘지는 FE와 PM이 정한다.
+- 이미 표시한 카드면 아무것도 바꾸지 않고 `204`다. 처음 표시한 시각을 유지한다.
+- 표시는 [CardSet](#cardset)의 `liked`로 확인한다.
+- 다음 카드 생성(4-1)의 `context`에는 아직 넣지 않는다. 대화 주제 추천에 반영하는 방식은 AI 담당과 정한 뒤 별도 작업으로 연결한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `CARD_NOT_FOUND` |
+
+### 4-6. `DELETE /api/v1/cards/{cardId}/like` — 신규
+
+4-5의 표시를 지운다. 본문 없음.
+
+응답 `204`
+
+- 표시하지 않은 카드여도 `204`다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `CARD_NOT_FOUND` |
+
 <br>
 
 ---
@@ -938,17 +1011,18 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 변경 사항
 
-- `audioPending` 상태의 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
-- 업로드 단계에서 실패한 작업만 있으면 새 작업을 만든다.
+- 보호자 평가를 제출한 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
+- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다.
+- 유효한 전사가 남은 실패 작업은 `REPORT_RETRY_AVAILABLE`로 6-5 사용을 안내한다.
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
-- 접수 후 실패했거나 완료된 회차는 다시 받지 않는다.
-- 앱은 `202`를 받으면 단말의 WAV 파일을 삭제한다.
+- 완료한 회차는 다시 받지 않는다.
+- 앱은 `202`를 받아도 단말 WAV와 회차 연결을 남긴다. 실패 후 재전송에 사용한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` |
 | 404 | `VISIT_SESSION_NOT_FOUND` |
-| 409 | `EVALUATION_REQUIRED` (신규), `ANALYSIS_SUBMISSION_IN_PROGRESS`, `ANALYSIS_ALREADY_FAILED`, `ANALYSIS_ALREADY_COMPLETED` |
+| 409 | `EVALUATION_REQUIRED`, `ANALYSIS_SUBMISSION_IN_PROGRESS`, `REPORT_RETRY_AVAILABLE`, `ANALYSIS_ALREADY_COMPLETED` |
 | 413 | `AUDIO_TOO_LARGE` |
 | 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` |
 | 503 | `AUDIO_STORAGE_UNAVAILABLE`, `SPEECH_ANALYSIS_NOT_CONFIGURED` |
@@ -987,9 +1061,45 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `EVALUATION_NOT_FOUND` |
 
+### 6-6. `POST /api/v1/speech-transcriptions` — 프로필 입력용 전사
+
+인증된 계정이 multipart의 `audio` 파일 하나를 보낸다. 프로필과 회차 ID는 받지 않는다.
+WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
+`{"schemaVersion": 1, "text": "..."}`이며 인식 결과가 비었으면 `text`도 빈 문자열이다.
+
+동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
+`AUDIO_TOO_LARGE` 413, 형식과 손상은 `INVALID_AUDIO_FORMAT` 또는 `INVALID_AUDIO` 422다.
+STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
+
+원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
+먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
+삭제 실패가 전사 성공을 취소하지 않는다. 큐 실행과 Lifecycle만으로 정확한 24시간 이내 삭제를
+보장한다고 설명하지 않는다. 처리 시간과 오류 코드 선택의 남은 확인은
+[프로필 음성 입력](../../backend/docs/short-speech-transcription.md)을 따른다.
+
 <br>
 
 ---
+
+### 6-5. `POST /api/v1/speech-analyses/{analysisId}/retry` — 신규
+
+실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
+기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
+동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
+
+응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
+이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
+
+| HTTP | errorCode | 처리 |
+| --- | --- | --- |
+| 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 재전송으로 우회하지 않고 동의 상태 확인 |
+| 404 | `SPEECH_ANALYSIS_NOT_FOUND` | 다른 계정 또는 없는 작업 |
+| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출 |
+| 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
+| 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
+| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
+
+전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 
 ## 7. 리포트와 변경 제안
 
@@ -1153,10 +1263,23 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 }
 ```
 
-worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttCompleted`) → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
+worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본 삭제 요청 기록과 S3 삭제 시도 → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
 
-- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
+S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
+
+- 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 실패 전사는 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다(2026-11-03 PM 승인). 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
+
+8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.
+
+미확인 발화가 있거나 라벨 수가 예상 인원보다 적으면 BE가 리포트와 제안의 모델 호출을 모두 생략한다.
+리포트에는 `화자 미확인 안내`와 정해진 설명만 저장하며 카드 요약, 새 이야기 후보와 주제 조정 제안은 만들지 않는다.
+보호자가 직접 남긴 소감과 평가는 보존한다. 임의 해석이나 제안을 넣으면 `UNVERIFIED_SPEAKER_FACT`로 저장을 거절한다.
+안내 저장 후 기존 작업 상태는 `completed`가 되지만 AI 분석 성공을 뜻하지 않는다. 제목과 본문에서 제한을 알린다.
+이력에는 `model=not-invoked`, `promptVersion=speaker-unverified-v1`을 남긴다. 라벨 수가 맞아도 보호자와 어르신의 역할이 확인된 것은 아니다.
+검사 범위와 보수적인 제한은 [화자와 이야기 저장 검사](../../backend/docs/speaker-fact-boundary.md)를 참고한다.
+8-3 요청의 선택 항목 `participantCount`는 해당 분석 작업의 예상 참여 인원이다. 생략되면 미확인으로 다룬다.
+실제 화자 수나 보호자와 어르신의 역할을 검증한 값이 아니다. [전사 입력 검사](../../backend/docs/speech-input-safety.md)를 참고한다.
 
 ### 8-2. 카드 생성 — 삭제
 
@@ -1380,7 +1503,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ### CardSet
 
-4-3의 응답이다. 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음이다.
+4-3, 4-4의 응답이다. 4-3은 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음, 4-4는 회차에 쓴 카드 묶음이다.
 
 ```json
 {
@@ -1407,16 +1530,18 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
       ],
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
-      "selected": false
+      "selected": false,
+      "liked": false
     }
   ]
 }
 ```
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
-- `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
 - `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
+- `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
 ### VisitSession
