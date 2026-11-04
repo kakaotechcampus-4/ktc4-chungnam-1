@@ -22,6 +22,11 @@ from app.services.speech_analysis_jobs import (
 )
 from app.workers.base import OpenConnection, Worker
 
+# STT 서버는 처리 기한(`dataExpiresAt`)이 자기 시각 + 24시간을 넘으면 거절한다
+# (`stt-server/src/stt_server/stt/service.py`). 기한은 접수할 때 정하고 STT는 그 뒤에 받으므로,
+# STT 서버 시계가 조금만 늦어도 24시간 그대로는 거절된다. 시계 차이를 감안해 5분을 남긴다.
+STT_MAX_DATA_SECONDS = 24 * 60 * 60 - 5 * 60
+
 logger = logging.getLogger("saerok.speech_analysis")
 
 
@@ -58,7 +63,8 @@ class SpeechAnalysisSubmissionService:
         self._jobs = jobs
         self._audio_storage = audio_storage
         self._max_audio_bytes = max_audio_bytes
-        self._retention_seconds = retention_seconds
+        # 설정이 더 길어도(최대 86400초) STT가 받는 기한을 넘기지 않는다. 원본 삭제가 그만큼 앞당겨질 뿐이다.
+        self._retention_seconds = min(retention_seconds, STT_MAX_DATA_SECONDS)
         self._object_prefix = object_prefix.strip("/")
 
     async def submit(

@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     speech_audio_s3_prefix: str = "temporary/speech"
     speech_audio_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
     speech_audio_presigned_ttl_seconds: int = Field(default=900, ge=60)
-    speech_audio_retention_seconds: int = Field(default=86400, ge=60, le=86400)
+    # STT 상한(24시간)과 서버 시계 차이를 감안해 기본 23시간 55분. 86100초보다 길게 줘도
+    # 접수 서비스가 86100초로 맞춘다(`speech_analysis_pipeline.STT_MAX_DATA_SECONDS`).
+    speech_audio_retention_seconds: int = Field(default=86100, ge=60, le=86400)
     max_audio_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     speech_analysis_lease_seconds: int = Field(default=900, ge=60)
     speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
