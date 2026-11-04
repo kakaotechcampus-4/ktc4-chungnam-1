@@ -34,7 +34,7 @@ Play Console에 올리는 AAB는 업로드 키로 서명한다. 키는 릴리스
 
     flutter build appbundle --release --dart-define-from-file=.env
 
-`key.properties`가 없으면 release도 디버그 키로 서명되며, 그 결과물은 Play에 올릴 수 없다. `.env`의 `SAEROK_API_BASE_URL`은 https여야 한다. 릴리스 빌드는 평문 통신을 막는다. 구글 로그인을 하려면 업로드 키의 SHA-1과 Play App Signing의 앱 서명 키 SHA-1을 Google Cloud Console에 등록해야 한다. 버전은 `pubspec.yaml`의 `version`(`이름+versionCode`)을 따르며, 올릴 때마다 versionCode를 올린다.
+`key.properties`가 없으면 release도 디버그 키로 서명되며, 그 결과물은 Play에 올릴 수 없다. `.env`의 `SAEROK_API_BASE_URL`은 https여야 하고 `SAEROK_GOOGLE_SERVER_CLIENT_ID`는 비어 있으면 안 된다. 릴리스 빌드는 평문 통신을 막는다. 둘 중 하나라도 맞지 않으면 릴리스 앱은 켜자마자 로그인 대신 설정 오류 화면을 띄우고 고칠 설정 이름을 보여 준다([릴리스 설정 검사](#릴리스-설정-검사)). 구글 로그인을 하려면 업로드 키의 SHA-1과 Play App Signing의 앱 서명 키 SHA-1을 Google Cloud Console에 등록해야 한다. 버전은 `pubspec.yaml`의 `version`(`이름+versionCode`)을 따르며, 올릴 때마다 versionCode를 올린다.
 
 ## 기술과 화면 기준
 
@@ -168,6 +168,8 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
 `/notifications`는 홈의 리포트 알림 상태(`ReportNotice`)를 그대로 다시 보여주는 화면이라 지금은 한 번에 한 건만 뜬다. 날짜별로 여러 건이 쌓인 이력을 보여주려면 데이터 모델을 넓혀야 한다.
 
 `/profile`의 로그아웃과 `/profile/delete`의 탈퇴하기는 서버에 연결했다([로그아웃과 탈퇴](#로그아웃과-탈퇴)). `/profile`의 갤러리는 올린 사진을 세 칸씩 보여주고, 분석이 끝나지 않은 사진에는 `분석 중`, 실패한 사진에는 `분석 실패`를 붙인다. 사진을 누르면 그 아래에 AI가 만든 설명(`ProfilePhoto.description`)이 `AI가 만든 설명`이라는 이름표와 함께 펼쳐지고, 보호자가 고쳐 저장하면 이름표가 `사진에 대한 설명`으로 바뀐다. 분석 중인 사진은 설명 대신 상태만 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 설명을 적어 저장할 수 있으며, 저장하면 `분석 실패` 표시를 뗀다. 보호자가 설명을 확인하는 방식과 저장 위치(API 3-3)가 미정이라, 저장은 [photo_description_store.dart](lib/features/profile/photo_description_store.dart)의 목이 앱 안에서만 한다. 목 사진의 `imageUrl`은 계약 예시 주소라 `MockRepository`가 읽을 때 앱에 든 합성 그림으로 바꾼다. 사진은 어르신마다의 `photos[]`다. 로그인해 서버에 저장한 분은 `serverProfilePhotosProvider`가 2-3 응답의 `photos[]`를 읽고, 분석이 끝나지 않은 사진은 갤러리를 보는 동안 3-2로 5초마다 물어 끝나면 설명이나 `분석 실패`로 바꾼다. 사진 목록을 읽는 중에 갤러리를 닫으면 늦게 온 응답으로 묻기 시작하지 않는다. 읽지 못하면 사진이 없다고 하지 않고 `다시 시도`를 둔다. 조회 주소(`imageUrl`)는 수명이 짧아 갤러리를 다시 열 때 새로 받는다. 로그인 없이 들어온 분은 `profileProvider`가 목 사진을 고른 어르신의 것으로 붙인다. 고친 설명은 계정, 어르신, 사진마다 따로 두어 다른 계정이나 다른 어르신에게 보이지 않고, 저장 응답은 저장한 사진에만 반영한다. 로그아웃과 탈퇴로 어르신 정보를 지울 때 함께 지운다.
+
+갤러리 머리글에는 기본 정보, 세부 정보와 달리 `수정하기`를 두지 않는다. 사진을 더하거나 지우는 화면이 없고, 설명은 사진을 눌러 그 자리에서 고치기 때문이다.
 
 `/profile/delete`의 탈퇴 이유 설문은 계약이나 법률 문서에 속한 값이 아니라 화면 문구다. 탈퇴 후 재가입 가능 여부는 `docs/legal/` 어디에도 정해진 내용이 없어 화면에 적지 않았다.
 
@@ -353,10 +355,21 @@ PR #117 리뷰). 그 밖의 단말 자료의 삭제 범위는 정해지지 않�
 | `SAEROK_API_BASE_URL` | `http://10.0.2.2:8000` | 에뮬레이터에서 호스트를 가리키는 주소. 실기기는 PC의 LAN 주소를 넘긴다 |
 
 `serverClientId`가 ID 토큰의 `aud`가 되므로 서버의 `SAEROK_GOOGLE_CLIENT_IDS`와 같아야 한다.
-Google Cloud Console에 Application ID `app.saerok.android`와 디버그·릴리스 SHA-1 등록이 선행되어야 한다.
+Google Cloud Console에 Application ID `app.saerok.android`와 디버그, 릴리스 SHA-1 등록이 선행되어야 한다.
 
 개발 서버가 http라서 평문 통신을 디버그 빌드에서만 열어 두었다
 (`android/app/src/debug/AndroidManifest.xml`). 릴리스 빌드에는 들어가지 않는다.
+
+#### 릴리스 설정 검사
+
+기본 서버 주소가 에뮬레이터용 http라서, 값을 넘기지 않은 릴리스 빌드는 모든 요청이 연결 오류로만 보인다. 이를 막으려고 릴리스 빌드(`kReleaseMode`)는 앱을 켤 때 [release_config.dart](lib/app/release_config.dart)의 `releaseConfigProblems`로 아래를 확인한다.
+
+| 확인 | 막는 값 |
+| --- | --- |
+| `SAEROK_API_BASE_URL` | 비어 있음(`비어 있어요`), scheme이 https가 아님(`https 주소가 아니에요`), https이지만 형식 오류(`형식이 올바르지 않아요`: 앞뒤 공백, 해석 불가, host 없음, `user@` 사용자 정보, query `?`, fragment `#`) |
+| `SAEROK_GOOGLE_SERVER_CLIENT_ID` | 비어 있음 |
+
+서버 주소는 세 문제 중 하나만 알린다. 하나라도 걸리면 `main.dart`의 `rootApp`이 `SaerokApp` 대신 `ReleaseConfigErrorApp`을 고른다. 라우터, 세션 복원과 서버 요청을 시작하지 않고, 화면에는 고칠 설정 이름만 적는다. 넘긴 주소와 ID 값은 화면과 로그에 남기지 않는다. 다시 빌드해야 고쳐지므로 다시 시도 버튼은 없다. 디버그와 프로필 빌드는 검사하지 않아 기존 동작 그대로다. 확인 내용은 `test/release_config_test.dart`에 있다. 이 테스트는 dart-define 없이 실행한 기본값(`http://10.0.2.2:8000`, 빈 클라이언트 ID)을 릴리스로 검사했을 때 두 설정이 모두 막히는지와 `rootApp(isRelease: true)`가 설정 오류 앱을 고르는지도 본다. 실제 `flutter build appbundle --release` 결과물에서 이 화면이 뜨는지는 실행하지 않았다.
 
 ### 확인이 필요한 것
 
