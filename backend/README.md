@@ -53,7 +53,7 @@ uv run pytest
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
 | 생존 확인 | `GET /health/live` |
-| 준비 상태 | `GET /health/ready`. 외부 의존성이 없는 골격의 상태만 확인 |
+| 준비 상태 | `GET /health/ready`. 3초 안에 DB 연결과 `SELECT 1` 확인. DB 설정 누락이나 연결 실패는 503 |
 | API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
@@ -88,7 +88,7 @@ CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 �
 `SAEROK_DATABASE_URL`을 쓰는지도 각각 검사한다. 다른 DB 테스트처럼 `SAEROK_TEST_DATABASE_URL`이
 없으면 건너뛰며 공용 DB나 작업용 DB에는 연결하지 않는다.
 
-PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다.
+PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다. DB revision, 작업 상태와 기본 STT 연결은 [읽기 전용 운영 점검](docs/runtime-check.md)으로 별도 확인한다. readiness 성공만으로 GPU와 모델 처리가 정상임을 보장하지 않는다.
 
 ## DB 연결과 저장소 작성 규칙
 
@@ -348,13 +348,19 @@ BE는 인증, 필수 동의, 회차 소유권과 보호자 평가 제출 여부�
 상태 조회는 인증된 `GET /api/v1/speech-analyses/{analysisId}`다. 다른 계정의 작업은
 존재 여부를 드러내지 않고 404로 처리한다. 상태는 `queued`, `transcribing`,
 `sttCompleted`, `generatingReport`, `completed`, `failed`이며 `failed`일 때 안전한
-`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 S3 원본 삭제까지 끝났다는
-뜻이며 리포트 완료는 아니다.
+`errorCode`만 반환한다. `sttCompleted`는 AI 응답 검증과 전사문 임시 저장이 끝났다는
+뜻이며 리포트 완료나 원본 삭제 완료를 뜻하지 않는다. 삭제 여부는 `audio_deleted_at`과
+삭제 대기열로 따로 확인한다.
 
 worker는 PostgreSQL에서 `queued` 작업을 행 잠금으로 하나씩 가져오고 S3 Presigned GET
 URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`를 호출한다.
-`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 S3 원본을 즉시 삭제하고,
-리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+`participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 전사를 저장하고 S3 원본
+삭제를 즉시 시도한다. 삭제 요청은 먼저 DB에 남기며 S3 삭제만 실패해도 리포트 생성은
+계속한다. 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+
+화자 미확인 발화나 예상 인원보다 적은 라벨이 있으면 모델을 호출하지 않고 화자 미확인
+안내만 저장한다. 이 경우도 기존 상태는 `completed`이지만 AI 해석, 카드 요약과 두 종류의
+제안은 없다. 제목과 본문에 제한을 알리며 보호자의 기존 평가는 보존한다([화자 처리](docs/speaker-fact-boundary.md)).
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
 있다. worker는 STT 뒤 같은 작업에서 리포트 생성기(8-3, [평가와 리포트 API](#평가와-리포트-api))로
@@ -407,10 +413,12 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_ML_API_KEY` | 리포트 생성에 쓰는 ML API 키(카드 생성과 같음). 비어 있으면 worker가 시작하지 않음(`--stt-only`는 제외) |
 
-S3 Lifecycle의 최대 24시간 삭제는 애플리케이션 설정만으로 만들어지지 않는다. 버킷
-운영 설정에서 별도로 적용하고 확인해야 한다. 정상 경로에서는 Lifecycle을 기다리지 않고
-STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와
-오류 응답에 남기지 않는다.
+S3 Lifecycle의 일 단위 만료는 UTC 날짜 계산과 비동기 삭제 때문에 업로드 후 24시간 이내
+삭제를 보장하지 않는다. `data_expires_at`에 따른 기한 삭제와 삭제 대기열 실행을 별도로
+운영하고, Lifecycle은 보조 규칙으로 적용한다. 정상 경로에서는 STT 직후 삭제를 시도한다.
+대기열 등록만으로 삭제 완료를 표시하지 않는다. 이 변경만으로 대기열 실행기가 배포되지는
+않는다. [삭제 실패와 분석 결과 분리](docs/audio-deletion-isolation.md)를 참고한다.
+녹음, 전사문, 원래 파일명, Presigned URL과 객체 키를 요청 로그와 오류 응답에 남기지 않는다.
 
 ### STT 예비 서버 전환
 
@@ -422,6 +430,7 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
 주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
 [연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
+기본 GPU와 ck 예비 경로의 상태 확인, 재시작과 증상별 대응은 [STT 운영 절차](docs/stt-operations.md)를 따른다.
 
 ## 사진 저장 (S3)
 

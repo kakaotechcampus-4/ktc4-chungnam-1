@@ -67,7 +67,12 @@ def _speech(analysis_id: str = ANALYSIS_ID) -> SpeechAnalysisResult:
                     "words": [
                         {"startMs": 0, "endMs": 800, "text": "합성", "probability": 0.9}
                     ],
-                }
+                },
+                {
+                    "startMs": 3400, "endMs": 5000,
+                    "speakerLabel": "SPEAKER_01",
+                    "text": "두 번째 합성 발화 구간", "words": [],
+                },
             ],
         }
     )
@@ -202,6 +207,7 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     [sent] = ai.report_requests
     assert sent["schemaVersion"] == 1
     assert sent["analysisId"] == ANALYSIS_ID
+    assert sent["participantCount"] == 2
     assert sent["evaluation"] == {
         "conversationSatisfaction": 4,
         "careRecipientReaction": "pleased",
@@ -233,7 +239,8 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     assert sent["transcript"] == {
         "durationMs": 15200,
         "segments": [
-            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"}
+            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"},
+            {"startMs": 3400, "endMs": 5000, "speakerLabel": "SPEAKER_01", "text": "두 번째 합성 발화 구간"},
         ],
     }
     # 피보호자의 이름, 성별, 생년월일은 어떤 형태로도 보내지 않는다.
