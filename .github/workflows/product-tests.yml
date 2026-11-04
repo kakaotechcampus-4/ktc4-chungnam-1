@@ -1,0 +1,172 @@
+name: Product tests
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+      - run: flutter test
+
+  python-lint:
+    name: Python syntax and undefined names
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+      # 문법 오류와 정의되지 않은 이름만 본다. 형식과 스타일 규칙은 기존 코드 정리 뒤에 넓힌다.
+      - run: uvx ruff@0.17.3 check --select E9,F63,F7,F82 backend ai stt-server
+
+  backend:
+    name: Backend and PostgreSQL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saelog_ci
+          POSTGRES_PASSWORD: isolated_ci_database
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saelog_ci -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONUTF8: '1'
+      SAEROK_TEST_DATABASE_URL: postgresql://saelog_ci:isolated_ci_database@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            ai/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked pytest -ra
+      # BE 코드 전체의 타입 검사. 처음 결과로 오류 수를 본 뒤 범위와 막을지를 정한다. 그 전까지는 실패해도 막지 않는다.
+      - name: Type check app (informational)
+        continue-on-error: true
+        run: uv run --locked --with mypy==2.2.0 mypy --follow-imports=silent --ignore-missing-imports app
+      # 서버가 만드는 API 스키마를 결과물로 남긴다. 손으로 쓴 명세(docs/architecture/api-spec.md)와 함께 본다.
+      - name: Export OpenAPI schema
+        run: uv run --locked python -c "import json; from app.main import app; print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))" > openapi.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openapi-schema
+          path: backend/openapi.json
+          retention-days: 14
+
+  ai:
+    name: AI tests and PostgreSQL (no model calls)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ai
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saelog_ci
+          POSTGRES_PASSWORD: isolated_ci_database
+          POSTGRES_DB: saelog_ai_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saelog_ci -d saelog_ai_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONUTF8: '1'
+      TOPIC_REC_TEST_DATABASE_URL: postgresql://saelog_ci:isolated_ci_database@127.0.0.1:5432/saelog_ai_ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: ai/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked pytest -ra
+
+  stt:
+    name: STT contracts and pipeline tests (no model calls)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: stt-server
+    env:
+      PYTHONUTF8: '1'
+      PYTHONPATH: src
+      HF_HUB_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: stt-server/uv.lock
+      - name: Install FFmpeg for TorchCodec imports
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg libpython3.12t64
+      - run: uv sync --locked
+      - name: Decode synthetic WAV without model calls
+        run: |
+          uv run --locked python - <<'PY'
+          from torchcodec.decoders import AudioDecoder
+          from tests.support import make_synthetic_wav_bytes
+
+          audio = AudioDecoder(make_synthetic_wav_bytes()).get_all_samples()
+          assert tuple(audio.data.shape) == (1, 160)
+          assert audio.sample_rate == 16000
+          PY
+      - run: uv run --locked python -m unittest discover -s tests -v

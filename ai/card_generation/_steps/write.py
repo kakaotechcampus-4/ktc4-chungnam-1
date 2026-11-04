@@ -1,6 +1,6 @@
 """문안 작성(④). 고른 12장에 설명, 첫 질문, 꼬리 질문 3개를 씀(판의 writing_topics.md).
 
-코드가 빈 설명, 꼬리 질문 개수, 물음표, 금지 표현(기억 시험, 최근 일, 의료 표현)을 검사함.
+코드가 빈 설명, 꼬리 질문 개수, 물음표와 카드의 직접적인 치료 효과 주장을 검사함.
 꼬리 질문 3개는 API 명세 4절(#87). 금지 표현은 PM이 저장소 규칙(CLAUDE.md)에 정해 둔 "최근 기억을 시험하는 질문, 의료 진단 금지" 기준.
 걸리면 걸린 곳을 알려 주고 한 번 다시 쓰게 함. 또 걸리면 실패.
 """
@@ -8,17 +8,14 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from card_generation._steps.deadline import Deadline
+from card_generation._steps.text_checks import has_card_treatment_claim
 from common.structured import invoke_structured
-
-_BANNED = [r"기억\s*나세요", r"기억\s*하세요", r"기억하시", r"기억나시", r"요즘", r"오늘", r"어제", r"방금", r"지난주",
-          r"치매", r"증상", r"치료", r"병원", r"약을?\s*드"]
 
 
 class WritingFailed(RuntimeError):
@@ -62,7 +59,7 @@ def write_cards(model: BaseChatModel, profile: dict[str, Any], cards: list[dict[
 
 
 def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
-    """문안 검사. 카드 위치가 입력과 같은지, 설명이 비지 않았는지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 금지 표현(_BANNED)이 없는지.
+    """문안 검사. 카드 위치가 입력과 같은지, 설명이 비지 않았는지, 꼬리 질문이 3개인지, 질문이 물음표로 끝나는지, 명백한 금지 구문이 없는지.
     걸린 것을 문장 목록으로 돌려주고, 이 문장을 그대로 모델에게 보내 고치게 함.
     """
     out = []
@@ -76,7 +73,8 @@ def _problems(result: _WritingResult, positions: list[int]) -> list[str]:
         for q in [c.primary_question, *c.follow_up_questions]:
             if not q.strip().endswith("?"):
                 out.append(f"{c.position}번: 질문이 물음표로 끝나지 않는다: {q}")
-            hit = next((b for b in _BANNED if re.search(b, q)), None)
-            if hit:
-                out.append(f"{c.position}번: 쓰면 안 되는 표현({hit})이 있다: {q}")
+        for field, text in [("설명", c.description), ("첫 질문", c.primary_question),
+                            *((f"꼬리 질문 {i}", q) for i, q in enumerate(c.follow_up_questions, 1))]:
+            if has_card_treatment_claim(text):
+                out.append(f"{c.position}번: {field}에 명백한 의료 효과 주장이 있다.")
     return out

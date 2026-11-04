@@ -53,7 +53,7 @@ uv run pytest
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
 | 생존 확인 | `GET /health/live` |
-| 준비 상태 | `GET /health/ready`. 외부 의존성이 없는 골격의 상태만 확인 |
+| 준비 상태 | `GET /health/ready`. 3초 안에 DB 연결과 `SELECT 1` 확인. DB 설정 누락이나 연결 실패는 503 |
 | API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
@@ -88,7 +88,7 @@ CHECK constraint, JSONB, partial index, FK `ON DELETE` 동작을 빠뜨릴 수 �
 `SAEROK_DATABASE_URL`을 쓰는지도 각각 검사한다. 다른 DB 테스트처럼 `SAEROK_TEST_DATABASE_URL`이
 없으면 건너뛰며 공용 DB나 작업용 DB에는 연결하지 않는다.
 
-PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 모델과 저장소가 연결되면 readiness에도 실제 의존성 점검을 추가한다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다.
+PR #32의 500 응답 헤더와 완료 로그 보완이 develop에 반영됐다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다. DB revision, 작업 상태와 기본 STT 연결은 [읽기 전용 운영 점검](docs/runtime-check.md)으로 별도 확인한다. readiness 성공만으로 GPU와 모델 처리가 정상임을 보장하지 않는다.
 
 ## DB 연결과 저장소 작성 규칙
 
@@ -422,6 +422,7 @@ STT 직후 삭제한다. 음성, 전사문, 원래 파일명, Presigned URL과 �
 현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
 주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
 [연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
+기본 GPU와 ck 예비 경로의 상태 확인, 재시작과 증상별 대응은 [STT 운영 절차](docs/stt-operations.md)를 따른다.
 
 ## 사진 저장 (S3)
 
