@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -23,6 +24,9 @@ import 'visit_recorder.dart';
 /// 실제 녹음은 [VisitRecorder] 가 한다. 녹음 라이브러리와 음성 형식은 AI 영역이
 /// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작, 멈춤, 끝내기와
 /// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
+///
+/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 앱이
+/// 백그라운드로 내려간 뒤의 녹음은 보장하지 않는다(`app/README.md`).
 class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
 
@@ -93,15 +97,21 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       _onPhotoUpload,
     );
 
-    return Scaffold(
-      appBar: const AppTopBar(),
-      body: visit.when(
-        loading: () => const LoadingView(),
-        error: (error, _) =>
-            const ErrorStateView(message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.'),
-        // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
-        data: (state) =>
-            state.started ? _Recording(state: state) : const _Intro(),
+    // 녹음하는 동안만 화면을 켜 둔다. 잠시 멈춤, 끝내기 확인 창(멈춘 채로
+    // 묻는다), 끝내기와 녹음 실패에서는 놓고, 화면을 떠나면 [KeepScreenOn] 이
+    // 빠지면서 놓는다.
+    return KeepScreenOn(
+      enabled: visit.value?.recording ?? false,
+      child: Scaffold(
+        appBar: const AppTopBar(),
+        body: visit.when(
+          loading: () => const LoadingView(),
+          error: (error, _) =>
+              const ErrorStateView(message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.'),
+          // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
+          data: (state) =>
+              state.started ? _Recording(state: state) : const _Intro(),
+        ),
       ),
     );
   }
