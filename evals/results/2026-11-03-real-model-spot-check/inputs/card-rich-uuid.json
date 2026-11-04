@@ -1,0 +1,156 @@
+{
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "context": {
+    "ageRange": "80s",
+    "profileFacts": {
+      "occupation": "양복점 재단사",
+      "hometown": "전남 여수",
+      "hobby": "트로트 듣기, 베란다 화초 가꾸기",
+      "family": "아들 둘, 딸 하나"
+    },
+    "lifeFacts": [
+      {
+        "factId": "80bfdc6c-bf04-5ee3-9cab-4ebca8cf9362",
+        "title": "여수 바닷가에서 멸치 말리던 일",
+        "content": "어린 시절 어머니와 함께 여수 바닷가에서 멸치를 널어 말렸다. (보호자 정정: 처음에 통영으로 적었으나 여수가 맞다)",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "25ebcd4d-6e17-58cc-a9a3-dc6d954aca5b",
+        "title": "부산 피란",
+        "content": "전쟁 때 가족과 부산으로 피란 가서 한동안 천막에서 지냈다.",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "42cce3ce-03ab-5c9c-9d99-50095502aa26",
+        "title": "국제시장에서 원단 떼 오던 일",
+        "content": "양복점을 하던 때 새벽 기차로 부산 국제시장에 가서 양복 원단을 떼어 왔다.",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "source": "caregiver"
+      },
+      {
+        "factId": "b18027bb-08fd-519a-83b3-3df2a8e75e83",
+        "title": "여수에 양복점을 연 일",
+        "content": "젊은 시절 여수 시내에 작은 양복점을 열었다. 간판은 형님이 써 주었다.",
+        "createdAt": "2026-09-10T00:00:00Z",
+        "source": "visit"
+      }
+    ],
+    "photos": [
+      {
+        "photoId": "bd2e5bfc-85b5-5575-8d0d-7391a74aa2da",
+        "description": "흑백 사진. 양복 차림의 남성이 가게 앞에 서 있다. 간판 글자는 흐릿해 읽기 어렵다."
+      }
+    ],
+    "topics": [
+      {
+        "topicId": "78920137-7b86-588f-99a9-086b5c8999fb",
+        "title": "바닷가에서 멸치 말리기",
+        "description": "어린 시절 어머니와 바닷가에서 멸치를 말리던 이야기",
+        "evidence": [
+          {
+            "factId": "80bfdc6c-bf04-5ee3-9cab-4ebca8cf9362"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "more",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "topicId": "0266b7d3-c835-5b36-82cb-c659665e1e85",
+        "title": "피란 시절 부산",
+        "description": "전쟁 때 가족과 부산으로 피란 갔던 이야기",
+        "evidence": [
+          {
+            "factId": "25ebcd4d-6e17-58cc-a9a3-dc6d954aca5b"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "exclude",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "topicId": "3b212608-9201-5828-8dde-051f74fd1a2c",
+        "title": "좋아하는 트로트 가수",
+        "description": "즐겨 듣던 트로트와 가수 이야기",
+        "evidence": [
+          {
+            "profileField": "hobby"
+          }
+        ],
+        "createdAt": "2026-09-01T00:00:00Z",
+        "feedback": [
+          {
+            "action": "less",
+            "decidedAt": "2026-09-20T00:00:00Z"
+          }
+        ]
+      }
+    ],
+    "visits": [
+      {
+        "sessionId": "2e4efdde-271c-5bf0-ad6c-46d22675fdcd",
+        "startedAt": "2026-09-19T05:00:00Z",
+        "setId": "a2c50c80-7a5a-5010-af4b-55329f339222"
+      }
+    ],
+    "pastCards": [
+      {
+        "cardId": "6f969dc7-17af-561d-af31-2b3f408c0e25",
+        "setId": "a2c50c80-7a5a-5010-af4b-55329f339222",
+        "topicId": "78920137-7b86-588f-99a9-086b5c8999fb",
+        "position": 1,
+        "cardTitle": "통영 바닷가의 멸치",
+        "primaryQuestion": "통영 바닷가에서 멸치를 널 때 어떤 냄새가 났어요?",
+        "evidence": [
+          {
+            "factId": "80bfdc6c-bf04-5ee3-9cab-4ebca8cf9362"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "positive"
+      },
+      {
+        "cardId": "c0e70fab-1ab9-58d9-a358-7f5801b1bf87",
+        "setId": "a2c50c80-7a5a-5010-af4b-55329f339222",
+        "topicId": "0266b7d3-c835-5b36-82cb-c659665e1e85",
+        "position": 2,
+        "cardTitle": "피란 가던 길",
+        "primaryQuestion": "부산으로 피란 가실 때 길은 어떠셨어요?",
+        "evidence": [
+          {
+            "factId": "25ebcd4d-6e17-58cc-a9a3-dc6d954aca5b"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "negative"
+      },
+      {
+        "cardId": "615d547f-b0c4-5481-bde9-68f16766a928",
+        "setId": "a2c50c80-7a5a-5010-af4b-55329f339222",
+        "topicId": "3b212608-9201-5828-8dde-051f74fd1a2c",
+        "position": 3,
+        "cardTitle": "즐겨 부르던 노래",
+        "primaryQuestion": "흥얼거리시던 노래 한 소절 들려주실래요?",
+        "evidence": [
+          {
+            "profileField": "hobby"
+          }
+        ],
+        "selected": true,
+        "reviewReaction": "neutral"
+      }
+    ]
+  }
+}

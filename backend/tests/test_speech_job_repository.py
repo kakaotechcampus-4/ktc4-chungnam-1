@@ -217,7 +217,7 @@ def test_worker_flow_keeps_the_transcript_only_until_completion(migrated_databas
     assert completed["transcript_deleted_at"] is not None
 
 
-def test_failed_job_after_acceptance_is_not_submitted_again(migrated_database_url):
+def test_failed_stt_allows_a_new_recording_without_reusing_the_failed_job(migrated_database_url):
     db = _Db(migrated_database_url)
     _, session_id = db.seed_session()
     accepted = _accept(db, session_id)
@@ -230,9 +230,10 @@ def test_failed_job_after_acceptance_is_not_submitted_again(migrated_database_ur
 
     existing, created = run(db.repository.reserve(_job(session_id)))
 
-    assert created is False
-    assert existing.analysis_id == accepted.analysis_id
-    assert existing.status == SpeechAnalysisStatus.FAILED
+    assert created is True
+    assert existing.analysis_id != accepted.analysis_id
+    assert existing.status == SpeechAnalysisStatus.UPLOADING
+    assert db.job_row(accepted.analysis_id)["status"] == "failed"
 
 
 def _generating(db: _Db, session_id: str) -> SpeechAnalysisJob:

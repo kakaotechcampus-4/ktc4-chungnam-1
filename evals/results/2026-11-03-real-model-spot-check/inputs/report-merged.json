@@ -1,0 +1,72 @@
+{
+  "analysisId": "a-synth-2",
+  "visitDate": "2026-10-10",
+  "evaluation": {
+    "conversationSatisfaction": 3,
+    "careRecipientReaction": "calm",
+    "freeNote": null
+  },
+  "cards": [
+    {
+      "cardId": "rc-5",
+      "cardTitle": "재봉틀 소리",
+      "topic": {
+        "topicId": "t-sewing",
+        "title": "재봉틀 돌리던 시절"
+      },
+      "reaction": "positive"
+    },
+    {
+      "cardId": "rc-6",
+      "cardTitle": "하숙집 반찬",
+      "topic": {
+        "topicId": "t-food",
+        "title": "기억에 남는 반찬"
+      },
+      "reaction": null
+    }
+  ],
+  "profileFacts": {
+    "occupation": "양장점 운영",
+    "hometown": null,
+    "hobby": null,
+    "family": "딸 하나"
+  },
+  "lifeFacts": [],
+  "transcript": {
+    "durationMs": 40000,
+    "segments": [
+      {
+        "startMs": 0,
+        "endMs": 4000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "엄마, 재봉틀 돌리던 얘기 좀 해 주세요."
+      },
+      {
+        "startMs": 5000,
+        "endMs": 9000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "나는 재봉틀 소리가 좋았어. 미싱 돌리면 하루가 금방 갔지."
+      },
+      {
+        "startMs": 10000,
+        "endMs": 14000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "저는 대학 때 서울에서 하숙했는데 하숙집 아주머니가 깍두기를 정말 잘 담그셨어요."
+      },
+      {
+        "startMs": 15000,
+        "endMs": 19000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "그랬구나. 깍두기는 무를 잘 골라야 해."
+      },
+      {
+        "startMs": 20000,
+        "endMs": 24000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "단골손님 중에 선생님이 한 분 계셨는데 꼭 감색 원피스만 맞췄어."
+      }
+    ]
+  },
+  "participantCount": 2
+}

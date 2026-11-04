@@ -236,8 +236,8 @@ enum PhotoAnalysisStatus {
 
 /// 프로필 사진 한 장이다(`docs/architecture/data-contracts.md` 의 ProfilePhoto).
 ///
-/// [description] 은 AI 가 만든 후보이며 확인된 사실이 아니다. 보호자가 확인하는
-/// 방식(API 3-3)은 아직 정해지지 않았다.
+/// [description]은 사진 설명이다. AI 원문인지 보호자가 고친 설명인지
+/// [descriptionSource]로 구분한다. 생애 사실로 자동 저장하지 않는다.
 class ProfilePhoto {
   const ProfilePhoto({
     required this.photoId,
@@ -247,6 +247,7 @@ class ProfilePhoto {
     required this.createdAt,
     this.imageUrlExpiresAt,
     this.description,
+    this.descriptionSource,
     this.errorCode,
   });
 
@@ -261,6 +262,7 @@ class ProfilePhoto {
         json['analysisStatus'] as String,
       ),
       description: json['description'] as String?,
+      descriptionSource: json['descriptionSource'] as String?,
       errorCode: error?['errorCode'] as String?,
       createdAt: json['createdAt'] as String,
     );
@@ -276,8 +278,11 @@ class ProfilePhoto {
   /// 모르는 값이면 `null` 이다. 화면은 분석이 끝나지 않은 것으로 다룬다.
   final PhotoAnalysisStatus? analysisStatus;
 
-  /// [PhotoAnalysisStatus.completed] 일 때만 있다.
+  /// AI 분석 완료 또는 보호자가 직접 적은 설명이 있으면 채운다.
   final String? description;
+
+  /// ai 또는 caregiver. 이전 서버의 응답에는 없어도 된다.
+  final String? descriptionSource;
 
   /// [PhotoAnalysisStatus.failed] 일 때의 `error.errorCode` 다.
   final String? errorCode;
@@ -293,6 +298,7 @@ class ProfilePhoto {
     imageUrlExpiresAt: imageUrlExpiresAt,
     analysisStatus: analysisStatus,
     description: description,
+    descriptionSource: descriptionSource,
     errorCode: errorCode,
     createdAt: createdAt,
   );

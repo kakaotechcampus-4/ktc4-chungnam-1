@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 1,
+  "model": "gpt-5.6-luna",
+  "promptVersion": 1,
+  "cards": [
+    {
+      "position": 1,
+      "topic": {
+        "topicId": "78920137-7b86-588f-99a9-086b5c8999fb",
+        "title": null,
+        "description": null,
+        "evidence": null
+      },
+      "cardTitle": "멸치 말리던 바닷바람",
+      "description": "어머니와 여수 바닷가에서 멸치를 널던 날의 바람과 햇볕을 여쭤보는 카드입니다.",
+      "primaryQuestion": "어머니와 여수 바닷가에서 멸치를 널 때 바람은 어땠어요?",
+      "followUpQuestions": [
+        "햇볕은 어떻게 느껴지셨어요?",
+        "멸치를 널 때 손으로 어떤 일을 하셨어요?",
+        "그때 바닷가는 어떤 모습이었어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "80bfdc6c-bf04-5ee3-9cab-4ebca8cf9362"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "existing",
+        "angle": "어머니와 여수 바닷가에서 멸치를 널던 날의 바람과 햇볕",
+        "pickReason": "기존 주제. 점수 1.00, 뽑힐 확률 88%",
+        "agentReason": "보호자가 더 자주를 선택했고, 지난번 냄새와 다른 감각을 살핀다.",
+        "matchReason": "어머니와 여수 바닷가에서 멸치를 널어 말리던 중심 경험이 기존 주제와 같다."
+      }
+    },
+    {
+      "position": 2,
+      "topic": {
+        "topicId": null,
+        "title": "여수에서 양복점을 처음 열던 일",
+        "description": "여수 시내에 작은 양복점을 처음 열고 간판을 내건 경험",
+        "evidence": [
+          {
+            "factId": "b18027bb-08fd-519a-83b3-3df2a8e75e83"
+          }
+        ]
+      },
+      "cardTitle": "양복점 간판",
+      "description": "젊은 시절 여수 시내에 양복점을 처음 열고 간판을 내걸던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "여수 시내에 양복점을 처음 열었을 때 가게 모습은 어땠어요?",
+      "followUpQuestions": [
+        "간판은 어떤 모습이었어요?",
+        "가게를 열 때 어떤 마음이셨어요?",
+        "양복점 안에는 무엇이 있었어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "b18027bb-08fd-519a-83b3-3df2a8e75e83"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "여수 시내 양복점의 간판과 가게를 처음 열던 모습",
+        "pickReason": "새 이야기",
+        "agentReason": "아직 카드로 다루지 않은 중요한 일의 시작을 떠올린다.",
+        "matchReason": "여수 시내에 양복점을 처음 열고 간판을 내걸던 경험은 기존 주제와 겹치지 않는 새 이야기다."
+      }
+    },
+    {
+      "position": 3,
+      "topic": {
+        "topicId": "3b212608-9201-5828-8dde-051f74fd1a2c",
+        "title": null,
+        "description": null,
+        "evidence": null
+      },
+      "cardTitle": "트로트가 흐르던 때",
+      "description": "젊은 시절 즐겨 듣던 트로트와 그 노래가 떠오르게 하는 계절이나 장소를 여쭤보는 카드입니다.",
+      "primaryQuestion": "좋아하시던 트로트를 들으면 어떤 계절이나 장소가 떠오르세요?",
+      "followUpQuestions": [
+        "어떤 가수의 노래를 즐겨 들으셨어요?",
+        "노래를 들을 때 주로 어디에 계셨어요?",
+        "노래 중에서 마음에 남은 대목은 무엇이에요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "hobby"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "existing",
+        "angle": "젊은 시절 트로트를 들으며 떠오르는 계절이나 장소",
+        "pickReason": "기존 주제. 점수 -1.00, 뽑힐 확률 100%",
+        "agentReason": "익숙한 취미를 부담 없이 회상하되 지난번 노래 부르기와 다른 장면을 묻는다.",
+        "matchReason": "트로트를 듣던 경험이 기존의 좋아하는 트로트 가수 이야기와 같다."
+      }
+    },
+    {
+      "position": 4,
+      "topic": {
+        "topicId": null,
+        "title": "부산 국제시장에서 양복 원단을 고르던 일",
+        "description": "양복점을 하며 새벽 기차로 부산 국제시장에 가서 원단을 떼어 오던 경험",
+        "evidence": [
+          {
+            "factId": "42cce3ce-03ab-5c9c-9d99-50095502aa26"
+          }
+        ]
+      },
+      "cardTitle": "원단 고르던 새벽",
+      "description": "양복점을 하며 새벽 기차를 타고 부산 국제시장에 가서 원단을 고르던 일을 여쭤보는 카드입니다.",
+      "primaryQuestion": "부산 국제시장에 원단을 고르러 갈 때 새벽 기차 안은 어땠어요?",
+      "followUpQuestions": [
+        "시장에 도착하면 어디부터 가셨어요?",
+        "원단을 고를 때 무엇을 살펴보셨어요?",
+        "기차를 타고 오가며 어떤 풍경을 보셨어요?"
+      ],
+      "evidenceSource": "lifeFact",
+      "evidence": [
+        {
+          "factId": "42cce3ce-03ab-5c9c-9d99-50095502aa26"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "새벽 기차를 타고 부산 국제시장에서 양복 원단을 고르던 때",
+        "pickReason": "새 이야기",
+        "agentReason": "덜 다뤄진 생애 이야기이며 직업 경험을 구체적인 장면으로 연다.",
+        "matchReason": "양복점을 하며 부산 국제시장에 가서 원단을 떼어 오던 경험은 가게를 여는 일과 구별되는 새 이야기다."
+      }
+    },
+    {
+      "position": 5,
+      "topic": {
+        "topicId": null,
+        "title": "양복을 재단하던 도구와 작업대",
+        "description": "양복을 재단할 때 손에 익었던 도구와 작업대에 관한 경험",
+        "evidence": []
+      },
+      "cardTitle": "재단사의 도구",
+      "description": "양복을 재단할 때 손에 익었던 도구와 작업대의 모습을 여쭤보는 카드입니다.",
+      "primaryQuestion": "양복을 재단할 때 어떤 도구를 손에 많이 쓰셨어요?",
+      "followUpQuestions": [
+        "작업대에는 무엇을 올려두셨어요?",
+        "도구를 사용할 때 어떤 소리가 났어요?",
+        "재단을 시작할 때 먼저 무엇을 하셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "양복을 재단할 때 손에 익었던 도구와 작업대",
+        "pickReason": "새 이야기",
+        "agentReason": "직업과 자연스럽게 이어지며 물건 중심이라 회상이 쉽다.",
+        "matchReason": "양복을 재단할 때 도구와 작업대를 사용하던 작업 경험은 별도의 새 이야기다."
+      }
+    },
+    {
+      "position": 6,
+      "topic": {
+        "topicId": null,
+        "title": "양복 원단의 색과 촉감",
+        "description": "기억에 남는 양복 원단의 색, 무늬, 촉감을 떠올리는 경험",
+        "evidence": []
+      },
+      "cardTitle": "원단의 색과 촉감",
+      "description": "기억에 남는 양복 원단의 색과 무늬, 만졌을 때의 느낌을 여쭤보는 카드입니다.",
+      "primaryQuestion": "양복 원단 가운데 어떤 색이나 무늬가 눈에 남으세요?",
+      "followUpQuestions": [
+        "그 원단을 만지면 느낌이 어땠어요?",
+        "두꺼운 원단과 얇은 원단은 어떻게 달랐어요?",
+        "어떤 원단을 고를 때 마음이 끌리셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "기억에 남는 양복 원단의 색, 무늬, 촉감",
+        "pickReason": "새 이야기",
+        "agentReason": "감각을 활용한 부담 적은 옛 직업 이야기다.",
+        "matchReason": "양복 원단의 색과 촉감을 기억하는 경험은 원단을 사러 가던 일과 구별되는 새 이야기다."
+      }
+    },
+    {
+      "position": 7,
+      "topic": {
+        "topicId": null,
+        "title": "양복점을 열 무렵의 여수 거리",
+        "description": "양복점을 열 무렵 여수 시내를 오가며 보던 사람들과 가게들",
+        "evidence": []
+      },
+      "cardTitle": "여수 거리 풍경",
+      "description": "양복점을 열 무렵 여수 시내에서 보던 사람들과 가게들의 모습을 여쭤보는 카드입니다.",
+      "primaryQuestion": "양복점을 열 무렵 여수 시내 거리는 어떤 모습이었어요?",
+      "followUpQuestions": [
+        "길을 오가는 사람들은 어떤 모습이었어요?",
+        "눈에 들어오던 가게는 어디였어요?",
+        "거리에서 어떤 소리가 들렸어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "양복점을 열 무렵 여수 시내를 오가던 사람들과 가게들",
+        "pickReason": "새 이야기",
+        "agentReason": "고향에 대한 친숙한 장소 회상으로 대화를 넓힌다.",
+        "matchReason": "양복점을 열 무렵 여수 시내를 오가며 보던 거리 풍경은 가게를 운영하거나 여는 일과 구별되는 새 이야기다."
+      }
+    },
+    {
+      "position": 8,
+      "topic": {
+        "topicId": null,
+        "title": "여수 바닷가의 햇살과 바람",
+        "description": "여수 바닷가에서 햇볕과 그늘, 바람을 느끼던 경험",
+        "evidence": []
+      },
+      "cardTitle": "여름 바닷가 햇살",
+      "description": "여수 바닷가에서 느끼던 햇볕과 그늘, 바람의 느낌을 여쭤보는 카드입니다.",
+      "primaryQuestion": "여수 바닷가의 햇볕과 바람은 어떻게 느껴지셨어요?",
+      "followUpQuestions": [
+        "햇볕을 피할 때는 어디에 계셨어요?",
+        "바닷바람은 세게 불었어요, 약하게 불었어요?",
+        "바닷가에서 가장 먼저 눈에 들어온 것은 무엇이었어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "여수 바닷가의 햇볕, 그늘, 바람 중 기억나는 느낌",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "멸치 이야기와 겹치지 않게 바닷가의 계절 풍경을 다룬다.",
+        "matchReason": "여수 바닷가의 햇살과 바람을 느끼던 경험은 멸치를 말리던 구체적인 작업과는 다른 새 이야기다."
+      }
+    },
+    {
+      "position": 9,
+      "topic": {
+        "topicId": null,
+        "title": "베란다에서 화초를 돌보던 일",
+        "description": "베란다에서 화초에 물을 주고 잎을 살피며 돌보던 경험",
+        "evidence": [
+          {
+            "profileField": "hobby"
+          }
+        ]
+      },
+      "cardTitle": "베란다 화초",
+      "description": "베란다에서 화초를 돌볼 때 하시던 일과 화초의 모습을 여쭤보는 카드입니다.",
+      "primaryQuestion": "베란다에서 화초를 돌볼 때 가장 먼저 무엇을 하셨어요?",
+      "followUpQuestions": [
+        "화초에 물은 어떻게 주셨어요?",
+        "잎을 살필 때 무엇을 보셨어요?",
+        "화초를 바라보면 마음이 어떠셨어요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "hobby"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "베란다에서 화초를 돌볼 때 손이 먼저 가는 일과 모습",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "현재 취미에 근거한 편안하고 반복 가능한 생활 이야기다.",
+        "matchReason": "베란다에서 화초를 돌보던 경험은 트로트를 듣던 기존 주제와 중심 경험이 다르다."
+      }
+    },
+    {
+      "position": 10,
+      "topic": {
+        "topicId": null,
+        "title": "자녀들과 둘러앉은 밥상",
+        "description": "세 자녀와 함께 밥상에 둘러앉아 음식을 먹고 이야기를 나누던 경험",
+        "evidence": [
+          {
+            "profileField": "family"
+          }
+        ]
+      },
+      "cardTitle": "아이들과 밥상",
+      "description": "세 자녀와 밥상에 둘러앉아 먹던 음식과 그때의 분위기를 여쭤보는 카드입니다.",
+      "primaryQuestion": "아이들과 밥상에 둘러앉았을 때 어떤 음식이 가장 눈에 남으세요?",
+      "followUpQuestions": [
+        "밥상에는 어떤 반찬이 올라왔어요?",
+        "식사할 때 어떤 이야기를 나누셨어요?",
+        "함께 밥을 먹는 시간은 어떤 분위기였어요?"
+      ],
+      "evidenceSource": "profile",
+      "evidence": [
+        {
+          "profileField": "family"
+        }
+      ],
+      "extra": {
+        "kind": "personal",
+        "bucket": "new",
+        "angle": "세 자녀와 둘러앉은 밥상에서 기억나는 음식과 분위기",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "가족 구성에 근거한 따뜻하고 열린 질문이다.",
+        "matchReason": "세 자녀와 둘러앉아 밥을 먹던 경험은 기존 주제와 겹치지 않는 새 이야기다."
+      }
+    },
+    {
+      "position": 11,
+      "topic": {
+        "topicId": null,
+        "title": "명절에 모인 가족상",
+        "description": "명절에 가족이 모여 음식과 집안 풍경을 함께하던 경험",
+        "evidence": []
+      },
+      "cardTitle": "명절 가족상",
+      "description": "명절에 가족이 모였을 때 보던 음식과 집안 풍경을 여쭤보는 카드입니다.",
+      "primaryQuestion": "명절에 가족이 모이면 집안 풍경은 어땠어요?",
+      "followUpQuestions": [
+        "상에는 어떤 음식이 올라왔어요?",
+        "음식을 준비할 때 누가 무엇을 했어요?",
+        "집 안에서는 어떤 소리가 들렸어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "명절에 가족이 모였을 때 보던 음식과 집안 풍경",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "가족 회상을 특정 사건 없이 편안하게 이끈다.",
+        "matchReason": "명절에 가족이 모여 식사하던 경험은 평소 자녀들과의 밥상과 구별되는 새 이야기다."
+      }
+    },
+    {
+      "position": 12,
+      "topic": {
+        "topicId": null,
+        "title": "장날 시장을 구경하던 일",
+        "description": "장날 시장에서 물건을 구경하며 소리와 풍경을 보던 경험",
+        "evidence": []
+      },
+      "cardTitle": "장날 시장 구경",
+      "description": "장날 시장에서 눈길이 가던 물건과 귀에 들리던 소리를 여쭤보는 카드입니다.",
+      "primaryQuestion": "장날 시장에 가면 어떤 물건이 가장 눈에 들어왔어요?",
+      "followUpQuestions": [
+        "시장에서는 어떤 소리가 들렸어요?",
+        "사람들은 무엇을 사고팔았어요?",
+        "시장에 가면 어디부터 구경하셨어요?"
+      ],
+      "evidenceSource": "none",
+      "evidence": [],
+      "extra": {
+        "kind": "general",
+        "bucket": "new",
+        "angle": "장날 시장에서 눈길이 가던 물건과 소리",
+        "pickReason": "새 이야기(남은 자리)",
+        "agentReason": "80대 어르신에게 익숙한 시장 풍경을 감각적으로 묻는다.",
+        "matchReason": "장날 시장을 구경하던 경험은 기존 주제와 겹치지 않는 새 이야기다."
+      }
+    }
+  ],
+  "log": {
+    "candidates": 17,
+    "toolCalls": 8,
+    "rejectedSubmissions": 0,
+    "refills": [],
+    "dropped": [
+      {
+        "no": 5,
+        "card_title": "가게 앞 사진",
+        "reason": "같은 주제의 3번 후보가 먼저 있음"
+      },
+      {
+        "no": 11,
+        "card_title": "화초 물주기",
+        "reason": "같은 주제의 10번 후보가 먼저 있음"
+      },
+      {
+        "no": 15,
+        "card_title": "겨울 아랫목",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 16,
+        "card_title": "봄날 동네길",
+        "reason": "12장이 다 참"
+      },
+      {
+        "no": 17,
+        "card_title": "라디오 소리",
+        "reason": "12장이 다 참"
+      }
+    ],
+    "selectionSeed": 116,
+    "writingFirstProblems": [],
+    "seconds": 47.5
+  }
+}
