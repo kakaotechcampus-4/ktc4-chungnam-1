@@ -82,6 +82,7 @@ async def to_profile_photo_response(
         image_url_expires_at=download.expires_at,
         analysis_status=photo.analysis_status,
         description=photo.description,
+        description_source=photo.description_source,
         error=(
             PhotoAnalysisError(error_code=photo.error_code)
             if photo.error_code is not None

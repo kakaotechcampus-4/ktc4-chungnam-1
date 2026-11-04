@@ -67,7 +67,12 @@ def _speech(analysis_id: str = ANALYSIS_ID) -> SpeechAnalysisResult:
                     "words": [
                         {"startMs": 0, "endMs": 800, "text": "합성", "probability": 0.9}
                     ],
-                }
+                },
+                {
+                    "startMs": 3400, "endMs": 5000,
+                    "speakerLabel": "SPEAKER_01",
+                    "text": "두 번째 합성 발화 구간", "words": [],
+                },
             ],
         }
     )
@@ -202,6 +207,7 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     [sent] = ai.report_requests
     assert sent["schemaVersion"] == 1
     assert sent["analysisId"] == ANALYSIS_ID
+    assert sent["participantCount"] == 2
     assert sent["evaluation"] == {
         "conversationSatisfaction": 4,
         "careRecipientReaction": "pleased",
@@ -233,7 +239,8 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     assert sent["transcript"] == {
         "durationMs": 15200,
         "segments": [
-            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"}
+            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"},
+            {"startMs": 3400, "endMs": 5000, "speakerLabel": "SPEAKER_01", "text": "두 번째 합성 발화 구간"},
         ],
     }
     # 피보호자의 이름, 성별, 생년월일은 어떤 형태로도 보내지 않는다.
@@ -532,7 +539,7 @@ def test_worker_fails_the_job_on_an_invalid_report_without_partial_save(
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "INVALID_AI_RESPONSE",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
     user_id = records.scalar(
@@ -635,7 +642,7 @@ def test_connected_generator_saves_the_combined_ai_result(migrated_database_url,
     assert [call["kind"] for call in calls] == ["report", "proposals"]
     for call in calls:
         assert isinstance(call["request"], ai_visit_report.VisitReportRequest)
-        assert call["model"] == "gpt-5.6-luna"
+        assert call["model"] == "gpt-6-luna"
         assert call["api_key"] == "synthetic-key"
     sent = calls[0]["request"]
     assert sent.analysis_id == ANALYSIS_ID
@@ -964,7 +971,7 @@ def test_worker_fails_a_timed_out_job_and_ignores_the_late_result(migrated_datab
     ai.release.set()
     _finish_generation_threads()
 
-    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": True}
+    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": False}
     assert after_timeout == expected
     assert _job(records, analysis_id) == expected
     assert _saved_rows(records, visit) == NOTHING_SAVED
@@ -1051,7 +1058,7 @@ def test_result_after_another_worker_expired_the_lease_is_not_saved(migrated_dat
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
@@ -1071,7 +1078,7 @@ def test_result_after_the_lease_ended_is_not_saved_before_cleanup(migrated_datab
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 

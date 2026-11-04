@@ -164,6 +164,17 @@ class ReportApi {
   }
 
   /// 6-3 음성 분석 작업의 상태. 모르는 값이면 `null` 이다.
+  /// 기존 전사를 쓸 수 있으면 리포트만 다시 만든다. 전사가 없으면 서버가
+  /// RECORDING_REQUIRED로 알려 기기에 보관한 녹음을 다시 제출하게 한다.
+  Future<String> retryAnalysis(String analysisId) async {
+    final body = await _client.post('$_base/speech-analyses/$analysisId/retry');
+    final id = body['analysisId'];
+    if (id is! String || id.isEmpty) {
+      throw const ApiUnexpectedResponseFailure('missing retry analysisId');
+    }
+    return id;
+  }
+
   Future<AnalysisStatus?> analysis(String analysisId) async {
     final body = await _client.get('$_base/speech-analyses/$analysisId');
     return _read(() => AnalysisStatus.parse(body['status'] as String));
