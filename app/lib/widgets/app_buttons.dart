@@ -8,6 +8,7 @@ class PrimaryButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.expand = true,
+    this.loading = false,
     super.key,
   });
 
@@ -19,17 +20,33 @@ class PrimaryButton extends StatelessWidget {
   /// 가로 폭을 가득 채운다.
   final bool expand;
 
+  /// 누른 일이 진행 중이다. 면을 조금 흐리게 하고 글자 앞에 도는 표시를 두며
+  /// 다시 누를 수 없게 한다. 비활성(회색)과는 다르게 보이도록 검정을 옅게만
+  /// 한다. 흰 글자와의 대비는 약 5.9:1 이다.
+  final bool loading;
+
+  /// [loading] 일 때의 면. 흰 바탕 위에서 `#646464` 쯤으로 보인다.
+  static final _loadingBackground = AppColors.ink.withValues(alpha: 0.65);
+
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null;
+    final enabled = onPressed != null || loading;
+    final text = Text(
+      label,
+      style: AppTypography.button.copyWith(
+        color: enabled ? AppColors.background : AppColors.textDisabled,
+      ),
+    );
     final button = SizedBox(
       height: AppSizes.control,
       child: FilledButton(
-        onPressed: onPressed,
+        onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.ink,
           foregroundColor: AppColors.background,
-          disabledBackgroundColor: AppColors.line,
+          disabledBackgroundColor: loading
+              ? _loadingBackground
+              : AppColors.line,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -38,12 +55,23 @@ class PrimaryButton extends StatelessWidget {
           ),
           textStyle: AppTypography.button,
         ),
-        child: Text(
-          label,
-          style: AppTypography.button.copyWith(
-            color: enabled ? AppColors.background : AppColors.textDisabled,
-          ),
-        ),
+        child: loading
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppColors.background,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Flexible(child: text),
+                ],
+              )
+            : text,
       ),
     );
     return expand ? SizedBox(width: double.infinity, child: button) : button;
@@ -102,7 +130,11 @@ class SecondaryButton extends StatelessWidget {
 
 /// 면 없이 글자만 있는 버튼이다. 밑줄로 누를 수 있음을 알린다.
 class AppTextButton extends StatelessWidget {
-  const AppTextButton({required this.label, required this.onPressed, super.key});
+  const AppTextButton({
+    required this.label,
+    required this.onPressed,
+    super.key,
+  });
 
   final String label;
   final VoidCallback? onPressed;

@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
 import 'mock_repository.dart';
@@ -22,9 +23,18 @@ final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
 );
 
-final accountProvider = FutureProvider<Account>(
-  (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
-);
+/// 로그인한 계정과 가장 최근 동의 이력(1-3). 로그인하지 않았으면 목 계정이다.
+///
+/// 계정이 바뀌면 다시 읽는다.
+final accountProvider = FutureProvider<Account>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  if (accountId == null) {
+    return ref.watch(mockRepositoryProvider).loadAccount();
+  }
+  return ref.watch(accountApiProvider).me();
+});
 
 /// 환자 정보 입력에서 받은 기본 정보다.
 class EnteredBasicInfo {
@@ -767,7 +777,7 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
@@ -780,6 +790,7 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
   });
@@ -793,6 +804,7 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
@@ -1036,6 +1048,7 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
     );

@@ -1,0 +1,93 @@
+{
+  "analysisId": "a-synth-3",
+  "visitDate": "2026-10-17",
+  "evaluation": {
+    "conversationSatisfaction": 3,
+    "careRecipientReaction": "calm",
+    "freeNote": "직원분 말씀 중에 기억력 얘기가 나와서 마음이 쓰였다. 꽃 얘기는 즐겁게 하셨다."
+  },
+  "cards": [
+    {
+      "cardId": "rc-7",
+      "cardTitle": "겨울에 피는 군자란",
+      "topic": {
+        "topicId": "t-clivia",
+        "title": "군자란 키우기"
+      },
+      "reaction": "positive"
+    },
+    {
+      "cardId": "rc-8",
+      "cardTitle": "공장 다니던 시절",
+      "topic": {
+        "topicId": "t-factory",
+        "title": "공장 다니던 시절"
+      },
+      "reaction": "notUsed"
+    },
+    {
+      "cardId": "rc-9",
+      "cardTitle": "노래자랑",
+      "topic": {
+        "topicId": "t-singing",
+        "title": "동네 노래자랑"
+      },
+      "reaction": null
+    }
+  ],
+  "profileFacts": {
+    "occupation": null,
+    "hometown": "충북 제천",
+    "hobby": "화초 가꾸기",
+    "family": null
+  },
+  "lifeFacts": [
+    {
+      "factId": "f-clivia",
+      "title": "베란다 군자란",
+      "content": "아파트 베란다에서 군자란을 오래 키웠다."
+    }
+  ],
+  "transcript": {
+    "durationMs": 50000,
+    "segments": [
+      {
+        "startMs": 0,
+        "endMs": 4000,
+        "speakerLabel": "SPEAKER_02",
+        "text": "어르신 오후 약은 드셨어요. 요즘 기억력이 많이 떨어지셔서 저희가 챙겨 드리고 있어요."
+      },
+      {
+        "startMs": 5000,
+        "endMs": 9000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "감사합니다. 엄마, 오늘은 꽃 얘기 해요. 베란다에 군자란 키우셨잖아요."
+      },
+      {
+        "startMs": 10000,
+        "endMs": 14000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "군자란은 겨울에 꽃대가 올라와. 물을 너무 주면 뿌리가 썩어."
+      },
+      {
+        "startMs": 15000,
+        "endMs": 19000,
+        "speakerLabel": null,
+        "text": "나 처녀 때 서울 방직공장 다녔어."
+      },
+      {
+        "startMs": 20000,
+        "endMs": 24000,
+        "speakerLabel": "SPEAKER_01",
+        "text": "군자란 분갈이는 봄에 하는 거야. 주황색 꽃이 참 예뻐."
+      },
+      {
+        "startMs": 25000,
+        "endMs": 29000,
+        "speakerLabel": "SPEAKER_00",
+        "text": "다음에 꽃 핀 사진 가져올게요."
+      }
+    ]
+  },
+  "participantCount": 3
+}

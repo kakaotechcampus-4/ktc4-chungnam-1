@@ -7,11 +7,12 @@
 조회와 저장소를 바꿔 끼운다.
 """
 
+import re
 from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
@@ -44,6 +45,41 @@ from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionServic
 bearer_scheme = HTTPBearer(auto_error=False)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+APP_VERSION_CODE_HEADER = "X-App-Version-Code"
+_VERSION_CODE_PATTERN = re.compile(r"[0-9]{1,10}")
+
+
+def require_supported_app_version(
+    settings: SettingsDep,
+    version_code: Annotated[
+        str | None,
+        Header(
+            alias=APP_VERSION_CODE_HEADER,
+            description=(
+                "앱의 안드로이드 versionCode. 최소 지원 버전보다 낮으면 426 "
+                "APP_UPDATE_REQUIRED 로 거절한다. 없으면 검사하지 않는다."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """최소 지원 버전보다 낮은 앱의 요청을 426 으로 거절한다.
+
+    헤더가 없거나 숫자가 아니면 통과시킨다. 헤더를 보내기 전에 낸 앱 빌드와 서버
+    점검 도구의 요청을 막지 않기 위해서다. 인증보다 먼저 확인하므로 구버전 앱은
+    로그인 전 요청에서도 업데이트가 필요하다는 응답을 받는다.
+    """
+    minimum = settings.min_android_version_code
+    if minimum == 0 or version_code is None:
+        return
+    if not _VERSION_CODE_PATTERN.fullmatch(version_code):
+        return
+    if int(version_code) < minimum:
+        raise AppError(
+            status_code=426,
+            error_code="APP_UPDATE_REQUIRED",
+            message="새 버전으로 업데이트해야 합니다.",
+        )
 
 
 async def get_db_connection(settings: SettingsDep) -> AsyncIterator[DbConnection]:

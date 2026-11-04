@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
@@ -258,6 +259,11 @@ Widget _app({
       // 로그인하면 어르신 목록을 서버에서 불러온다. 실제 주소로 나가지 않게 한다.
       FakeProfileServer().override,
       FakeReportServer().override,
+      // 프로필 설정의 계정 약관 동의는 로그인하면 서버(1-3)에서 읽는다. 이
+      // 테스트는 로그인과 탈퇴만 보므로 목 계정을 쓴다.
+      accountProvider.overrideWith(
+        (ref) => const MockRepository().loadAccount(),
+      ),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),

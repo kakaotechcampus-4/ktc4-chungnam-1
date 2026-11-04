@@ -164,6 +164,17 @@ class ReportApi {
   }
 
   /// 6-3 음성 분석 작업의 상태. 모르는 값이면 `null` 이다.
+  /// 기존 전사를 쓸 수 있으면 리포트만 다시 만든다. 전사가 없으면 서버가
+  /// RECORDING_REQUIRED로 알려 기기에 보관한 녹음을 다시 제출하게 한다.
+  Future<String> retryAnalysis(String analysisId) async {
+    final body = await _client.post('$_base/speech-analyses/$analysisId/retry');
+    final id = body['analysisId'];
+    if (id is! String || id.isEmpty) {
+      throw const ApiUnexpectedResponseFailure('missing retry analysisId');
+    }
+    return id;
+  }
+
   Future<AnalysisStatus?> analysis(String analysisId) async {
     final body = await _client.get('$_base/speech-analyses/$analysisId');
     return _read(() => AnalysisStatus.parse(body['status'] as String));
@@ -241,15 +252,7 @@ class ReportApi {
   }
 
   /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
-  static T _read<T>(T Function() parse) {
-    try {
-      return parse();
-    } on TypeError catch (error) {
-      throw ApiUnexpectedResponseFailure('리포트 응답 모양이 다르다: $error');
-    } on FormatException catch (error) {
-      throw ApiUnexpectedResponseFailure(error.message);
-    }
-  }
+  T _read<T>(T Function() parse) => _client.read('리포트', parse);
 }
 
 /// 리포트와 변경 제안 처리 실패를 보호자에게 보여줄 문구로 옮긴다.

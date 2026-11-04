@@ -116,7 +116,10 @@ class FakeAiServer:
             language="ko",
             durationMs=100,
             text="합성 전사 결과",
-            segments=[],
+            segments=[{
+                "startMs": 0, "endMs": 100, "speakerLabel": "SPEAKER_00",
+                "text": "합성 전사 결과", "words": [],
+            }],
         )
 
 
@@ -196,6 +199,32 @@ def test_accepts_wav_and_returns_durable_job_identifier() -> None:
     assert job.participant_count == 2
     assert job.size_bytes == len(synthetic_wav())
     assert storage.objects[job.object_key] == synthetic_wav()
+
+
+def test_data_deadline_leaves_room_under_the_stt_24_hour_limit() -> None:
+    # STT는 처리 기한이 자기 시각 + 24시간을 넘으면 거절한다. 설정이 86400초여도 5분을 남긴다.
+    from app.services.speech_analysis_pipeline import STT_MAX_DATA_SECONDS
+
+    application, jobs, _, _ = harness()
+    before = datetime.now(UTC)
+    response = submit(application)
+    after = datetime.now(UTC)
+
+    assert response.status_code == 202
+    job = asyncio.run(
+        jobs.get_for_account(
+            analysis_id=response.json()["analysisId"], account_id=ACCOUNT.account_id
+        )
+    )
+    assert STT_MAX_DATA_SECONDS == 86100
+    assert before + timedelta(seconds=86100) <= job.data_expires_at
+    assert job.data_expires_at <= after + timedelta(seconds=86100)
+
+
+def test_default_retention_is_under_the_stt_limit() -> None:
+    from app.core.config import Settings
+
+    assert Settings(_env_file=None).speech_audio_retention_seconds <= 24 * 60 * 60 - 5 * 60
 
 
 def test_repeated_submission_reuses_the_active_job_without_second_upload() -> None:
@@ -592,7 +621,10 @@ def test_worker_keeps_audio_during_failover_and_finishes_one_job(backup_works) -
         return httpx.Response(200, json={
             "schemaVersion": 1, "analysisId": accepted["analysisId"],
             "language": "ko", "durationMs": 100,
-            "text": "합성 전사 결과", "segments": [],
+            "text": "합성 전사 결과", "segments": [{
+                "startMs": 0, "endMs": 100, "speakerLabel": "SPEAKER_00",
+                "text": "합성 전사 결과", "words": [],
+            }],
         })
 
     ai = AiServerClient(

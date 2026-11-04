@@ -44,6 +44,28 @@ void main() {
       participantCount: 3,
     );
 
+  test('참여자 수 없이 복원한 녹음은 확인을 기다린 뒤 같은 파일로 보낸다', () async {
+    final api = FakeVisitApi();
+    final uploads = FakePendingUploads()
+      ..saved[_sessionId] = const PendingUpload(
+        sessionId: _sessionId,
+        audioPath: '/synthetic/preserved.wav',
+        participantCount: null,
+      );
+    final container = makeContainer(api, uploads);
+    final provider = uploadRetryProvider(_sessionId);
+    expect(
+      await container.read(provider.future),
+      UploadRetryOutcome.participantCountRequired,
+    );
+    expect(api.calls, isEmpty);
+    await container.read(provider.notifier).confirmParticipantCount(3);
+    expect(await container.read(provider.future), UploadRetryOutcome.sent);
+    expect(api.audio?.audioPath, '/synthetic/preserved.wav');
+    expect(api.audio?.participantCount, 3);
+    expect(uploads.removedPaths, isEmpty);
+  });
+
   test('기록한 녹음과 참여자 수를 보내고 보냈다고 적는다', () async {
     final api = FakeVisitApi();
     final uploads = withPending();

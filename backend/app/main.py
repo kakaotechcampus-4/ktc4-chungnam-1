@@ -11,10 +11,15 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    # 운영에서는 자동 API 문서와 스키마 주소를 닫는다. 명세는 docs/architecture/api-spec.md가 기준이다.
+    docs_open = settings.environment != "production"
     application = FastAPI(
         title=settings.service_name,
         version=settings.service_version,
         description="Flutter 연동과 Python 처리 파이프라인 검증을 위한 로컬 기준 환경",
+        docs_url="/docs" if docs_open else None,
+        redoc_url="/redoc" if docs_open else None,
+        openapi_url="/openapi.json" if docs_open else None,
     )
     register_exception_handlers(application)
     install_request_logging(application)

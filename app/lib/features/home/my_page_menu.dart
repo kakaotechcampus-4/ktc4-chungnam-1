@@ -23,6 +23,9 @@ Future<void> showMyPageMenu(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.background,
+    // 지정하지 않으면 앱 언어(영어)의 `Scrim` 이 읽힌다(접근성 보고서 8쪽).
+    // 손잡이의 `Dismiss` 와 누르기 안내는 앱 언어를 따르므로 아직 영어다.
+    barrierLabel: '메뉴 닫기',
     showDragHandle: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),

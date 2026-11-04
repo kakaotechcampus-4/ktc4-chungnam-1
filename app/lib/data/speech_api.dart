@@ -1,8 +1,8 @@
 /// 짧은 음성 전사 API(이슈 #138 의 BE 답변).
 ///
 /// 세부 정보 입력에서 녹음 하나를 보내면 글자를 바로 돌려받는다. 면회 녹음의
-/// 음성 분석(6-2)과 달리 프로필이나 회차에 묶지 않는다. 아직
-/// `docs/architecture/api-spec.md` 에 들어가지 않아 이슈의 합의를 따른다.
+/// 음성 분석(6-2)과 달리 프로필이나 회차에 묶지 않는다.
+/// `docs/architecture/api-spec.md`의 6-6과 `backend/docs/short-speech-transcription.md`를 따른다.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,7 +40,7 @@ class ServerSpeechApi implements SpeechApi {
     );
     final text = body['text'];
     if (text is! String) {
-      throw const ApiUnexpectedResponseFailure('text 가 없다');
+      throw _client.unexpected('text 가 없다');
     }
     return text;
   }

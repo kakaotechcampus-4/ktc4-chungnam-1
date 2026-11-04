@@ -20,9 +20,11 @@ enum SubmissionFailure {
   /// 서버에 회차가 없다. 녹음을 시작하지 못한 채 소감까지 온 경우다.
   noSession,
 
-  /// 보낼 녹음 파일이나 참여자 수가 없다. 파일을 저장하지 못했거나, 끝내기
-  /// 확인 창을 거치지 않고 녹음 화면을 떠난 경우다.
+  /// 보낼 녹음 파일이 없다.
   noRecording,
+
+  /// 파일은 있지만 참여자 수를 아직 확인하지 않았다.
+  participantCountRequired,
 }
 
 class SubmissionState {
@@ -67,11 +69,13 @@ class SubmissionState {
 class SubmissionController extends Notifier<SubmissionState> {
   /// 지금 상태가 가리키는 회차. 다른 회차를 보내면 처음부터 시작한다.
   String? _sessionId;
+  int? _confirmedParticipantCount;
 
   @override
   SubmissionState build() {
     ref.watch(visitControllerProvider.select((v) => v.value?.sessionId));
     _sessionId = null;
+    _confirmedParticipantCount = null;
     return const SubmissionState();
   }
 
@@ -80,7 +84,10 @@ class SubmissionController extends Notifier<SubmissionState> {
   ///
   /// [resumeSessionId] 는 앱을 다시 켠 뒤 이어서 하는 회차다. 없으면 지금 막
   /// 마친 면회다([reviewTargetProvider]).
-  Future<bool> submit({String? resumeSessionId}) async {
+  Future<bool> submit({
+    String? resumeSessionId,
+    int? confirmedParticipantCount,
+  }) async {
     if (state.sending) return false;
 
     final ReviewTarget? target;
@@ -101,19 +108,47 @@ class SubmissionController extends Notifier<SubmissionState> {
     }
     if (_sessionId != sessionId) {
       _sessionId = sessionId;
+      _confirmedParticipantCount = null;
       state = const SubmissionState();
     }
 
     state = state.copyWith(sending: true);
     try {
+      final audioPath = target.audioPath;
+      final participantCount =
+          target.participantCount ??
+          confirmedParticipantCount ??
+          _confirmedParticipantCount;
+      if (audioPath != null &&
+          (participantCount == null ||
+              participantCount < 1 ||
+              participantCount > 8)) {
+        _fail(SubmissionFailure.participantCountRequired);
+        return false;
+      }
+      if (audioPath != null && target.participantCount == null) {
+        // 보내기 실패나 앱 재실행 때 같은 질문을 반복하지 않도록 먼저 기억한다.
+        _confirmedParticipantCount = participantCount;
+        try {
+          await ref
+              .read(pendingUploadsProvider)
+              .save(
+                PendingUpload(
+                  sessionId: sessionId,
+                  audioPath: audioPath,
+                  participantCount: participantCount,
+                ),
+              );
+        } on Exception {
+          // 기록을 갱신하지 못해도 파일이 없다는 뜻은 아니다. 이번 전송은 계속한다.
+        }
+      }
       if (!state.evaluationSaved) {
         await _saveEvaluation(sessionId, target.cards);
         if (!ref.mounted) return false;
         state = state.copyWith(evaluationSaved: true);
       }
 
-      final audioPath = target.audioPath;
-      final participantCount = target.participantCount;
       if (audioPath == null || participantCount == null) {
         _fail(SubmissionFailure.noRecording);
         return false;

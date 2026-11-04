@@ -19,7 +19,11 @@ class FakePendingUploads implements PendingUploads {
   }
 
   @override
-  Future<PendingUpload?> find(String sessionId) async => saved[sessionId];
+  Future<PendingUpload?> find(
+    String sessionId, {
+    bool includeUploaded = false,
+  }) async =>
+      saved[sessionId] ?? (includeUploaded ? uploaded[sessionId] : null);
 
   @override
   Future<void> markUploaded(PendingUpload upload) async {
