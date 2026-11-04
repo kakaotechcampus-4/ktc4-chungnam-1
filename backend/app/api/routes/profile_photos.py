@@ -1,4 +1,4 @@
-"""프로필 사진 (API 3-1, 3-2).
+"""프로필 사진 (API 3-1, 3-2, 3-4).
 
 온보딩의 사진 첨부와 마이페이지의 갤러리 추가에서 사진을 한 장씩 올린다. 서버는 사진을
 S3에 저장하고 분석 대기(`pending`) 행을 만든다. 앱은 3-2로 분석이 끝날 때까지 폴링한다.
@@ -32,7 +32,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필, 프로필 사진 또는 계정 없음",
-        409: "프로필당 사진 수 초과 또는 카드 생성 중 수정 거절",
+        409: "프로필당 사진 수 초과, 또는 카드를 만드는 중이라 설명 수정이나 삭제를 거절",
         413: "사진 크기 초과",
         422: "요청 형식 오류 또는 JPEG, PNG가 아닌 사진",
         503: "DB 또는 사진 저장소 설정 미완료, 사진 저장소 사용 불가",
@@ -100,3 +100,28 @@ async def edit_profile_photo_description(
         start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
     return PhotoDescriptionResponse(**row)
+
+
+@router.delete(
+    "/profile-photos/{photo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=_errors(401, 404, 409, 422, 503),
+)
+async def delete_profile_photo(
+    photo_id: UUID,
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    settings: SettingsDep,
+) -> None:
+    """프로필 사진 한 장 삭제. S3 원본은 삭제 대기열로 지운다.
+
+    API 명세 3-4
+    """
+    await profile_photos.delete_profile_photo(
+        connection,
+        photo_id,
+        account_id=account.account_id,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
+    logger.info("profile_photo_deleted")
+

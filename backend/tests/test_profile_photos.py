@@ -382,3 +382,72 @@ def test_storage_failures_are_reported_without_saving(migrated_database_url):
     assert _photo_rows(api, profile_id) == []
     assert readable.status_code == 200
     assert readable.json()["photos"] == []
+
+
+def test_deleting_a_profile_photo_removes_it_and_queues_the_file(migrated_database_url):
+    storage = MemoryImageStorage()
+    api = _api(migrated_database_url, storage)
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    object_key = f"photos/{photo_id}.jpg"
+
+    response = caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 204
+    assert caregiver.call("GET", f"/api/v1/profile-photos/{photo_id}").status_code == 404
+    assert _photo_rows(api, profile_id) == []
+    # S3 원본은 트리거가 넣은 삭제 대기열로 지운다. 요청 처리 중에는 저장소를 부르지 않는다.
+    assert api.query(
+        "SELECT s3_object_key FROM storage_deletion_request_queue WHERE s3_object_key = %s",
+        (object_key,),
+    ) == [{"s3_object_key": object_key}]
+
+
+def test_another_account_cannot_delete_the_photo(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    owner = api.create_account()
+    other = api.create_account()
+    profile_id = owner.create_profile()["profileId"]
+    photo_id = _upload(owner, profile_id).json()["photoId"]
+
+    response = other.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 404
+    assert response.json()["errorCode"] == "PROFILE_PHOTO_NOT_FOUND"
+    assert len(_photo_rows(api, profile_id)) == 1
+
+
+def test_deleting_a_photo_makes_the_unused_card_set_need_refresh(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    api.query(
+        "INSERT INTO card_sets (profile_id, status, model, prompt_version, generation_log) "
+        "VALUES (%s, 'completed', 'synthetic-model', '1', '{\"input\": {}}')",
+        (profile_id,),
+    )
+
+    assert caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}").status_code == 204
+
+    status = caregiver.call("GET", f"/api/v1/profiles/{profile_id}/card-generations/status")
+    assert status.json()["needsRefresh"] is True
+
+
+def test_photo_is_kept_while_cards_are_being_generated(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    api.query(
+        "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
+        "VALUES (%s, 'running', 'synthetic-model', '1')",
+        (profile_id,),
+    )
+
+    response = caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 409
+    assert response.json()["errorCode"] == "CARD_GENERATION_IN_PROGRESS"
+    assert len(_photo_rows(api, profile_id)) == 1

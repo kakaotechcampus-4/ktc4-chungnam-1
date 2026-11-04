@@ -70,6 +70,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 3-3 | 앨범에서 사진 설명 수정 | | | 수정 API 미정, 필수 승인 없음 |
+| 3-4 | 앨범에서 사진 삭제 | `DELETE` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 4-1 | 홈 | `POST` | `/api/v1/profiles/{profileId}/card-generations` | 신규 |
 | 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 |
 | 4-3 | 대화 카드 선택 | `GET` | `/api/v1/profiles/{profileId}/card-generations/current` | 신규 |
@@ -499,6 +500,23 @@ AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`
 <br>
 
 ---
+
+### 3-4. `DELETE /api/v1/profile-photos/{photoId}` — 신규
+
+앨범에서 프로필 사진 한 장을 지운다. 면회 사진(5-2)은 대상이 아니다.
+
+본문 없음.
+
+응답 `204`
+
+- 사진 행을 지우고 S3 원본은 삭제 대기열로 지운다(`photos_queue_storage_deletion` 트리거).
+- 사진은 카드 생성 자료가 될 수 있으므로 이야기 삭제(2-9)처럼 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 된다. 이미 만든 카드와 면회 기록은 남는다.
+- 카드를 만드는 중이면 409로 거절한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_PHOTO_NOT_FOUND`(다른 계정의 사진, 면회 사진 포함) |
+| 409 | `CARD_GENERATION_IN_PROGRESS` |
 
 ## 4. 대화 카드
 
