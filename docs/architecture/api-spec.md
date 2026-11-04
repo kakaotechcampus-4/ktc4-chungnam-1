@@ -1153,7 +1153,9 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 }
 ```
 
-worker 처리 순서: 8-1 → S3 원본 삭제 → 전사문 임시 저장(`sttCompleted`) → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
+worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본 삭제 요청 기록과 S3 삭제 시도 → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
+
+S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
 
 - 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간(`transcript_expires_at`)이 지나면 지운다. 기한까지 리포트를 저장하지 못하면 작업은 `failed`이고 `errorCode`는 `TRANSCRIPT_EXPIRED`다.
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.

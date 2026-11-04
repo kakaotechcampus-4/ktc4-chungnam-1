@@ -154,12 +154,7 @@ class SpeechAnalysisSubmissionService:
         return job
 
     async def _fail_upload(self, job: SpeechAnalysisJob) -> None:
-        try:
-            await self._audio_storage.delete(object_key=job.object_key)
-        except Exception:
-            # 오류 응답이나 로그에 객체 키를 넣지 않는다. 24시간 Lifecycle이
-            # 최종 삭제 상한을 보장해야 한다.
-            pass
+        await _delete_audio_or_queue(self._jobs, self._audio_storage, job)
         # 202로 접수하기 전 실패이므로 작업을 남겨 완료된 제출처럼 보이게 하지
         # 않는다. 같은 로컬 원본으로 안전하게 다시 제출할 수 있어야 한다.
         await self._jobs.discard_upload(analysis_id=job.analysis_id)
@@ -201,17 +196,12 @@ class SpeechAnalysisQueue:
         self, connection: DbConnection, job: SpeechAnalysisJob, *, error_code: str
     ) -> None:
         jobs = self._jobs_for(connection)
-        try:
-            await _delete_audio(jobs, self._audio_storage, job)
-        except AppError:
-            # Lifecycle이 24시간 상한을 보장한다. 원래 처리 오류를 삭제 오류로
-            # 덮어쓰지 않되 삭제 실패는 worker 운영 지표에서 별도로 확인한다.
-            pass
+        await _delete_audio_or_queue(jobs, self._audio_storage, job)
         await jobs.mark_failed(analysis_id=job.analysis_id, error_code=error_code)
 
 
 class SpeechAnalysisProcessor:
-    """작업 하나를 STT하고 원본을 지운 뒤, 리포트 생성기가 있으면 리포트까지 만든다."""
+    """전사를 저장하고 원본 삭제를 시도한다. 삭제 재처리는 리포트와 분리한다."""
 
     def __init__(
         self,
@@ -229,13 +219,16 @@ class SpeechAnalysisProcessor:
     async def __call__(self, connection: DbConnection, job: SpeechAnalysisJob) -> None:
         jobs = self._jobs_for(connection)
         speech = await self._transcribe(job)
-        await _delete_audio(jobs, self._audio_storage, job)
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
         # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
-        if not await jobs.mark_stt_completed(
+        stored = await jobs.mark_stt_completed(
             analysis_id=job.analysis_id,
             transcript=_transcript_for_report(speech),
-        ):
+        )
+        # 삭제 요청을 DB에 먼저 남긴다. S3 삭제만 실패했다면 전사는 보존하고
+        # 리포트 생성을 계속한다. 이미 끝난 작업의 원본도 정리 대상이다.
+        await _delete_audio_or_queue(jobs, self._audio_storage, job)
+        if not stored:
             _log_stopped(job, stage=SpeechAnalysisStatus.STT_COMPLETED)
             return
         if self._report_generator is None:
@@ -298,20 +291,19 @@ def create_speech_worker(
     )
 
 
-async def _delete_audio(
+async def _delete_audio_or_queue(
     jobs: SpeechAnalysisJobRepository,
     audio_storage: AudioStorage,
     job: SpeechAnalysisJob,
 ) -> None:
+    # DB 기록 실패는 삼키지 않는다. 삭제 대기열에 남겼다고 확인하지 못한 상태를
+    # 정상적인 삭제 재처리 접수로 취급할 수 없다.
+    await jobs.queue_audio_deletion(analysis_id=job.analysis_id)
     try:
         await audio_storage.delete(object_key=job.object_key)
-    except Exception as error:
-        raise AppError(
-            status_code=503,
-            error_code="AUDIO_DELETE_FAILED",
-            message="임시 음성 파일을 삭제하지 못했습니다.",
-            retryable=True,
-        ) from error
+    except Exception:
+        logger.warning("audio_deletion_pending analysis_id=%s", job.analysis_id)
+        return
     await jobs.mark_audio_deleted(analysis_id=job.analysis_id)
 
 
