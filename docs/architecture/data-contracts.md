@@ -45,7 +45,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 
 - 피보호자의 이름, 성별, 생년월일 같은 직접 식별정보와 로컬 파일 경로는 AI 서버 요청에 포함하지 않는다.
 - 원본 음성은 BE가 처리 동의를 확인한 경우에만 서버에 임시 저장한다. STT 직후 삭제하며 최대 24시간을 넘기지 않는다. 동의 확인 이력과 삭제 상태는 BE가 관리한다.
-- 전사문은 리포트를 저장할 때까지만 임시 보관하며, 늦어도 STT 완료 후 24시간이 지나면 지운다.
+- 전사문은 최초 STT 저장부터 24시간을 만료 기한으로 두고 리포트 저장이 먼저 완료되면 지운다. 실패 전사를 남은 기한까지 유지하는 변경은 2026-11-03 PM이 승인했다. 만료 재사용은 차단하지만 실제 DB 정리는 worker 실행에 의존하므로 정리 주기와 지연 감시가 필요하다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
 - 사진은 BE가 S3에 서버 측 암호화로 저장하며 객체 키에는 개인정보를 넣지 않는다. 프로필 사진은 모두 이미지 분석을 요청하고 면회 사진은 요청하지 않는다.
 - BE는 AI 서버에 원본을 수명이 짧은 S3 Presigned GET URL로만 전달한다.
 
@@ -96,7 +96,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 | [VisitReport](#리포트-초안-visitreport) | AI, BE | FE |
 | [ChangeProposal](#변경-제안-changeproposal) | AI | FE, BE |
 
-- `LifeFactCollectionState`는 단말에만 둔다. 나머지 객체는 BE가 저장하며, `SpeechAnalysisResult`의 전사문은 리포트를 저장할 때까지만 임시 보관한다. 접근 권한, 보관 기간과 삭제 범위는 아직 확정하지 않았다.
+- `LifeFactCollectionState`는 단말에만 둔다. 나머지 객체는 BE가 저장하며, `SpeechAnalysisResult`의 전사문은 위 임시 보관 기준을 적용한다. 실패 후 보관 변경의 동의 화면 반영과 실제 사용자 자료 처리 조건은 PM 확인이 남아 있다.
 - 앱과 BE 사이의 요청과 응답은 [API 명세](api-spec.md)를 따른다. BE와 AI 서버 사이의 요청은 API 명세의 내부 API를 따른다.
 - `Account`는 백엔드가 구글 ID 토큰을 검증하고 필수 동의가 완료될 때 서버에서 만든다. FE는 로그인과 동의 화면을 제공하고 결과를 읽는다.
 - 카드의 `selected`와 변경 제안의 `reviewStatus`처럼 사용자가 확인해서 바꾸는 값은 AI가 만든 객체라도 FE의 요청([API 5-1, 5-3](api-spec.md#5-면회), [7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규))으로 BE가 바꾼다.
@@ -205,7 +205,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 일대기에서 내용을 고칠 수 있다([API 2-7](api-spec.md#2-7-patch-apiv1life-factsfactid--신규)).
 - `storyCategory`는 일대기의 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`), `imageNumber`는 분류별 기본 그림 번호(1~5)다. 그림 파일은 앱에 있다. 필드 이름은 임시다([API 미정 사항](api-spec.md#미정-사항) 11).
-- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 이미 만든 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
+- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 되고, 지난 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
 
 <br>
 
@@ -275,7 +275,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 기존 API 제안은 프로필 사진을 모두 분석하는 구조다. PR #92의 PM 수정안에서는 보관과 분석 동의를 구분하며, 분석하지 않는 사진의 상태와 동의 전달 및 철회 방식은 후속 계약으로 남아 있다([결정 대기 항목](#결정-대기-항목)).
 - `analysisStatus` 값은 `pending`, `processing`, `completed`, `failed`이다.
   - 분석에 실패해도 프로필 입력을 계속 진행할 수 있어야 한다.
-  - `description`은 `completed`일 때만 채우고 그 밖에는 `null`이다. 다루는 기준은 [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate)를 따른다.
+  - `description`은 보호자가 고친 설명이 있으면 그것을 우선하며, 없으면 완료된 AI 설명이다. 둘 다 없으면 `null`이다. 선택 필드 `descriptionSource`는 `caregiver`, `ai`, `null`이다. AI 분석 상태와 보호자 설명의 저장을 구분한다. 다루는 기준은 [ImageAnalysisCandidate](#이미지-분석-후보-imageanalysiscandidate)를 따른다.
   - `failed`이면 `error`에 `{ "errorCode": "..." }`를 담고, 그 밖에는 `null`이다.
 
 **없어도 되는 값** — `description`, `error`
@@ -379,6 +379,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 ```
 
 - `model`, `promptVersion`은 BE 설정값이며 작업을 만들 때 저장한 값을 그대로 넘긴다. `promptVersion`은 정수다.
+- 11/3 로컬 전환본의 새 작업 기본 모델은 `gpt-6-luna`다. 위 예시의 이전 모델도 명시적으로 선택할 수 있으며 이미 저장된 작업의 모델은 바꾸지 않는다. 모델 전환으로 요청 필드와 응답 형식은 바꾸지 않는다.
 - `ageRange`는 BE가 생년월일로 계산한 값이다. 피보호자의 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - `profileFacts`는 [Profile](#프로필-profile)의 세부 정보 네 항목이다.
 - `lifeFacts.source`는 면회 제안을 승인해 생긴 이야기면 `visit`, 직접 넣은 이야기면 `caregiver`다.
@@ -401,6 +402,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
   "usedBySessionId": null,
+  "needsRefresh": false,
   "cards": [
     {
       "cardId": "00000000-0000-4000-8000-000000000501",
@@ -431,6 +433,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 4-3으로는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다. 평가가 끝난 회차의 묶음은 4-4로 읽기만 하며 면회에 다시 쓰지 않는다.
 - `setId`는 녹음을 시작할 때 [API 5-1](api-spec.md#5-1-post-apiv1visit-sessions--신규)에 보낸다.
 - `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
+- `needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고쳐서 다시 만들어야 하는 묶음이면 `true`다. 볼 수는 있지만 이 묶음으로 면회를 시작할 수 없다. 4-2 응답에도 같은 값이 있다([API 4절](api-spec.md#4-대화-카드)).
 - `cards`는 12장이다. `cardId`는 BE가 부여한다. `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
 - `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `topic.description`과 `description`은 보호자에게 주제와 카드를 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.
@@ -543,10 +546,10 @@ BE는 `audioPending`인 회차만 받으며, 원본을 S3에 임시 저장하고
 
 - 공개 상태는 `queued`, `transcribing`, `sttCompleted`, `generatingReport`,
   `completed`, `failed`다.
-- `sttCompleted`는 AI 응답 검증과 원본 삭제까지 끝났지만 리포트는 아직 준비되지 않은 상태다.
+- `sttCompleted`는 AI 응답 검증과 전사문 임시 저장이 끝났지만 리포트는 아직 준비되지 않은 상태다. 원본 삭제는 즉시 시도하며 실패 시 삭제 대기열에 남긴다. 이 상태가 원본 삭제 완료를 뜻하지는 않는다.
 - `completed`는 STT뿐 아니라 리포트와 변경 제안 저장까지 끝난 상태다.
 - 실패 시 `errorCode`만 제공하며 AI 오류 본문, 전사문, S3 URL과 객체 키를 제공하지 않는다.
-- 업로드 단계에서 실패한 작업만 있으면 새 작업을 만들고, 접수된 작업이 처리 중이면 그 작업을 반환한다. 접수 후 실패했거나 완료된 회차는 다시 받지 않는다.
+- 유효한 전사가 남은 실패 작업은 6-5로 리포트만 다시 요청하고, 전사가 없거나 만료됐으면 6-2로 기기 녹음을 다시 제출한다. 처리 중인 작업은 반환하고 완료한 회차는 다시 받지 않는다. [API 명세](api-spec.md)의 6-2와 6-5를 따른다.
 - 자세한 상태 전이, 삭제와 재시도 경계는 [ADR-008](decisions/ADR-008-stt-pipeline.md)을 따른다.
 
 <br>
@@ -557,7 +560,7 @@ BE는 `audioPending`인 회차만 받으며, 원본을 S3에 임시 저장하고
 
 > **상태: v1 구현.** BE가 동의를 확인한 요청만 AI 서버에 전달하며 동의 이력은 BE가 관리한다.
 
-- 전사문은 화면에 표시하지 않으며 리포트 생성 요청([API 8-3](api-spec.md#8-3-post-internalv1visit-reports--신규))의 입력으로만 사용한다. 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업에 임시 저장하고, 리포트를 저장하면 지운다. 늦어도 STT 완료 후 24시간이 지나면 지운다.
+- 전사문은 화면에 표시하지 않으며 리포트 생성 요청([API 8-3](api-spec.md#8-3-post-internalv1visit-reports--신규))의 입력으로만 사용한다. 리포트 재시도는 최초 STT 저장부터 24시간의 남은 기한 안에서만 허용하고, 리포트 저장 완료 시 삭제한다. 실패 전사 보관 기준과 만료 삭제의 worker 의존성은 위 공통 규칙 및 [보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)를 따른다.
 - 입력 음성은 WAV/PCM 16-bit/16kHz/mono 규격으로 고정한다.
 - 운영에서는 S3 Presigned GET URL을 사용하고, `localFile`은 개발과 테스트 환경에서만 허용한다.
 - `SPEAKER_00` 같은 값은 파일 안의 화자 군집 라벨이며 보호자 또는 피보호자 역할을 뜻하지 않는다.
@@ -703,7 +706,7 @@ AI 성공 응답은 다음과 같다.
 | 답하지 않고 넘어갔다(미응답) | 그 카드를 **담지 않는다** | 응답이 없으므로 비선호를 추정하거나 추천을 낮추거나 제외하지 않는다 |
 
 - 미응답을 미사용으로 읽지 않는다. 미사용도 시간 부족이나 나중에 이야기하려는 선택일 수 있어 사용자의 의도를 대신 판단하지 않는다.
-- 추천 대상 제외는 사용자가 명시적으로 선택했을 때 적용한다. 이는 과거 카드와 면회 기록 삭제가 아니다. API 명세에서는 보호자가 주제 제안을 승인하며 `exclude`를 고를 때([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) 주제 단위로 적용하며, `wasUsed=false`로 대신 표현하지 않는다. 제안 없이 보호자가 직접 제외를 고르는 기능은 아직 정하지 않았다.
+- 추천 대상 제외는 사용자가 명시적으로 선택했을 때 적용한다. 이는 과거 카드와 면회 기록 삭제가 아니다. API 명세에서는 보호자가 주제 제안을 승인하며 `exclude`를 고를 때([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) 주제 단위로 적용하며, `wasUsed=false`로 대신 표현하지 않는다. 제안 없이 보호자가 직접 제외를 고르는 기능은 아직 정하지 않았다. 제외한 주제의 근거 이야기와 사진은 다음 카드 생성 입력에서 뺀다. 근거가 남으면 같은 이야기로 이름만 다른 새 주제가 만들어지기 때문이다. 세부 정보 네 칸(하시던 일, 고향, 취미, 가족)은 남긴다.
 - 리포트의 `cardSummaries`는 평가한 카드만 담는다. 리포트 화면은 미사용과 미응답을 이 평가([API 6-4](api-spec.md#6-4-get-apiv1visit-sessionssessionidevaluation--신규))로 분석 결과 대신 그 사실로 표시한다.
 
 **없어도 되는 값** — `freeNote`, `wasUsed`가 `false`일 때의 `caregiverReaction`

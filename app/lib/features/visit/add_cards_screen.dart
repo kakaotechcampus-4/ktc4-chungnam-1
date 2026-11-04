@@ -8,6 +8,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../cards/cards_screen.dart' show cardSelectLabel;
 import 'visit_controller.dart';
 
 /// E-5 대화 카드 추가.
@@ -175,6 +176,7 @@ class _AddCardTile extends StatelessWidget {
     return AppCard(
       selected: selected,
       onTap: onToggleExpanded,
+      expanded: expanded,
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,13 +195,10 @@ class _AddCardTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
-              GestureDetector(
+              SelectionToggle(
+                label: cardSelectLabel(card.cardTitle),
+                selected: selected,
                 onTap: onToggleSelected,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: SelectionMark(selected: selected),
-                ),
               ),
             ],
           ),

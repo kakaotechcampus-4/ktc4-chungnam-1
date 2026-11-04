@@ -21,7 +21,7 @@ from uuid import UUID
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
-from app.services import ownership
+from app.services import card_sets, ownership
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,8 @@ _COLUMNS = "fact_id, profile_id, title, content, created_at, story_category, ima
 IMAGE_COUNT = 5
 # 2-7이 고칠 수 있는 열. `SET` 절의 열 이름은 이 목록에서만 고른다.
 _UPDATABLE = ("title", "content", "story_category", "image_number")
+# 카드 생성(`card_sets.build_context`)에 쓰는 열. 분류와 그림 번호는 쓰지 않는다.
+_CARD_INPUT = ("title", "content")
 
 
 async def create_life_fact(
@@ -113,52 +115,88 @@ async def update_life_fact(
     *,
     account_id: str,
     changes: Mapping[str, Any],
+    start_timeout_seconds: int,
 ) -> LifeFact:
     """보낸 필드만 바꾼다(API 2-7). 바꿀 것이 없으면 그대로 돌려준다.
 
     `changes`의 키는 열 이름(`title`, `content`, `story_category`, `image_number`)이다.
-    `created_at`은 바꾸지 않으므로 고쳐도 일대기 목차 순서가 그대로다.
+    `created_at`은 바꾸지 않으므로 고쳐도 일대기 목차 순서가 그대로다. 제목이나 내용이
+    바뀌면 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다(`card_sets.mark_stale`).
     """
     await ownership.require_owned(
         connection, ownership.LIFE_FACT, fact_id, account_id=account_id
     )
     columns = [column for column in _UPDATABLE if column in changes]
-    if columns:
-        assignments = ", ".join(f"{column} = %s" for column in columns)
-        cursor = await connection.execute(
-            f"UPDATE life_facts SET {assignments} "
-            f"WHERE fact_id = %s RETURNING {_COLUMNS}",
-            (*(changes[column] for column in columns), fact_id),
-        )
-    else:
+    if not columns:
         cursor = await connection.execute(
             f"SELECT {_COLUMNS} FROM life_facts WHERE fact_id = %s", (fact_id,)
         )
-    row = await cursor.fetchone()
-    if row is None:
-        # 소유 확인 뒤 같은 계정의 다른 요청이 이야기나 프로필을 지운 경우다.
-        raise _not_found()
-    return _to_life_fact(row)
+        row = await cursor.fetchone()
+        if row is None:
+            # 소유 확인 뒤 같은 계정의 다른 요청이 이야기나 프로필을 지운 경우다.
+            raise _not_found()
+        return _to_life_fact(row)
+    assignments = ", ".join(f"{column} = %s" for column in columns)
+    async with connection.transaction():
+        before = await _lock(connection, fact_id)
+        if any(
+            column in changes and changes[column] != before[column] for column in _CARD_INPUT
+        ):
+            await card_sets.mark_stale(
+                connection, before["profile_id"], start_timeout_seconds=start_timeout_seconds
+            )
+        cursor = await connection.execute(
+            f"UPDATE life_facts SET {assignments} WHERE fact_id = %s RETURNING {_COLUMNS}",
+            (*(changes[column] for column in columns), fact_id),
+        )
+        return _to_life_fact(await cursor.fetchone())
 
 
 async def delete_life_fact(
-    connection: DbConnection, fact_id: UUID, *, account_id: str
+    connection: DbConnection,
+    fact_id: UUID,
+    *,
+    account_id: str,
+    start_timeout_seconds: int,
 ) -> None:
     """일대기에서 보호자가 생애 정보를 지운다(API 2-9).
 
     행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 기록으로
-    남는다. 카드와 주제를 함께 정리할지는 미정이다(작업 D 문서 미정 D3). 출처 제안
-    (`life_fact_proposals`)은 지우지 않는다.
+    남는다. 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다(`card_sets.mark_stale`).
+    출처 제안(`life_fact_proposals`)은 지우지 않는다.
     """
     await ownership.require_owned(
         connection, ownership.LIFE_FACT, fact_id, account_id=account_id
     )
+    async with connection.transaction():
+        before = await _lock(connection, fact_id)
+        await card_sets.mark_stale(
+            connection, before["profile_id"], start_timeout_seconds=start_timeout_seconds
+        )
+        await connection.execute("DELETE FROM life_facts WHERE fact_id = %s", (fact_id,))
+
+
+async def _lock(connection: DbConnection, fact_id: UUID) -> Mapping[str, Any]:
+    """이야기가 속한 프로필과 이야기 행을 차례로 잠그고 이야기를 읽는다. 트랜잭션 안에서 부른다.
+
+    2-8(프로필 삭제), 4-1, 5-1처럼 프로필을 먼저 잠근다. 이야기를 먼저 잠그면 2-8과 서로
+    기다리다 멈출 수 있다.
+    """
     cursor = await connection.execute(
-        "DELETE FROM life_facts WHERE fact_id = %s RETURNING fact_id", (fact_id,)
+        "SELECT profile_id FROM life_facts WHERE fact_id = %s", (fact_id,)
     )
-    if await cursor.fetchone() is None:
-        # 소유 확인 뒤 같은 계정의 다른 요청이 먼저 지운 경우다.
+    row = await cursor.fetchone()
+    if row is not None:
+        await card_sets.lock_profile(connection, row["profile_id"])
+        cursor = await connection.execute(
+            "SELECT profile_id, title, content FROM life_facts WHERE fact_id = %s FOR UPDATE",
+            (fact_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        # 소유 확인 뒤 같은 계정의 다른 요청이 이야기나 프로필을 지운 경우다.
         raise _not_found()
+    return row
 
 
 def _not_found() -> AppError:

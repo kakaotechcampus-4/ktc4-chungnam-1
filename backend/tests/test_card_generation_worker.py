@@ -3,8 +3,16 @@
 임시 DB에 최신 migration을 적용해 실행(`conftest.py`). 값은 모두 합성 데이터.
 """
 
+import json
+from types import SimpleNamespace
+
 import card_generation as ai
+import card_generation.generate as card_generation_module
+import httpx
+import openai
 import pytest
+from common.llm import ENDPOINTS
+from langchain_core.exceptions import OutputParserException
 from psycopg.types.json import Jsonb
 
 from app.core.config import Settings
@@ -21,6 +29,7 @@ from app.services.card_sets import (
     CardGenerationError,
     CardGenerationProcessor,
     build_context,
+    result_problems,
 )
 from app.workers.card_generation import card_generator, create_worker
 from tests.card_fixtures import (
@@ -152,13 +161,24 @@ def _process(database_url, generate, *, actions=("more",)):
 def test_context_has_only_what_card_generation_may_see(migrated_database_url):
     async def build(connection):
         profile_id, _, old_set, topic_id = await _seed(connection)
+        # 허용한 생성 시각에 생년과 같은 숫자가 있어도 개인정보 유출은 아니다.
+        await connection.execute(
+            "UPDATE profile_topics SET created_at = '2026-11-03T00:00:00.541943Z' "
+            "WHERE profile_id = %s", (profile_id,),
+        )
         return await build_context(connection, profile_id), old_set, topic_id
 
     context, old_set, topic_id = with_db(migrated_database_url, build)
 
     text = context.model_dump_json(by_alias=True)
-    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943"):
+    for hidden in ("합성이름", "합성 증상 메모", "mildDementia", "합성 평가 메모", "합성 이유", "female", "1943-04-01"):
         assert hidden not in text, hidden
+    assert set(context.model_dump(by_alias=True)) == {
+        "ageRange", "profileFacts", "lifeFacts", "photos", "topics", "visits", "pastCards",
+    }
+    assert set(context.profile_facts.model_dump(by_alias=True)) == {
+        "occupation", "hometown", "hobby", "family",
+    }
     assert context.age_range == "80s" and context.profile_facts.hobby == "합성 취미"
     assert [fact.source for fact in context.life_facts] == ["caregiver"]
     assert [photo.description for photo in context.photos] == ["합성 사진 설명"]
@@ -207,6 +227,79 @@ def test_context_drops_evidence_of_deleted_life_facts(migrated_database_url):
     assert card.evidence == [{"factId": str(kept)}]
     assert str(deleted) not in context.model_dump_json(by_alias=True)
     assert stored == [{"factId": str(deleted)}, {"profileField": "hobby"}]
+
+
+def test_context_drops_stories_and_photos_behind_excluded_topics(migrated_database_url):
+    """보호자가 제외한 주제의 근거 이야기와 사진은 다음 생성 입력에서 빠짐.
+
+    같은 이야기로 이름만 다른 새 주제가 다시 나오지 않게 함. 세부 정보 칸, 다른 이야기,
+    제외한 주제 자체와 결정, 저장된 근거는 그대로."""
+
+    async def build(connection):
+        profile_id, _, old_set, topic_id = await _seed(connection, ("exclude",))
+        refused = await value(
+            connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
+        )
+        photo = await value(
+            connection,
+            "SELECT photo_id FROM photos WHERE profile_id = %s AND analysis_status = 'completed'",
+            (profile_id,),
+        )
+        other = await value(
+            connection,
+            "INSERT INTO life_facts (profile_id, title, content)"
+            " VALUES (%s, '다른 제목', '다른 이야기') RETURNING fact_id",
+            (profile_id,),
+        )
+        excluded_evidence = [{"factId": str(refused)}, {"photoId": str(photo)}, {"profileField": "hobby"}]
+        await connection.execute(
+            "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+            (Jsonb(excluded_evidence), topic_id),
+        )
+        # 제외하지 않은 다른 주제가 같은 이야기와 다른 이야기를 함께 근거로 씀
+        kept_topic = await value(
+            connection,
+            "SELECT topic_id FROM conversation_cards WHERE set_id = %s AND position = 2",
+            (old_set,),
+        )
+        await connection.execute(
+            "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+            (Jsonb([{"factId": str(refused)}, {"factId": str(other)}]), kept_topic),
+        )
+        await connection.execute(
+            "UPDATE conversation_cards SET evidence_source = 'life_fact', evidence = %s"
+            " WHERE set_id = %s AND topic_id = %s",
+            (Jsonb([{"factId": str(refused)}]), old_set, topic_id),
+        )
+        context = await build_context(connection, profile_id)
+        stored = await value(
+            connection, "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topic_id,)
+        )
+        return context, old_set, topic_id, kept_topic, refused, photo, other, stored, excluded_evidence
+
+    context, old_set, topic_id, kept_topic, refused, photo, other, stored, excluded_evidence = with_db(
+        migrated_database_url, build
+    )
+
+    assert [fact.fact_id for fact in context.life_facts] == [other]
+    assert context.photos == []
+    assert context.profile_facts.hobby == "합성 취미"
+    topics = {topic.topic_id: topic for topic in context.topics}
+    assert [f.action for f in topics[topic_id].feedback] == ["exclude"]
+    assert topics[topic_id].evidence == [{"profileField": "hobby"}]
+    assert topics[kept_topic].evidence == [{"factId": str(other)}]
+    card = next(c for c in context.past_cards if c.set_id == old_set and c.topic_id == topic_id)
+    assert card.evidence == []
+    text = context.model_dump_json(by_alias=True)
+    assert str(refused) not in text and str(photo) not in text
+    assert stored == excluded_evidence
+
+    # 생성 함수가 그래도 그 이야기를 근거로 쓰면 결과 검증에서 거절
+    result = fake_result(SimpleNamespace(model="synthetic-model", prompt_version="2"))
+    result.cards[2] = result.cards[2].model_copy(
+        update={"evidence_source": "lifeFact", "evidence": [{"factId": str(refused)}]}
+    )
+    assert any(problem.startswith("3번") for problem in result_problems(result, context))
 
 
 def test_generated_cards_and_new_topics_are_saved(migrated_database_url):
@@ -368,6 +461,64 @@ def test_card_generator_keeps_the_ai_failure_code(migrated_database_url, monkeyp
     card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
 
     assert (card_set["status"], card_set["error_code"]) == ("failed", "NOT_ENOUGH_TOPICS")
+    assert cards == []
+
+
+def test_card_generator_refuses_to_start_with_a_model_the_ai_package_cannot_call():
+    """4-1이 저장할 모델이 ENDPOINTS에 없으면 작업마다 실패하므로 worker를 시작하지 않는다."""
+    assert Settings(_env_file=None).card_generation_model in ENDPOINTS
+    with pytest.raises(RuntimeError, match="SAEROK_CARD_GENERATION_MODEL"):
+        card_generator(
+            Settings(_env_file=None, ml_api_key="synthetic-key", card_generation_model="synthetic-model")
+        )
+
+
+# ── 생성 오류 구분(#143) ─────────────────────────────────────
+# `ai/`의 실제 generate_cards 안에서 모델을 부르는 단계(recommend)에 예외를 넣는다.
+# _seed의 작업은 합성 모델 이름이라 ENDPOINTS에 있는 모델과 있는 판으로 바꿔 부른다.
+
+_SYNTHETIC_REQUEST = httpx.Request("POST", "https://synthetic.invalid/v1/responses")
+_CARD_CALL_ERRORS = {
+    "connection": (lambda: openai.APIConnectionError(request=_SYNTHETIC_REQUEST), "LLM_UNAVAILABLE"),
+    "timeout": (lambda: openai.APITimeoutError(request=_SYNTHETIC_REQUEST), "LLM_UNAVAILABLE"),
+    "bad_request": (
+        lambda: openai.BadRequestError(
+            "synthetic", response=httpx.Response(400, request=_SYNTHETIC_REQUEST), body=None
+        ),
+        "CARD_GENERATION_FAILED",
+    ),
+    "truncated_json": (
+        lambda: OutputParserException('synthetic {"cards": [{"cardTitle": "합성'),
+        "CARD_GENERATION_FAILED",
+    ),
+    "json_decode": (
+        lambda: json.JSONDecodeError("Unterminated string", '{"cards": [{"cardTitle": "합성', 10),
+        "CARD_GENERATION_FAILED",
+    ),
+    # 후보를 하나도 못 찾으면 카드 12장을 채울 수 없어 실패다(카드에는 0장 정상 완료가 없음).
+    "no_candidates": (lambda: card_generation_module.RecommendFailed("synthetic"), "NOT_ENOUGH_TOPICS"),
+}
+
+
+@pytest.mark.parametrize("case", list(_CARD_CALL_ERRORS))
+def test_card_model_call_errors_keep_the_ai_failure_code(migrated_database_url, monkeypatch, case):
+    make_error, error_code = _CARD_CALL_ERRORS[case]
+    called = []
+    real_generate_cards = ai.generate_cards
+
+    def fail(*args, **kwargs):
+        called.append(case)
+        raise make_error()
+
+    def generate_cards(request, *, api_key):
+        sent = request.model_copy(update={"model": next(iter(ENDPOINTS)), "prompt_version": 1})
+        return real_generate_cards(sent, api_key=api_key, time_limit=5)
+
+    monkeypatch.setattr(card_generation_module, "recommend", fail)
+    card_set, cards = _process(migrated_database_url, _ai_generator(monkeypatch, generate_cards))
+
+    assert called == [case]
+    assert (card_set["status"], card_set["error_code"]) == ("failed", error_code)
     assert cards == []
 
 

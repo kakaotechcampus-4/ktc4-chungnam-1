@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -21,8 +22,11 @@ import 'visit_recorder.dart';
 /// 둘은 별도 화면이 아니라 이 화면의 상태다.
 ///
 /// 실제 녹음은 [VisitRecorder] 가 한다. 녹음 라이브러리와 음성 형식은 AI 영역이
-/// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작·멈춤·끝내기와
+/// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작, 멈춤, 끝내기와
 /// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
+///
+/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 앱이
+/// 백그라운드로 내려간 뒤의 녹음은 보장하지 않는다(`app/README.md`).
 class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
 
@@ -77,8 +81,9 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     _closePhotoNotice();
     // 끝내기를 누르지 않고 뒤로 나간 경우다. 열린 파일을 닫지 않으면 WAV 헤더가
     // 쓰이지 않아 소리는 들어 있는데 열 수 없는 파일이 남는다. 닫을 파일이
-    // 없으면 상태가 알아서 지나간다.
-    unawaited(_controller.stopRecording());
+    // 없으면 상태가 알아서 지나간다. 파일은 바로 닫고, 트리 정리 중에 상태를
+    // 바꾸지 않도록 상태 변경은 정리 뒤로 미루는 쪽을 부른다.
+    unawaited(_controller.stopRecordingOnLeave());
     super.dispose();
   }
 
@@ -92,15 +97,21 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       _onPhotoUpload,
     );
 
-    return Scaffold(
-      appBar: const AppTopBar(),
-      body: visit.when(
-        loading: () => const LoadingView(),
-        error: (error, _) =>
-            const ErrorStateView(message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.'),
-        // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
-        data: (state) =>
-            state.started ? _Recording(state: state) : const _Intro(),
+    // 녹음하는 동안만 화면을 켜 둔다. 잠시 멈춤, 끝내기 확인 창(멈춘 채로
+    // 묻는다), 끝내기와 녹음 실패에서는 놓고, 화면을 떠나면 [KeepScreenOn] 이
+    // 빠지면서 놓는다.
+    return KeepScreenOn(
+      enabled: visit.value?.recording ?? false,
+      child: Scaffold(
+        appBar: const AppTopBar(),
+        body: visit.when(
+          loading: () => const LoadingView(),
+          error: (error, _) =>
+              const ErrorStateView(message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.'),
+          // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
+          data: (state) =>
+              state.started ? _Recording(state: state) : const _Intro(),
+        ),
       ),
     );
   }
@@ -216,6 +227,8 @@ class _ProblemNotice extends StatelessWidget {
       '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
     VisitRecordingProblem.sessionFailed =>
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+    VisitRecordingProblem.cardsOutdated =>
+      '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
   };
 
   @override
@@ -325,11 +338,16 @@ class _Recording extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: AppSpacing.xxxl),
-                Text(
-                  state.recording ? '녹음 중이에요' : '잠시 멈췄어요',
-                  // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
-                  style: AppTypography.screenTitle.copyWith(fontSize: 24),
-                  textAlign: TextAlign.center,
+                // 멈춤과 이어서 녹음을 누르면 바뀐 상태를 화면 낭독기가 바로
+                // 읽는다. 1초마다 바뀌는 시간은 읽지 않게 여기에만 둔다.
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    state.recording ? '녹음 중이에요' : '잠시 멈췄어요',
+                    // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
+                    style: AppTypography.screenTitle.copyWith(fontSize: 24),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
@@ -416,7 +434,8 @@ class _CardPeek extends StatefulWidget {
   /// 하단 안전영역까지 포함한 전체 높이.
   final double height;
 
-  final VoidCallback onOpen;
+  /// 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
+  final Future<void> Function() onOpen;
 
   /// 기준 화면에서 쓰는 높이. 짧은 기기에서는 이보다 줄어든다.
   static const maxHeight = 380.0;
@@ -442,12 +461,18 @@ class _CardPeekState extends State<_CardPeek> {
   static const _dragDistance = 48.0;
 
   double _dragged = 0;
+
+  /// 한 번의 끌어올리기에서 시트가 두 번 열리지 않게 막는다. 시트가 닫히면
+  /// 푼다. 끌기 시작에서만 풀면 끌 수 없는 화면 낭독기 사용자는 한 번 닫은 뒤
+  /// 다시 꺼낼 수 없다.
   bool _opening = false;
 
   void _open() {
     if (_opening) return;
     _opening = true;
-    widget.onOpen();
+    widget.onOpen().whenComplete(() {
+      if (mounted) _opening = false;
+    });
   }
 
   @override
@@ -455,37 +480,46 @@ class _CardPeekState extends State<_CardPeek> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final fanHeight = widget.height - bottomInset - _CardPeek._fanInset;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    // 화면 낭독기에서는 끌어올릴 수 없으므로 두 번 눌러 꺼내는 버튼 하나로 읽는다.
+    // 부채 그림과 `위로 올려서` 안내는 읽지 않는다.
+    return Semantics(
+      container: true,
+      button: true,
+      label: '대화 카드 꺼내기',
       onTap: _open,
-      onVerticalDragStart: (_) {
-        _dragged = 0;
-        _opening = false;
-      },
-      onVerticalDragUpdate: (details) {
-        _dragged += details.delta.dy;
-        if (_dragged < -_dragDistance) _open();
-      },
-      onVerticalDragEnd: (details) {
-        if ((details.primaryVelocity ?? 0) < _flingVelocity) _open();
-      },
-      child: SizedBox(
-        height: widget.height,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: _CardPeek._fanBottom + bottomInset,
-              child: _CardFan(key: const Key('cardPeekFan'), height: fanHeight),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _PullHint(bottomInset: bottomInset),
-            ),
-          ],
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _open,
+        onVerticalDragStart: (_) => _dragged = 0,
+        onVerticalDragUpdate: (details) {
+          _dragged += details.delta.dy;
+          if (_dragged < -_dragDistance) _open();
+        },
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) < _flingVelocity) _open();
+        },
+        child: SizedBox(
+          height: widget.height,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: _CardPeek._fanBottom + bottomInset,
+                child: _CardFan(
+                  key: const Key('cardPeekFan'),
+                  height: fanHeight,
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _PullHint(bottomInset: bottomInset),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -618,24 +652,34 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.line, width: 2),
+    // 둥근 버튼과 아래 이름을 화면 낭독기에서 버튼 하나로 읽는다. 이름이 버튼
+    // 밖에 있으면 아이콘만 있는 이름 없는 버튼과 글자가 따로 읽힌다(접근성
+    // 보고서 11쪽). 이름은 지금 누르면 하는 일이라 멈춘 뒤에는 `이어서 녹음` 이 된다.
+    return Semantics(
+      container: true,
+      button: true,
+      label: label,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.line, width: 2),
+              ),
+              child: Icon(icon, size: 30, color: AppColors.ink),
             ),
-            child: Icon(icon, size: 30, color: AppColors.ink),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(label, style: AppTypography.sub),
-      ],
+          const SizedBox(height: AppSpacing.sm),
+          Text(label, style: AppTypography.sub),
+        ],
+      ),
     );
   }
 }

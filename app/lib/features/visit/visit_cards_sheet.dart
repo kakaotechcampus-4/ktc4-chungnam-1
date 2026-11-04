@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show OrdinalSortKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -22,6 +23,9 @@ Future<void> showVisitCardsSheet(BuildContext context) {
     backgroundColor: AppColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
     barrierColor: Colors.black54,
+    // 지정하지 않으면 앱 언어(영어)의 `Scrim` 이 읽힌다. 보고서 8쪽은 마이페이지
+    // 메뉴를 짚었고, 같은 문제라 이 시트에도 붙인다.
+    barrierLabel: '대화 카드 닫기',
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
     ),
@@ -80,20 +84,29 @@ class _Cards extends ConsumerWidget {
             children: [
               Column(
                 children: [
+                  // 화면 낭독기는 메인 질문, 꼬리 질문, 다음 카드 순서로
+                  // 읽는다. 다음 카드 버튼이 두 영역 경계에 걸쳐 있어 위치만으로
+                  // 두면 꼬리 질문보다 먼저 읽힐 수 있다.
                   Expanded(
-                    child: _MainQuestion(
-                      cardTitle: card.cardTitle,
-                      question: card.primaryQuestion,
+                    child: Semantics(
+                      sortKey: const OrdinalSortKey(0),
+                      child: _MainQuestion(
+                        cardTitle: card.cardTitle,
+                        question: card.primaryQuestion,
+                      ),
                     ),
                   ),
                   Expanded(
-                    child: _FollowUpQuestion(
-                      question: state.currentFollowUp ?? '',
-                      index: state.followUpCount == 0
-                          ? 0
-                          : state.followUpIndex % state.followUpCount,
-                      count: state.followUpCount,
-                      onTap: controller.nextFollowUp,
+                    child: Semantics(
+                      sortKey: const OrdinalSortKey(1),
+                      child: _FollowUpQuestion(
+                        question: state.currentFollowUp ?? '',
+                        index: state.followUpCount == 0
+                            ? 0
+                            : state.followUpIndex % state.followUpCount,
+                        count: state.followUpCount,
+                        onTap: controller.nextFollowUp,
+                      ),
                     ),
                   ),
                 ],
@@ -103,9 +116,12 @@ class _Cards extends ConsumerWidget {
               Positioned.fill(
                 child: Align(
                   alignment: Alignment.center,
-                  child: _NextCardButton(
-                    enabled: !state.isLastCard,
-                    onTap: controller.nextCard,
+                  child: Semantics(
+                    sortKey: const OrdinalSortKey(2),
+                    child: _NextCardButton(
+                      enabled: !state.isLastCard,
+                      onTap: controller.nextCard,
+                    ),
                   ),
                 ),
               ),
@@ -328,35 +344,47 @@ class _NextCardButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: enabled ? AppColors.ink : AppColors.line,
-      shape: const CircleBorder(),
-      elevation: 0,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 72,
-          height: 72,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                enabled ? Icons.arrow_forward : Icons.check,
-                size: 24,
-                color: enabled ? AppColors.background : AppColors.textDisabled,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                enabled ? '다음' : '마지막',
-                style: AppTypography.caption.copyWith(
+    // 보이는 글자는 `다음` 하나라 무엇의 다음인지 알 수 없다. 화면 낭독기에는
+    // 카드라는 것을 붙여 읽는다.
+    return Semantics(
+      container: true,
+      button: true,
+      enabled: enabled,
+      label: enabled ? '다음 카드' : '마지막 카드',
+      onTap: enabled ? onTap : null,
+      excludeSemantics: true,
+      child: Material(
+        color: enabled ? AppColors.ink : AppColors.line,
+        shape: const CircleBorder(),
+        elevation: 0,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 72,
+            height: 72,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  enabled ? Icons.arrow_forward : Icons.check,
+                  size: 24,
                   color: enabled
                       ? AppColors.background
                       : AppColors.textDisabled,
-                  fontWeight: FontWeight.w600,
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  enabled ? '다음' : '마지막',
+                  style: AppTypography.caption.copyWith(
+                    color: enabled
+                        ? AppColors.background
+                        : AppColors.textDisabled,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

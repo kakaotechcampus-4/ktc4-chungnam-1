@@ -30,36 +30,80 @@ class CardsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final generation = ref.watch(cardGenerationProvider);
-    final controller = ref.read(cardGenerationProvider.notifier);
+    final profileId = ref.watch(serverProfileIdProvider);
 
     return Scaffold(
       appBar: const AppTopBar(),
-      body: generation.when(
+      body: profileId.when(
         loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
         error: (error, _) => ErrorStateView(
           message: _failureMessage(error),
-          onRetry: controller.retry,
+          onRetry: () => ref.invalidate(serverProfileIdProvider),
         ),
-        data: (status) => switch (status) {
-          CardGenerationStatus.ready => const _Cards(),
-          // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
-          // 못하므로 공통 문구만 보여준다.
-          CardGenerationStatus.failed => ErrorStateView(
-            message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
-            onRetry: controller.retry,
-          ),
-          // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
-          CardGenerationStatus.inVisit => const EmptyStateView(
-            message: '아직 마치지 않은 면회가 있어요.',
-            icon: Icons.style_outlined,
-          ),
-          // 생성 흐름은 none 과 running 을 남기지 않는다. 기다리는 도중 화면을
-          // 떠난 경우뿐이라 기다리는 화면을 그대로 둔다.
-          CardGenerationStatus.none || CardGenerationStatus.running =>
-            const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
-        },
+        data: (id) => id == null
+            ? ErrorStateView(
+                message: _failureMessage(StateError('고른 어르신이 없다')),
+                onRetry: () => ref.invalidate(serverProfileIdProvider),
+              )
+            : _Generation(profileId: id),
       ),
+    );
+  }
+}
+
+/// 한 어르신의 카드 생성 상태. 들어올 때 묻는 중이 아니면 처음부터 확인한다.
+class _Generation extends ConsumerStatefulWidget {
+  const _Generation({required this.profileId});
+
+  final String profileId;
+
+  @override
+  ConsumerState<_Generation> createState() => _GenerationState();
+}
+
+class _GenerationState extends ConsumerState<_Generation> {
+  @override
+  void initState() {
+    super.initState();
+    // 그리는 도중에는 provider 를 바꿀 수 없다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(cardGenerationProvider(widget.profileId).notifier).start();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final generation = ref.watch(cardGenerationProvider(widget.profileId));
+    final controller = ref.read(
+      cardGenerationProvider(widget.profileId).notifier,
+    );
+
+    return generation.when(
+      loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
+      error: (error, _) => ErrorStateView(
+        message: _failureMessage(error),
+        onRetry: controller.start,
+      ),
+      data: (status) => switch (status) {
+        CardGenerationStatus.ready => const _Cards(),
+        CardGenerationStatus.needsRefresh => const _Outdated(),
+        // 4-2 는 실패 이유를 주지 않는다. 정보 부족과 그 밖의 실패를 가르지
+        // 못하므로 공통 문구만 보여준다.
+        CardGenerationStatus.failed => ErrorStateView(
+          message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
+          onRetry: controller.start,
+        ),
+        // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
+        CardGenerationStatus.inVisit => const EmptyStateView(
+          message: '아직 마치지 않은 면회가 있어요.',
+          icon: Icons.style_outlined,
+        ),
+        // 생성 흐름은 none 과 running 을 남기지 않는다. 아직 시작하지 않은
+        // null 은 들어온 직후 한 프레임뿐이라 기다리는 화면을 그대로 둔다.
+        null || CardGenerationStatus.none || CardGenerationStatus.running =>
+          const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
+      },
     );
   }
 }
@@ -70,12 +114,18 @@ String _failureMessage(Object error) => switch (error) {
 };
 
 /// 쓸 묶음이 준비된 뒤의 카드 고르기.
+///
+/// 받은 묶음(4-3)이 `needsRefresh` 면 카드를 보여주지 않고 [_Outdated] 로
+/// 홈에 돌려보낸다. 4-2 는 `ready` 였지만 그 사이에 정보를 고친 경우다.
 class _Cards extends ConsumerWidget {
   const _Cards();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cards = ref.watch(cardsControllerProvider);
+    final setOutdated =
+        ref.watch(currentCardSetProvider).value?.needsRefresh ?? false;
+    if (setOutdated) return const _Outdated();
 
     return cards.when(
       loading: () => const LoadingView(message: '오늘의 대화 카드를 불러오고 있어요'),
@@ -85,6 +135,27 @@ class _Cards extends ConsumerWidget {
         onRetry: () => ref.invalidate(currentCardSetProvider),
       ),
       data: (state) => _Body(state: state),
+    );
+  }
+}
+
+/// 받은 뒤 프로필이나 일대기를 고친 묶음이다.
+///
+/// 옛 카드는 보여주지 않고 고르거나 면회를 시작하지 못하게 한다. 새 카드는
+/// 홈의 `오늘의 대화카드 받기` 에서 12장을 모두 다시 만든다(2026-11-01 #171
+/// 에서 PM 확인). 만드는 동안 다른 화면을 볼 수 있게 하려는 것이다.
+class _Outdated extends StatelessWidget {
+  const _Outdated();
+
+  @override
+  Widget build(BuildContext context) {
+    return EmptyStateView(
+      message:
+          '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n'
+          '홈에서 오늘의 대화카드 받기를 누르면\n새로 만들어요.',
+      icon: Icons.style_outlined,
+      actionLabel: '홈으로 가기',
+      onAction: () => context.go(AppRoutes.home),
     );
   }
 }
@@ -263,6 +334,7 @@ class _CardTile extends StatelessWidget {
     return AppCard(
       selected: selected,
       onTap: onToggleExpanded,
+      expanded: expanded,
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,13 +357,11 @@ class _CardTile extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.md),
               // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다.
-              GestureDetector(
+              // 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+              SelectionToggle(
+                label: cardSelectLabel(card.cardTitle),
+                selected: selected,
                 onTap: onToggleSelected,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: SelectionMark(selected: selected),
-                ),
               ),
             ],
           ),
@@ -327,3 +397,6 @@ class _CardTile extends StatelessWidget {
     );
   }
 }
+
+/// 카드 고르기 표시를 화면 낭독기가 읽는 이름이다. 카드 추가 화면도 같은 이름을 쓴다.
+String cardSelectLabel(String cardTitle) => '$cardTitle 카드 고르기';

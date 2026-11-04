@@ -14,6 +14,7 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/profile/profile_gallery.dart';
 
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
@@ -241,5 +242,31 @@ void main() {
       expect(container.read(careProfilesProvider).hasSelected, isTrue);
       expect(find.text('오늘의 대화카드 받기'), findsOneWidget);
     });
+  });
+
+  testWidgets('갤러리는 목 사진 대신 서버에 올린 사진과 분석 상태를 보여준다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          photos: [
+            FakeProfileServer.photo(id: 'photo-a'),
+            FakeProfileServer.photo(id: 'photo-b', analysisStatus: 'failed'),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.profile);
+
+    expect(find.byType(ProfilePhotoImage), findsNWidgets(2));
+    expect(find.text('분석 실패'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is ProfilePhotoImage && w.url.startsWith('asset:'),
+      ),
+      findsNothing,
+      reason: '서버에 저장한 분에게 목 사진을 보여주지 않는다',
+    );
   });
 }

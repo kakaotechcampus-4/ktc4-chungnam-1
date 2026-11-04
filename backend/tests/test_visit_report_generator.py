@@ -14,11 +14,16 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
+import openai
 import proposal_generation
+import proposal_generation.generate as proposal_generation_module
+import pydantic
 import pytest
 import report_generation
+import report_generation.generate as report_generation_module
 from common import visit_report as ai_visit_report
 from common.llm import ENDPOINTS
+from langchain_core.exceptions import OutputParserException
 
 from app.clients.ai_server import AiServerClient
 from app.core.config import Settings
@@ -62,7 +67,12 @@ def _speech(analysis_id: str = ANALYSIS_ID) -> SpeechAnalysisResult:
                     "words": [
                         {"startMs": 0, "endMs": 800, "text": "합성", "probability": 0.9}
                     ],
-                }
+                },
+                {
+                    "startMs": 3400, "endMs": 5000,
+                    "speakerLabel": "SPEAKER_01",
+                    "text": "두 번째 합성 발화 구간", "words": [],
+                },
             ],
         }
     )
@@ -197,6 +207,7 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     [sent] = ai.report_requests
     assert sent["schemaVersion"] == 1
     assert sent["analysisId"] == ANALYSIS_ID
+    assert sent["participantCount"] == 2
     assert sent["evaluation"] == {
         "conversationSatisfaction": 4,
         "careRecipientReaction": "pleased",
@@ -228,7 +239,8 @@ def test_request_has_evaluation_cards_facts_and_transcript_without_identity(
     assert sent["transcript"] == {
         "durationMs": 15200,
         "segments": [
-            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"}
+            {"startMs": 0, "endMs": 3200, "speakerLabel": "SPEAKER_00", "text": "합성 발화 구간"},
+            {"startMs": 3400, "endMs": 5000, "speakerLabel": "SPEAKER_01", "text": "두 번째 합성 발화 구간"},
         ],
     }
     # 피보호자의 이름, 성별, 생년월일은 어떤 형태로도 보내지 않는다.
@@ -527,7 +539,7 @@ def test_worker_fails_the_job_on_an_invalid_report_without_partial_save(
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "INVALID_AI_RESPONSE",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
     user_id = records.scalar(
@@ -630,7 +642,7 @@ def test_connected_generator_saves_the_combined_ai_result(migrated_database_url,
     assert [call["kind"] for call in calls] == ["report", "proposals"]
     for call in calls:
         assert isinstance(call["request"], ai_visit_report.VisitReportRequest)
-        assert call["model"] == "gpt-5.6-luna"
+        assert call["model"] == "gpt-6-luna"
         assert call["api_key"] == "synthetic-key"
     sent = calls[0]["request"]
     assert sent.analysis_id == ANALYSIS_ID
@@ -709,6 +721,141 @@ def test_ai_result_breaking_backend_rules_is_rejected_without_partial_save(
 
     assert error.value.error_code == "INVALID_AI_RESPONSE"
     assert _saved_rows(records, visit) == NOTHING_SAVED
+
+
+# ── 생성 오류 구분(#143) ─────────────────────────────────────
+# 후보가 없는 정상 응답과 호출 실패, 잘린 응답이나 JSON 오류를 기존 실패 코드로 나누는지
+# 확인한다. 예외는 `ai/`의 실제 생성 함수 안에서 모델 호출(`invoke_structured`) 자리에
+# 넣는다. 실제 출력 한도에 닿았을 때 SDK가 어떤 예외를 던지는지는 실측하지 않았다.
+
+
+def test_no_candidates_is_a_normal_completion(migrated_database_url, monkeypatch):
+    """카드 요약, 이야기 후보와 주제 조정이 모두 비어도 리포트를 저장하고 작업을 끝낸다."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = records.job(visit.session_id, "queued")
+
+    def report(request):
+        return _ai_report(request).model_copy(update={"card_summaries": []})
+
+    def proposals(request):
+        return _ai_proposals(request).model_copy(
+            update={"life_fact_proposals": [], "topic_proposals": []}
+        )
+
+    _connected(monkeypatch, report=report, proposals=proposals)
+
+    _run_worker_with(records, FakeAi(), _connected_generator())
+
+    assert _job(records, analysis_id) == {
+        "status": "completed",
+        "error_code": None,
+        "transcript_deleted": True,
+    }
+    assert _saved_rows(records, visit) == {
+        **NOTHING_SAVED,
+        "report": {
+            "report_title": "합성 리포트 제목",
+            "report_body": "합성 리포트 본문",
+            "report_model": "gpt-5.6-luna",
+            "report_prompt_version": "report-1+proposals-1",
+            "generated": True,
+        },
+    }
+
+
+def _synthetic_request() -> httpx.Request:
+    return httpx.Request("POST", "https://synthetic.invalid/v1/responses")
+
+
+def _validation_error() -> Exception:
+    class Shape(pydantic.BaseModel):
+        title: str
+
+    try:
+        Shape.model_validate({})
+    except pydantic.ValidationError as error:
+        return error
+    raise AssertionError("검증 오류가 나야 함")
+
+
+# (모델 호출에서 난 예외, 작업 실패 코드, 재시도 가능)
+_CALL_ERRORS = {
+    "connection": (
+        lambda: openai.APIConnectionError(request=_synthetic_request()),
+        "AI_SERVER_UNAVAILABLE",
+        True,
+    ),
+    "timeout": (
+        lambda: openai.APITimeoutError(request=_synthetic_request()),
+        "AI_SERVER_UNAVAILABLE",
+        True,
+    ),
+    "bad_request": (
+        lambda: openai.BadRequestError(
+            "synthetic 합성 발화 구간",
+            response=httpx.Response(400, request=_synthetic_request()),
+            body=None,
+        ),
+        "AI_SERVER_ERROR",
+        False,
+    ),
+    "truncated_json": (
+        lambda: OutputParserException('synthetic {"title": "합성 발화 구간'),
+        "AI_SERVER_ERROR",
+        False,
+    ),
+    "json_decode": (
+        lambda: json.JSONDecodeError("Unterminated string", '{"title": "합성 발화 구간', 10),
+        "AI_SERVER_ERROR",
+        False,
+    ),
+    "schema_mismatch": (_validation_error, "AI_SERVER_ERROR", False),
+}
+
+
+@pytest.mark.parametrize("failing", ["report", "proposals"])
+@pytest.mark.parametrize("case", list(_CALL_ERRORS))
+def test_model_call_errors_map_to_contract_codes_without_partial_save(
+    migrated_database_url, monkeypatch, failing, case
+):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    make_error, error_code, retryable = _CALL_ERRORS[case]
+    called = []
+
+    def fail(*args, **kwargs):
+        called.append(failing)
+        raise make_error()
+
+    # 실패하는 쪽만 `ai/`의 실제 생성 함수를 부르고, 다른 쪽은 정상 결과를 돌려준다.
+    _connected(monkeypatch, **{failing: _real_ai_function(failing)})
+    module = report_generation_module if failing == "report" else proposal_generation_module
+    monkeypatch.setattr(module, "invoke_structured", fail)
+
+    with pytest.raises(AppError) as error:
+        _generate_with(records, visit, _connected_generator())
+
+    assert called == [failing]
+    assert (error.value.error_code, error.value.retryable) == (error_code, retryable)
+    # 모델이나 SDK가 남긴 메시지(전사문 일부일 수 있음)는 작업 실패에 담지 않는다.
+    assert "합성" not in error.value.message and "synthetic" not in error.value.message
+    assert _saved_rows(records, visit) == NOTHING_SAVED
+    assert _job(records, UUID(ANALYSIS_ID))["status"] == "generatingReport"
+
+
+def _real_ai_function(kind: str):
+    """`_connected`에 넣을 `ai/`의 실제 생성 함수. 모델 호출은 테스트가 바꿔 끼운다."""
+    real = (
+        report_generation_module.generate_report
+        if kind == "report"
+        else proposal_generation_module.generate_proposals
+    )
+
+    def call(request):
+        return real(request, model="gpt-5.6-luna", api_key="synthetic-key")
+
+    return call
 
 
 def test_worker_completes_with_the_connected_generator(migrated_database_url, monkeypatch):
@@ -824,28 +971,49 @@ def test_worker_fails_a_timed_out_job_and_ignores_the_late_result(migrated_datab
     ai.release.set()
     _finish_generation_threads()
 
-    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": True}
+    expected = {"status": "failed", "error_code": "AI_SERVER_TIMEOUT", "transcript_deleted": False}
     assert after_timeout == expected
     assert _job(records, analysis_id) == expected
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
 
+def test_cancelled_deadline_fails_the_check_before_the_time_runs_out():
+    deadline = ReportDeadline(60)
+    deadline.cancel()
+
+    with pytest.raises(AppError) as error:
+        deadline.check()
+
+    assert error.value.error_code == "AI_SERVER_TIMEOUT"
+
+
+@pytest.mark.parametrize("clock", ["real", "not_yet_past"])
 def test_connected_generator_stops_before_the_proposal_call_after_the_time_limit(
-    migrated_database_url, monkeypatch
+    migrated_database_url, monkeypatch, clock
 ):
-    """마감 뒤 남은 스레드가 변경 제안을 위해 전사문을 다시 보내지 않는다."""
+    """마감 뒤 남은 스레드가 변경 제안을 위해 전사문을 다시 보내지 않는다.
+
+    `not_yet_past`는 이벤트 루프가 시간 초과를 확정했는데 스레드가 읽는 시계로는 아직
+    마감 전인 경우다(Windows의 시계 해상도에서 생김). 시계와 관계없이 멈춰야 한다.
+    """
     records = Records(migrated_database_url)
     visit = _evaluated(records)
+    report_started = threading.Event()
     release = threading.Event()
 
     def slow_report(request):
+        report_started.set()
         assert release.wait(10)
         return _ai_report(request)
 
     calls = _connected(monkeypatch, report=slow_report)
+    if clock == "not_yet_past":
+        monkeypatch.setattr(ReportDeadline, "left", lambda self: self.seconds)
 
     with pytest.raises(AppError) as error:
         _generate_with(records, visit, _connected_generator(SHORT_LIMIT_SECONDS))
+    # 시간 초과가 확정된 뒤에 첫 리포트 응답이 도착한다.
+    assert report_started.wait(5)
     release.set()
     _finish_generation_threads()
 
@@ -890,7 +1058,7 @@ def test_result_after_another_worker_expired_the_lease_is_not_saved(migrated_dat
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 
@@ -910,7 +1078,7 @@ def test_result_after_the_lease_ended_is_not_saved_before_cleanup(migrated_datab
     assert _job(records, analysis_id) == {
         "status": "failed",
         "error_code": "WORKER_LEASE_EXPIRED",
-        "transcript_deleted": True,
+        "transcript_deleted": False,
     }
     assert _saved_rows(records, visit) == NOTHING_SAVED
 

@@ -124,6 +124,7 @@ void main() {
 
     await _until(() => _info(container)?.notice == ReportNotice.failed);
     expect(_info(container)!.reportId, 's1');
+    expect(_info(container)!.analysisId, 'a1');
   });
 
   test('서버가 실패로 계산한 회차는 바로 실패를 띄운다', () async {

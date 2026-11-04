@@ -11,6 +11,41 @@ def test_default_settings_are_safe_for_local_development() -> None:
     assert settings.service_name == "saerok-backend"
     assert settings.ai_server_url == "http://127.0.0.1:8001"
     assert settings.ai_server_timeout_seconds == 600.0
+    assert settings.ai_server_backup_url is None
+    assert settings.ai_server_failover_connect_timeout_seconds == 5.0
+
+
+@pytest.mark.parametrize("value", ["", "  "])
+def test_empty_backup_environment_disables_failover(monkeypatch, value) -> None:
+    monkeypatch.setenv("SAEROK_AI_SERVER_BACKUP_URL", value)
+    assert Settings(_env_file=None).ai_server_backup_url is None
+
+
+def test_backup_environment_is_read_without_changing_primary(monkeypatch) -> None:
+    monkeypatch.setenv("SAEROK_AI_SERVER_BACKUP_URL", " http://backup.test:8001/ ")
+    settings = Settings(_env_file=None)
+    assert settings.ai_server_url == "http://127.0.0.1:8001"
+    assert settings.ai_server_backup_url == "http://backup.test:8001/"
+
+
+@pytest.mark.parametrize("value", [0, -1, 31])
+def test_rejects_invalid_failover_connection_timeout(value) -> None:
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, ai_server_failover_connect_timeout_seconds=value)
+
+
+def test_generation_model_defaults_and_environment_override(monkeypatch) -> None:
+    monkeypatch.delenv("SAEROK_CARD_GENERATION_MODEL", raising=False)
+    monkeypatch.delenv("SAEROK_REPORT_GENERATION_MODEL", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.card_generation_model == "gpt-6-luna"
+    assert settings.report_generation_model == "gpt-6-luna"
+
+    monkeypatch.setenv("SAEROK_CARD_GENERATION_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("SAEROK_REPORT_GENERATION_MODEL", "gpt-5.6-luna")
+    previous = Settings(_env_file=None)
+    assert previous.card_generation_model == "gpt-5.6-luna"
+    assert previous.report_generation_model == "gpt-5.6-luna"
 
 
 # 아래 두 개는 환경변수를 직접 읽는 경로를 검사한다. 값을 생성자로 넘기면

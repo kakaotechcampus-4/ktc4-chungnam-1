@@ -32,6 +32,10 @@ COPY app ./app
 RUN useradd --system --uid 10001 --no-create-home saerok
 USER saerok
 
+# 코드가 바뀌어도 의존성 층은 재사용한다. 검증한 전체 SHA를 빌드 인수로 전달한다.
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+
 EXPOSE 8000
 
 # 개발 서버는 API 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 있어 프로세스 수의 제약은 아니다.
