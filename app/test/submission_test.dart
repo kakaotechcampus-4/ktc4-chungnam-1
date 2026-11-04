@@ -218,8 +218,28 @@ void main() {
       );
       expect(api.calls, isNot(contains('audio')));
       final state = container.read(submissionProvider);
-      expect(state.failure, SubmissionFailure.noRecording);
-      expect(state.evaluationSaved, isTrue, reason: '평가는 먼저 저장한다');
+      expect(state.failure, SubmissionFailure.participantCountRequired);
+      expect(state.evaluationSaved, isFalse, reason: '참여자 수 확인을 마친 뒤 제출한다');
+      expect(api.calls, isNot(contains('evaluation')));
+    });
+
+    test('나중에 참여자 수를 확인하면 기존 녹음을 보내고 실패 후에도 수를 기억한다', () async {
+      final api = FakeVisitApi(audioFailure: const ApiNetworkFailure());
+      final files = FakePendingUploads();
+      final container = await afterVisit(
+        api,
+        participantCount: null,
+        files: files,
+      );
+      final controller = container.read(submissionProvider.notifier);
+      expect(await controller.submit(), isFalse);
+      expect(await controller.submit(confirmedParticipantCount: 3), isFalse);
+      expect(files.saved[FakeVisitApi.sessionId]?.participantCount, 3);
+      api.audioFailure = null;
+      expect(await controller.submit(), isTrue);
+      expect(api.audio?.participantCount, 3);
+      expect(api.calls.where((call) => call == 'evaluation'), hasLength(1));
+      expect(files.removedPaths, isEmpty);
     });
   });
 
@@ -253,11 +273,12 @@ void main() {
       expect(files.saved, contains(FakeVisitApi.sessionId));
     });
 
-    test('참여자 수를 확인받지 않았으면 적지 않는다', () async {
+    test('참여자 수를 확인받지 않아도 회차와 녹음 파일은 기억한다', () async {
       final files = FakePendingUploads();
       await afterVisit(FakeVisitApi(), files: files, participantCount: null);
 
-      expect(files.saved, isEmpty);
+      expect(files.saved[FakeVisitApi.sessionId]?.audioPath, isNotNull);
+      expect(files.saved[FakeVisitApi.sessionId]?.participantCount, isNull);
     });
   });
 }
