@@ -7,7 +7,7 @@
 쓰이지만, 이 표시는 평가 뒤에도 언제든 켜고 끌 수 있고 고르지 않은 카드에도 남길 수 있음.
 
 Revision ID: a4f6c1d83b29
-Revises: b7e2c4a9d153
+Revises: d73f0b5ca921
 Create Date: 2026-10-27 15:00:00.000000
 
 """
@@ -17,7 +17,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'a4f6c1d83b29'
-down_revision: Union[str, Sequence[str], None] = 'b7e2c4a9d153'
+down_revision: Union[str, Sequence[str], None] = 'd73f0b5ca921'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
