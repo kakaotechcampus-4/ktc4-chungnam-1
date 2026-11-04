@@ -287,6 +287,28 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 - **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
 - **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 백업과 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
+## 최소 지원 앱 버전
+
+구버전 앱이 바뀐 API를 부르다 이상하게 실패하는 대신, 업데이트가 필요하다는 응답을 받게 한다. 앱은 모든 요청에 안드로이드 versionCode를 `X-App-Version-Code` 헤더로 싣는다(`app/README.md`의 "서버에 앱 버전 알리기"). 서버는 [deps.py](app/api/deps.py)의 `require_supported_app_version`에서 이 값을 설정과 비교한다. [router.py](app/api/router.py)가 `/health/*`를 뺀 모든 경로에 이 의존성을 건다.
+
+| 요청 | 결과 |
+| --- | --- |
+| 헤더 값이 `SAEROK_MIN_ANDROID_VERSION_CODE`보다 작음 | `426 APP_UPDATE_REQUIRED`, `retryable: false`. 인증과 DB보다 먼저 확인해 로그인 전 API(`/auth/google`, `/auth/consent`)도 같다 |
+| 헤더 값이 설정 이상 | 통과 |
+| 헤더가 없거나 ASCII 숫자가 아님 | 통과. 헤더를 싣기 전에 낸 앱 빌드와 점검 도구를 막지 않는다 |
+| 설정이 `0`(기본값) | 검사하지 않음 |
+| `/health/*` | 검사하지 않음. compose 헬스체크용 |
+
+경로가 없는 요청(404)에는 의존성이 돌지 않는다. 앱은 `404 NOT_FOUND`도 따로 업데이트 안내의 단서로 쓴다.
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_MIN_ANDROID_VERSION_CODE` | 받을 수 있는 가장 낮은 앱 versionCode (기본 `0`, 검사 안 함) |
+
+**올리는 순서.** 구버전 앱과 맞지 않는 서버 변경을 배포할 때는, 맞는 앱 빌드를 Play에 먼저 낸 뒤 이 값을 그 빌드의 versionCode로 올린다. 앱 쪽 헤더를 처음 싣는 빌드보다 앞선 빌드는 헤더가 없어 이 검사로 막을 수 없다.
+
+헤더 값은 사용자를 식별하지 않는 앱 빌드 번호다. 요청 로그([logging.py](app/core/logging.py))는 헤더를 기록하지 않는다.
+
 ## 프로필과 생애 정보 API
 
 [API 명세 2절](../docs/architecture/api-spec.md#2-프로필)의 2-1~2-4, 2-6~2-9이다. 온보딩의 `마치기`는 세부 정보를 2-4로 저장한 뒤 작업 B의 4-1로 첫 카드 생성을 요청한다. 별도의 2-5 API는 사용하지 않는다. 라우트는 [profiles.py](app/api/routes/profiles.py)와 [life_facts.py](app/api/routes/life_facts.py), 저장은 [services/profiles.py](app/services/profiles.py)와 [services/life_facts.py](app/services/life_facts.py)에 있다.
