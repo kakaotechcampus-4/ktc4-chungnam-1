@@ -11,6 +11,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 항목 | 기준 |
 | --- | --- |
 | 인증 | `/auth/google`, `/auth/consent`를 제외한 모든 공개 API는 `Authorization: Bearer <accessToken>` |
+| 앱 버전 | 앱은 모든 공개 API에 `X-App-Version-Code: <안드로이드 versionCode>`를 싣는다. 서버 설정(`SAEROK_MIN_ANDROID_VERSION_CODE`)보다 낮으면 인증보다 먼저 `426 APP_UPDATE_REQUIRED`로 거절한다. 헤더가 없거나 숫자가 아니면 검사하지 않는다. `/health/*`는 검사하지 않는다 |
 | 본문 | JSON, 필드는 `lowerCamelCase`. 파일 업로드만 `multipart/form-data` |
 | 버전 | 응답 최상위에 `schemaVersion: 1` |
 | ID | UUID 문자열 |
@@ -39,6 +40,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 401 | `SESSION_EXPIRED` | 세션 만료 |
 | 404 | `ACCOUNT_NOT_FOUND` | 세션의 계정이 없음 |
 | 422 | `INVALID_REQUEST` | 요청 형식 오류 |
+| 426 | `APP_UPDATE_REQUIRED` | 앱 버전(`X-App-Version-Code`)이 최소 지원 버전보다 낮음. 로그인 전 API 포함 |
 | 500 | `INTERNAL_SERVER_ERROR` | 서버 내부 오류 |
 | 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
 

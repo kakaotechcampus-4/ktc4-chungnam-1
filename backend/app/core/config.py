@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     # 구글 계정 이름을 저장하지 않을 때 쓰는 기본 표시 이름.
     default_display_name: str = "보호자"
 
+    # 받을 수 있는 가장 낮은 안드로이드 앱 versionCode. 앱이 `X-App-Version-Code` 로
+    # 보낸 값이 이보다 낮으면 426 `APP_UPDATE_REQUIRED` 로 거절한다. 0 이면 검사하지
+    # 않는다. 구버전과 맞지 않는 서버를 올리기 전에, 맞는 앱을 Play 에 낸 뒤 올린다.
+    min_android_version_code: int = Field(default=0, ge=0)
+
     @field_validator("session_secret")
     @classmethod
     def _reject_short_secret(cls, value: str) -> str:

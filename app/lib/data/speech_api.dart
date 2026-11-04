@@ -40,7 +40,7 @@ class ServerSpeechApi implements SpeechApi {
     );
     final text = body['text'];
     if (text is! String) {
-      throw const ApiUnexpectedResponseFailure('text 가 없다');
+      throw _client.unexpected('text 가 없다');
     }
     return text;
   }

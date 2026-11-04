@@ -5,12 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/release_config.dart';
 import 'app/router.dart';
 import 'app/routes.dart';
+import 'data/app_version.dart';
 import 'design/theme.dart';
+import 'features/app_update/app_update_watcher.dart';
 import 'features/auth/session_refresher.dart';
 import 'features/profile_setup/setup_controller.dart';
 
-void main() {
-  runApp(rootApp(isRelease: kReleaseMode));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 요청마다 서버에 알릴 앱 버전. 읽지 못하면 헤더 없이 보낸다.
+  final versionCode = await readAppVersionCode();
+  runApp(rootApp(isRelease: kReleaseMode, versionCode: versionCode));
 }
 
 /// 처음 띄울 앱을 고른다.
@@ -18,10 +23,13 @@ void main() {
 /// 릴리스 빌드에 서버 주소나 구글 클라이언트 ID 를 잘못 넘겼으면 로그인과 요청을
 /// 시작하지 않고 설정 오류를 알린다. 디버그 빌드는 검사하지 않는다. 테스트가
 /// [isRelease] 를 넘겨 이 연결을 확인한다.
-Widget rootApp({required bool isRelease}) {
+Widget rootApp({required bool isRelease, String? versionCode}) {
   final problems = currentReleaseConfigProblems(isRelease: isRelease);
   if (problems.isNotEmpty) return ReleaseConfigErrorApp(problems: problems);
-  return const ProviderScope(child: SaerokApp());
+  return ProviderScope(
+    overrides: [appVersionCodeProvider.overrideWithValue(versionCode)],
+    child: const SaerokApp(),
+  );
 }
 
 class SaerokApp extends ConsumerStatefulWidget {
@@ -55,6 +63,10 @@ class _SaerokAppState extends ConsumerState<SaerokApp> {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       routerConfig: _router,
+      builder: (context, child) => AppUpdateWatcher(
+        router: _router,
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }
