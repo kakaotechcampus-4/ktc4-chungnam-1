@@ -118,6 +118,46 @@ class ServerPhotoUploader implements PhotoUploader {
   }
 }
 
+/// [current] 사진 중 아직 올리지 못한 것을 한 장씩 차례로 올린다.
+///
+/// 이미 올라간 사진은 건너뛴다. 그래서 일부가 실패한 뒤 다시 부르면 실패한
+/// 사진만 다시 올린다. 사진의 상태가 바뀔 때마다 [update] 로 알린다. 한 장을
+/// 올린 뒤 [active] 가 `false` 면(화면이 사라짐) 멈춘다.
+///
+/// 입력 흐름의 사진 단계와 등록 뒤 사진 추가가 같이 쓴다.
+Future<void> uploadPendingPhotos({
+  required PhotoUploader uploader,
+  required String? profileId,
+  required List<SetupPhoto> Function() current,
+  required void Function(int index, SetupPhoto photo) update,
+  required bool Function() active,
+}) async {
+  for (var i = 0; i < current().length; i++) {
+    final photo = current()[i];
+    if (photo.status == PhotoUploadStatus.uploaded) continue;
+
+    update(i, photo.withStatus(PhotoUploadStatus.uploading));
+    PhotoUploadFailure? failure;
+    try {
+      await uploader.upload(photo.picked, profileId: profileId);
+    } on PhotoUploadFailure catch (caught) {
+      failure = caught;
+    } catch (_) {
+      failure = const PhotoUploadFailure(
+        PhotoUploadFailure.networkError,
+        retryable: true,
+      );
+    }
+    if (!active()) return;
+    update(
+      i,
+      failure == null
+          ? photo.withStatus(PhotoUploadStatus.uploaded)
+          : photo.withStatus(PhotoUploadStatus.failed, failure: failure),
+    );
+  }
+}
+
 /// 로그인했으면 서버에 올린다. 아니면 목 업로더를 쓴다.
 final photoUploaderProvider = Provider<PhotoUploader>((ref) {
   final online = ref.watch(sessionProvider.select((s) => s != null));

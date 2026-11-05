@@ -55,8 +55,10 @@ class SetupDraft {
   bool get hasFailedPhoto =>
       photos.any((photo) => photo.status == PhotoUploadStatus.failed);
 
-  /// 사진을 더하거나 뺄 수 있는지. 올리는 중이거나 모두 올린 뒤에는 막는다.
-  bool get canEditPhotos => !isUploadingPhotos && !allPhotosUploaded;
+  /// 사진을 더하거나 뺄 수 있는지. 올리는 중에만 막는다. 모두 올린 뒤에도
+  /// [maxProfilePhotos] 장 미만이면 더 골라 올릴 수 있다. 올라간 사진은 지울
+  /// API 가 없어 빼지 않는다.
+  bool get canEditPhotos => !isUploadingPhotos;
 
   /// 이름은 50자 이하다(`data-contracts.md` 의 Profile).
   static const maxNameLength = 50;
@@ -281,37 +283,13 @@ class SetupController extends Notifier<SetupState> {
   /// 사진만 다시 올린다.
   Future<void> uploadPhotos() async {
     if (state.draft.isUploadingPhotos) return;
-    final uploader = ref.read(photoUploaderProvider);
-
-    for (var i = 0; i < state.draft.photos.length; i++) {
-      final photo = state.draft.photos[i];
-      if (photo.status == PhotoUploadStatus.uploaded) continue;
-
-      _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploading));
-      try {
-        await uploader.upload(photo.picked, profileId: state.remoteId);
-        if (!ref.mounted) return;
-        _setPhoto(i, photo.withStatus(PhotoUploadStatus.uploaded));
-      } on PhotoUploadFailure catch (failure) {
-        if (!ref.mounted) return;
-        _setPhoto(
-          i,
-          photo.withStatus(PhotoUploadStatus.failed, failure: failure),
-        );
-      } catch (_) {
-        if (!ref.mounted) return;
-        _setPhoto(
-          i,
-          photo.withStatus(
-            PhotoUploadStatus.failed,
-            failure: const PhotoUploadFailure(
-              PhotoUploadFailure.networkError,
-              retryable: true,
-            ),
-          ),
-        );
-      }
-    }
+    await uploadPendingPhotos(
+      uploader: ref.read(photoUploaderProvider),
+      profileId: state.remoteId,
+      current: () => state.draft.photos,
+      update: _setPhoto,
+      active: () => ref.mounted,
+    );
   }
 
   /// 올리지 못한 사진을 뺀다. 사진은 선택이라 실패한 사진 없이도 마칠 수 있다.
