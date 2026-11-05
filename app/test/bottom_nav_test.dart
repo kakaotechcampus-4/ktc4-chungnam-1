@@ -70,6 +70,8 @@ void main() {
     final settingsX = _slotCenterX(tester, '설정');
     await tester.tap(find.text('설정'));
     await tester.pump();
+    // 새 화면을 그린 다음 프레임부터 움직인다.
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     // 화면이 바뀌는 동안에도 하단 탭은 하나뿐이고 막대가 옮겨 가는 중이다.
     expect(find.byType(AppBottomNav), findsOneWidget);
@@ -139,14 +141,17 @@ void main() {
     final home = _slotCenterX(tester, '홈');
     final settings = _slotCenterX(tester, '설정');
 
+    // 탭이 바뀐 프레임이 무거운 화면 때문에 0.5초 걸렸다고 친다. 시간으로
+    // 움직이는 막대가 그사이 끝까지 가 버리면 순간이동처럼 보인다.
     await tester.pumpWidget(nav(AppTab.settings));
+    await tester.pump(const Duration(milliseconds: 500));
     final start = _barCenterX(tester);
     await tester.pump(const Duration(milliseconds: 120));
     final middle = _barCenterX(tester);
     await tester.pumpAndSettle();
     final end = _barCenterX(tester);
 
-    expect(start, closeTo(home, 1), reason: '앞 탭인 홈 자리에서 출발한다');
+    expect(start, closeTo(home, 1), reason: '긴 프레임이 지나도 아직 홈 자리에서 출발 전이다');
     expect(middle, inExclusiveRange(home, settings), reason: '중간을 지난다');
     expect(end, closeTo(settings, 1));
   });

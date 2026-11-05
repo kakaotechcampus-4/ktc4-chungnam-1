@@ -184,31 +184,86 @@ class AppBottomNav extends StatelessWidget {
                 // 고른 탭 위의 검정 막대. 누름은 아래 탭이 받는다. 높이는 탭이 정한다.
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: TweenAnimationBuilder<double>(
-                      // 끝값이 바뀌면 지금 자리에서 새 끝값으로 움직인다.
-                      tween: Tween(begin: index, end: index),
-                      duration: still
-                          ? Duration.zero
-                          : const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, position, _) => Align(
-                        alignment: Alignment(
-                          -1 + 2 * position / (AppTab.values.length - 1),
-                          -1,
-                        ),
-                        child: FractionallySizedBox(
-                          widthFactor: 1 / AppTab.values.length,
-                          child: const Align(
-                            alignment: Alignment.topCenter,
-                            child: _Indicator(),
-                          ),
-                        ),
-                      ),
-                    ),
+                    child: _SlidingIndicator(index: index, still: still),
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 고른 탭 위로 미끄러지는 막대.
+///
+/// 고른 탭이 바뀐 프레임에는 새 화면도 함께 처음 그려진다. 무거운 화면(프로필
+/// 설정, 설정 등)은 그 한 프레임이 길어 시간으로 움직이는 막대가 그사이 끝까지
+/// 가 버려 순간이동처럼 보였다. 그래서 그 프레임을 다 그린 뒤 다음 프레임부터
+/// 0.3초 동안 움직인다. 움직이는 도중 또 바뀌면 지금 자리에서 다시 출발한다.
+class _SlidingIndicator extends StatefulWidget {
+  const _SlidingIndicator({required this.index, required this.still});
+
+  final double index;
+
+  /// 움직임 줄이기. 켜져 있으면 바로 옮긴다.
+  final bool still;
+
+  @override
+  State<_SlidingIndicator> createState() => _SlidingIndicatorState();
+}
+
+class _SlidingIndicatorState extends State<_SlidingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+    value: 1,
+  );
+  late double _from = widget.index;
+  late double _to = widget.index;
+
+  double get _position =>
+      _from + (_to - _from) * Curves.easeOutCubic.transform(_slide.value);
+
+  @override
+  void didUpdateWidget(_SlidingIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index == widget.index) return;
+    _from = _position;
+    _to = widget.index;
+    _slide.stop();
+    if (widget.still) {
+      _slide.value = 1;
+      return;
+    }
+    _slide.value = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _slide.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _slide.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _slide,
+      builder: (context, _) => Align(
+        alignment: Alignment(
+          -1 + 2 * _position / (AppTab.values.length - 1),
+          -1,
+        ),
+        child: FractionallySizedBox(
+          widthFactor: 1 / AppTab.values.length,
+          child: const Align(
+            alignment: Alignment.topCenter,
+            child: _Indicator(),
           ),
         ),
       ),
