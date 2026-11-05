@@ -374,3 +374,12 @@ CREATE TABLE session_revocations (
     expires_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX idx_session_revocations_expires ON session_revocations(expires_at);
+
+-- 리포트 완료 푸시를 보낼 기기의 FCM 등록 ID(FID). 같은 기기에서 다른 계정이 등록하면
+-- 그 계정으로 옮긴다. 앱이 켤 때마다 다시 등록하므로 `registered_at` 으로 오래된 등록을 고른다.
+CREATE TABLE push_devices (
+    fid           VARCHAR(64) PRIMARY KEY CHECK (fid ~ '^[A-Za-z0-9_-]+$'),
+    user_id       UUID        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_push_devices_user ON push_devices(user_id);
