@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../data/profile_api.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
@@ -19,6 +21,9 @@ import 'life_story_providers.dart';
 /// 이전, 다음으로 넘겨도 화면을 새로 쌓지 않는다. 뒤로 가면 바로 목차다.
 /// 오른쪽 위의 연필로 고치고 휴지통으로 지운다. 세부 정보 이야기는 프로필
 /// 수정에서 고치므로 연필이 그 화면을 열고 휴지통은 없다.
+///
+/// 대화 카드를 만드는 동안에는 서버가 고치기와 지우기를 거절한다. 다 쓰고
+/// 저장할 때 실패하지 않게 연필과 휴지통을 누르는 순간 안내창으로 알린다.
 class LifeStoryStoryScreen extends ConsumerStatefulWidget {
   const LifeStoryStoryScreen({
     required this.category,
@@ -45,7 +50,24 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   /// 지우고 목차로 돌아가는 중인 이야기.
   LifeStory? _leavingWith;
 
+  /// 카드를 만드는 중이면 알리고 `true` 를 돌려준다.
+  Future<bool> _blockedByCards() async {
+    // 카드는 홈 버튼이 이 ID 를 읽은 뒤에만 만든다. 아직 읽지 않았으면 이번
+    // 실행에서 만드는 카드가 없다.
+    final profileId = ref.read(serverProfileIdProvider).value;
+    if (profileId == null || !ref.read(cardsBeingMadeProvider(profileId))) {
+      return false;
+    }
+    await showNoticeDialog(
+      context,
+      title: '대화 카드를 만들고 있어요',
+      detail: '카드를 만드는 동안에는 이야기를\n고치거나 지울 수 없어요.\n카드가 준비된 뒤 다시 눌러주세요.',
+    );
+    return true;
+  }
+
   Future<void> _edit(LifeStory story) async {
+    if (await _blockedByCards() || !mounted) return;
     if (story.isProfileDetail) {
       context.push(AppRoutes.profileEditDetails);
       return;
@@ -63,6 +85,7 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   }
 
   Future<void> _delete(String profileId, LifeStory story) async {
+    if (await _blockedByCards() || !mounted) return;
     final confirmed = await showChoiceDialog(
       context,
       title: '이 이야기를 지울까요?',
