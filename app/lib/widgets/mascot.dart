@@ -35,7 +35,13 @@ class MascotController extends ChangeNotifier {
 /// 기기의 `움직임 줄이기`가 켜져 있으면 몸을 움직이지 않고 표정만 바꾼다.
 /// 장식이라 화면 읽기에서는 뺀다.
 class Mascot extends StatefulWidget {
-  const Mascot({super.key, required this.size, this.controller, this.onReact});
+  const Mascot({
+    super.key,
+    required this.size,
+    this.controller,
+    this.onReact,
+    this.cheerful = false,
+  });
 
   /// 정사각 영역의 한 변. 그림자는 이 영역 안 아래쪽에 그린다.
   final double size;
@@ -45,6 +51,11 @@ class Mascot extends StatefulWidget {
   /// 눌러서 반응을 시작했을 때 부른다. 반응 중이거나 축하 중이라 무시한
   /// 누름에는 부르지 않는다.
   final VoidCallback? onReact;
+
+  /// `true` 인 동안 평소 얼굴 대신 `><` 신나는 얼굴로 떠 있고 둘러보지
+  /// 않는다. 홈은 카드 완성 말풍선이 떠 있는 동안 켠다. 눌렀을 때의 반응은
+  /// 그대로 한다.
+  final bool cheerful;
 
   /// `false` 면 떠 있기와 둘러보기를 하지 않는다. 끝나지 않는 움직임이
   /// 화면이 멈추기를 기다리는 위젯 테스트를 막으므로
@@ -139,6 +150,8 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
       oldWidget.controller?.removeListener(_celebrate);
       widget.controller?.addListener(_celebrate);
     }
+    // 신나는 얼굴과 평소 얼굴을 오갈 때는 천천히 바꾼다.
+    if (oldWidget.cheerful != widget.cheerful) _swap = _successSwap;
   }
 
   @override
@@ -181,7 +194,9 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
   void _look() {
     if (!mounted) return;
     // 다른 화면이 위에 있으면 보이지 않으므로 다음으로 미룬다.
-    if (_phase != MascotPhase.idle || !TickerMode.valuesOf(context).enabled) {
+    if (_phase != MascotPhase.idle ||
+        widget.cheerful ||
+        !TickerMode.valuesOf(context).enabled) {
       _scheduleLook();
       return;
     }
@@ -240,16 +255,20 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
 
   // ── 그리기 ─────────────────────────────────────
 
+  /// 아무 반응도 하지 않을 때의 얼굴.
+  String get _restFace =>
+      widget.cheerful ? Mascot.successAsset : Mascot.idleAsset;
+
   /// 지금 보여줄 그림.
   String get _asset => switch (_phase) {
-    MascotPhase.idle => Mascot.idleAsset,
+    MascotPhase.idle => _restFace,
     MascotPhase.looking => _lookAsset,
     // 착지하고 작게 튄 뒤 원래 얼굴로 돌아온다.
     MascotPhase.tapReaction =>
       _tap.value < 0.8 ? Mascot.tapAsset : Mascot.idleAsset,
     // 바로 `><` 얼굴이 되어 약 2초 좋아한 뒤 기본으로 돌아온다.
     MascotPhase.success =>
-      _success.value < 0.8 ? Mascot.successAsset : Mascot.idleAsset,
+      _success.value < 0.8 ? Mascot.successAsset : _restFace,
   };
 
   /// 몸의 가로 배율, 세로 배율, 위로 뜬 높이(한 변에 대한 비율, 위가 음수).

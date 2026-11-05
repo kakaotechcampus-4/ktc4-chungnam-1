@@ -205,7 +205,13 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
                 math.min(box.maxHeight, box.maxWidth * 0.55),
                 220.0,
               );
-              return Mascot(size: size, controller: _mascot, onReact: _talk);
+              return Mascot(
+                size: size,
+                controller: _mascot,
+                onReact: _talk,
+                // 카드 완성 말풍선이 떠 있는 동안 신나는 얼굴로 떠 있는다.
+                cheerful: _line.greeting == cardsReadyMessage,
+              );
             },
           ),
         ),

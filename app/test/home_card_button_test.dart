@@ -160,6 +160,11 @@ void main() {
 
     // 성공 움직임이 끝난 뒤 누른다. 축하 중에는 누름을 받지 않는다.
     await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 1));
+    // 완성 말풍선이 떠 있는 동안은 신나는 얼굴 그대로다.
+    expect(find.byKey(const ValueKey(Mascot.successAsset)), findsOneWidget);
+    expect(find.byKey(const ValueKey(Mascot.idleAsset)), findsNothing);
+
     await tester.tap(find.byType(Mascot));
     await tester.pump();
     expect(find.text(cardsReadyMessage), findsNothing);
@@ -170,6 +175,10 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 1));
+    // 말풍선이 바뀌면 반응을 마친 뒤 평소 얼굴로 돌아온다.
+    expect(find.byKey(const ValueKey(Mascot.idleAsset)), findsOneWidget);
+    expect(find.byKey(const ValueKey(Mascot.successAsset)), findsNothing);
   });
 
   testWidgets('상태를 묻는 짧은 동안은 버튼 모양을 바꾸지 않는다', (tester) async {
