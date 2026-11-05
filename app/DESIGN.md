@@ -142,7 +142,7 @@
 | --- | --- |
 | `logo.webp` | 스플래시 (A-1) |
 | `onboarding.webp` | 처음 오셨네요 (B-1) |
-| `main.webp` | 홈 |
+| `mascot/idle.webp` 외 4장 | 홈 마스코트. `idle`(기본), `look_left`, `look_right`(둘러보기), `tap`(눌렀을 때 눈웃음), `success`(카드 완료, `><` 표정에 꽃이 펴짐). 모두 같은 600x600 투명 캔버스이고 캐릭터 위치와 크기가 같다. 자르지 않고 같은 영역에 그린다. 그림자, 반짝이와 하트는 코드로 그린다 |
 | `patient-male.webp`, `patient-female.webp` | 어르신 기본 프로필 사진. 성별에 맞춰 고른다 |
 | `family.webp` | 세부 정보 입력에서 첨부하는 가족 사진 |
 | `visitation.webp` | 면회 인증샷 |
