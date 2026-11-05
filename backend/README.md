@@ -232,13 +232,25 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 #### 푸시 받을 기기
 
-리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 이번 변경은 등록과 해제까지이며 FCM 발송과 worker 연결은 후속 작업이다.
+리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 발송은 아래 "리포트 완료 푸시"에 있다.
 
 - `fid`는 앱이 FCM에 등록하고 받은 Firebase Installation ID다. FCM HTTP v1은 기기 토큰(`token`) 대신 `fid`로 보내도록 바꿨다. 경로로 받으며 영문 대소문자, 숫자, `-`, `_`로 된 1~64자만 받는다(DB CHECK도 같다). 기기를 가리키는 값이라 로그에 남기지 않는다.
 - 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6과 겹치지 않도록 계정 행을 `FOR SHARE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
 - 해제(1-8)는 이 계정의 등록만 지우며 없거나 다른 계정의 FID여도 `204`다. 알림 동의가 없어도 지울 수 있다.
 - 1-6에서 `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 등록을 모두 지운다. 탈퇴(1-5)는 `ON DELETE CASCADE`로 지운다. 로그아웃(1-4)은 서버가 어느 기기인지 모르므로 앱이 로그아웃 전에 1-8을 보낸다.
-- 오래된 등록 정리(FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 본다)는 발송 작업에서 정한다.
+- 오래된 등록을 주기적으로 지우는 작업은 아직 없다. 발송이 `UNREGISTERED`로 실패한 등록만 지운다. FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 보며, `registered_at`으로 고를 수 있다.
+
+#### 리포트 완료 푸시
+
+음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)).
+
+- 완료 처리(`mark_completed`)가 커밋된 다음에 보낸다. 대상은 DB에서 다시 고른다. 작업이 `completed`이고, 그 회차 계정의 현재 동의(`current_consents`)에서 알림 수신이 켜져 있고, 그 계정의 `push_devices`에 등록된 기기만이다. 임대를 잃어 리포트를 저장하지 못한 작업이나 그사이 동의를 거둔 계정에는 보내지 않는다. 대상을 읽을 때 트랜잭션을 열지 않아 발송 중 잠금을 잡지 않는다.
+- 알림은 고정 문구(`새록`, `리포트가 준비되었어요`)와 `data`의 `type: reportReady`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `sessionId`로 리포트(7-2)를 다시 읽는다. `data` 항목은 FE와 합의 전인 테스트 가정이다.
+- 인증은 Firebase 서비스 계정 키로 서명한 JWT를 Google 토큰 주소에 보내 접근 토큰을 받는다(`pyjwt[crypto]`와 `httpx`, 새 의존성 없음). 접근 토큰은 만료 60초 전까지 다시 쓰고 401을 받으면 버린다.
+- 응답이 404 `UNREGISTERED`면 그 계정의 그 등록을 지운다. 400 `INVALID_ARGUMENT`는 알림 본문 문제일 수도 있어 지우지 않는다. 그 밖의 실패(429, 5xx, 연결 실패, 토큰 실패)는 이번 알림만 포기하고 다시 보내지 않는다. 알림을 놓쳐도 앱은 홈에서 회차 상태(5-4)로 리포트 도착을 보여준다.
+- 발송 실패는 리포트 작업을 실패로 만들지 않는다. 로그에는 HTTP 상태, FCM 오류 코드와 건수만 남기고 FID, 키와 접근 토큰은 남기지 않는다.
+- 설정: `SAEROK_FCM_CREDENTIALS_PATH`(키 파일 경로, 비우면 푸시 없음), `SAEROK_FCM_TIMEOUT_SECONDS`(요청 하나의 제한 시간, 기본 10초). 경로를 넣었는데 키 파일을 읽지 못하면 음성 worker가 시작하지 않는다. `--stt-only`는 리포트를 만들지 않으므로 키를 보지 않는다. 컨테이너 배포는 [배포 문서](docs/deployment.md)의 "리포트 완료 푸시 키"를 따른다.
+- 리포트 생성 실패를 알릴지는 정하지 않아 보내지 않는다(PM 확인 필요). 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
 
 ### 세션
 
