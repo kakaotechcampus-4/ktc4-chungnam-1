@@ -19,6 +19,8 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
+import 'package:saerok/features/home/home_phrases.dart';
+import 'package:saerok/widgets/mascot.dart';
 
 import 'fake_card_api.dart';
 import 'sample_profile.dart';
@@ -142,6 +144,32 @@ void main() {
     expect(find.textContaining('대화 카드가 준비됐어요'), findsOneWidget);
     expect(location(router), AppRoutes.home, reason: '다른 화면에 있을 수 있다');
     expect(api.calls.where((c) => c == 'request'), hasLength(1));
+  });
+
+  testWidgets('다 만들면 말풍선이 완성을 알리고, 마스코트를 누르면 이야기로 바뀐다', (tester) async {
+    final api = FakeCardApi(statuses: [_none, _running, _ready]);
+    await openHome(tester, api);
+    expect(find.text(cardsReadyMessage), findsNothing);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump(_poll);
+    await tester.pump(_poll);
+    await tester.pump();
+    expect(find.text(cardsReadyMessage), findsOneWidget);
+
+    // 성공 움직임이 끝난 뒤 누른다. 축하 중에는 누름을 받지 않는다.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.tap(find.byType(Mascot));
+    await tester.pump();
+    expect(find.text(cardsReadyMessage), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Text && storyRemarks.contains(w.data),
+      ),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('상태를 묻는 짧은 동안은 버튼 모양을 바꾸지 않는다', (tester) async {

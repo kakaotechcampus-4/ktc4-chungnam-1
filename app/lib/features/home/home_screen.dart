@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,10 +11,10 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
-import '../../widgets/mascot.dart';
 import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
+import 'home_talk.dart';
 import 'my_page_menu.dart';
 
 /// 시작 화면.
@@ -45,7 +44,9 @@ class HomeScreen extends ConsumerWidget {
     final hasProfile = ref.watch(
       careProfilesProvider.select((p) => p.hasSelected),
     );
-    final name = ref.watch(profileProvider).value?.profile.name;
+    final shown = ref.watch(profileProvider).value?.profile;
+    final name = shown?.name;
+    final profileKey = shown?.profileId;
 
     // 어르신이 있어야 쓰는 기능이다. 없으면 등록부터 안내한다.
     void needsProfile(VoidCallback open) =>
@@ -134,14 +135,6 @@ class HomeScreen extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      '새록',
-                      style: AppTypography.screenTitle.copyWith(
-                        fontSize: 44,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
                     // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
                     // 이름을 읽는 동안에는 이름 없이 묻는다.
                     Text(
@@ -151,8 +144,9 @@ class HomeScreen extends ConsumerWidget {
                       style: AppTypography.body,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    const Flexible(child: _HomeMascot()),
+                    const SizedBox(height: AppSpacing.xl),
+                    // 어르신을 바꾸면 인사말부터 다시 시작한다.
+                    Flexible(child: HomeTalk(key: ValueKey(profileKey))),
                   ],
                 ),
               ),
@@ -173,57 +167,6 @@ class HomeScreen extends ConsumerWidget {
           }
         },
       ),
-    );
-  }
-}
-
-/// 홈 가운데의 마스코트. 남는 높이에 맞춰 크기를 정한다.
-///
-/// 지금 고른 어르신의 카드를 실제로 만들고(`making`, `remaking`) 끝나 쓸 수
-/// 있게 되면(`ready`, `inVisit`) 한 번 축하한다. 이미 있던 묶음을 확인만 한
-/// 경우(`checking`)와 실패는 축하하지 않는다. 다른 화면에 가 있는 동안 끝나면
-/// 움직임은 홈으로 돌아왔을 때 이어서 보인다.
-class _HomeMascot extends ConsumerStatefulWidget {
-  const _HomeMascot();
-
-  @override
-  ConsumerState<_HomeMascot> createState() => _HomeMascotState();
-}
-
-class _HomeMascotState extends ConsumerState<_HomeMascot> {
-  final _mascot = MascotController();
-
-  @override
-  void dispose() {
-    _mascot.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final profileId = ref.watch(serverProfileIdProvider).value;
-    if (profileId != null) {
-      ref.listen(cardGenerationProvider(profileId), (previous, next) {
-        final made =
-            ref.read(cardMakingProvider(profileId)) != CardMaking.checking;
-        final usable =
-            !next.isLoading &&
-            !next.hasError &&
-            (next.value == CardGenerationStatus.ready ||
-                next.value == CardGenerationStatus.inVisit);
-        if ((previous?.isLoading ?? false) && made && usable) {
-          _mascot.celebrate();
-        }
-      });
-    }
-    return LayoutBuilder(
-      builder: (context, box) {
-        final size = math.min(
-          math.min(box.maxHeight, box.maxWidth * 0.6),
-          240.0,
-        );
-        return Mascot(size: size, controller: _mascot);
-      },
     );
   }
 }
@@ -285,6 +228,8 @@ class _CardButton extends ConsumerWidget {
   }
 
   Future<void> _getCards(BuildContext context, WidgetRef ref) async {
+    // 기다리는 동안 볼 이야기를 말풍선에 꺼낸다.
+    ref.read(homeTalkNudgeProvider.notifier).nudge();
     // 이미 읽은 값이 있으면 기다리지 않는다. 누르자마자 버튼이 돌게 한다.
     final profileId =
         ref.read(serverProfileIdProvider).value ??

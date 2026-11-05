@@ -35,12 +35,16 @@ class MascotController extends ChangeNotifier {
 /// 기기의 `움직임 줄이기`가 켜져 있으면 몸을 움직이지 않고 표정만 바꾼다.
 /// 장식이라 화면 읽기에서는 뺀다.
 class Mascot extends StatefulWidget {
-  const Mascot({super.key, required this.size, this.controller});
+  const Mascot({super.key, required this.size, this.controller, this.onReact});
 
   /// 정사각 영역의 한 변. 그림자는 이 영역 안 아래쪽에 그린다.
   final double size;
 
   final MascotController? controller;
+
+  /// 눌러서 반응을 시작했을 때 부른다. 반응 중이거나 축하 중이라 무시한
+  /// 누름에는 부르지 않는다.
+  final VoidCallback? onReact;
 
   /// `false` 면 떠 있기와 둘러보기를 하지 않는다. 끝나지 않는 움직임이
   /// 화면이 멈추기를 기다리는 위젯 테스트를 막으므로
@@ -211,6 +215,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     _setPhase(MascotPhase.tapReaction);
     _tap.forward(from: 0);
     _heart.forward(from: 0);
+    widget.onReact?.call();
   }
 
   void _onTapStatus(AnimationStatus status) {
