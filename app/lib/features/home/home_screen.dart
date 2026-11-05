@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
+import '../../widgets/mascot.dart';
 import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
@@ -150,12 +152,7 @@ class HomeScreen extends ConsumerWidget {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: AppSpacing.xxxl),
-                    Flexible(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.image),
-                        child: Image.asset('assets/images/main.webp'),
-                      ),
-                    ),
+                    const Flexible(child: _HomeMascot()),
                   ],
                 ),
               ),
@@ -176,6 +173,57 @@ class HomeScreen extends ConsumerWidget {
           }
         },
       ),
+    );
+  }
+}
+
+/// 홈 가운데의 마스코트. 남는 높이에 맞춰 크기를 정한다.
+///
+/// 지금 고른 어르신의 카드를 실제로 만들고(`making`, `remaking`) 끝나 쓸 수
+/// 있게 되면(`ready`, `inVisit`) 한 번 축하한다. 이미 있던 묶음을 확인만 한
+/// 경우(`checking`)와 실패는 축하하지 않는다. 다른 화면에 가 있는 동안 끝나면
+/// 움직임은 홈으로 돌아왔을 때 이어서 보인다.
+class _HomeMascot extends ConsumerStatefulWidget {
+  const _HomeMascot();
+
+  @override
+  ConsumerState<_HomeMascot> createState() => _HomeMascotState();
+}
+
+class _HomeMascotState extends ConsumerState<_HomeMascot> {
+  final _mascot = MascotController();
+
+  @override
+  void dispose() {
+    _mascot.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profileId = ref.watch(serverProfileIdProvider).value;
+    if (profileId != null) {
+      ref.listen(cardGenerationProvider(profileId), (previous, next) {
+        final made =
+            ref.read(cardMakingProvider(profileId)) != CardMaking.checking;
+        final usable =
+            !next.isLoading &&
+            !next.hasError &&
+            (next.value == CardGenerationStatus.ready ||
+                next.value == CardGenerationStatus.inVisit);
+        if ((previous?.isLoading ?? false) && made && usable) {
+          _mascot.celebrate();
+        }
+      });
+    }
+    return LayoutBuilder(
+      builder: (context, box) {
+        final size = math.min(
+          math.min(box.maxHeight, box.maxWidth * 0.6),
+          240.0,
+        );
+        return Mascot(size: size, controller: _mascot);
+      },
     );
   }
 }
