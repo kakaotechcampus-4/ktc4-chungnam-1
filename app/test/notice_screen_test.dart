@@ -78,6 +78,8 @@ void main() {
 
       expect(find.text('알림'), findsOneWidget);
       expect(find.text('아직 새 알림이 없어요.'), findsOneWidget);
+      // 쓰임새가 없던 오른쪽 위 메뉴 아이콘은 두지 않는다.
+      expect(find.byTooltip('메뉴'), findsNothing);
     });
 
     testWidgets('만드는 중이면 홈과 같은 문구를 보여준다', (tester) async {
@@ -103,6 +105,15 @@ void main() {
       await tester.pump();
 
       expect(find.text('리포트가 도착했어요'), findsOneWidget);
+      // 알림 상자는 내용 높이만큼만 차지하고 화면을 채우지 않는다.
+      final box = find
+          .ancestor(
+            of: find.text('리포트가 도착했어요'),
+            matching: find.byType(Material),
+          )
+          .first;
+      expect(tester.getSize(box).height, lessThan(250));
+      expect(find.byIcon(Icons.mail_outline_rounded), findsOneWidget);
 
       await tester.tap(find.text('리포트가 도착했어요'));
       await tester.pump();
