@@ -43,6 +43,10 @@
         <meta-data
             android:name="firebase_messaging_auto_init_enabled"
             android:value="false" />
+        <!-- 리포트 완료 푸시를 MainActivity 가 만드는 `report_ready` 채널(리포트 알림)로 띄운다. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="report_ready" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
