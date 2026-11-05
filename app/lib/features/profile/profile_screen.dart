@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
-import '../../data/account_api.dart';
-import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -13,31 +11,24 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
-import '../auth/auth_providers.dart';
-import '../auth/consent_terms.dart';
-import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_steps.dart';
 import 'profile_gallery.dart';
 
-/// 프로필 설정.
+/// 프로필 설정. 하단 탭의 마이페이지로 들어온다.
 ///
-/// 피그마에는 `MYPAGE` 로 되어 있으나 화면 이름은 프로필 설정이다. 하단 탭의
-/// 마이페이지를 눌러 뜨는 메뉴에서 들어온다.
+/// 피그마에는 `MYPAGE` 로 되어 있으나 화면 이름은 프로필 설정이다. 지금 고른
+/// 어르신의 사진, 기본 정보, 세부 정보와 갤러리를 보여준다. 계정 약관 동의,
+/// 로그아웃과 회원탈퇴는 설정 탭으로 옮겼다(2026-11-06 디자인 리뉴얼).
 ///
 /// 이름과 생년월일은 계약상 `localOnly` 라 단말에만 두며 외부 요청에 담지 않는다.
 ///
-/// 등록한 어르신이 없으면 어르신 항목을 모두 감추고 계정 약관 동의, 저장하기,
-/// 로그아웃과 회원탈퇴만 보여준다.
-///
-/// 계정 정보를 읽지 못해도 로그아웃은 둔다. 세션이 만료돼 다시 시도해도 같은
-/// 오류가 나면 로그아웃한 뒤 다시 로그인할 길이 있어야 한다.
+/// 등록한 어르신이 없으면 등록부터 안내한다.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
-    final account = ref.watch(accountProvider);
 
     return Scaffold(
       appBar: const AppTopBar(title: '프로필 설정'),
@@ -47,247 +38,28 @@ class ProfileScreen extends ConsumerWidget {
           message: '프로필을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(profileProvider),
         ),
-        data: (bundle) => account.when(
-          // 체크 상태는 처음 받은 값에서 시작하므로, 저장 뒤 다시 읽는 중에는
-          // 이전 값을 보여주지 않고 기다린다.
-          skipLoadingOnRefresh: false,
-          loading: () => const LoadingView(),
-          error: (error, _) => Column(
-            children: [
-              Expanded(
-                child: ErrorStateView(
-                  message: '계정 정보를 불러오지 못했어요.',
-                  onRetry: () => ref.invalidate(accountProvider),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(AppSpacing.screen),
-                child: _SignOutButton(),
-              ),
-            ],
-          ),
-          data: (account) => _Body(bundle: bundle, account: account),
-        ),
+        data: (bundle) => bundle == null
+            ? EmptyStateView(
+                message: '함께하는 소중한 분을 등록하면\n정보를 볼 수 있어요.',
+                icon: Icons.person_add_alt_1_outlined,
+                actionLabel: '등록하러 가기',
+                onAction: () => context.push(AppRoutes.profileSwitch),
+              )
+            : _Body(bundle: bundle),
       ),
     );
   }
 }
 
-class _Body extends ConsumerStatefulWidget {
-  const _Body({required this.bundle, required this.account});
+class _Body extends StatelessWidget {
+  const _Body({required this.bundle});
 
-  /// 등록한 어르신이 없으면 `null` 이다.
-  final ProfileBundle? bundle;
-  final Account account;
-
-  @override
-  ConsumerState<_Body> createState() => _BodyState();
-}
-
-class _BodyState extends ConsumerState<_Body> {
-  /// 지금 화면에서 동의한 항목의 키. `widget.account.consent` 에서 시작해
-  /// 수정하기 전까지는 회원가입 때 고른 값과 같다.
-  late final Set<String> _agreed;
-
-  @override
-  void initState() {
-    super.initState();
-    _agreed = {
-      for (final entry in widget.account.consent.entries)
-        if (entry.value.granted) entry.key,
-    };
-  }
-
-  bool get _requiredAgreed => consentTerms
-      .where((term) => term.required)
-      .every((term) => _agreed.contains(term.key));
-
-  bool get _allAgreed => _agreed.length == consentTerms.length;
-
-  /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
-  bool _saving = false;
-
-  /// 처음 값과 달라진 선택 동의. 필수 동의는 1-6 으로 바꿀 수 없어 담지 않는다.
-  Map<String, bool> get _changedOptional => {
-    for (final term in consentTerms)
-      if (!term.required &&
-          _agreed.contains(term.key) !=
-              (widget.account.consent[term.key]?.granted ?? false))
-        term.key: _agreed.contains(term.key),
-  };
-
-  /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 바꾼 것이 없거나
-  /// 로그인하지 않았으면 그대로 닫는다. 저장하지 못하면 알리고 화면에 남는다.
-  ///
-  /// 저장하는 동안 화면을 떠나도 저장되면 계정을 다시 읽는다. 저장을 마쳤을 때
-  /// 이 화면이 맨 위가 아니면 닫지 않는다. 그사이 연 화면을 닫지 않기 위해서다.
-  Future<void> _save() async {
-    final changes = _changedOptional;
-    final online = ref.read(sessionProvider) != null;
-    if (!online || changes.isEmpty) {
-      await Navigator.maybePop(context);
-      return;
-    }
-
-    setState(() => _saving = true);
-    final messenger = ScaffoldMessenger.of(context);
-    // 화면을 떠난 뒤에는 ref 를 쓸 수 없어 미리 잡아 둔다.
-    final container = ProviderScope.containerOf(context, listen: false);
-    try {
-      await ref.read(accountApiProvider).updateConsents(changes);
-    } on ApiFailure catch (failure) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
-      return;
-    }
-    // 다음에 열 때 서버의 새 동의 이력을 읽는다.
-    container.invalidate(accountProvider);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('동의를 저장했어요.')));
-    if (!mounted) return;
-    setState(() => _saving = false);
-    if (ModalRoute.of(context)?.isCurrent ?? true) {
-      await Navigator.maybePop(context);
-    }
-  }
-
-  void _toggleAll(bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.addAll(consentTerms.map((t) => t.key));
-      } else {
-        _agreed.clear();
-      }
-    });
-  }
-
-  void _toggle(String key, bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.add(key);
-      } else {
-        _agreed.remove(key);
-      }
-    });
-  }
-
-  void _showDetails(ConsentTerm term) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.background,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen,
-            0,
-            AppSpacing.screen,
-            AppSpacing.section,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(term.label, style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.md),
-              Text(term.statement, style: AppTypography.body),
-              const SizedBox(height: AppSpacing.xl),
-              for (final line in term.details) ...[
-                Text(line, style: AppTypography.sub),
-                const SizedBox(height: AppSpacing.md),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _editBasic() => context.push(AppRoutes.profileEditBasic);
-
-  /// 지금 보고 있는 어르신의 사진, 기본 정보, 세부 정보와 갤러리다.
-  List<Widget> _elderSections(ProfileBundle bundle) {
-    final profile = bundle.profile;
-    return [
-      Center(
-        child: Column(
-          children: [
-            ProfileAvatar(gender: profile.gender, size: 130),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    '${profile.name} 어르신',
-                    style: AppTypography.sectionTitle,
-                  ),
-                ),
-                // 이름도 기본 정보 수정에서 고친다.
-                IconButton(
-                  onPressed: _editBasic,
-                  tooltip: '이름 수정',
-                  icon: const Icon(
-                    Icons.edit_outlined,
-                    size: 18,
-                    color: AppColors.textSub,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: AppSpacing.section),
-
-      _Section(
-        title: '기본 정보',
-        onEdit: _editBasic,
-        child: Column(
-          children: [
-            _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
-            _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
-            _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-            _InfoRow(
-              label: '현재 상태',
-              value: profile.stage?.label ?? unsupportedValueLabel,
-            ),
-            if (profile.symptomNote != null)
-              _InfoRow(label: '메모', value: profile.symptomNote!),
-          ],
-        ),
-      ),
-      const SizedBox(height: AppSpacing.section),
-
-      _Section(
-        title: '세부 정보',
-        onEdit: () => context.push(AppRoutes.profileEditDetails),
-        child: _Details(profile: profile),
-      ),
-      // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
-      const SizedBox(height: AppSpacing.section),
-
-      // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
-      // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
-      _Section(
-        title: '갤러리',
-        child: _Gallery(mockPhotos: bundle.photos),
-      ),
-      const SizedBox(height: AppSpacing.section),
-    ];
-  }
+  final ProfileBundle bundle;
 
   @override
   Widget build(BuildContext context) {
-    final bundle = widget.bundle;
+    final profile = bundle.profile;
+    void editBasic() => context.push(AppRoutes.profileEditBasic);
 
     return ScreenBody(
       scrollable: true,
@@ -295,70 +67,71 @@ class _BodyState extends ConsumerState<_Body> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: AppSpacing.lg),
-
-          // 등록한 어르신이 없으면 계정 항목만 보여준다.
-          if (bundle != null) ..._elderSections(bundle),
-
-          // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다. 어르신을
-          // 바꿔도 같은 값이 보인다는 것을 알린다.
-          const Text('계정 약관 동의', style: AppTypography.sectionTitle),
-          const SizedBox(height: AppSpacing.sm),
-          const Text('함께하는 모든 분에게 똑같이 적용돼요.', style: AppTypography.sub),
-          const SizedBox(height: AppSpacing.lg),
-
-          for (final term in consentTerms) ...[
-            _ConsentRow(
-              term: term,
-              checked: _agreed.contains(term.key),
-              onChanged: (value) => _toggle(term.key, value),
-              onDetails: () => _showDetails(term),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Divider(),
-          ),
-
-          InkWell(
-            onTap: () => _toggleAll(!_allAgreed),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Row(
-                children: [
-                  Checkbox(
-                    value: _allAgreed,
-                    onChanged: _toggleAll,
-                    activeColor: AppColors.ink,
-                    side: const BorderSide(color: AppColors.line, width: 2),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  const Text('전체 동의', style: AppTypography.bodyStrong),
-                ],
-              ),
+          Center(
+            child: Column(
+              children: [
+                ProfileAvatar(gender: profile.gender, size: 130),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${profile.name} 어르신',
+                        style: AppTypography.sectionTitle,
+                      ),
+                    ),
+                    // 이름도 기본 정보 수정에서 고친다.
+                    IconButton(
+                      onPressed: editBasic,
+                      tooltip: '이름 수정',
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        size: 18,
+                        color: AppColors.textSub,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AppSpacing.section),
 
-          PrimaryButton(
-            label: _saving ? '저장하는 중이에요' : '저장하기',
-            // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
-            onPressed: _requiredAgreed && !_saving ? _save : null,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          const _SignOutButton(),
-          const SizedBox(height: AppSpacing.xl),
-
-          Center(
-            child: AppTextButton(
-              label: '회원탈퇴',
-              onPressed: () => context.push(AppRoutes.profileDelete),
+          _Section(
+            title: '기본 정보',
+            onEdit: editBasic,
+            child: Column(
+              children: [
+                _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
+                _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
+                _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
+                _InfoRow(
+                  label: '현재 상태',
+                  value: profile.stage?.label ?? unsupportedValueLabel,
+                ),
+                if (profile.symptomNote != null)
+                  _InfoRow(label: '메모', value: profile.symptomNote!),
+              ],
             ),
           ),
+          const SizedBox(height: AppSpacing.section),
 
-          const SizedBox(height: AppSpacing.xl),
+          _Section(
+            title: '세부 정보',
+            onEdit: () => context.push(AppRoutes.profileEditDetails),
+            child: _Details(profile: profile),
+          ),
+          // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
+          const SizedBox(height: AppSpacing.section),
+
+          // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+          // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
+          _Section(
+            title: '갤러리',
+            child: _Gallery(mockPhotos: bundle.photos),
+          ),
+          const SizedBox(height: AppSpacing.section),
         ],
       ),
     );
@@ -384,40 +157,6 @@ class _BodyState extends ConsumerState<_Body> {
   /// `80s` 를 `80대` 로 바꾼다.
   static String _ageLabel(String raw) =>
       raw.endsWith('s') ? '${raw.substring(0, raw.length - 1)}대' : raw;
-}
-
-/// 로그아웃. 단말 세션과 구글 쪽을 지우고 서버에서도 세션을 폐기한다.
-///
-/// 서버에 닿지 못해도 로그아웃은 된다(`SessionNotifier.signOut`).
-class _SignOutButton extends ConsumerStatefulWidget {
-  const _SignOutButton();
-
-  @override
-  ConsumerState<_SignOutButton> createState() => _SignOutButtonState();
-}
-
-class _SignOutButtonState extends ConsumerState<_SignOutButton> {
-  bool _busy = false;
-
-  /// 세션을 지우면 계정 정보가 바뀌어 설정 화면이 다시 그려지고, 이 버튼은
-  /// 서버 응답을 기다리는 동안 사라질 수 있다. 그래도 한 번의 로그아웃으로
-  /// 로그인 화면까지 가도록 필요한 것을 미리 잡아 둔다.
-  Future<void> _signOut() async {
-    setState(() => _busy = true);
-    final container = ProviderScope.containerOf(context, listen: false);
-    final router = GoRouter.of(context);
-    await container.read(sessionProvider.notifier).signOut();
-    forgetCareProfilesIn(container);
-    router.go(AppRoutes.signIn);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SecondaryButton(
-      label: _busy ? '로그아웃하는 중이에요' : '로그아웃',
-      onPressed: _busy ? null : _signOut,
-    );
-  }
 }
 
 /// 갤러리의 사진. 서버에 저장한 분은 서버의 사진(2-3)을, 로그인 없이 들어온
@@ -557,101 +296,6 @@ class _DetailRow extends StatelessWidget {
           AppChip(label, tone: ChipTone.weak),
           const SizedBox(height: AppSpacing.md),
           Text(text, style: AppTypography.body),
-        ],
-      ),
-    );
-  }
-}
-
-/// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.
-class _ConsentRow extends StatelessWidget {
-  const _ConsentRow({
-    required this.term,
-    required this.checked,
-    required this.onChanged,
-    required this.onDetails,
-  });
-
-  final ConsentTerm term;
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final VoidCallback onDetails;
-
-  static const _labelOffset = 12.0;
-  static const _detailsHeight = 28.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!checked),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Checkbox(
-            value: checked,
-            onChanged: onChanged,
-            activeColor: AppColors.ink,
-            side: const BorderSide(color: AppColors.line, width: 2),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: _labelOffset),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: term.required ? '[필수] ' : '[선택] ',
-                        style: AppTypography.body.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: term.required
-                              ? AppColors.danger
-                              : AppColors.textSub,
-                        ),
-                      ),
-                      TextSpan(text: term.label, style: AppTypography.body),
-                    ],
-                  ),
-                ),
-
-                if (term.note != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(term.note!, style: AppTypography.sub),
-                ],
-
-                const SizedBox(height: AppSpacing.sm),
-
-                TextButton(
-                  onPressed: onDetails,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textDisabled,
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size(0, _detailsHeight),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '자세히 보기',
-                        style: AppTypography.sub.copyWith(
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.textDisabled,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

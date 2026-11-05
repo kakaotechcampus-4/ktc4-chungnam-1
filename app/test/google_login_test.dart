@@ -29,6 +29,7 @@ import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
+import 'package:saerok/features/settings/settings_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
@@ -242,6 +243,10 @@ Widget _app({
       GoRoute(
         path: AppRoutes.profile,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
       GoRoute(
         path: AppRoutes.profileDelete,
@@ -914,7 +919,7 @@ void main() {
       expect(google.signOutCalls, 1);
     });
 
-    testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
+    testWidgets('설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
       final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
@@ -932,12 +937,12 @@ void main() {
           google: _FakeGoogleAuthenticator(),
           store: store,
           session: _signedIn(),
-          initialLocation: AppRoutes.profile,
+          initialLocation: AppRoutes.settings,
           photos: photos,
         ),
       );
 
-      final button = find.widgetWithText(OutlinedButton, '로그아웃');
+      final button = find.widgetWithText(TextButton, '로그아웃');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
