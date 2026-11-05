@@ -7,6 +7,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_surfaces.dart';
+import '../home/home_talk.dart';
 import 'comfort_messages.dart';
 import 'review_controller.dart';
 
@@ -28,7 +29,11 @@ class ComfortScreen extends ConsumerWidget {
     );
     final message = comfortMessageFor(satisfaction);
 
-    void goHome() => context.go(AppRoutes.home);
+    // 홈 말풍선이 이야기 대신 면회 뒤 인사를 하게 한다.
+    void goHome() {
+      ref.read(homeAfterVisitProvider.notifier).returning();
+      context.go(AppRoutes.home);
+    }
 
     // 평가는 이미 제출했다. 뒤로 가기로 소감 화면에 돌아가면 두 번 제출하게
     // 되므로 홈으로 보낸다.

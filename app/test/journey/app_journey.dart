@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/features/cards/cards_screen.dart' show cardSelectLabel;
+import 'package:saerok/features/home/home_phrases.dart';
 import 'package:saerok/features/report/report_text.dart'
     show splitIntoParagraphs;
 import 'package:saerok/widgets/app_surfaces.dart';
@@ -88,6 +89,13 @@ Future<void> _finishVisit(JourneyDriver app) async {
   await app.waitFor(find.text('제출 완료!'));
   await app.tap(find.text('홈으로'));
   await app.waitFor(find.text(_homeCardsButton));
+  // 면회를 마치고 돌아오면 말풍선이 이야기 대신 면회 뒤 인사를 한다.
+  expect(
+    find.byWidgetPredicate(
+      (w) => w is Text && afterVisitGreetings.contains(w.data),
+    ),
+    findsOneWidget,
+  );
 }
 
 /// 앱을 켜고 첫 면회를 마쳐 홈으로 돌아온다. 첫 카드 묶음은 온보딩에서 받았다.

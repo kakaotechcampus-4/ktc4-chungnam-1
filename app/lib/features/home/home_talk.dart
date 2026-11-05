@@ -27,9 +27,25 @@ class HomeTalkNudge extends Notifier<int> {
   void nudge() => state++;
 }
 
+/// 면회를 마치고 홈으로 갈 때 위로 화면이 켠다. 홈이 다시 보이면
+/// [HomeTalk] 가 이야기 대신 [afterVisitGreetings] 로 인사하고 끈다.
+final homeAfterVisitProvider = NotifierProvider<HomeAfterVisit, bool>(
+  HomeAfterVisit.new,
+);
+
+class HomeAfterVisit extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void returning() => state = true;
+
+  void clear() => state = false;
+}
+
 /// 홈 가운데의 말풍선과 마스코트.
 ///
-/// 처음에는 시간대 인사말을 한다. 다른 화면에서 홈으로 돌아올 때, 마스코트를
+/// 처음에는 시간대 인사말을 한다. 면회를 마치고 돌아오면 면회 뒤 인사말을
+/// 한다([homeAfterVisitProvider]). 다른 화면에서 홈으로 돌아올 때, 마스코트를
 /// 눌러 반응할 때, `오늘의 대화카드 받기` 를 누를 때 일대기 이야기 하나를
 /// 무작위로 골라 보여준다. 이야기가 없거나 아직 읽는 중이면 인사말을 바꾼다.
 /// 같은 이야기, 같은 말은 연달아 고르지 않는다. 이야기 말풍선을 누르면 그
@@ -75,7 +91,16 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
     // 위에 쌓였던 화면이 닫혀 홈이 다시 보이면 이야기를 바꾼다. 곧 build 가
     // 이어지므로 setState 없이 바꾼다.
     final onStage = TickerMode.valuesOf(context).enabled;
-    if (_onStage == false && onStage) {
+    // 면회를 마치고 왔다. 처음 만들어졌든 다시 보이든 인사부터 한다.
+    if (onStage && ref.read(homeAfterVisitProvider)) {
+      _line = _Line.greeting(_pick(afterVisitGreetings, _line.greeting));
+      _turn++;
+      _keepOnReturn = false;
+      // 화면을 그리는 중에는 provider 를 바꿀 수 없어 미룬다.
+      Future.microtask(() {
+        if (mounted) ref.read(homeAfterVisitProvider.notifier).clear();
+      });
+    } else if (_onStage == false && onStage) {
       if (_keepOnReturn) {
         _keepOnReturn = false;
       } else {
