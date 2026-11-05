@@ -183,6 +183,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `PATCH` | `/auth/me/consents` | 선택 동의 변경. 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 추가 |
 | `POST` | `/auth/logout` | 요청에 쓴 세션 폐기. 본문 없이 `204` |
 | `DELETE` | `/auth/me` | 회원 탈퇴. 계정과 그 아래 기록을 지우고 요청에 쓴 세션 폐기. 탈퇴 이유는 선택 본문. `204` |
+| `PUT` | `/auth/me/push-devices/{fid}` | 리포트 완료 푸시를 받을 기기(FCM FID) 등록. 본문 없이 `204` |
+| `DELETE` | `/auth/me/push-devices/{fid}` | 기기 등록 해제. 본문 없이 `204` |
 
 요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
@@ -227,6 +229,16 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
 - DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체는 삭제 실행기(#204)가 지우며, 운영 배포와 주기 실행은 남아 있다. 대기열 등록만으로 삭제 완료를 표시하지 않는다.
 - 탈퇴 이유는 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣고 계정 ID는 넣지 않는다. `reasons`는 1개 이상이고 중복을 받지 않으며, `otherText`는 `other`를 고른 경우에만 비우지 않고 보낸다. 조건이 맞지 않으면 `INVALID_REQUEST`(422)이며 계정을 지우지 않는다. `otherText`는 로그에 남기지 않는다.
+
+#### 푸시 받을 기기
+
+리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 이번 변경은 등록과 해제까지이며 FCM 발송과 worker 연결은 후속 작업이다.
+
+- `fid`는 앱이 FCM에 등록하고 받은 Firebase Installation ID다. FCM HTTP v1은 기기 토큰(`token`) 대신 `fid`로 보내도록 바꿨다. 경로로 받으며 영문 대소문자, 숫자, `-`, `_`로 된 1~64자만 받는다(DB CHECK도 같다). 기기를 가리키는 값이라 로그에 남기지 않는다.
+- 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6과 겹치지 않도록 계정 행을 `FOR SHARE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
+- 해제(1-8)는 이 계정의 등록만 지우며 없거나 다른 계정의 FID여도 `204`다. 알림 동의가 없어도 지울 수 있다.
+- 1-6에서 `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 등록을 모두 지운다. 탈퇴(1-5)는 `ON DELETE CASCADE`로 지운다. 로그아웃(1-4)은 서버가 어느 기기인지 모르므로 앱이 로그아웃 전에 1-8을 보낸다.
+- 오래된 등록 정리(FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 본다)는 발송 작업에서 정한다.
 
 ### 세션
 

@@ -60,6 +60,8 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 완료 |
 | 1-5 | 회원 탈퇴 | `DELETE` | `/auth/me` | 수정 |
 | 1-6 | 프로필 설정 | `PATCH` | `/auth/me/consents` | 신규 |
+| 1-7 | 앱 시작, 알림 수신 동의 | `PUT` | `/auth/me/push-devices/{fid}` | 미병합 |
+| 1-8 | 로그아웃, 알림 수신 철회 | `DELETE` | `/auth/me/push-devices/{fid}` | 미병합 |
 | 2-1 | 로그인 직후, 어르신 목록 | `GET` | `/api/v1/profiles` | 신규 |
 | 2-2 | 기본 정보 입력 | `POST` | `/api/v1/profiles` | 신규 |
 | 2-3 | 마이페이지, 일대기 | `GET` | `/api/v1/profiles/{profileId}` | 신규 |
@@ -111,6 +113,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
     [리포트]      7-2, 6-4 → 7-3 → 7-4. 회차의 카드 전체 보기: 4-4, 좋았어요 표시: 4-5, 4-6
     [일대기]      2-3, 2-6, 2-7, 2-9
     [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
+    [푸시 기기]   알림 수신에 동의한 계정이면 앱을 켤 때마다 1-7. 로그아웃 전과 알림 수신 철회 때 1-8
 
 <br>
 
@@ -246,11 +249,41 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 응답 `200` — [Account](#account)
 
 - 직전 이력을 복사해 보낸 항목만 바꾼 새 이력 행을 추가한다. 약관 버전은 직전 이력의 값을 쓴다.
+- `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 푸시 기기 등록(1-7)을 모두 지운다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 422 | `REQUIRED_CONSENT_NOT_CHANGEABLE` | `serviceData` 또는 `sensitiveData`를 보냄 |
 | 422 | `INVALID_REQUEST` | 본문이 비었음 |
+
+### 1-7. `PUT /auth/me/push-devices/{fid}` — 미병합
+
+리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음.
+
+- `fid`: 앱이 FCM에 등록하고 받은 Firebase Installation ID(FID). FCM은 기기 토큰(`getToken`) 대신 FID를 쓰도록 바꿨고, 서버는 HTTP v1 발송의 `fid`에 이 값을 넣는다. 영문 대소문자, 숫자, `-`, `_`로 된 1~64자다(지금 FID는 22자).
+- 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
+- 다른 계정에 등록된 FID면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한 경우이며, 앞 계정의 알림이 이 기기로 가지 않게 된다.
+- 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
+- 탈퇴(1-5)하면 계정과 함께 지운다.
+
+응답 `204`
+
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 403 | `PUSH_NOTIFICATION_CONSENT_REQUIRED` | 알림 수신에 동의하지 않음 |
+| 422 | `INVALID_REQUEST` | `fid` 형식이 맞지 않음 |
+
+### 1-8. `DELETE /auth/me/push-devices/{fid}` — 미병합
+
+1-7의 등록을 지운다. 본문 없음. 앱은 로그아웃(1-4) 전과 알림 수신을 끌 때 보낸다. 로그아웃 뒤에는 세션이 없어 지울 수 없다.
+
+응답 `204`
+
+- 등록되지 않았거나 다른 계정에 등록된 FID여도 `204`다. 다른 계정의 등록은 지우지 않는다.
+
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 422 | `INVALID_REQUEST` | `fid` 형식이 맞지 않음 |
 
 <br>
 
