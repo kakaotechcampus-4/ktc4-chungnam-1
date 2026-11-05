@@ -141,10 +141,11 @@ class HomeScreen extends ConsumerWidget {
                       name == null
                           ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
                           : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
-                      style: AppTypography.body,
+                      // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
+                      style: AppTypography.sectionTitle,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.xxl),
                     // 어르신을 바꾸면 인사말부터 다시 시작한다.
                     Flexible(child: HomeTalk(key: ValueKey(profileKey))),
                   ],
