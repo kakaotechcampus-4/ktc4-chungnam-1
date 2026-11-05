@@ -28,7 +28,7 @@ class LifeStoryCoverScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(),
+      appBar: const AppTopBar(title: '일대기'),
       body: LifeStoryBookLoader(
         // 제목, 책, 편수를 한 덩어리로 묶어 화면 가운데에 둔다. 화면이 낮으면
         // 책이 줄어든다.

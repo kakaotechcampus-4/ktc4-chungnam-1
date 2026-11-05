@@ -248,7 +248,19 @@ void main() {
       expect(find.text('쌓아온 이야기'), findsOneWidget);
       expect(find.text('책을 눌러 펼쳐 보세요'), findsOneWidget);
       expect(find.text('김새록님의'), findsOneWidget);
-      expect(find.text('일대기'), findsOneWidget);
+      // 책 표지의 `일대기`. 상단바 제목과 하단 탭에도 같은 글자가 있다.
+      expect(
+        find.descendant(
+          of: find.bySemanticsLabel('일대기 책 펼치기'),
+          matching: find.text('일대기'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('일대기')),
+        findsOneWidget,
+        reason: '뒤로가기 옆에 화면 이름을 둔다',
+      );
       // 세부 정보 두 편과 목 이야기 열 편.
       expect(find.text('지금까지 12편의 이야기가 담겨 있어요'), findsOneWidget);
     });
