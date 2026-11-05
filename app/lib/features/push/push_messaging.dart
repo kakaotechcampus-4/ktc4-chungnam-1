@@ -32,6 +32,21 @@ abstract interface class PushMessaging {
 
   /// 이 기기의 등록을 푼다. 서버가 이 ID 로 보내면 실패한다.
   Future<void> unregister();
+
+  /// 앱이 꺼져 있을 때 리포트 완료 알림을 눌러 앱을 켰으면 그 회차 ID. 한 번만 준다.
+  Future<String?> initialReportSession();
+
+  /// 앱이 뒤에 있을 때 리포트 완료 알림을 누를 때마다 그 회차 ID 를 준다.
+  Stream<String> get openedReportSessions;
+}
+
+/// 리포트 완료 알림(`data.type == reportReady`)이면 그 회차 ID. 아니면 `null` 이다.
+///
+/// 서버가 보내는 알림 형식은 `api-spec.md` 1-7 에 있다.
+String? reportSessionOf(Map<String, dynamic> data) {
+  if (data['type'] != 'reportReady') return null;
+  final sessionId = data['sessionId'];
+  return sessionId is String && sessionId.isNotEmpty ? sessionId : null;
 }
 
 /// 푸시를 쓰지 않는다. 테스트와 기본값이다.
@@ -52,6 +67,12 @@ class NoPushMessaging implements PushMessaging {
 
   @override
   Future<void> unregister() async {}
+
+  @override
+  Future<String?> initialReportSession() async => null;
+
+  @override
+  Stream<String> get openedReportSessions => const Stream.empty();
 }
 
 /// FCM 으로 등록한다.
@@ -115,6 +136,27 @@ class FirebasePushMessaging implements PushMessaging {
       await FirebaseMessaging.instance.unregister();
     } catch (error) {
       _log('FCM 등록을 풀지 못했어요: ${error.runtimeType}');
+    }
+  }
+
+  @override
+  Future<String?> initialReportSession() async {
+    if (!await _initialized()) return null;
+    try {
+      final message = await FirebaseMessaging.instance.getInitialMessage();
+      return message == null ? null : reportSessionOf(message.data);
+    } catch (error) {
+      _log('알림으로 켠 앱의 알림을 읽지 못했어요: ${error.runtimeType}');
+      return null;
+    }
+  }
+
+  @override
+  Stream<String> get openedReportSessions async* {
+    if (!await _initialized()) return;
+    await for (final message in FirebaseMessaging.onMessageOpenedApp) {
+      final sessionId = reportSessionOf(message.data);
+      if (sessionId != null) yield sessionId;
     }
   }
 }

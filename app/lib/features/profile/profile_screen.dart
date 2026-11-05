@@ -14,6 +14,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import '../auth/auth_providers.dart';
+import '../push/push_registration.dart';
 import '../auth/consent_terms.dart';
 import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_steps.dart';
@@ -182,7 +183,9 @@ class _BodyState extends ConsumerState<_Body> {
       showDragHandle: true,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
       ),
       builder: (context) => SafeArea(
         child: Padding(
@@ -406,6 +409,9 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
     setState(() => _busy = true);
     final container = ProviderScope.containerOf(context, listen: false);
     final router = GoRouter.of(context);
+    // 세션이 남아 있을 때 이 기기의 푸시 등록을 서버에서 지운다(1-8). 짧게만
+    // 기다리고 실패해도 로그아웃을 이어간다.
+    await container.read(pushRegistrationProvider.notifier).releaseForSignOut();
     await container.read(sessionProvider.notifier).signOut();
     forgetCareProfilesIn(container);
     router.go(AppRoutes.signIn);
