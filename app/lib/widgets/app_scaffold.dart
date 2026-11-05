@@ -101,9 +101,14 @@ class ScreenBody extends StatelessWidget {
   }
 }
 
-/// 하단 탭의 종류. `마이페이지` 는 화면 이동이 아니라 팝업 메뉴를 연다.
-enum AppTab { album, home, myPage }
+/// 하단 탭의 종류. 화면에 놓인 순서다.
+enum AppTab { album, report, home, myPage, settings }
 
+/// 하단 탭. 고른 탭 위에 검정 막대를 둔다.
+///
+/// 탭이 있는 화면들이 이 탭 하나를 함께 쓴다(router.dart 의 `_TabShell`). 고른
+/// 탭이 바뀌면 막대가 그 자리로 미끄러진다. 움직임 줄이기가 켜져 있으면 바로
+/// 옮긴다.
 class AppBottomNav extends StatelessWidget {
   const AppBottomNav({
     required this.current,
@@ -116,6 +121,9 @@ class AppBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final index = current.index.toDouble();
+    final still = MediaQuery.disableAnimationsOf(context);
+
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.background,
@@ -124,35 +132,102 @@ class AppBottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: AppSizes.bottomNav,
-          child: Row(
-            children: [
-              _Item(
-                tab: AppTab.album,
-                icon: Icons.menu_book_outlined,
-                label: '일대기',
-                current: current,
-                onSelected: onSelected,
-              ),
-              _Item(
-                tab: AppTab.home,
-                icon: Icons.home_outlined,
-                selectedIcon: Icons.home,
-                label: '홈',
-                current: current,
-                onSelected: onSelected,
-              ),
-              _Item(
-                tab: AppTab.myPage,
-                icon: Icons.person_outline,
-                label: '마이페이지',
-                current: current,
-                onSelected: onSelected,
-              ),
-            ],
+        // 기본 높이를 지키되 글자를 키우면 그만큼 높아진다. 글자를 자르지 않는다.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: AppSizes.bottomNav),
+          child: IntrinsicHeight(
+            child: Stack(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Item(
+                      tab: AppTab.album,
+                      icon: Icons.menu_book_outlined,
+                      label: '일대기',
+                      current: current,
+                      onSelected: onSelected,
+                    ),
+                    _Item(
+                      tab: AppTab.report,
+                      icon: Icons.description_outlined,
+                      selectedIcon: Icons.description,
+                      label: '리포트',
+                      current: current,
+                      onSelected: onSelected,
+                    ),
+                    _Item(
+                      tab: AppTab.home,
+                      icon: Icons.home_outlined,
+                      selectedIcon: Icons.home,
+                      label: '홈',
+                      current: current,
+                      onSelected: onSelected,
+                    ),
+                    _Item(
+                      tab: AppTab.myPage,
+                      icon: Icons.person_outline,
+                      label: '마이페이지',
+                      current: current,
+                      onSelected: onSelected,
+                    ),
+                    _Item(
+                      tab: AppTab.settings,
+                      icon: Icons.settings_outlined,
+                      selectedIcon: Icons.settings,
+                      label: '설정',
+                      current: current,
+                      onSelected: onSelected,
+                    ),
+                  ],
+                ),
+                // 고른 탭 위의 검정 막대. 누름은 아래 탭이 받는다. 높이는 탭이 정한다.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: TweenAnimationBuilder<double>(
+                      // 끝값이 바뀌면 지금 자리에서 새 끝값으로 움직인다.
+                      tween: Tween(begin: index, end: index),
+                      duration: still
+                          ? Duration.zero
+                          : const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, position, _) => Align(
+                        alignment: Alignment(
+                          -1 + 2 * position / (AppTab.values.length - 1),
+                          -1,
+                        ),
+                        child: FractionallySizedBox(
+                          widthFactor: 1 / AppTab.values.length,
+                          child: const Align(
+                            alignment: Alignment.topCenter,
+                            child: _Indicator(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 고른 탭 위의 짧고 둥근 검정 막대.
+class _Indicator extends StatelessWidget {
+  const _Indicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 32,
+      height: 3,
+      decoration: BoxDecoration(
+        color: AppColors.ink,
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }
@@ -183,19 +258,27 @@ class _Item extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: () => onSelected(tab),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(selected ? (selectedIcon ?? icon) : icon, size: 24, color: color),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              label,
-              style: AppTypography.caption.copyWith(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected ? (selectedIcon ?? icon) : icon,
+                size: 24,
                 color: color,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: AppTypography.caption.copyWith(
+                  color: color,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

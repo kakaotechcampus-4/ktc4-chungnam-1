@@ -7,7 +7,6 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
-import 'my_page_menu.dart';
 
 /// 알림. 홈의 왼쪽 상단 알림 아이콘을 누르면 뜬다(피그마 설계 없음).
 ///
@@ -28,14 +27,12 @@ class NoticeScreen extends ConsumerWidget {
         : ref.watch(visitReportProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      appBar: const AppTopBar(title: '알림'),
       body: ScreenBody(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: AppSpacing.lg),
-            Text('알림', style: AppTypography.screenTitle),
-            const SizedBox(height: AppSpacing.xxl),
             Expanded(
               child: notice == null
                   ? const EmptyStateView(
@@ -89,19 +86,6 @@ class NoticeScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: AppBottomNav(
-        current: AppTab.home,
-        onSelected: (tab) {
-          switch (tab) {
-            case AppTab.album:
-              context.push(AppRoutes.album);
-            case AppTab.home:
-              context.go(AppRoutes.home);
-            case AppTab.myPage:
-              showMyPageMenu(context);
-          }
-        },
       ),
     );
   }

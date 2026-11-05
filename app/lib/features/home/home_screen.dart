@@ -15,7 +15,6 @@ import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
 import 'home_talk.dart';
-import 'my_page_menu.dart';
 
 /// 시작 화면.
 ///
@@ -154,19 +153,6 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ],
-      ),
-      bottomNavigationBar: AppBottomNav(
-        current: AppTab.home,
-        onSelected: (tab) {
-          switch (tab) {
-            case AppTab.album:
-              needsProfile(() => context.push(AppRoutes.album));
-            case AppTab.home:
-              break;
-            case AppTab.myPage:
-              showMyPageMenu(context);
-          }
-        },
       ),
     );
   }
