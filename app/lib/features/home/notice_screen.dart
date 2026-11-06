@@ -27,7 +27,11 @@ class NoticeScreen extends ConsumerWidget {
         : ref.watch(visitReportProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(title: '알림'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '알림',
+      ),
       body: ScreenBody(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,7 +133,7 @@ class _NoticeRow extends StatelessWidget {
         color: AppColors.background,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.card),
-          side: const BorderSide(color: AppColors.line),
+          side: const BorderSide(color: HomeColors.outline),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -196,13 +200,13 @@ class _NoticeIcon extends StatelessWidget {
       width: 44,
       height: 44,
       decoration: const BoxDecoration(
-        color: AppColors.surface,
+        color: HomeColors.bubble,
         shape: BoxShape.circle,
       ),
       child: const Icon(
         Icons.mail_outline_rounded,
         size: 24,
-        color: AppColors.ink,
+        color: HomeColors.accent,
       ),
     );
   }

@@ -43,10 +43,19 @@ class ComfortScreen extends ConsumerWidget {
         if (!didPop) goHome();
       },
       child: Scaffold(
-        appBar: const AppTopBar(showBack: false),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(
+          backgroundColor: HomeColors.background,
+          showBack: false,
+        ),
         body: ScreenBody(
           scrollable: true,
-          bottom: PrimaryButton(label: '홈으로', onPressed: goHome),
+          bottom: PrimaryButton(
+            color: HomeColors.accent,
+            loadingColor: HomeColors.accentLoading,
+            label: '홈으로',
+            onPressed: goHome,
+          ),
           child: Column(
             children: [
               const Spacer(),
@@ -66,6 +75,7 @@ class ComfortScreen extends ConsumerWidget {
               if (message != null) ...[
                 const SizedBox(height: AppSpacing.section),
                 AppSurfaceBox(
+                  color: HomeColors.bubble,
                   padding: const EdgeInsets.all(AppSpacing.xl),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -86,12 +96,17 @@ class ComfortScreen extends ConsumerWidget {
   }
 }
 
-/// 둥글게 자른 이미지. 흰 배경과 섞이지 않도록 테두리와 옅은 그림자로
-/// 경계를 나눈다.
+/// 둥글게 자른 이미지. 바탕과 섞이지 않도록 테두리와 그림자로 경계를 나누고,
+/// 그림자를 넓고 부드럽게 두어 살짝 떠 보이게 한다.
 class _HugImage extends StatelessWidget {
   const _HugImage({required this.size});
 
   final double size;
+
+  static const _shadow = [
+    BoxShadow(color: Color(0x1F000000), blurRadius: 24, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2)),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -101,8 +116,8 @@ class _HugImage extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: AppColors.line),
-          boxShadow: AppShadows.low,
+          border: Border.all(color: HomeColors.bubbleLine),
+          boxShadow: _shadow,
         ),
         child: ClipOval(
           child: Image.asset(
