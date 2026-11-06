@@ -21,6 +21,10 @@ import 'report_text.dart';
 ///
 /// `변경 사항 확인하기` 는 확인할 제안(7-3 의 `pending`)이 남았을 때만 둔다. 홈
 /// 알림에서 들어왔는지, 리포트 기록에서 들어왔는지는 보지 않는다.
+///
+/// 확인할 제안이 없으면 확인을 마칠 버튼이 없으므로, 리포트와 제안을 모두 읽으면
+/// 이 리포트의 홈 도착 알림을 지운다. 어느 하나라도 읽는 중이거나 읽지 못했으면
+/// 지우지 않는다. 제안이 남았으면 변경 사항 확인을 마쳐야 지운다.
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({required this.reportId, super.key});
 
@@ -194,6 +198,26 @@ class _BodyState extends ConsumerState<_Body> {
   /// 이 화면에 머무는 동안만 기억한다. 앱 전체로 넓히거나 저장하는 것은
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 이 위젯은 리포트를 읽은 뒤에만 그려진다. 남은 것은 제안을 읽었는지다.
+    ref.listenManual(reportProposalsProvider(widget.report.reportId), (
+      _,
+      next,
+    ) {
+      if (next.isLoading || next.hasError) return;
+      if (!(next.value?.nothingPending ?? false)) return;
+      // 화면을 그리는 중에 알림 상태를 바꾸지 않도록 미룬다.
+      Future.microtask(() {
+        if (!mounted) return;
+        ref
+            .read(reportNoticeProvider.notifier)
+            .acknowledge(widget.report.reportId);
+      });
+    }, fireImmediately: true);
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,8 @@
 package app.saerok.android
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -7,6 +10,24 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var screenAwakeChannel: MethodChannel? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        createReportChannel()
+    }
+
+    // 리포트 완료 푸시가 쓰는 알림 채널. AndroidManifest.xml 의
+    // `default_notification_channel_id` 와 같은 ID 다. 이미 있으면 그대로 둔다.
+    // minSdk 26 이라 버전을 따로 확인하지 않는다.
+    private fun createReportChannel() {
+        val channel = NotificationChannel(
+            REPORT_CHANNEL_ID,
+            "리포트 알림",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply { description = "면회 리포트가 준비되면 알려요" }
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,5 +76,6 @@ class MainActivity : FlutterActivity() {
         // Dart 의 `MethodChannelScreenAwake.channel`, `.method` 와 같아야 한다.
         const val SCREEN_AWAKE_CHANNEL = "app.saerok.android/screen_awake"
         const val SET_KEEP_SCREEN_ON = "setKeepScreenOn"
+        const val REPORT_CHANNEL_ID = "report_ready"
     }
 }

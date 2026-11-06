@@ -26,19 +26,16 @@ enum AnalysisPlan {
   /// 분석이 실패한다(`failed`). 다시 요청하면 [success] 로 끝난다.
   failed,
 
-  /// 화자를 충분히 구분하지 못했다. BE 처럼 모델을 부르지 않고 고정 안내만
-  /// 저장하며, 카드 요약과 제안은 비운다(`backend/docs/speaker-fact-boundary.md`).
-  speakerUnverified,
+  /// 라벨이 부족해도 일반 리포트와 후보를 반환하는 합성 응답이다.
+  /// 실제 STT와 모델의 화자 추론은 검사하지 않는다.
+  insufficientSpeakerLabels,
 }
 
-/// BE 의 화자 미확인 안내 제목과 본문(`visit_report_generator.py`)과 같다.
-const unverifiedSpeakerTitle = '화자 미확인 안내';
-const unverifiedSpeakerBody =
-    '녹음에서 누가 한 말인지 충분히 구분하지 못했습니다. '
-    '대화 내용의 해석, 카드별 요약, 새 이야기 후보와 주제 조정 제안을 만들지 않았습니다. '
-    '직접 남기신 소감과 카드 평가는 그대로 보관됩니다.';
+const journeyUncertainProposalReason =
+    '대화 흐름상 어르신의 경험으로 보아 제안했습니다. '
+    '화자가 명확하지 않아 누구의 경험인지 확인이 필요합니다.';
 
-/// 정상 리포트의 합성 문장. 화자 미확인 리포트에 이 문장이 없어야 한다.
+/// 일반 리포트의 합성 문장.
 const journeyReportTitle = '수선집 이야기를 나눈 날';
 const journeyReportBody = '오늘은 수선집을 하시던 시절 이야기를 나눴어요.';
 const journeyCardSummary = '단골손님 옷을 고쳐 주던 이야기를 하셨어요.';
@@ -512,7 +509,7 @@ class JourneyServer {
   }
 
   void _writeReport(_Session session, AnalysisPlan plan) {
-    final unverified = plan == AnalysisPlan.speakerUnverified;
+    final insufficientLabels = plan == AnalysisPlan.insufficientSpeakerLabels;
     final evaluation = session.evaluation!;
     final reviews = (evaluation['cardReviews']! as List)
         .cast<Map<String, Object?>>();
@@ -529,42 +526,40 @@ class JourneyServer {
     session.report = {
       'schemaVersion': 1,
       'sessionId': session.sessionId,
-      'title': unverified ? unverifiedSpeakerTitle : journeyReportTitle,
-      'body': unverified ? unverifiedSpeakerBody : journeyReportBody,
+      'title': journeyReportTitle,
+      'body': journeyReportBody,
       'visitDate': session.startedAt.substring(0, 10),
-      // BE 는 보호자 만족도로 기분을 정한다. 화자 미확인이어도 보호자의 답이다.
+      // BE 는 보호자 만족도로 기분을 정한다.
       'mood': satisfaction <= 2
           ? 'hard'
           : satisfaction == 3
           ? 'normal'
           : 'good',
       'photo': null,
-      'cardSummaries': unverified
-          ? <Object>[]
-          : [
-              for (final cardId in usedCards)
-                {
-                  'cardId': cardId,
-                  'cardTitle': titleOf(cardId),
-                  'summary': journeyCardSummary,
-                },
-            ],
+      'cardSummaries': [
+        for (final cardId in usedCards)
+          {
+            'cardId': cardId,
+            'cardTitle': titleOf(cardId),
+            'summary': journeyCardSummary,
+          },
+      ],
       'generatedAt': session.startedAt.replaceFirst('14:00', '16:00'),
     };
     session.proposal = {
       'schemaVersion': 1,
       'sessionId': session.sessionId,
-      'lifeFactProposals': unverified
-          ? <Map<String, Object?>>[]
-          : <Map<String, Object?>>[
-              {
-                'proposalId': _id('6', _next++),
-                'title': journeyProposalTitle,
-                'content': journeyProposalContent,
-                'reason': '이번 면회에서 말씀하셨어요.',
-                'reviewStatus': 'pending',
-              },
-            ],
+      'lifeFactProposals': <Map<String, Object?>>[
+        {
+          'proposalId': _id('6', _next++),
+          'title': journeyProposalTitle,
+          'content': journeyProposalContent,
+          'reason': insufficientLabels
+              ? journeyUncertainProposalReason
+              : '이번 면회에서 말씀하셨어요.',
+          'reviewStatus': 'pending',
+        },
+      ],
       'topicProposals': <Object>[],
     };
   }

@@ -14,5 +14,4 @@ def speaker_context(labels: Sequence[str | None], expected: int | None) -> dict:
         "has_unassigned_speech": unassigned,
         "fewer_labels_than_expected": fewer,
         "speaker_roles_verified": False,
-        "life_fact_proposals_allowed": bool(known) and not unassigned and not fewer,
     }

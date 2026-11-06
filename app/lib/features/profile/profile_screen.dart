@@ -13,6 +13,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
+import '../profile_setup/photo_picker.dart';
 import '../profile_setup/setup_steps.dart';
 import 'profile_gallery.dart';
 
@@ -238,6 +239,9 @@ class _Body extends StatelessWidget {
 /// 분은 목 사진을 보여준다.
 ///
 /// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
+///
+/// 서버에 저장한 분은 갤러리 아래에서 사진을 더 올린다. [maxProfilePhotos] 장을
+/// 채웠으면 막고 이유를 알린다. 목 사진은 올릴 곳이 없어 두지 않는다.
 class _Gallery extends ConsumerWidget {
   const _Gallery({required this.mockPhotos});
 
@@ -247,7 +251,36 @@ class _Gallery extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final server = ref.watch(serverProfilePhotosProvider);
     return server.when(
-      data: (photos) => ProfileGallery(photos: photos ?? mockPhotos),
+      data: (photos) => photos == null
+          ? ProfileGallery(photos: mockPhotos)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ProfileGallery(photos: photos),
+                const SizedBox(height: AppSpacing.lg),
+                if (photos.length < maxProfilePhotos)
+                  SecondaryButton(
+                    borderColor: HomeColors.outline,
+                    label: '사진 추가하기',
+                    onPressed: () => context.push(
+                      AppRoutes.profilePhotoAdd,
+                      extra: photos.length,
+                    ),
+                  )
+                else ...[
+                  const SecondaryButton(
+                    borderColor: HomeColors.outline,
+                    label: '사진 추가하기',
+                    onPressed: null,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text(
+                    '사진은 $maxProfilePhotos장까지 올릴 수 있어요.',
+                    style: AppTypography.sub,
+                  ),
+                ],
+              ],
+            ),
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
         child: Center(child: CircularProgressIndicator()),

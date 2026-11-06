@@ -86,3 +86,22 @@ def test_cli_stt_only_once(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['speech-worker', '--stt-only', '--once'])
     entry.main()
     assert seen == {'stt_only': True, 'once': True}
+
+
+def test_report_push_is_wired_only_when_a_key_file_is_set(monkeypatch, tmp_path):
+    monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
+    monkeypatch.setattr(entry, 'create_speech_worker', lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url='postgresql://synthetic',
+        speech_audio_s3_bucket='synthetic', ml_api_key='synthetic-key',
+    )
+    # 경로가 비어 있으면 푸시 없이 리포트만 만든다.
+    assert entry.create_worker(settings)['report_notifier'] is None
+    # 경로를 넣었는데 키 파일을 읽지 못하면 푸시가 꺼진 채로 시작하지 않는다.
+    absent = settings.model_copy(
+        update={'fcm_credentials_path': str(tmp_path / 'absent.json')}
+    )
+    with pytest.raises(RuntimeError, match='FCM'):
+        entry.create_worker(absent)
+    # STT만 돌릴 때는 리포트가 없으므로 키 파일을 보지 않는다.
+    assert entry.create_worker(absent, stt_only=True)['report_notifier'] is None

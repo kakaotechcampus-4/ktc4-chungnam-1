@@ -21,6 +21,8 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.0.1" apply false
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
+    // FCM 설정 파일(google-services.json)을 읽는다. app/build.gradle.kts 가 파일이 있을 때만 붙인다.
+    id("com.google.gms.google-services") version "4.4.4" apply false
 }
 
 include(":app")

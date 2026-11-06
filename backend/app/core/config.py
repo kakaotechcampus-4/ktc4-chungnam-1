@@ -100,6 +100,13 @@ class Settings(BaseSettings):
     # 않는다. 구버전과 맞지 않는 서버를 올리기 전에, 맞는 앱을 Play 에 낸 뒤 올린다.
     min_android_version_code: int = Field(default=0, ge=0)
 
+    # 리포트 완료 푸시(FCM)에 쓰는 Firebase 서비스 계정 키 파일 경로. 음성 worker만
+    # 읽는다. 비어 있으면 푸시를 보내지 않고 리포트 처리는 그대로 한다. 키 파일은
+    # 저장소와 이미지에 넣지 않고 실행할 때 마운트한다(docs/deployment.md).
+    fcm_credentials_path: str = ""
+    # FCM 인증과 발송 요청 하나의 제한 시간.
+    fcm_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
     @field_validator("session_secret")
     @classmethod
     def _reject_short_secret(cls, value: str) -> str:

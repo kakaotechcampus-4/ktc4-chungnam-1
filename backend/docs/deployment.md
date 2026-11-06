@@ -88,6 +88,9 @@ uv run pytest
    | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. GPU 서버의 Tailscale 주소인 `http://<GPU 서버의 Tailscale IP>:8001`을 넣는다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
    | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
+   | `SAEROK_FCM_KEY_FILE`, `SAEROK_FCM_CREDENTIALS_PATH` | 리포트 완료 푸시. 아래 "리포트 완료 푸시 키"를 따른다. 둘 다 비우면 푸시 없이 리포트만 만든다 |
+
+   **리포트 완료 푸시 키**: Firebase 콘솔 → 프로젝트 설정 → 서비스 계정에서 받은 키 파일을 저장소 밖(예: `/opt/saerok/secrets/fcm-service-account.json`)에 두고 `chmod 600`으로 다른 사용자가 읽지 못하게 한다. `SAEROK_FCM_KEY_FILE`에 그 호스트 경로를, `SAEROK_FCM_CREDENTIALS_PATH`에 `/run/secrets/fcm-service-account.json`을 넣는다. compose가 키를 `speech-worker`에만 읽기 전용으로 붙이며 이미지에는 넣지 않는다. 경로를 넣었는데 키를 읽지 못하면 `speech-worker`가 시작하지 않는다. 키 경로와 값은 이 문서, 이슈와 PR에 남기지 않는다.
 
 7. DB, migration, API와 카드 worker, HTTPS 앞단 순서로 띄운다.
 

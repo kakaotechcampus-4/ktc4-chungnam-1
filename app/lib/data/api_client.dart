@@ -206,6 +206,10 @@ class ApiClient {
     timeout,
   );
 
+  /// 본문 없이 둔다(1-7). 성공 응답은 빈 `204` 이므로 아무것도 돌려주지 않는다.
+  Future<void> put(String path) =>
+      _send(() async => _client.put(_uri(path), headers: _headers()), timeout);
+
   void close() {
     if (_ownsClient) _client.close();
   }

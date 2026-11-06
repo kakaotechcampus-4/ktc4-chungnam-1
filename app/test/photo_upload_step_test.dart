@@ -287,7 +287,7 @@ void main() {
         findsNothing,
         reason: '서버에 올라간 사진은 지울 수 없다',
       );
-      expect(find.text('추가'), findsNothing);
+      expect(find.text('추가'), findsOneWidget, reason: '다섯 장 미만이면 더 올릴 수 있다');
       expect(find.text('홈 화면'), findsNothing, reason: '자동으로 넘어가지 않는다');
 
       await tester.tap(find.widgetWithText(FilledButton, '홈으로'));
@@ -372,6 +372,49 @@ void main() {
           .photos
           .map((photo) => photo.path);
       expect(paths, ['photo_1.jpg']);
+    });
+
+    testWidgets('실패한 사진을 빼도 다섯 장 미만이면 더 골라 새 사진만 올린다', (tester) async {
+      final uploader = _FakeUploader(
+        failures: {'photo_3.jpg': const PhotoUploadFailure('IMAGE_TOO_LARGE')},
+      );
+      final picker = _FakePicker([_paths(3), _paths(1, from: 4)]);
+      final container = await _openPhotoStep(
+        tester,
+        picker,
+        uploader: uploader,
+      );
+      await tester.tap(find.text('사진 추가하기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '마치기'));
+      await tester.pumpAndSettle();
+
+      // 실패한 사진만 X 로 뺀다. 남은 두 장은 모두 올라간 사진이다.
+      await tester.tap(find.byTooltip('사진 3 빼기'));
+      await tester.pumpAndSettle();
+      expect(find.text('추가'), findsOneWidget, reason: '세 장을 더 올릴 수 있다');
+
+      await tester.tap(find.text('추가'));
+      await tester.pumpAndSettle();
+      expect(picker.limits.last, 3);
+      await tester.tap(find.widgetWithText(FilledButton, '마치기'));
+      await tester.pumpAndSettle();
+
+      expect(uploader.attempts, [
+        'photo_1.jpg',
+        'photo_2.jpg',
+        'photo_3.jpg',
+        'photo_4.jpg',
+      ], reason: '이미 올라간 사진은 다시 올리지 않는다');
+      expect(
+        container
+            .read(setupControllerProvider)
+            .draft
+            .photos
+            .map((photo) => photo.status),
+        everyElement(PhotoUploadStatus.uploaded),
+      );
+      expect(find.widgetWithText(FilledButton, '홈으로'), findsOneWidget);
     });
 
     testWidgets('서버에 닿지 못하면 다시 올릴 수 있다', (tester) async {

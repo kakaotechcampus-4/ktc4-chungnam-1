@@ -15,6 +15,7 @@ from app.schemas.speech_analysis import SpeechAnalysisRequest, SpeechAnalysisRes
 from app.services.accounts import Account, REQUIRED_CONSENTS
 from app.services.audio_storage import AudioStorage
 from app.services.audio_validation import validate_visit_audio
+from app.services.report_notifications import ReportNotifier
 from app.services.speech_analysis_jobs import (
     SpeechAnalysisJob,
     SpeechAnalysisJobRepository,
@@ -220,11 +221,13 @@ class SpeechAnalysisProcessor:
         audio_storage: AudioStorage,
         ai_server: AiServerClient,
         report_generator: ReportGenerator | None = None,
+        report_notifier: ReportNotifier | None = None,
     ) -> None:
         self._jobs_for = jobs_for
         self._audio_storage = audio_storage
         self._ai_server = ai_server
         self._report_generator = report_generator
+        self._report_notifier = report_notifier
 
     async def __call__(self, connection: DbConnection, job: SpeechAnalysisJob) -> None:
         jobs = self._jobs_for(connection)
@@ -245,7 +248,7 @@ class SpeechAnalysisProcessor:
                 raise AppError(status_code=422, error_code="EMPTY_TRANSCRIPT",
                                message="다시 분석할 발화를 확인하지 못했습니다.")
             await self._report_generator.generate(connection, session_id=job.session_id, speech=speech)
-            await jobs.mark_completed(analysis_id=job.analysis_id)
+            await self._complete(connection, jobs, job)
             return
         speech = await self._transcribe(job)
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
@@ -268,7 +271,21 @@ class SpeechAnalysisProcessor:
         await self._report_generator.generate(
             connection, session_id=job.session_id, speech=speech
         )
+        await self._complete(connection, jobs, job)
+
+    async def _complete(
+        self,
+        connection: DbConnection,
+        jobs: SpeechAnalysisJobRepository,
+        job: SpeechAnalysisJob,
+    ) -> None:
         await jobs.mark_completed(analysis_id=job.analysis_id)
+        # 완료가 커밋된 뒤에 알린다. 앱이 알림을 받고 바로 리포트를 읽을 수 있어야 한다.
+        # 알림 쪽이 작업이 실제로 완료됐는지 다시 확인하고, 실패해도 예외를 내지 않는다.
+        if self._report_notifier is not None:
+            await self._report_notifier.report_ready(
+                connection, analysis_id=job.analysis_id
+            )
 
     async def _transcribe(self, job: SpeechAnalysisJob) -> SpeechAnalysisResult:
         if job.size_bytes is None or job.sha256 is None:
@@ -316,6 +333,7 @@ def create_speech_worker(
     open_connection: OpenConnection,
     lease_seconds: int,
     report_generator: ReportGenerator | None = None,
+    report_notifier: ReportNotifier | None = None,
 ) -> Worker[SpeechAnalysisJob]:
     return Worker(
         queue=SpeechAnalysisQueue(jobs_for=jobs_for, audio_storage=audio_storage,
@@ -325,6 +343,7 @@ def create_speech_worker(
             audio_storage=audio_storage,
             ai_server=ai_server,
             report_generator=report_generator,
+            report_notifier=report_notifier,
         ),
         open_connection=open_connection,
         lease_seconds=lease_seconds,

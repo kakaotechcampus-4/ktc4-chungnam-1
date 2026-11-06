@@ -13,8 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/features/cards/cards_screen.dart' show cardSelectLabel;
 import 'package:saerok/features/home/home_phrases.dart';
-import 'package:saerok/features/report/report_text.dart'
-    show splitIntoParagraphs;
 import 'package:saerok/widgets/app_surfaces.dart';
 
 import 'journey_harness.dart';
@@ -312,24 +310,24 @@ void defineAppJourneyTests() {
       await app.close();
     });
 
-    testWidgets('화자를 확인하지 못한 리포트는 안내만 보여주고 해석과 제안을 두지 않는다', (tester) async {
-      final server = JourneyServer(plans: [AnalysisPlan.speakerUnverified]);
+    testWidgets('라벨이 부족해도 리포트와 후보를 보여주고 확인 필요 이유를 펼친다', (tester) async {
+      final server = JourneyServer(
+        plans: [AnalysisPlan.insufficientSpeakerLabels],
+      );
       final app = await _firstVisit(tester, server);
-
       await app.waitFor(find.text('리포트가 도착했어요'));
       await app.tap(find.text('리포트가 도착했어요'));
-
-      await app.waitFor(find.text(unverifiedSpeakerTitle));
-      // 리포트 화면은 본문을 문장 단위로 나눠 보여준다. 고정 안내를 고치지 않는다.
-      for (final paragraph in splitIntoParagraphs(unverifiedSpeakerBody)) {
-        expect(find.text(paragraph), findsOneWidget);
-      }
-      expect(find.text(journeyReportTitle), findsNothing);
-      expect(find.text(journeyCardSummary), findsNothing);
-      // 보호자는 첫 카드를 썼다고 답했다. 요약이 없다고 다룬 카드가 없다고 하지 않는다.
-      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsNothing);
-      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsOneWidget);
-      expect(find.text('변경 사항 확인하기'), findsNothing, reason: '이야기와 주제 제안이 없다');
+      await app.waitFor(find.text(journeyReportTitle));
+      expect(find.text(journeyReportBody), findsOneWidget);
+      expect(find.text(journeyCardSummary), findsOneWidget);
+      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsNothing);
+      await app.tap(find.text('변경 사항 확인하기'));
+      await app.waitFor(find.text(journeyProposalTitle));
+      expect(server.lifeFacts, isEmpty, reason: '승인 전에는 일대기에 반영하지 않는다');
+      expect(find.text(journeyUncertainProposalReason), findsNothing);
+      await app.tap(find.text('AI 제안 이유 보기'));
+      await app.waitFor(find.text(journeyUncertainProposalReason));
+      expect(server.lifeFacts, isEmpty, reason: '이유를 읽는 것만으로 승인하지 않는다');
 
       final texts = _visibleTexts(tester);
       expect(

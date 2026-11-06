@@ -65,7 +65,7 @@ void main() {
 
   test('가짜 서버의 응답이 BE 응답 모델과 같은 필드를 쓴다', () async {
     final server = JourneyServer(
-      plans: [AnalysisPlan.failed, AnalysisPlan.speakerUnverified],
+      plans: [AnalysisPlan.failed, AnalysisPlan.insufficientSpeakerLabels],
     );
     await _driveServer(server);
 
@@ -260,7 +260,7 @@ Set<String> _multipartNames(File route, String function) {
 }
 
 /// 여정에서 앱이 부르는 순서대로 가짜 서버를 직접 부른다. 분석은 한 번 실패한
-/// 뒤 다시 요청하고, 두 번째 면회는 화자 미확인으로 끝난다.
+/// 뒤 다시 요청하고, 두 번째 면회는 라벨이 부족해도 일반 리포트와 후보를 반환한다.
 Future<void> _driveServer(JourneyServer server) async {
   final client = server.client;
   const base = JourneyServer.baseUrl;

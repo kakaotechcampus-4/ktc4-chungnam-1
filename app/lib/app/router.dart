@@ -20,6 +20,7 @@ import '../features/profile/profile_basic_edit_screen.dart';
 import '../features/profile/profile_delete_screen.dart';
 import '../features/profile/profile_details_edit_screen.dart';
 import '../features/profile/profile_dialogs.dart';
+import '../features/profile/profile_photo_add_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/profile_switch_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
@@ -198,6 +199,12 @@ GoRouter buildRouter() {
         path: AppRoutes.profileEditDetails,
         builder: (context, state) =>
             const _NeedsProfile(child: ProfileDetailsEditScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.profilePhotoAdd,
+        builder: (context, state) => _NeedsProfile(
+          child: ProfilePhotoAddScreen(existing: state.extra as int? ?? 0),
+        ),
       ),
       GoRoute(
         path: AppRoutes.profileSwitch,

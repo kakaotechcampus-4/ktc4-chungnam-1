@@ -31,3 +31,12 @@ def test_hospital_visit_can_be_reported_without_claiming_treatment(migrated_data
     result = _report(visit, body="병원에 다녀왔다는 이야기를 나눴습니다. 치매 약을 먹고 있다고 말했습니다.")
     _generate(records, visit, FakeAi(result))
     assert _saved_rows(records, visit)["report"]["generated"]
+
+
+def test_quoted_elder_speech_about_treatment_is_saved(migrated_database_url):
+    """어르신의 말을 옮긴 문장은 효과 주장으로 보지 않는다(멘토 리뷰 11/5)."""
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    result = _report(visit, body='어르신께서 "치매는 치료할 수 있다더라"고 말씀하셨어요. 텔레비전에서 본 이야기라고 하셨습니다.')
+    _generate(records, visit, FakeAi(result))
+    assert _saved_rows(records, visit)["report"]["generated"]

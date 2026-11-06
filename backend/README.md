@@ -183,6 +183,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `PATCH` | `/auth/me/consents` | 선택 동의 변경. 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 추가 |
 | `POST` | `/auth/logout` | 요청에 쓴 세션 폐기. 본문 없이 `204` |
 | `DELETE` | `/auth/me` | 회원 탈퇴. 계정과 그 아래 기록을 지우고 요청에 쓴 세션 폐기. 탈퇴 이유는 선택 본문. `204` |
+| `PUT` | `/auth/me/push-devices/{fid}` | 리포트 완료 푸시를 받을 기기(FCM FID) 등록. 본문 없이 `204` |
+| `DELETE` | `/auth/me/push-devices/{fid}` | 기기 등록 해제. 본문 없이 `204` |
 
 요청과 응답의 정확한 형태는 서버 실행 후 `http://127.0.0.1:8000/docs` 와 `openapi.json` 에서 확인한다. 구현 전 API를 포함한 전체 명세는 [API 명세](../docs/architecture/api-spec.md)를 따른다.
 
@@ -227,6 +229,28 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
 - DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체는 삭제 실행기(#204)가 지우며, 운영 배포와 주기 실행은 남아 있다. 대기열 등록만으로 삭제 완료를 표시하지 않는다.
 - 탈퇴 이유는 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣고 계정 ID는 넣지 않는다. `reasons`는 1개 이상이고 중복을 받지 않으며, `otherText`는 `other`를 고른 경우에만 비우지 않고 보낸다. 조건이 맞지 않으면 `INVALID_REQUEST`(422)이며 계정을 지우지 않는다. `otherText`는 로그에 남기지 않는다.
+
+#### 푸시 받을 기기
+
+리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 발송은 아래 "리포트 완료 푸시"에 있다.
+
+- `fid`는 앱이 FCM에 등록하고 받은 Firebase Installation ID다. FCM HTTP v1은 기기 토큰(`token`) 대신 `fid`로 보내도록 바꿨다. 경로로 받으며 영문 대소문자, 숫자, `-`, `_`로 된 1~64자만 받는다(DB CHECK도 같다). 기기를 가리키는 값이라 로그에 남기지 않는다.
+- 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6과 겹치지 않도록 계정 행을 `FOR SHARE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
+- 해제(1-8)는 이 계정의 등록만 지우며 없거나 다른 계정의 FID여도 `204`다. 알림 동의가 없어도 지울 수 있다.
+- 1-6에서 `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 등록을 모두 지운다. 탈퇴(1-5)는 `ON DELETE CASCADE`로 지운다. 로그아웃(1-4)은 서버가 어느 기기인지 모르므로 앱이 로그아웃 전에 1-8을 보낸다.
+- 오래된 등록을 주기적으로 지우는 작업은 아직 없다. 발송이 `UNREGISTERED`로 실패한 등록만 지운다. FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 보며, `registered_at`으로 고를 수 있다.
+
+#### 리포트 완료 푸시
+
+음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)).
+
+- 완료 처리(`mark_completed`)가 커밋된 다음에 보낸다. 대상은 DB에서 다시 고른다. 작업이 `completed`이고, 그 회차 계정의 현재 동의(`current_consents`)에서 알림 수신이 켜져 있고, 그 계정의 `push_devices`에 등록된 기기만이다. 임대를 잃어 리포트를 저장하지 못한 작업이나 그사이 동의를 거둔 계정에는 보내지 않는다. 대상을 읽을 때 트랜잭션을 열지 않아 발송 중 잠금을 잡지 않는다.
+- 알림은 고정 문구(`새록`, `리포트가 준비되었어요`)와 `data`의 `type: reportReady`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `sessionId`로 리포트(7-2)를 다시 읽는다. `data` 항목은 FE와 합의 전인 테스트 가정이다.
+- 인증은 Firebase 서비스 계정 키로 서명한 JWT를 Google 토큰 주소에 보내 접근 토큰을 받는다(`pyjwt[crypto]`와 `httpx`, 새 의존성 없음). 접근 토큰은 만료 60초 전까지 다시 쓰고 401을 받으면 버린다.
+- 응답이 404 `UNREGISTERED`면 그 계정의 그 등록을 지운다. 400 `INVALID_ARGUMENT`는 알림 본문 문제일 수도 있어 지우지 않는다. 그 밖의 실패(429, 5xx, 연결 실패, 토큰 실패)는 이번 알림만 포기하고 다시 보내지 않는다. 알림을 놓쳐도 앱은 홈에서 회차 상태(5-4)로 리포트 도착을 보여준다.
+- 발송 실패는 리포트 작업을 실패로 만들지 않는다. 로그에는 HTTP 상태, FCM 오류 코드와 건수만 남기고 FID, 키와 접근 토큰은 남기지 않는다.
+- 설정: `SAEROK_FCM_CREDENTIALS_PATH`(키 파일 경로, 비우면 푸시 없음), `SAEROK_FCM_TIMEOUT_SECONDS`(요청 하나의 제한 시간, 기본 10초). 경로를 넣었는데 키 파일을 읽지 못하면 음성 worker가 시작하지 않는다. `--stt-only`는 리포트를 만들지 않으므로 키를 보지 않는다. 컨테이너 배포는 [배포 문서](docs/deployment.md)의 "리포트 완료 푸시 키"를 따른다.
+- 리포트 생성 실패를 알릴지는 정하지 않아 보내지 않는다(PM 확인 필요). 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
 
 ### 세션
 
@@ -382,9 +406,9 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 삭제를 즉시 시도한다. 삭제 요청은 먼저 DB에 남기며 S3 삭제만 실패해도 리포트 생성은
 계속한다. 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
 
-화자 미확인 발화나 예상 인원보다 적은 라벨이 있으면 모델을 호출하지 않고 화자 미확인
-안내만 저장한다. 이 경우도 기존 상태는 `completed`이지만 AI 해석, 카드 요약과 두 종류의
-제안은 없다. 제목과 본문에 제한을 알리며 보호자의 기존 평가는 보존한다([화자 처리](docs/speaker-fact-boundary.md)).
+화자 라벨이 누락되거나 라벨 수가 입력 인원보다 적어도 리포트와 변경 제안 모델을
+호출한다. 빈 전사는 `EMPTY_TRANSCRIPT`로 거절한다. 프롬프트의 출처 구분과 보호자의
+이야기 승인 절차는 유지한다([화자 처리](docs/speaker-fact-boundary.md)).
 
 현재 코드에는 작업 저장소, S3 어댑터, 제출 및 조회 API와 독립 worker 실행 진입점이
 있다. worker는 STT 뒤 같은 작업에서 리포트 생성기(8-3, [평가와 리포트 API](#평가와-리포트-api))로
