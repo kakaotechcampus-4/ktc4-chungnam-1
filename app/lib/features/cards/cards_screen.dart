@@ -425,7 +425,7 @@ class _CardTile extends StatelessWidget {
     // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
     return SelectableCard(
       accent: HomeColors.accent,
-      shadows: AppShadows.card,
+      shadows: AppShadows.cardSoft,
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,

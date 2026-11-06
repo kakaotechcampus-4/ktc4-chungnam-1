@@ -126,6 +126,11 @@ abstract final class AppShadows {
   static const card = [
     BoxShadow(color: Color(0x1F000000), blurRadius: 10, offset: Offset(0, 3)),
   ];
+
+  /// 대화 카드 받기와 추가 화면의 흰 대화 카드. [card] 보다 살짝 옅다.
+  static const cardSoft = [
+    BoxShadow(color: Color(0x17000000), blurRadius: 9, offset: Offset(0, 2)),
+  ];
 }
 
 /// 50~60대가 주 사용자다. 본문은 17이고 캡션 13보다 작게 쓰지 않는다.
