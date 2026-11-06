@@ -395,6 +395,7 @@ class _TopicCard extends StatelessWidget {
     final description = proposal.topic.description;
 
     return AppCard(
+      borderColor: HomeColors.outline,
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -507,7 +508,9 @@ class _ActionOption extends StatelessWidget {
         color: selected ? AppColors.ink : AppColors.background,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: BorderSide(color: selected ? AppColors.ink : AppColors.line),
+          side: BorderSide(
+            color: selected ? AppColors.ink : HomeColors.outline,
+          ),
         ),
         child: InkWell(
           onTap: onTap,
@@ -680,6 +683,7 @@ class _LifeFactCard extends StatelessWidget {
     final content = edited?.content ?? proposal.content;
 
     return AppCard(
+      borderColor: HomeColors.outline,
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

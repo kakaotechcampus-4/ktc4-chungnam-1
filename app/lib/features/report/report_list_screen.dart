@@ -81,6 +81,7 @@ class _ReportRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      borderColor: HomeColors.outline,
       onTap: () => context.push(AppRoutes.reportOf(report.reportId)),
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
@@ -102,6 +103,7 @@ class _ReportRow extends StatelessWidget {
                 AppChip(
                   report.mood?.label ?? unsupportedValueLabel,
                   tone: ChipTone.weak,
+                  weakBorder: HomeColors.outline,
                 ),
               ],
             ),

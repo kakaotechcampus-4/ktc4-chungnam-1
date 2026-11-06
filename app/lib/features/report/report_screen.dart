@@ -418,6 +418,7 @@ class _CardSummaryTile extends StatelessWidget {
     // 이어 듣기 어렵다.
     return MergeSemantics(
       child: AppCard(
+        borderColor: HomeColors.outline,
         padding: EdgeInsets.all(set.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -467,7 +468,7 @@ class _EasyModeButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: on ? AppColors.ink : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(color: on ? AppColors.ink : AppColors.line),
+          border: Border.all(color: on ? AppColors.ink : HomeColors.outline),
           boxShadow: AppShadows.high,
         ),
         child: Material(
