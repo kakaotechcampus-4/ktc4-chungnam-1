@@ -129,26 +129,45 @@ class HomeScreen extends ConsumerWidget {
               // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
               // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
               // 붙는 순간 아래로 넘친다.
-              child: Align(
-                alignment: const Alignment(0, -0.2),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
-                    // 이름을 읽는 동안에는 이름 없이 묻는다.
-                    Text(
-                      name == null
-                          ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                          : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
-                      // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
-                      style: AppTypography.sectionTitle,
-                      textAlign: TextAlign.center,
+              //
+              // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
+              // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문을
+              // 스크롤한다. 글자를 잘리게 두지 않는다(`app/DESIGN.md`).
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final roomy =
+                      MediaQuery.textScalerOf(context).scale(1) <= 1.3 &&
+                      box.maxHeight >= 300;
+                  final content = Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                      // 이름을 읽는 동안에는 이름 없이 묻는다.
+                      Text(
+                        name == null
+                            ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                            : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
+                        // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
+                        style: AppTypography.sectionTitle,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.xxl),
+                      // 어르신을 바꾸면 인사말부터 다시 시작한다.
+                      if (roomy)
+                        Flexible(child: HomeTalk(key: ValueKey(profileKey)))
+                      else
+                        HomeTalk(key: ValueKey(profileKey), mascotSize: 140),
+                    ],
+                  );
+                  const alignment = Alignment(0, -0.2);
+                  if (roomy) return Align(alignment: alignment, child: content);
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: box.maxHeight),
+                      child: Align(alignment: alignment, child: content),
                     ),
-                    const SizedBox(height: AppSpacing.xxl),
-                    // 어르신을 바꾸면 인사말부터 다시 시작한다.
-                    Flexible(child: HomeTalk(key: ValueKey(profileKey))),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ),

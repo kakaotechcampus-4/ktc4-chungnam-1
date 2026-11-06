@@ -61,10 +61,14 @@ class HomeAfterVisit extends Notifier<bool> {
 /// 확인만 한 경우와 실패는 축하하지 않는다. 다른 화면에 가 있는 동안 끝나면
 /// 움직임은 홈으로 돌아왔을 때 이어서 보인다.
 class HomeTalk extends ConsumerStatefulWidget {
-  const HomeTalk({super.key, this.random});
+  const HomeTalk({super.key, this.random, this.mascotSize});
 
   /// 테스트가 고르는 순서를 정할 때 넘긴다.
   final math.Random? random;
+
+  /// 마스코트 크기를 정해 둔다. 홈이 스크롤될 때(글자를 크게 키웠을 때) 쓴다.
+  /// `null` 이면 남는 높이에 맞춰 줄어든다.
+  final double? mascotSize;
 
   @override
   ConsumerState<HomeTalk> createState() => _HomeTalkState();
@@ -167,6 +171,14 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
     });
   }
 
+  Widget _mascotOf(double size) => Mascot(
+    size: size,
+    controller: _mascot,
+    onReact: _talk,
+    // 카드 완성 말풍선이 떠 있는 동안 신나는 얼굴로 떠 있는다.
+    cheerful: _line.greeting == cardsReadyMessage,
+  );
+
   @override
   Widget build(BuildContext context) {
     final profileId = ref.watch(serverProfileIdProvider).value;
@@ -198,23 +210,16 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
                 ),
         ),
         const SizedBox(height: AppSpacing.md),
-        Flexible(
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final size = math.min(
-                math.min(box.maxHeight, box.maxWidth * 0.55),
-                220.0,
-              );
-              return Mascot(
-                size: size,
-                controller: _mascot,
-                onReact: _talk,
-                // 카드 완성 말풍선이 떠 있는 동안 신나는 얼굴로 떠 있는다.
-                cheerful: _line.greeting == cardsReadyMessage,
-              );
-            },
+        if (widget.mascotSize case final fixed?)
+          _mascotOf(fixed)
+        else
+          Flexible(
+            child: LayoutBuilder(
+              builder: (context, box) => _mascotOf(
+                math.min(math.min(box.maxHeight, box.maxWidth * 0.55), 220.0),
+              ),
+            ),
           ),
-        ),
       ],
     );
   }
