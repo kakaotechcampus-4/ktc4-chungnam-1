@@ -109,7 +109,7 @@ class ScreenBody extends StatelessWidget {
 /// 하단 탭의 종류. 화면에 놓인 순서다.
 enum AppTab { album, report, home, myPage, settings }
 
-/// 하단 탭. 고른 탭 위에 검정 막대를 둔다.
+/// 하단 탭. 고른 탭 위에 막대를 둔다. 보통 검정이고 홈에서는 [accent] 의 초록이다.
 ///
 /// 탭이 있는 화면들이 이 탭 하나를 함께 쓴다(router.dart 의 `_TabShell`). 고른
 /// 탭이 바뀌면 막대가 그 자리로 미끄러진다. 움직임 줄이기가 켜져 있으면 바로
@@ -118,11 +118,15 @@ class AppBottomNav extends StatelessWidget {
   const AppBottomNav({
     required this.current,
     required this.onSelected,
+    this.accent = AppColors.ink,
     super.key,
   });
 
   final AppTab current;
   final ValueChanged<AppTab> onSelected;
+
+  /// 고른 탭의 아이콘, 글자와 막대 색. 홈에서만 초록을 넘긴다.
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -151,6 +155,7 @@ class AppBottomNav extends StatelessWidget {
                       icon: Icons.menu_book_outlined,
                       label: '일대기',
                       current: current,
+                      accent: accent,
                       onSelected: onSelected,
                     ),
                     _Item(
@@ -159,6 +164,7 @@ class AppBottomNav extends StatelessWidget {
                       selectedIcon: Icons.description,
                       label: '리포트',
                       current: current,
+                      accent: accent,
                       onSelected: onSelected,
                     ),
                     _Item(
@@ -167,6 +173,7 @@ class AppBottomNav extends StatelessWidget {
                       selectedIcon: Icons.home,
                       label: '홈',
                       current: current,
+                      accent: accent,
                       onSelected: onSelected,
                     ),
                     _Item(
@@ -174,6 +181,7 @@ class AppBottomNav extends StatelessWidget {
                       icon: Icons.person_outline,
                       label: '마이페이지',
                       current: current,
+                      accent: accent,
                       onSelected: onSelected,
                     ),
                     _Item(
@@ -182,6 +190,7 @@ class AppBottomNav extends StatelessWidget {
                       selectedIcon: Icons.settings,
                       label: '설정',
                       current: current,
+                      accent: accent,
                       onSelected: onSelected,
                     ),
                   ],
@@ -189,7 +198,11 @@ class AppBottomNav extends StatelessWidget {
                 // 고른 탭 위의 검정 막대. 누름은 아래 탭이 받는다. 높이는 탭이 정한다.
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: _SlidingIndicator(index: index, still: still),
+                    child: _SlidingIndicator(
+                      index: index,
+                      still: still,
+                      color: accent,
+                    ),
                   ),
                 ),
               ],
@@ -208,9 +221,16 @@ class AppBottomNav extends StatelessWidget {
 /// 가 버려 순간이동처럼 보였다. 그래서 그 프레임을 다 그린 뒤 다음 프레임부터
 /// 0.3초 동안 움직인다. 움직이는 도중 또 바뀌면 지금 자리에서 다시 출발한다.
 class _SlidingIndicator extends StatefulWidget {
-  const _SlidingIndicator({required this.index, required this.still});
+  const _SlidingIndicator({
+    required this.index,
+    required this.still,
+    required this.color,
+  });
 
   final double index;
+
+  /// 막대 색.
+  final Color color;
 
   /// 움직임 줄이기. 켜져 있으면 바로 옮긴다.
   final bool still;
@@ -266,9 +286,9 @@ class _SlidingIndicatorState extends State<_SlidingIndicator>
         ),
         child: FractionallySizedBox(
           widthFactor: 1 / AppTab.values.length,
-          child: const Align(
+          child: Align(
             alignment: Alignment.topCenter,
-            child: _Indicator(),
+            child: _Indicator(color: widget.color),
           ),
         ),
       ),
@@ -276,9 +296,11 @@ class _SlidingIndicatorState extends State<_SlidingIndicator>
   }
 }
 
-/// 고른 탭 위의 짧고 둥근 검정 막대.
+/// 고른 탭 위의 짧고 둥근 막대. 보통 검정이고 홈에서는 초록이다.
 class _Indicator extends StatelessWidget {
-  const _Indicator();
+  const _Indicator({required this.color});
+
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +308,7 @@ class _Indicator extends StatelessWidget {
       width: 32,
       height: 3,
       decoration: BoxDecoration(
-        color: AppColors.ink,
+        color: color,
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -299,6 +321,7 @@ class _Item extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.current,
+    required this.accent,
     required this.onSelected,
     this.selectedIcon,
   });
@@ -308,12 +331,13 @@ class _Item extends StatelessWidget {
   final IconData? selectedIcon;
   final String label;
   final AppTab current;
+  final Color accent;
   final ValueChanged<AppTab> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final selected = tab == current;
-    final color = selected ? AppColors.ink : AppColors.textDisabled;
+    final color = selected ? accent : AppColors.textDisabled;
 
     return Expanded(
       child: InkWell(

@@ -42,6 +42,42 @@ abstract final class AppColors {
   static const bookSpine = Color(0xFFC6C6C6);
 }
 
+/// 홈에서 면회 평가까지 이어지는 화면(홈, 오늘의 대화 카드, 만남 사진, 녹음
+/// 안내와 녹음 중, 보호자 평가)에만 쓰는 색. 세이지 초록을 연하게 풀어 쓴다
+/// (2026-11-06 디자인 리뉴얼). 글자, 경고, 고르지 않은 칸은 검정과 회색을 그대로 쓴다.
+///
+/// 다른 화면은 [AppColors] 의 흑백을 그대로 쓴다. 하단 탭은 홈을 보고 있을
+/// 때만 [accent] 로 고른 탭을 칠한다. 언덕 그림은 홈에만 둔다.
+abstract final class HomeColors {
+  /// 화면 배경. 흰색에 아주 가까운 오프화이트다. 보조 글자 6.4:1.
+  static const background = Color(0xFFFBFAF6);
+
+  /// `오늘의 대화카드 받기`, `대화 시작하기` 버튼 면, 홈에서 고른 탭의 아이콘,
+  /// 글자와 막대, 고른 대화 카드의 테두리와 체크 원, `○개 선택함` 칩.
+  /// 흰 글자 6.6:1, 흰 탭 바탕 위 6.6:1.
+  static const accent = Color(0xFF4E6347);
+
+  /// [accent] 버튼이 도는 중일 때의 면. 흰 글자 4.6:1.
+  static const accentLoading = Color(0xFF677A60);
+
+  /// 어르신 알약과 연초록 면. 회색이 섞인 아주 연한 초록이다. 본문 글자 16.4:1.
+  /// 홈 캐릭터 말풍선은 흰색([AppColors.background])으로 둔다.
+  static const bubble = Color(0xFFEDF0E9);
+
+  /// 어르신 알약의 연한 테두리.
+  static const bubbleLine = Color(0xFFC5CDBC);
+
+  /// 오프화이트 바탕에서도 보이는 진한 테두리. 보조 버튼, 녹음 버튼, 카드
+  /// 부채, 리포트의 카드와 칸 테두리에 쓴다. 오프화이트 위 2.4:1.
+  static const outline = Color(0xFF9AA68E);
+
+  /// 뒤 언덕.
+  static const hillBack = Color(0xFFEEF0E9);
+
+  /// 앞 언덕. 그 위 보조 글자 5.0:1, 오류 글자 5.3:1.
+  static const hillFront = Color(0xFFDCE1D5);
+}
+
 /// 간격은 4의 배수만 쓴다.
 abstract final class AppSpacing {
   static const xs = 4.0;
@@ -54,6 +90,10 @@ abstract final class AppSpacing {
 
   /// 화면 좌우 여백.
   static const screen = 20.0;
+
+  /// 만남 사진 화면과 녹음 안내 화면의 제목 위 여백. 두 화면을 넘길 때 제목이
+  /// 같은 자리에 오게 한다.
+  static const visitTitleTop = 56.0;
 
   /// 섹션 사이.
   static const section = 32.0;
@@ -80,6 +120,11 @@ abstract final class AppShadows {
   /// 팝업 메뉴와 하단 탭바.
   static const high = [
     BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 4)),
+  ];
+
+  /// 오프화이트 바탕 위의 흰 대화 카드. [low] 보다 조금 진하다.
+  static const card = [
+    BoxShadow(color: Color(0x1F000000), blurRadius: 10, offset: Offset(0, 3)),
   ];
 }
 

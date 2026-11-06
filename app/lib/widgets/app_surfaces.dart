@@ -17,11 +17,23 @@ class AppCard extends StatelessWidget {
     this.expanded,
     this.selected = false,
     this.padding = const EdgeInsets.all(AppSpacing.lg),
+    this.accent = AppColors.ink,
+    this.borderColor = AppColors.line,
+    this.shadows = AppShadows.low,
     super.key,
   });
 
   final Widget child;
   final VoidCallback? onTap;
+
+  /// 고르지 않은 카드의 테두리 색.
+  final Color borderColor;
+
+  /// 카드 그림자.
+  final List<BoxShadow> shadows;
+
+  /// 고른 카드의 테두리 색. 보통 검정이고 오늘의 대화 카드 화면에서는 초록이다.
+  final Color accent;
 
   /// 펼치는 카드면 지금 펼쳐졌는지. `null` 이면 펼치는 카드가 아니다.
   final bool? expanded;
@@ -37,10 +49,10 @@ class AppCard extends StatelessWidget {
         color: AppColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: selected ? AppColors.ink : AppColors.line,
+          color: selected ? accent : borderColor,
           width: selected ? 2 : 1,
         ),
-        boxShadow: AppShadows.low,
+        boxShadow: shadows,
       ),
       child: child,
     );
@@ -67,11 +79,15 @@ class AppSurfaceBox extends StatelessWidget {
   const AppSurfaceBox({
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.lg),
+    this.color = AppColors.surface,
     super.key,
   });
 
   final Widget child;
   final EdgeInsets padding;
+
+  /// 면 색. 보통 옅은 회색이고, 세이지 색감 화면에서는 연초록이다.
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +95,7 @@ class AppSurfaceBox extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: color,
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: child,
@@ -104,11 +120,20 @@ class AppChip extends StatelessWidget {
     this.label, {
     this.tone = ChipTone.normal,
     this.style,
+    this.accent = AppColors.ink,
+    this.weakBorder = AppColors.line,
     super.key,
   });
 
   final String label;
   final ChipTone tone;
+
+  /// [ChipTone.weak] 의 테두리 색.
+  final Color weakBorder;
+
+  /// [ChipTone.strong] 의 면과 [ChipTone.normal] 의 글자, 테두리 색. 흰 글자와
+  /// 4.5:1 이상인 색만 쓴다.
+  final Color accent;
 
   /// 글자 묶음을 바꿔 끼울 때 쓴다. 색과 굵기는 [tone] 이 정하므로 크기만
   /// 넘기면 된다. 지정하지 않으면 캡션이다.
@@ -117,12 +142,12 @@ class AppChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (background, foreground, border) = switch (tone) {
-      ChipTone.strong => (AppColors.ink, AppColors.background, AppColors.ink),
-      ChipTone.normal => (AppColors.background, AppColors.ink, AppColors.ink),
+      ChipTone.strong => (accent, AppColors.background, accent),
+      ChipTone.normal => (AppColors.background, accent, accent),
       ChipTone.weak => (
         AppColors.background,
         AppColors.textDisabled,
-        AppColors.line,
+        weakBorder,
       ),
     };
 
@@ -158,10 +183,18 @@ class AppChip extends StatelessWidget {
 /// 1.3:1 이라 흰 카드 위에서 잘 보이지 않았다(접근성 보고서 14쪽). 카드 테두리
 /// 같은 다른 선은 그대로 둔다.
 class SelectionMark extends StatelessWidget {
-  const SelectionMark({required this.selected, this.size = 28, super.key});
+  const SelectionMark({
+    required this.selected,
+    this.size = 28,
+    this.accent = AppColors.ink,
+    super.key,
+  });
 
   final bool selected;
   final double size;
+
+  /// 고른 원의 면과 테두리 색. 흰 체크와 4.5:1 이상인 색만 쓴다.
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -169,12 +202,12 @@ class SelectionMark extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: selected ? AppColors.ink : AppColors.background,
+        color: selected ? accent : AppColors.background,
         shape: BoxShape.circle,
         // 빈 원은 3:1 하한을 지키는 가장 연한 회색과 가는 선으로 둔다. 너무
         // 진해 카드 내용보다 눈에 띄었다.
         border: Border.all(
-          color: selected ? AppColors.ink : AppColors.selectionRing,
+          color: selected ? accent : AppColors.selectionRing,
           width: selected ? 2 : 1.5,
         ),
       ),
@@ -202,6 +235,8 @@ class SelectableCard extends StatelessWidget {
     required this.onTap,
     required this.selectLabel,
     required this.onToggleSelected,
+    this.accent = AppColors.ink,
+    this.shadows = AppShadows.low,
     super.key,
   });
 
@@ -209,6 +244,12 @@ class SelectableCard extends StatelessWidget {
   final bool selected;
   final bool expanded;
   final VoidCallback onTap;
+
+  /// 고른 카드의 테두리와 체크 원 색.
+  final Color accent;
+
+  /// 카드 그림자.
+  final List<BoxShadow> shadows;
 
   /// 화면 낭독기가 읽는 이름. 예: `옛 동네 이야기 카드 고르기`.
   final String selectLabel;
@@ -229,6 +270,8 @@ class SelectableCard extends StatelessWidget {
             selected: selected,
             onTap: onTap,
             expanded: expanded,
+            accent: accent,
+            shadows: shadows,
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.xl,
               AppSpacing.xl,
@@ -250,6 +293,7 @@ class SelectableCard extends StatelessWidget {
                 label: selectLabel,
                 selected: selected,
                 onTap: onToggleSelected,
+                accent: accent,
               ),
             ),
           ),
@@ -268,6 +312,7 @@ class SelectionToggle extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.accent = AppColors.ink,
     super.key,
   });
 
@@ -275,6 +320,9 @@ class SelectionToggle extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// 고른 원의 색.
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +346,7 @@ class SelectionToggle extends StatelessWidget {
               // 원(28)의 가운데가 카드 오른쪽 끝에서 48 에 온다. 예전 여백 24와
               // 자리 48의 절반을 더한 자리다.
               padding: const EdgeInsets.only(right: 48 - 14),
-              child: SelectionMark(selected: selected),
+              child: SelectionMark(selected: selected, accent: accent),
             ),
           ),
         ),
