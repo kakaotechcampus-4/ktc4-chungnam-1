@@ -87,7 +87,11 @@ class _ProfileBasicEditScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(title: '기본 정보 수정'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '기본 정보 수정',
+      ),
       body: ScreenBody(
         scrollable: true,
         // 처음 입력할 때와 같이 입력란이 많아 버튼을 본문과 함께 흘려보낸다.
@@ -104,6 +108,8 @@ class _ProfileBasicEditScreenState
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: _saving ? '저장하는 중이에요' : '저장하기',
                 onPressed: _canSave ? _save : null,
               ),

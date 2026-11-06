@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -31,7 +33,11 @@ class ProfileScreen extends ConsumerWidget {
     final profile = ref.watch(profileProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(title: '프로필 설정'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '프로필 설정',
+      ),
       body: profile.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
@@ -66,15 +72,13 @@ class _Body extends StatelessWidget {
     // 그 값이 실제보다 작게 나올 수 있고, 갤러리가 맨 아래라 그 넘침이 저장하기를
     // 가렸다(웹 미리보기에서 1픽셀). 이 화면은 높이를 채울 일이 없어 그냥
     // 스크롤한다.
-    // 사진과 이름의 회색 면은 화면 양옆 끝까지 채우고, 그 아래 구역들만 화면
-    // 좌우 여백 안에 둔다.
+    // 사진과 이름 아래에는 덩굴 모양 꾸밈 선을 두어 아래 구역과 나눈다.
     return SafeArea(
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 사진과 이름은 일대기 첫 장처럼 연한 회색 면에 둔다. 사진은 회색 면과
-            // 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
+            // 사진은 바탕과 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
             Container(
               // 이름 줄은 연필 버튼(48) 높이라 글자 아래가 그만큼 더 비어 보인다.
               // 그 몫을 빼서 글자 아래 간격이 사진 위 간격(32)과 같아 보이게 한다.
@@ -84,7 +88,6 @@ class _Body extends StatelessWidget {
                 AppSpacing.screen,
                 AppSpacing.xxl - _nameRowSlack(context),
               ),
-              color: AppColors.surface,
               child: Column(
                 children: [
                   Container(
@@ -92,7 +95,7 @@ class _Body extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppColors.background,
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.line),
+                      border: Border.all(color: HomeColors.bubbleLine),
                       boxShadow: AppShadows.low,
                     ),
                     child: ProfileAvatar(gender: profile.gender, size: 120),
@@ -134,6 +137,10 @@ class _Body extends StatelessWidget {
                 ],
               ),
             ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+              child: _VineDivider(),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.screen,
@@ -141,7 +148,7 @@ class _Body extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 회색 면에서 기본 정보까지 다른 구역 사이와 같은 간격을 둔다.
+                  // 꾸밈 선에서 기본 정보까지 다른 구역 사이와 같은 간격을 둔다.
                   const SizedBox(height: AppSpacing.section),
 
                   _Section(
@@ -251,6 +258,7 @@ class _Gallery extends ConsumerWidget {
           Text('사진을 불러오지 못했어요.', style: AppTypography.sub),
           const SizedBox(height: AppSpacing.sm),
           SecondaryButton(
+            borderColor: HomeColors.outline,
             label: '다시 시도',
             onPressed: () => ref.invalidate(serverProfilePhotosProvider),
           ),
@@ -358,14 +366,93 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppSurfaceBox(
+      color: HomeColors.bubble,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppChip(label, tone: ChipTone.weak),
+          AppChip(
+            accent: HomeColors.accent,
+            weakBorder: HomeColors.outline,
+            label,
+            tone: ChipTone.weak,
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(text, style: AppTypography.body),
         ],
       ),
     );
   }
+}
+
+/// 사진과 이름 아래의 꾸밈 선이다. 양 끝으로 갈수록 잦아드는 물결 선 두 줄기가
+/// 가운데의 작은 잎 한 쌍에서 만난다. 장식이라 화면 낭독기는 읽지 않는다.
+class _VineDivider extends StatelessWidget {
+  const _VineDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ExcludeSemantics(
+      child: SizedBox(
+        height: 24,
+        width: double.infinity,
+        child: CustomPaint(painter: _VinePainter()),
+      ),
+    );
+  }
+}
+
+class _VinePainter extends CustomPainter {
+  const _VinePainter();
+
+  /// 가운데 잎 자리의 반 폭.
+  static const _gap = 22.0;
+
+  /// 물결 한 번의 길이와 가장 큰 높이.
+  static const _wave = 28.0;
+  static const _amplitude = 3.5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    final line = Paint()
+      ..color = HomeColors.outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    // 가운데에서 바깥으로 그린다. 바깥으로 갈수록 물결이 잦아든다.
+    for (final dir in const [-1.0, 1.0]) {
+      final length = cx - _gap;
+      final path = Path()..moveTo(cx + dir * _gap, cy);
+      for (double d = 0; d <= length; d += 1) {
+        final fade = 1 - d / length;
+        final y = cy + math.sin(d / _wave * 2 * math.pi) * _amplitude * fade;
+        path.lineTo(cx + dir * (_gap + d), y);
+      }
+      canvas.drawPath(path, line);
+    }
+
+    // 가운데 잎 한 쌍. 왼쪽 잎은 연한 세이지, 오른쪽 잎은 초록이다.
+    _leaf(canvas, Offset(cx, cy), -1, HomeColors.outline);
+    _leaf(canvas, Offset(cx, cy), 1, HomeColors.accent);
+
+    // 잎이 만나는 자리의 작은 점.
+    canvas.drawCircle(Offset(cx, cy), 2.5, Paint()..color = HomeColors.accent);
+  }
+
+  /// [dir] 쪽으로 비스듬히 올라가는 잎 하나.
+  void _leaf(Canvas canvas, Offset base, double dir, Color color) {
+    final tip = base + Offset(dir * 16, -7);
+    final path = Path()
+      ..moveTo(base.dx, base.dy)
+      ..quadraticBezierTo(base.dx + dir * 6, base.dy - 10, tip.dx, tip.dy)
+      ..quadraticBezierTo(base.dx + dir * 10, base.dy + 2, base.dx, base.dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_VinePainter oldDelegate) => false;
 }

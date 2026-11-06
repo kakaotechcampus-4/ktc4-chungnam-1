@@ -194,10 +194,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
     ref.watch(sessionProvider.select((s) => s?.account.accountId));
 
     if (photos.isEmpty) {
-      return Text(
-        '아직 올린 사진이 없어요.',
-        style: AppTypography.sub.copyWith(color: AppColors.textDisabled),
-      );
+      return Text('아직 올린 사진이 없어요.', style: AppTypography.sub);
     }
 
     final rows = <Widget>[];
@@ -351,7 +348,7 @@ class _GalleryTile extends StatelessWidget {
               DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppRadius.image),
-                  border: Border.all(color: AppColors.ink, width: 3),
+                  border: Border.all(color: HomeColors.accent, width: 3),
                 ),
               ),
             if (badge != null)
@@ -438,6 +435,8 @@ class _DescriptionPanel extends StatelessWidget {
         // 안내는 이름표 바로 아래, 입력칸 위에 둔다. 무엇을 확인할지 먼저 읽고
         // 고치게 한다.
         AppTextField(
+          borderColor: HomeColors.outline,
+          focusColor: HomeColors.accent,
           label: fromAi ? 'AI가 만든 설명' : '사진에 대한 설명',
           description: fromAi
               ? 'AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.'
@@ -455,6 +454,8 @@ class _DescriptionPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         PrimaryButton(
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           label: saving ? '저장하는 중이에요' : '저장하기',
           onPressed: canSave ? onSave : null,
         ),
@@ -511,11 +512,8 @@ class ProfilePhotoImage extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget fallback(BuildContext context, Object error, StackTrace? stack) =>
         const ColoredBox(
-          color: AppColors.surface,
-          child: Icon(
-            Icons.broken_image_outlined,
-            color: AppColors.textDisabled,
-          ),
+          color: HomeColors.bubble,
+          child: Icon(Icons.broken_image_outlined, color: HomeColors.accent),
         );
 
     if (url.startsWith(_assetScheme)) {

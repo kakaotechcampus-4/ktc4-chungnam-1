@@ -50,7 +50,11 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider);
     return Scaffold(
-      appBar: const AppTopBar(title: '설정'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '설정',
+      ),
       body: account.when(
         // 체크 상태는 처음 받은 값에서 시작하므로, 저장 뒤 다시 읽는 중에는
         // 이전 값을 보여주지 않고 기다린다.
@@ -267,7 +271,7 @@ class _BodyState extends ConsumerState<_Body>
                 Switch(
                   value: alertOn,
                   onChanged: _setAlert,
-                  activeTrackColor: AppColors.ink,
+                  activeTrackColor: HomeColors.accent,
                 ),
               ],
             ),
@@ -319,6 +323,8 @@ class _BodyState extends ConsumerState<_Body>
           const SizedBox(height: AppSpacing.section),
 
           PrimaryButton(
+            color: HomeColors.accent,
+            loadingColor: HomeColors.accentLoading,
             label: _saving ? '저장하는 중이에요' : '저장하기',
             // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
             onPressed: _requiredAgreed && !_saving ? _save : null,
@@ -372,7 +378,7 @@ class _BodyState extends ConsumerState<_Body>
     below: TextButton(
       onPressed: () => showConsentDetails(context, term),
       style: TextButton.styleFrom(
-        foregroundColor: AppColors.textDisabled,
+        foregroundColor: AppColors.textSub,
         padding: EdgeInsets.zero,
         alignment: Alignment.centerLeft,
         minimumSize: const Size(0, 28),
@@ -381,15 +387,8 @@ class _BodyState extends ConsumerState<_Body>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            '자세히 보기',
-            style: AppTypography.sub.copyWith(color: AppColors.textDisabled),
-          ),
-          const Icon(
-            Icons.chevron_right,
-            size: 18,
-            color: AppColors.textDisabled,
-          ),
+          Text('자세히 보기', style: AppTypography.sub),
+          const Icon(Icons.chevron_right, size: 18, color: AppColors.textSub),
         ],
       ),
     ),
@@ -427,8 +426,8 @@ class _CheckLine extends StatelessWidget {
               Checkbox(
                 value: checked,
                 onChanged: onChanged,
-                activeColor: AppColors.ink,
-                side: const BorderSide(color: AppColors.line, width: 2),
+                activeColor: HomeColors.accent,
+                side: const BorderSide(color: HomeColors.outline, width: 2),
               ),
               const SizedBox(width: AppSpacing.xs),
               Expanded(child: label),

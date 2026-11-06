@@ -96,7 +96,11 @@ class _ProfileDetailsEditScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(title: '세부 정보 수정'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '세부 정보 수정',
+      ),
       body: ScreenBody(
         // 입력칸이 넷이라 버튼을 아래에 고정하지 않고 본문과 함께 흘려보낸다.
         // ScreenBody 의 scrollable 은 내용 높이를 미리 재어(IntrinsicHeight) 화면
@@ -110,6 +114,8 @@ class _ProfileDetailsEditScreenState
             children: [
               for (final step in lifeFactSteps) ...[
                 AppTextField(
+                  borderColor: HomeColors.outline,
+                  focusColor: HomeColors.accent,
                   label: step.label,
                   controller: _fields[step.category],
                   maxLines: null,
@@ -120,6 +126,8 @@ class _ProfileDetailsEditScreenState
                 const SizedBox(height: AppSpacing.xxl),
               ],
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: _saving ? '저장하는 중이에요' : '저장하기',
                 onPressed: _changed && !_saving ? _save : null,
               ),
