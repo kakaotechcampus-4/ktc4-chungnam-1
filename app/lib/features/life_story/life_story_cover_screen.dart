@@ -11,13 +11,10 @@ import 'life_story_book_loader.dart';
 
 /// 앨범 표지 화면에서만 쓰는 색이다.
 ///
-/// 2026-11-06 디자인 리뉴얼에서 이 화면부터 색을 입혔다(시안 B: 버건디 천,
-/// 가죽 모서리, 금박). 다른 화면은 아직 흑백이고 하단 탭도 그대로다.
+/// 2026-11-06 디자인 리뉴얼에서 책 그림에만 색을 입혔다(시안 B: 버건디 천,
+/// 가죽 모서리, 금박, 초록 꽃잎). 바탕과 글자는 다른 화면처럼 흑백이다.
 abstract final class _AlbumColors {
-  /// 화면 바탕. 흰색에 가까운 아이보리다.
-  static const background = Color(0xFFFDF9F4);
-
-  /// 표지 천. `편` 수 강조 글자에도 쓴다(바탕과 대비 9:1 이상).
+  /// 표지 천.
   static const cloth = Color(0xFF7E2F33);
 
   static const spineDark = Color(0xFF45271F);
@@ -33,8 +30,6 @@ abstract final class _AlbumColors {
   /// 표지 뒤로 보이는 책장.
   static const page = Color(0xFFF6EFE3);
   static const pageLine = Color(0xFFE4D7C2);
-
-  static const subText = Color(0xFF6E6360);
 }
 
 /// H 일대기의 첫 화면. 앨범 표지를 누르면 표지가 넘어가며 책 안으로 들어간다.
@@ -58,11 +53,7 @@ class LifeStoryCoverScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _AlbumColors.background,
-      appBar: const AppTopBar(
-        title: '일대기',
-        backgroundColor: _AlbumColors.background,
-      ),
+      appBar: const AppTopBar(title: '일대기'),
       body: LifeStoryBookLoader(
         // 제목, 책, 편수를 한 덩어리로 묶어 화면 가운데에 둔다. 화면이 낮으면
         // 책이 줄어든다.
@@ -85,7 +76,7 @@ class LifeStoryCoverScreen extends StatelessWidget {
                     Text(
                       '책을 눌러 펼쳐 보세요',
                       style: AppTypography.body.copyWith(
-                        color: _AlbumColors.subText,
+                        color: AppColors.textSub,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -105,7 +96,7 @@ class LifeStoryCoverScreen extends StatelessWidget {
                             text: '${book.total}편',
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: _AlbumColors.cloth,
+                              color: AppColors.ink,
                             ),
                           ),
                           const TextSpan(text: '의 이야기가 담겨 있어요'),
