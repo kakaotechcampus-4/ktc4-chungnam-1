@@ -10,6 +10,7 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/profile/profile_basic_edit_screen.dart';
 import 'package:saerok/features/profile/profile_details_edit_screen.dart';
+import 'package:saerok/features/profile/profile_gallery.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
 
 import 'sample_profile.dart';
@@ -313,6 +314,20 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('AI가 만든 설명'), findsOneWidget);
+      // 안내 글은 이름표와 입력칸 사이에 둔다. 무엇을 확인할지 먼저 읽는다.
+      final labelY = tester.getTopLeft(find.text('AI가 만든 설명')).dy;
+      final noteY = tester
+          .getTopLeft(find.text('AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.'))
+          .dy;
+      final fieldY = tester
+          .getTopLeft(
+            find.descendant(
+              of: find.byType(ProfileGallery),
+              matching: find.byType(TextField),
+            ),
+          )
+          .dy;
+      expect(labelY < noteY && noteY < fieldY, isTrue);
       expect(recorder.pushed, isEmpty, reason: '새 화면이나 창을 띄우지 않는다');
       expect(_location(tester), AppRoutes.profile, reason: '경로가 그대로다');
     });

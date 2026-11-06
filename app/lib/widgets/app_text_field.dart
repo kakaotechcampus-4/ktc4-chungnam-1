@@ -13,6 +13,7 @@ import '../design/tokens.dart';
 class AppTextField extends StatelessWidget {
   const AppTextField({
     required this.label,
+    this.description,
     this.controller,
     this.hintText,
     this.required = false,
@@ -28,6 +29,11 @@ class AppTextField extends StatelessWidget {
   });
 
   final String label;
+
+  /// 이름표와 입력 상자 사이에 두는 짧은 안내. 무엇을 확인하고 적을지 입력 전에
+  /// 읽게 한다. 화면 낭독기도 이름표 다음에 읽는다.
+  final String? description;
+
   final TextEditingController? controller;
   final String? hintText;
   final bool required;
@@ -53,6 +59,10 @@ class AppTextField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ExcludeSemantics(child: FieldLabel(label, required: required)),
+        if (description case final description?) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(description, style: AppTypography.caption),
+        ],
         const SizedBox(height: AppSpacing.md),
         Semantics(
           label: fieldSemanticsLabel(label, required: required),

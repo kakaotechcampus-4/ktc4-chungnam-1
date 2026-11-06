@@ -332,8 +332,15 @@ class _DescriptionPanel extends StatelessWidget {
           const _PanelNotice('AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.', danger: true),
           const SizedBox(height: AppSpacing.lg),
         ],
+        // 안내는 이름표 바로 아래, 입력칸 위에 둔다. 무엇을 확인할지 먼저 읽고
+        // 고치게 한다.
         AppTextField(
           label: fromAi ? 'AI가 만든 설명' : '사진에 대한 설명',
+          description: fromAi
+              ? 'AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.'
+              : edited
+              ? '직접 적은 설명이에요. 다시 고칠 수 있어요.'
+              : null,
           controller: controller,
           maxLines: null,
           hintText: '어떤 사진인지 적어주세요',
@@ -343,15 +350,6 @@ class _DescriptionPanel extends StatelessWidget {
               : null,
           onChanged: (_) => onChanged(),
         ),
-        if (fromAi || edited) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            fromAi
-                ? 'AI가 사진을 보고 만든 설명이에요. 사실과 다르면 고쳐주세요.'
-                : '직접 적은 설명이에요. 다시 고칠 수 있어요.',
-            style: AppTypography.caption,
-          ),
-        ],
         const SizedBox(height: AppSpacing.lg),
         PrimaryButton(
           label: saving ? '저장하는 중이에요' : '저장하기',
