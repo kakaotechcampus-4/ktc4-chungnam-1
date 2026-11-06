@@ -55,14 +55,13 @@ void main() {
 
       expect(visit.cards, hasLength(2));
       expect(visit.currentIndex, 0);
-      expect(visit.progress, 0.5);
+      expect(visit.addedCardIds, isEmpty);
     });
 
     test('보충용 카드는 뒤 3장이다', () async {
       final container = makeContainer();
       final all = await container.read(conversationCardsProvider.future);
-      final supplements =
-          await container.read(supplementCardsProvider.future);
+      final supplements = await container.read(supplementCardsProvider.future);
 
       expect(supplements, hasLength(3));
       expect(
@@ -74,16 +73,26 @@ void main() {
     test('보충 카드를 더하면 회차 카드가 늘어난다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);
-      final supplements =
-          await container.read(supplementCardsProvider.future);
+      final supplements = await container.read(supplementCardsProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
 
       await controller.addCards(supplements.take(1));
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(3),
+      );
+      expect(
+        container.read(visitControllerProvider).value!.addedCardIds,
+        {supplements.first.cardId},
+        reason: '더한 카드는 번호 칩을 다른 색으로 그리도록 따로 기억한다',
+      );
 
       // 같은 카드를 두 번 더하지 않는다.
       await controller.addCards(supplements.take(1));
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(3),
+      );
     });
   });
 
@@ -97,10 +106,43 @@ void main() {
       var state = container.read(visitControllerProvider).value!;
       expect(state.currentIndex, 1);
       expect(state.isLastCard, isTrue);
-      expect(state.progress, 1.0);
 
       controller.nextCard();
       expect(container.read(visitControllerProvider).value!.currentIndex, 1);
+    });
+
+    test('이전 카드로 돌아가고, 첫 카드에서는 더 가지 않는다', () async {
+      final container = await withSelection(2);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      controller.nextCard();
+      controller.previousCard();
+      var state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 0);
+      expect(state.isFirstCard, isTrue);
+
+      controller.previousCard();
+      state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 0);
+    });
+
+    test('번호로 원하는 카드에 바로 가고, 꼬리 질문은 처음부터 보인다', () async {
+      final container = await withSelection(3);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      controller.nextFollowUp();
+      controller.goToCard(2);
+      var state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 2);
+      expect(state.followUpIndex, 0);
+
+      // 범위 밖 번호는 무시한다.
+      controller.goToCard(3);
+      controller.goToCard(-1);
+      state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 2);
     });
 
     test('꼬리 질문은 3개를 돌아가며 보여준다', () async {
@@ -186,7 +228,8 @@ void main() {
 
       expect(state.elapsedLabel, '00:00:00');
       expect(
-        state.copyWith(elapsed: const Duration(minutes: 5, seconds: 38))
+        state
+            .copyWith(elapsed: const Duration(minutes: 5, seconds: 38))
             .elapsedLabel,
         '00:05:38',
       );
@@ -293,7 +336,10 @@ void main() {
 
       expect(added, isTrue);
       expect(api.added, [supplements.first.cardId]);
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(2));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(2),
+      );
     });
 
     test('보충 카드를 서버에 알리지 못하면 화면에도 더하지 않는다', () async {
@@ -307,7 +353,10 @@ void main() {
       final added = await controller.addCards(supplements.take(1));
 
       expect(added, isFalse);
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(1));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(1),
+      );
     });
 
     test('녹음 전에 더한 보충 카드는 회차를 만든 뒤 따로 더한다', () async {

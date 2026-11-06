@@ -324,6 +324,27 @@ void main() {
         tester.getSemantics(find.bySemanticsLabel('다음 카드')),
         isSemantics(isButton: true, isEnabled: true, hasTapAction: true),
       );
+      // 소제목과 메인 질문 묶음은 위 막대와 이전·다음 버튼 사이 가운데에 온다.
+      final title = find.textContaining('[ ');
+      final question = find
+          .descendant(
+            of: find.ancestor(of: title, matching: find.byType(Column)).first,
+            matching: find.byType(FittedBox),
+          )
+          .first;
+      final groupCenter =
+          (tester.getTopLeft(title).dy + tester.getBottomLeft(question).dy) / 2;
+      final barBottom =
+          tester.getCenter(find.bySemanticsLabel(RegExp('^1번 카드'))).dy + 4;
+      final buttonsTop = tester.getTopLeft(find.bySemanticsLabel('다음 카드')).dy;
+      expect(groupCenter, closeTo((barBottom + buttonsTop) / 2, 2));
+
+      // 경계에 띄운 버튼이 받은 자리를 다 채워 세로로 길어지지 않는다.
+      for (final label in ['다음 카드', '첫 카드']) {
+        final size = tester.getSize(find.bySemanticsLabel(label));
+        expect(size.height, inInclusiveRange(64, 80), reason: label);
+        expect(size.width, lessThan(200), reason: label);
+      }
       expect(
         find.semantics.byLabel('대화 카드 닫기'),
         findsOne,
@@ -604,5 +625,4 @@ void main() {
       handle.dispose();
     });
   });
-
 }
