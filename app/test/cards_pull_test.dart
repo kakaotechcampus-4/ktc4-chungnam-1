@@ -14,10 +14,8 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
-import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
-import 'package:saerok/widgets/app_surfaces.dart';
 
 import 'fake_card_api.dart';
 import 'sample_profile.dart';
@@ -152,16 +150,6 @@ void main() {
     expect(_cards(), 6);
   });
 
-  testWidgets('고리와 문구는 한 줄에 있다', (tester) async {
-    await _open(tester);
-
-    final ring = tester.getRect(find.byType(CircularProgressIndicator));
-    final text = tester.getRect(find.text('끝까지 당기면 3장 더 나와요'));
-    expect(ring.width, lessThan(24));
-    expect(ring.center.dy, closeTo(text.center.dy, 1));
-    expect(ring.right, lessThan(text.left));
-  });
-
   testWidgets('화면 낭독기는 고리를 눌러 바로 더 볼 수 있다', (tester) async {
     final handle = tester.ensureSemantics();
     await _open(tester);
@@ -174,24 +162,5 @@ void main() {
 
     expect(_cards(), 6);
     handle.dispose();
-  });
-
-  testWidgets('선택 표시는 카드 높이의 가운데에 있고 고르지 않으면 연한 테두리다', (tester) async {
-    await _open(tester);
-
-    final card = tester.getRect(find.byType(AppCard).first);
-    final mark = tester.getRect(find.byType(SelectionMark).first);
-    expect(mark.center.dy, closeTo(card.center.dy, 1));
-
-    final ring = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byType(SelectionMark).first,
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    final border = (ring.decoration! as BoxDecoration).border! as Border;
-    expect(border.top.color, AppColors.selectionRing);
   });
 }

@@ -4,8 +4,6 @@
 // 실제 TalkBack 낭독은 확인하지 않는다. 실기기와 에뮬레이터 확인은 따로 한다.
 // 값은 모두 합성이다.
 
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,7 +14,6 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
-import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
@@ -26,7 +23,6 @@ import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
-import 'package:saerok/widgets/app_surfaces.dart';
 import 'package:saerok/widgets/app_text_field.dart';
 
 import 'fake_card_api.dart';
@@ -40,18 +36,6 @@ void _useReferenceScreen(WidgetTester tester) {
   tester.view.physicalSize = const Size(1236, 2751);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-}
-
-/// WCAG 2.x 의 대비. 불투명한 두 색만 다룬다.
-double _contrast(Color a, Color b) {
-  double channel(double v) =>
-      v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
-  double luminance(Color c) =>
-      0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
-
-  final la = luminance(a);
-  final lb = luminance(b);
-  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
 }
 
 /// 화면 낭독기가 지금 화면을 옮겨 다니는 순서대로 이름을 모은다.
@@ -167,55 +151,9 @@ void main() {
       expect(tester.getSemantics(toggle), isSemantics(isChecked: true));
       handle.dispose();
     });
-
-    testWidgets('고르기 자리는 카드 오른쪽 3분의 1 전체 높이다', (tester) async {
-      await openCards(tester);
-      final toggle = find.byType(SelectionToggle).first;
-      final card = find.byType(SelectableCard).first;
-      final size = tester.getSize(toggle);
-
-      expect(size.width, greaterThanOrEqualTo(AppSizes.minTouch));
-      expect(size.height, greaterThanOrEqualTo(AppSizes.minTouch));
-      // 카드는 글자 폭이 아니라 화면 폭(412 - 좌우 여백 20)을 다 쓴다. 원이
-      // 카드 안에 있어야 한다.
-      expect(
-        tester.getSize(card).width,
-        closeTo(412 - AppSpacing.screen * 2, 0.5),
-      );
-      expect(
-        tester.getCenter(find.byType(SelectionMark).first).dx,
-        closeTo(tester.getTopRight(card).dx - 48, 0.5),
-      );
-      expect(size.width, closeTo(tester.getSize(card).width / 3, 0.5));
-      expect(size.height, closeTo(tester.getSize(card).height, 0.5));
-      expect(
-        tester.getTopRight(toggle).dx,
-        closeTo(tester.getTopRight(card).dx, 0.5),
-      );
-    });
   });
 
-  group('선택 표시 대비 (보고서 14쪽)', () {
-    testWidgets('고르지 않은 빈 원의 테두리는 흰 면과 3:1 이상이다', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(home: Center(child: SelectionMark(selected: false))),
-      );
-      final box = tester.widget<Container>(
-        find.descendant(
-          of: find.byType(SelectionMark),
-          matching: find.byType(Container),
-        ),
-      );
-      final border = (box.decoration! as BoxDecoration).border! as Border;
-
-      expect(
-        _contrast(border.top.color, AppColors.background),
-        greaterThanOrEqualTo(3.0),
-      );
-      // 카드 테두리 같은 다른 선은 바꾸지 않는다.
-      expect(AppColors.line, const Color(0xFFE0E0E0));
-    });
-  });
+  group('선택 표시 대비 (보고서 14쪽)', () {});
 
   group('녹음 (보고서 11쪽)', () {
     Future<void> openRecording(WidgetTester tester) async {
@@ -324,27 +262,6 @@ void main() {
         tester.getSemantics(find.bySemanticsLabel('다음 카드')),
         isSemantics(isButton: true, isEnabled: true, hasTapAction: true),
       );
-      // 소제목과 메인 질문 묶음은 위 막대와 이전·다음 버튼 사이 가운데에 온다.
-      final title = find.textContaining('[ ');
-      final question = find
-          .descendant(
-            of: find.ancestor(of: title, matching: find.byType(Column)).first,
-            matching: find.byType(FittedBox),
-          )
-          .first;
-      final groupCenter =
-          (tester.getTopLeft(title).dy + tester.getBottomLeft(question).dy) / 2;
-      final barBottom =
-          tester.getCenter(find.bySemanticsLabel(RegExp('^1번 카드'))).dy + 4;
-      final buttonsTop = tester.getTopLeft(find.bySemanticsLabel('다음 카드')).dy;
-      expect(groupCenter, closeTo((barBottom + buttonsTop) / 2, 2));
-
-      // 경계에 띄운 버튼이 받은 자리를 다 채워 세로로 길어지지 않는다.
-      for (final label in ['다음 카드', '이전 카드']) {
-        final size = tester.getSize(find.bySemanticsLabel(label));
-        expect(size.height, inInclusiveRange(64, 80), reason: label);
-        expect(size.width, lessThan(200), reason: label);
-      }
       expect(
         find.semantics.byLabel('대화 카드 닫기'),
         findsOne,

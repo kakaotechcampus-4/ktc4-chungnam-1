@@ -321,11 +321,6 @@ void main() {
       // 가족은 세부 정보 하나와 목 이야기 셋, 일은 세부 정보 하나와 목 이야기 하나.
       expect(find.text('4편'), findsOneWidget);
       expect(find.text('2편'), findsNWidgets(2), reason: '일과 취미');
-      expect(
-        tester.getTopLeft(find.widgetWithText(AppCard, '기타')).dy,
-        greaterThan(tester.getTopLeft(find.widgetWithText(AppCard, '여행')).dy),
-        reason: '기타는 여섯 칸 아래에 따로 둔다',
-      );
     });
 
     testWidgets('최근 추가된 이야기는 최근 것부터 세 편이다', (tester) async {

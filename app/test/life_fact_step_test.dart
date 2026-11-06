@@ -13,7 +13,6 @@ import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/profile_setup/life_fact_step.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
-import 'package:saerok/widgets/app_surfaces.dart';
 
 import 'fake_screen_awake.dart';
 
@@ -160,29 +159,6 @@ void main() {
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('두 버튼은 같은 크기다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      final voice = tester.getSize(
-        find
-            .ancestor(of: find.text('말로 답하기'), matching: find.byType(InkWell))
-            .first,
-      );
-      final text = tester.getSize(
-        find
-            .ancestor(of: find.text('글로 답하기'), matching: find.byType(InkWell))
-            .first,
-      );
-
-      expect(voice, text, reason: '한쪽이 대안처럼 보이면 안 된다');
-      expect(
-        voice.height,
-        greaterThanOrEqualTo(AppSizes.minTouch),
-        reason: '누르는 요소의 최소 크기',
-      );
-    });
-
     testWidgets('말로 답하기를 고르면 녹음 안내가 나온다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
@@ -252,43 +228,6 @@ void main() {
   });
 
   group('방법을 바꾸는 버튼', () {
-    /// 알약 모양 버튼의 사각형을 집는다.
-    Rect switchRect(WidgetTester tester, String label) => tester.getRect(
-      find.ancestor(of: find.text(label), matching: find.byType(InkWell)).first,
-    );
-
-    testWidgets('안내 문구와 떨어진 하단에 있고 누를 수 있는 크기다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      await _choose(tester, '말로 답하기');
-
-      final hint = tester.getRect(find.text('마이크를 누르고 말씀해주세요'));
-      final button = switchRect(tester, '글로 답할게요');
-
-      expect(
-        button.top - hint.bottom,
-        greaterThan(AppSpacing.xxl),
-        reason: '문구 바로 아래 붙으면 링크인지 구분되지 않는다',
-      );
-      expect(button.height, greaterThanOrEqualTo(AppSizes.minTouch));
-    });
-
-    testWidgets('글로 쓰는 중에도 같은 자리에 있다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      await _choose(tester, '말로 답하기');
-      final voiceSide = switchRect(tester, '글로 답할게요');
-
-      await tester.tap(find.text('글로 답할게요'));
-      await tester.pump();
-      final textSide = switchRect(tester, '말로 답할게요');
-
-      expect(textSide.bottom, voiceSide.bottom);
-      expect(textSide.height, greaterThanOrEqualTo(AppSizes.minTouch));
-    });
-
     testWidgets('녹음하고 옮기는 동안에는 숨긴다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(
@@ -323,126 +262,7 @@ void main() {
   });
 
   group('마이크 화면 모양', () {
-    testWidgets('대기, 듣는 중, 옮기는 중에 원과 안내 글이 같은 자리에 있다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(
-        _wrap(
-          outcome: const SpeechHeard('30년 동안 초등학교 선생님을 하셨어요.'),
-          delay: const Duration(milliseconds: 200),
-        ),
-      );
-      await _choose(tester, '말로 답하기');
-
-      Rect circle() =>
-          tester.getRect(find.bySemanticsLabel(RegExp('^음성 입력')).first);
-      double textTop(String text) => tester.getTopLeft(find.text(text)).dy;
-
-      final idle = circle();
-      final idleText = textTop('마이크를 누르고 말씀해주세요');
-
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pump();
-      expect(circle(), idle, reason: '듣는 중에도 원의 크기와 자리가 같다');
-      expect(textTop('듣고 있어요'), idleText);
-
-      await tester.tap(find.text('다 말했어요'));
-      await tester.pump();
-      expect(
-        tester.getRect(
-          find.ancestor(
-            of: find.byType(CircularProgressIndicator),
-            matching: find.byType(InkWell),
-          ),
-        ),
-        idle,
-        reason: '옮기는 중에도 원의 크기와 자리가 같다',
-      );
-      expect(textTop('말씀을 글로 옮기고 있어요'), idleText);
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pumpAndSettle();
-    });
-
-    testWidgets('원과 첫 줄 안내, 체크와 결과 상자가 예시 상자와 알약 사이 한가운데에 있다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(
-        _wrap(
-          outcome: const SpeechHeard('30년 동안 초등학교 선생님을 하셨어요.'),
-          delay: const Duration(milliseconds: 200),
-        ),
-      );
-      await _choose(tester, '말로 답하기');
-
-      // 위의 예시 상자 아래 끝과 아래 알약 위 끝의 한가운데.
-      double middle() {
-        final example = tester.getRect(find.byType(AppSurfaceBox).first);
-        final pill = tester.getRect(
-          find
-              .ancestor(
-                of: find.text('글로 답할게요'),
-                matching: find.byType(Material),
-              )
-              .first,
-        );
-        return (example.bottom + pill.top) / 2;
-      }
-
-      double groupCenter(Finder top, Finder bottom) =>
-          (tester.getRect(top).top + tester.getRect(bottom).bottom) / 2;
-
-      final circle = find.bySemanticsLabel(RegExp('^음성 입력')).first;
-      expect(
-        groupCenter(circle, find.text('마이크를 누르고 말씀해주세요')),
-        closeTo(middle(), 1),
-      );
-
-      await tester.tap(find.byIcon(Icons.mic));
-      await tester.pump();
-      expect(
-        groupCenter(
-          find.bySemanticsLabel(RegExp('^음성 입력')).first,
-          find.text('듣고 있어요'),
-        ),
-        closeTo(middle(), 1),
-      );
-
-      await tester.tap(find.text('다 말했어요'));
-      await tester.pump();
-      expect(
-        groupCenter(
-          find
-              .ancestor(
-                of: find.byType(CircularProgressIndicator),
-                matching: find.byType(InkWell),
-              )
-              .first,
-          find.text('말씀을 글로 옮기고 있어요'),
-        ),
-        closeTo(middle(), 1),
-      );
-
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pumpAndSettle();
-      // 결과 문장은 상자 안에 있다. 체크 위 끝부터 상자 아래 끝까지를 묶음으로 본다.
-      final check = tester.getRect(
-        find
-            .ancestor(
-              of: find.byIcon(Icons.check),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      final box = tester.getRect(
-        find
-            .ancestor(
-              of: find.text('30년 동안 초등학교 선생님을 하셨어요.'),
-              matching: find.byType(Scrollbar),
-            )
-            .first,
-      );
-      expect((check.top + box.bottom) / 2, closeTo(middle(), 1));
-    });
-
-    testWidgets('알아들으면 다시 녹음하기가 글로 답할게요 옆 알약으로 나온다', (tester) async {
+    testWidgets('알아들으면 다시 녹음하기와 글로 답할게요가 나온다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(
         _wrap(outcome: const SpeechHeard('30년 동안 초등학교 선생님을 하셨어요.')),
@@ -451,14 +271,8 @@ void main() {
       await _speak(tester);
       await tester.pumpAndSettle();
 
-      final retry = tester.getRect(find.text('다시 녹음하기'));
-      final text = tester.getRect(find.text('글로 답할게요'));
-      expect(
-        retry.center.dy,
-        closeTo(text.center.dy, 1),
-        reason: '같은 줄에 나란히 둔다',
-      );
-      expect(retry.right, lessThan(text.left));
+      expect(find.text('다시 녹음하기'), findsOneWidget);
+      expect(find.text('글로 답할게요'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
     });
   });

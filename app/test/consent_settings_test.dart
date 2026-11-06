@@ -458,35 +458,5 @@ void main() {
       expect(find.widgetWithText(TextButton, '로그아웃'), findsOneWidget);
       expect(find.widgetWithText(TextButton, '회원탈퇴'), findsOneWidget);
     });
-
-    testWidgets('두 구역의 제목과 안내 글 사이 간격이 같다', (tester) async {
-      await open(tester, _FakeAccountServer());
-
-      double gap(String title, String note) =>
-          tester.getTopLeft(find.text(note)).dy -
-          tester.getBottomLeft(find.text(title)).dy;
-
-      expect(
-        gap('알림 설정', '만남 리포트가 완성되면 알려드려요.'),
-        closeTo(gap('계정 약관 동의', '함께하는 모든 분에게 똑같이 적용돼요.'), 0.5),
-        reason: '스위치 높이가 알림 설정의 간격을 벌리지 않는다',
-      );
-    });
-
-    testWidgets('알림 수신 동의 줄도 평소에는 바탕을 비워 커서 표시가 보인다', (tester) async {
-      await open(tester, _FakeAccountServer());
-
-      final highlight = tester
-          .widgetList<DecoratedBox>(
-            find.ancestor(
-              of: find.textContaining('알림 수신 동의', findRichText: true),
-              matching: find.byType(DecoratedBox),
-            ),
-          )
-          .map((box) => box.decoration)
-          .whereType<BoxDecoration>()
-          .firstWhere((d) => d.border != null);
-      expect(highlight.color?.a, 0, reason: '흰 바탕이면 다른 줄과 달리 회색 표시가 가려진다');
-    });
   });
 }

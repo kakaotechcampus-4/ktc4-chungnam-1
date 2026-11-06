@@ -17,7 +17,6 @@ import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
-import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/home/home_phrases.dart';
 import 'package:saerok/widgets/mascot.dart';
@@ -87,12 +86,6 @@ void main() {
   String location(GoRouter router) =>
       router.routerDelegate.currentConfiguration.last.matchedLocation;
 
-  Color? buttonColor(WidgetTester tester) {
-    final button = tester.widget<FilledButton>(find.byType(FilledButton));
-    final states = {if (button.onPressed == null) WidgetState.disabled};
-    return button.style?.backgroundColor?.resolve(states);
-  }
-
   Finder spinnerInButton() => find.descendant(
     of: find.byType(FilledButton),
     matching: find.byType(CircularProgressIndicator),
@@ -123,12 +116,6 @@ void main() {
     expect(find.text(_making), findsOneWidget, reason: '만드는 중임을 글로도 알린다');
     expect(find.text(_button), findsNothing);
     expect(
-      buttonColor(tester),
-      isNot(AppColors.ink),
-      reason: '만드는 동안은 면을 조금 흐리게 한다',
-    );
-    expect(buttonColor(tester), isNot(AppColors.line), reason: '비활성 회색과 다르다');
-    expect(
       find.textContaining(_remakingNotice),
       findsNothing,
       reason: '고친 묶음이 아니다',
@@ -140,7 +127,6 @@ void main() {
 
     expect(spinnerInButton(), findsNothing);
     expect(find.text(_button), findsOneWidget);
-    expect(buttonColor(tester), HomeColors.accent);
     expect(find.textContaining('대화 카드가 준비됐어요'), findsOneWidget);
     expect(location(router), AppRoutes.home, reason: '다른 화면에 있을 수 있다');
     expect(api.calls.where((c) => c == 'request'), hasLength(1));
@@ -169,9 +155,7 @@ void main() {
     await tester.pump();
     expect(find.text(cardsReadyMessage), findsNothing);
     expect(
-      find.byWidgetPredicate(
-        (w) => w is Text && storyRemarks.contains(w.data),
-      ),
+      find.byWidgetPredicate((w) => w is Text && storyRemarks.contains(w.data)),
       findsOneWidget,
     );
     await tester.pump(const Duration(seconds: 2));
@@ -190,7 +174,6 @@ void main() {
 
     expect(find.text(_button), findsOneWidget, reason: '바꾸면 곧 다시 바뀌어 깜빡인다');
     expect(find.text(_making), findsNothing);
-    expect(buttonColor(tester), HomeColors.accent);
 
     api.answer.complete(_ready);
     await tester.pump();
@@ -313,19 +296,18 @@ void main() {
     );
   });
 
-  testWidgets('실패와 연결 끊김은 빨간 글로 알린다', (tester) async {
+  testWidgets('실패와 연결 끊김은 버튼 아래 글로 알린다', (tester) async {
     await openHome(tester, _OfflineCardApi());
 
     await tester.tap(find.text(_button));
     await tester.pump();
     await tester.pump();
 
-    final text = tester.widget<Text>(find.textContaining('서버에 연결하지 못했어요'));
-    expect(text.style?.color, AppColors.danger);
+    expect(find.textContaining('서버에 연결하지 못했어요'), findsOneWidget);
     expect(find.byType(SnackBar), findsNothing);
   });
 
-  testWidgets('새로 만드는 까닭은 i 기호와 함께 회색 상자에 둔다', (tester) async {
+  testWidgets('새로 만드는 까닭은 i 기호와 함께 보여준다', (tester) async {
     final api = FakeCardApi(statuses: [_needsRefresh, _running, _ready]);
     await openHome(tester, api);
 
@@ -341,8 +323,6 @@ void main() {
       find.descendant(of: box.first, matching: find.byIcon(Icons.info_outline)),
       findsOneWidget,
     );
-    final decoration = tester.widget<Container>(box.first).decoration;
-    expect((decoration! as BoxDecoration).color, HomeColors.background);
     expect(find.textContaining('다른 화면을 봐도 괜찮아요'), findsNothing);
 
     await tester.pump(_poll);

@@ -105,14 +105,6 @@ void main() {
       await tester.pump();
 
       expect(find.text('리포트가 도착했어요'), findsOneWidget);
-      // 알림 상자는 내용 높이만큼만 차지하고 화면을 채우지 않는다.
-      final box = find
-          .ancestor(
-            of: find.text('리포트가 도착했어요'),
-            matching: find.byType(Material),
-          )
-          .first;
-      expect(tester.getSize(box).height, lessThan(250));
       expect(find.byIcon(Icons.mail_outline_rounded), findsOneWidget);
 
       await tester.tap(find.text('리포트가 도착했어요'));

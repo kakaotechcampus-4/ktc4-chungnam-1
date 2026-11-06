@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
-import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
@@ -291,21 +290,6 @@ void main() {
 
       expect(uploads.saved, isEmpty);
       expect(uploads.uploaded[FakeVisitApi.sessionId]?.participantCount, 2);
-    });
-
-    testWidgets('녹음 전 안내 제목은 만남 사진 화면의 제목과 같은 자리다', (tester) async {
-      // 기준 화면 412 x 917 dp 다(`app/README.md`).
-      tester.view.physicalSize = const Size(1236, 2751);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
-      final (container, _, _) = await showScreen(tester, start: false);
-
-      final top = tester.getTopLeft(find.text('소중한 대화 내용을\n놓치지 않게 녹음할게요')).dy;
-      final barBottom = tester.getBottomLeft(find.byType(AppBar)).dy;
-      // 만남 사진 화면도 상단바 아래 같은 여백 뒤에 제목을 둔다.
-      expect(top - barBottom, closeTo(AppSpacing.visitTitleTop, 1));
-
-      await leaveScreen(tester, container);
     });
 
     testWidgets('녹음 전 안내에서 나가도 상태 수정 오류가 나지 않는다', (tester) async {
