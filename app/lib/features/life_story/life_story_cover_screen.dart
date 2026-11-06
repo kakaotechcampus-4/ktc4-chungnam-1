@@ -11,19 +11,21 @@ import 'life_story_book_loader.dart';
 
 /// 앨범 표지 화면에서만 쓰는 색이다.
 ///
-/// 2026-11-06 디자인 리뉴얼에서 책 그림에만 색을 입혔다(시안 B: 버건디 천,
-/// 가죽 모서리, 금박, 초록 꽃잎). 바탕과 글자는 다른 화면처럼 흑백이다.
+/// 2026-11-06 디자인 리뉴얼에서 책 그림에만 색을 입혔다. 처음에는 버건디
+/// 천이었고, 같은 날 오래된 양장본 같은 빈티지 초록 천(회색이 살짝 섞인 짙은
+/// 사냥꾼 초록)에 바랜 갈색 가죽 모서리와 금박으로 바꿨다. 앱의 세이지 초록과
+/// 같은 색일 필요는 없다. 바탕과 글자는 다른 화면처럼 둔다.
 abstract final class _AlbumColors {
-  /// 표지 천.
-  static const cloth = Color(0xFF7E2F33);
+  /// 표지 천. 빈티지 초록이다.
+  static const cloth = Color(0xFF385443);
 
-  static const spineDark = Color(0xFF45271F);
-  static const spine = Color(0xFF5C362C);
+  static const spineDark = Color(0xFF22332A);
+  static const spine = Color(0xFF2E4437);
 
-  /// 오른쪽 위아래 모서리에 덧댄 가죽.
-  static const leather = Color(0xFF55332A);
+  /// 오른쪽 위아래 모서리에 덧댄 가죽. 바랜 갈색이다.
+  static const leather = Color(0xFF574231);
 
-  /// 금박 글자와 선. 천 위에서 대비 5.8:1 이다.
+  /// 금박 글자와 선. 천 위에서 대비 4.9:1 이다.
   static const gold = Color(0xFFE2C27E);
   static const goldDeep = Color(0xFFB48A3E);
 
@@ -207,6 +209,42 @@ class _OpeningBookState extends State<_OpeningBook>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            // 책이 바닥에 놓인 것처럼 보이게 하는 그림자 두 겹. 빛이 왼쪽
+            // 위에서 온다고 보고 오른쪽 아래로 넓게 번지는 그림자와, 책 아랫
+            // 변이 바닥에 닿는 자리의 짙고 좁은 그림자를 둔다.
+            const Positioned(
+              left: 12,
+              top: 28,
+              right: -16,
+              bottom: -16,
+              child: _FloorShadow(
+                radius: 12,
+                shadows: [
+                  BoxShadow(
+                    color: Color(0x331C2A22),
+                    blurRadius: 36,
+                    spreadRadius: -2,
+                    offset: Offset(10, 18),
+                  ),
+                ],
+              ),
+            ),
+            const Positioned(
+              left: 4,
+              right: -14,
+              bottom: -14,
+              height: 14,
+              child: _FloorShadow(
+                radius: 40,
+                shadows: [
+                  BoxShadow(
+                    color: Color(0x4D1C2A22),
+                    blurRadius: 12,
+                    offset: Offset(2, 4),
+                  ),
+                ],
+              ),
+            ),
             // 책장 두께. 오른쪽과 아래로 종이 줄이 보이고 책 아래에 그림자가
             // 진다.
             const Positioned(
@@ -255,6 +293,24 @@ class _OpeningBookState extends State<_OpeningBook>
   }
 }
 
+/// 책 아래 바닥에 지는 그림자. 면은 투명하고 그림자만 그린다.
+class _FloorShadow extends StatelessWidget {
+  const _FloorShadow({required this.radius, required this.shadows});
+
+  final double radius;
+  final List<BoxShadow> shadows;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: shadows,
+      ),
+    );
+  }
+}
+
 /// 표지 뒤로 보이는 책장 묶음. 가는 줄을 촘촘히 그어 종이가 쌓인 것처럼 보인다.
 class _Pages extends StatelessWidget {
   const _Pages({required this.vertical, required this.shadow});
@@ -277,12 +333,12 @@ class _Pages extends StatelessWidget {
         boxShadow: shadow
             ? const [
                 BoxShadow(
-                  color: Color(0x38461E1E),
+                  color: Color(0x381C2A22),
                   blurRadius: 32,
                   offset: Offset(0, 20),
                 ),
                 BoxShadow(
-                  color: Color(0x1F461E1E),
+                  color: Color(0x1F1C2A22),
                   blurRadius: 8,
                   offset: Offset(0, 4),
                 ),
@@ -322,7 +378,7 @@ class _PageLinesPainter extends CustomPainter {
   bool shouldRepaint(_PageLinesPainter old) => old.vertical != vertical;
 }
 
-/// 버건디 천 표지. 왼쪽 책등, 오른쪽 위아래 가죽 모서리, 금박 테두리 안에
+/// 빈티지 초록 천 표지. 왼쪽 책등, 오른쪽 위아래 가죽 모서리, 금박 테두리 안에
 /// 동그란 액자와 이름을 둔다.
 ///
 /// 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나누고, 이름
