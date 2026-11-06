@@ -186,43 +186,54 @@ class _RadioRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.card),
-      child: Container(
-        height: AppSizes.control,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.surface : AppColors.background,
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          border: Border.all(
-            color: selected ? AppColors.ink : AppColors.line,
-            width: selected ? 2 : 1,
+    // 화면 낭독기가 셋 중 하나를 고르는 항목과 선택 여부를 함께 읽는다.
+    return Semantics(
+      inMutuallyExclusiveGroup: true,
+      checked: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        child: Container(
+          height: AppSizes.control,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.surface : AppColors.background,
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(
+              color: selected ? AppColors.ink : AppColors.line,
+              width: selected ? 2 : 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: selected ? AppColors.ink : AppColors.background,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected ? AppColors.ink : AppColors.line,
-                  width: 2,
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.ink : AppColors.background,
+                  shape: BoxShape.circle,
+                  // 빈 동그라미도 흰 배경과 3:1 이상 대비가 나도록 공용 선택
+                  // 표시(`SelectionMark`)와 같은 색을 쓴다(접근성 보고서 14쪽).
+                  border: Border.all(
+                    color: selected ? AppColors.ink : AppColors.textDisabled,
+                    width: 2,
+                  ),
                 ),
+                child: selected
+                    ? const Icon(
+                        Icons.check,
+                        size: 15,
+                        color: AppColors.background,
+                      )
+                    : null,
               ),
-              child: selected
-                  ? const Icon(Icons.check, size: 15, color: AppColors.background)
-                  : null,
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Text(
-              label,
-              style: selected ? AppTypography.bodyStrong : AppTypography.body,
-            ),
-          ],
+              const SizedBox(width: AppSpacing.md),
+              Text(
+                label,
+                style: selected ? AppTypography.bodyStrong : AppTypography.body,
+              ),
+            ],
+          ),
         ),
       ),
     );

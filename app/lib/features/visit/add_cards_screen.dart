@@ -177,6 +177,7 @@ class _AddCardTile extends StatelessWidget {
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,
+      tapHint: expanded ? '질문 접기' : '질문 펼치기',
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

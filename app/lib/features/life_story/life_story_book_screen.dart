@@ -37,7 +37,9 @@ class LifeStoryBookScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _ProfileHeader(book: book),
+                      // 화면 낭독기가 프로필을 한 번에 읽고, 초점 테두리가 아래
+                      // 분류 목록까지 감싸지 않게 따로 묶는다(접근성 보고서 9쪽).
+                      MergeSemantics(child: _ProfileHeader(book: book)),
                       const SizedBox(height: AppSpacing.xxxl),
                       const Text(
                         '어떤 이야기를 볼까요?',
