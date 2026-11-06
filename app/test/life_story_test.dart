@@ -317,6 +317,12 @@ void main() {
         lessThan(tester.getTopLeft(find.widgetWithText(AppCard, '가족')).dy),
         reason: '초점 테두리가 분류 목록까지 감싸지 않는다',
       );
+
+      // 제목도 회색 면 전체가 아니라 제목 글자만 감싼다.
+      final title = find.text('어떤 이야기를 볼까요?');
+      expect(tester.getSemantics(title), isSemantics(isHeader: true));
+      final titleRect = tester.getSemantics(title).rect;
+      expect(titleRect.height, lessThan(tester.getSize(title).height * 2));
       handle.dispose();
     });
 
