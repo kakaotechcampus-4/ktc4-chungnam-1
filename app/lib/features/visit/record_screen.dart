@@ -261,11 +261,7 @@ class _ProblemNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.mic_off_outlined,
-            size: 22,
-            color: AppColors.danger,
-          ),
+          const Icon(Icons.mic_off_outlined, size: 22, color: AppColors.danger),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
@@ -328,11 +324,8 @@ class _Recording extends ConsumerWidget {
         // ScreenBody 의 SafeArea 가 하단 안전영역을 한 번 더 쓰므로 카드 자리와
         // 따로 빼 둔다. 빼지 않으면 그만큼 컨트롤이 스크롤 밖으로 밀린다.
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final peekHeight =
-            (constraints.maxHeight - _statusHeight - bottomInset).clamp(
-              _CardPeek.minHeight,
-              _CardPeek.maxHeight + bottomInset,
-            );
+        final peekHeight = (constraints.maxHeight - _statusHeight - bottomInset)
+            .clamp(_CardPeek.minHeight, _CardPeek.maxHeight + bottomInset);
 
         return _body(context, controller, peekHeight);
       },
@@ -434,7 +427,7 @@ class _Recording extends ConsumerWidget {
 
         _CardPeek(
           height: peekHeight,
-          onOpen: () => showVisitCardsSheet(context),
+          onOpen: (sheet) => showVisitCardsSheet(context, controller: sheet),
         ),
       ],
     );
@@ -452,8 +445,8 @@ class _CardPeek extends StatefulWidget {
   /// 하단 안전영역까지 포함한 전체 높이.
   final double height;
 
-  /// 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
-  final Future<void> Function() onOpen;
+  /// 주어진 움직임으로 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
+  final Future<void> Function(AnimationController sheet) onOpen;
 
   /// 기준 화면에서 쓰는 높이. 짧은 기기에서는 이보다 줄어든다.
   static const maxHeight = 380.0;
@@ -471,26 +464,115 @@ class _CardPeek extends StatefulWidget {
   State<_CardPeek> createState() => _CardPeekState();
 }
 
-class _CardPeekState extends State<_CardPeek> {
-  /// 이 속도보다 빠르게 위로 그으면 꺼낸 것으로 본다.
-  static const _flingVelocity = -200.0;
+class _CardPeekState extends State<_CardPeek>
+    with SingleTickerProviderStateMixin {
+  /// 이 속도보다 빠르게 위로 그으면 덜 올라왔어도 연다. 아래로 이만큼 빠르게
+  /// 그으면 많이 올라왔어도 닫는다.
+  static const _flingVelocity = 700.0;
 
-  /// 천천히 끌어올리는 경우다. 이만큼 올라오면 속도와 상관없이 꺼낸다.
-  static const _dragDistance = 48.0;
+  /// 손을 뗐을 때 시트가 이만큼(비율) 넘게 올라와 있으면 끝까지 연다.
+  static const _openFraction = 0.3;
 
-  double _dragged = 0;
+  /// 시트의 움직임. 끌어올리는 동안 손가락이 직접 값을 바꾼다.
+  late final AnimationController _sheet;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheet = BottomSheet.createAnimationController(this);
+  }
+
+  /// 손가락으로 끌어 연 시트를 따라 움직이는 중이다.
+  bool _following = false;
+
+  /// 끄는 동안 녹음 화면 위에 그리는 시트([VisitCardsSheetPreview]).
+  final _preview = OverlayPortalController();
 
   /// 한 번의 끌어올리기에서 시트가 두 번 열리지 않게 막는다. 시트가 닫히면
   /// 푼다. 끌기 시작에서만 풀면 끌 수 없는 화면 낭독기 사용자는 한 번 닫은 뒤
   /// 다시 꺼낼 수 없다.
   bool _opening = false;
 
+  @override
+  void dispose() {
+    _sheet.dispose();
+    super.dispose();
+  }
+
   void _open() {
     if (_opening) return;
     _opening = true;
-    widget.onOpen().whenComplete(() {
+    widget.onOpen(_sheet).whenComplete(() {
       if (mounted) _opening = false;
     });
+  }
+
+  /// 시트 높이. 시트는 화면 높이의 [visitCardsSheetHeightFactor] 만큼이다.
+  double get _sheetHeight =>
+      MediaQuery.sizeOf(context).height * visitCardsSheetHeightFactor;
+
+  /// 끌기 시작하면 녹음 화면 위에 그린 시트가 손가락을 따라오게 한다.
+  void _startFollow() {
+    if (_opening) return;
+    _sheet.value = 0;
+    _preview.show();
+    _following = true;
+  }
+
+  void _follow(DragUpdateDetails details) {
+    if (!_following) return;
+    _sheet.value -= details.delta.dy / _sheetHeight;
+  }
+
+  /// 손을 떼면 충분히 올라왔거나 위로 그었을 때 끝까지 열고, 아니면 내린다.
+  void _endFollow(double velocity) {
+    if (!_following) return;
+    _following = false;
+    final open =
+        velocity < -_flingVelocity ||
+        (_sheet.value > _openFraction && velocity <= _flingVelocity);
+    if (open) {
+      // 그린 시트를 거두고 같은 높이에서 진짜 시트가 이어 올라간다.
+      _preview.hide();
+      _open();
+    } else {
+      _sheet.reverse().whenCompleteOrCancel(() {
+        if (mounted && !_following) _preview.hide();
+      });
+    }
+  }
+
+  /// 끄는 동안 그리는 시트와 뒤 어둡게 하기. 진짜 시트와 같은 높이와 색이다.
+  Widget _buildPreview(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _sheet,
+        builder: (context, child) {
+          final height = _sheetHeight;
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Color.lerp(
+                    Colors.transparent,
+                    Colors.black54,
+                    _sheet.value,
+                  )!,
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                height: height,
+                bottom: -height * (1 - _sheet.value),
+                child: child!,
+              ),
+            ],
+          );
+        },
+        child: const VisitCardsSheetPreview(),
+      ),
+    );
   }
 
   @override
@@ -500,43 +582,45 @@ class _CardPeekState extends State<_CardPeek> {
 
     // 화면 낭독기에서는 끌어올릴 수 없으므로 두 번 눌러 꺼내는 버튼 하나로 읽는다.
     // 부채 그림과 `위로 올려서` 안내는 읽지 않는다.
-    return Semantics(
-      container: true,
-      button: true,
-      label: '대화 카드 꺼내기',
-      onTap: _open,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+    return OverlayPortal(
+      controller: _preview,
+      overlayChildBuilder: _buildPreview,
+      child: Semantics(
+        container: true,
+        button: true,
+        label: '대화 카드 꺼내기',
         onTap: _open,
-        onVerticalDragStart: (_) => _dragged = 0,
-        onVerticalDragUpdate: (details) {
-          _dragged += details.delta.dy;
-          if (_dragged < -_dragDistance) _open();
-        },
-        onVerticalDragEnd: (details) {
-          if ((details.primaryVelocity ?? 0) < _flingVelocity) _open();
-        },
-        child: SizedBox(
-          height: widget.height,
-          child: Stack(
-            children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: _CardPeek._fanBottom + bottomInset,
-                child: _CardFan(
-                  key: const Key('cardPeekFan'),
-                  height: fanHeight,
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _open,
+          // 끌어올리는 동안 시트가 손가락을 따라 올라온다.
+          onVerticalDragStart: (_) => _startFollow(),
+          onVerticalDragUpdate: _follow,
+          onVerticalDragEnd: (details) =>
+              _endFollow(details.primaryVelocity ?? 0),
+          onVerticalDragCancel: () => _endFollow(0),
+          child: SizedBox(
+            height: widget.height,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: _CardPeek._fanBottom + bottomInset,
+                  child: _CardFan(
+                    key: const Key('cardPeekFan'),
+                    height: fanHeight,
+                  ),
                 ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _PullHint(bottomInset: bottomInset),
-              ),
-            ],
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _PullHint(bottomInset: bottomInset),
+                ),
+              ],
+            ),
           ),
         ),
       ),

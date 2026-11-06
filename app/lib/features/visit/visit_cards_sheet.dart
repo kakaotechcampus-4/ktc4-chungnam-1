@@ -16,9 +16,16 @@ import 'visit_controller.dart';
 /// 둔다.
 ///
 /// 내려서 닫으면 녹음 화면으로 돌아가고, 거기서 정지를 눌러 대화를 마친다.
-Future<void> showVisitCardsSheet(BuildContext context) {
+///
+/// [controller] 를 주면 시트가 그 움직임을 따른다. 녹음 화면에서 손가락으로
+/// 끌어올리는 동안 시트가 손가락을 따라오게 하는 데 쓴다.
+Future<void> showVisitCardsSheet(
+  BuildContext context, {
+  AnimationController? controller,
+}) {
   return showModalBottomSheet<void>(
     context: context,
+    transitionAnimationController: controller,
     isScrollControlled: true,
     backgroundColor: AppColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
@@ -31,11 +38,37 @@ Future<void> showVisitCardsSheet(BuildContext context) {
     ),
     builder: (context) => FractionallySizedBox(
       // 화면의 5분의 4까지 올라온다.
-      heightFactor: 0.8,
+      heightFactor: visitCardsSheetHeightFactor,
       child: const _SheetBody(),
     ),
   );
 }
+
+/// 녹음 화면에서 손가락으로 끄는 동안 그리는 시트 모양이다.
+///
+/// 끄는 도중에 [showVisitCardsSheet] 로 시트를 띄우면 Flutter 가 진행 중인
+/// 손가락 입력을 끊는다. 그래서 끄는 동안에는 녹음 화면 위에 같은 모양을 직접
+/// 그려 손가락을 따라오게 하고, 손을 떼면 그 높이에서 진짜 시트로 이어 받는다.
+class VisitCardsSheetPreview extends StatelessWidget {
+  const VisitCardsSheetPreview({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Material(
+      color: AppColors.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _SheetBody(),
+    );
+  }
+}
+
+/// 시트가 화면 높이에서 차지하는 비율.
+const visitCardsSheetHeightFactor = 0.8;
 
 class _SheetBody extends ConsumerWidget {
   const _SheetBody();
