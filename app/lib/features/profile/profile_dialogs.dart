@@ -131,12 +131,15 @@ class _ChoiceDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: primaryLabel,
                 onPressed: () => Navigator.of(context).pop(true),
               ),
               if (secondaryLabel case final secondary?) ...[
                 const SizedBox(height: AppSpacing.md),
                 SecondaryButton(
+                  borderColor: HomeColors.outline,
                   label: secondary,
                   onPressed: () => Navigator.of(context).pop(false),
                 ),
