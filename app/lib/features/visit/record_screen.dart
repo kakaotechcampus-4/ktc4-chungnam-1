@@ -157,20 +157,24 @@ class _Intro extends ConsumerWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        // 제목, 보관 안내와 마이크 원을 한 묶음으로 보고 본문 가운데에 둔다.
+        // 위아래 빈 자리를 같게 나누고, 맨 아래 여백(lg)과 같은 만큼 위에도
+        // 둔다. 실패 안내가 뜨면 그만큼 묶음이 위로 올라간다.
         children: [
-          const Spacer(flex: 2),
+          const SizedBox(height: AppSpacing.lg),
+          const Spacer(),
           const Text(
             '소중한 대화 내용을\n놓치지 않게 녹음할게요',
             style: AppTypography.screenTitle,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xs),
           const Text(
             recordingRetentionNotice,
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          const Spacer(flex: 2),
+          const SizedBox(height: AppSpacing.xxxl + AppSpacing.sm),
 
           Center(
             child: Container(
@@ -184,7 +188,7 @@ class _Intro extends ConsumerWidget {
             ),
           ),
 
-          const Spacer(flex: 2),
+          const Spacer(),
 
           if (problem != null) ...[
             const SizedBox(height: AppSpacing.lg),
