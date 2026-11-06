@@ -12,6 +12,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../profile/profile_dialogs.dart' show showChoiceDialog;
 import 'stop_recording_dialog.dart';
 import 'visit_cards_sheet.dart';
 import 'visit_controller.dart';
@@ -87,6 +88,29 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     super.dispose();
   }
 
+  /// 확인 창에서 나가기를 골랐다. 이때는 다시 묻지 않고 나간다.
+  bool _leaving = false;
+
+  /// 녹음을 시작했고 아직 만남을 끝내지 않았는지. 잠시 멈춘 때도 포함한다.
+  ///
+  /// 이때 뒤로 나가면 녹음이 멈추고, 지금은 같은 카드로 회차를 다시 만들 수
+  /// 없어(서버 `CARD_SET_ALREADY_USED`) 한 번 더 묻는다.
+  bool _inProgress(VisitState? state) =>
+      state != null && state.started && state.participantCount == null;
+
+  Future<void> _confirmLeave() async {
+    final leave = await showChoiceDialog(
+      context,
+      title: '녹음을 그만둘까요?',
+      detail: '지금 나가면 녹음이 멈춰요.\n만남을 마치려면 만남 끝내기를 눌러주세요.',
+      primaryLabel: '그만두고 나가기',
+      secondaryLabel: '계속 녹음하기',
+    );
+    if (!leave || !mounted) return;
+    setState(() => _leaving = true);
+    context.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final visit = ref.watch(visitControllerProvider);
@@ -100,17 +124,24 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     // 녹음하는 동안만 화면을 켜 둔다. 잠시 멈춤, 끝내기 확인 창(멈춘 채로
     // 묻는다), 끝내기와 녹음 실패에서는 놓고, 화면을 떠나면 [KeepScreenOn] 이
     // 빠지면서 놓는다.
-    return KeepScreenOn(
-      enabled: visit.value?.recording ?? false,
-      child: Scaffold(
-        appBar: const AppTopBar(),
-        body: visit.when(
-          loading: () => const LoadingView(),
-          error: (error, _) =>
-              const ErrorStateView(message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.'),
-          // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
-          data: (state) =>
-              state.started ? _Recording(state: state) : const _Intro(),
+    return PopScope(
+      canPop: _leaving || !_inProgress(visit.value),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmLeave();
+      },
+      child: KeepScreenOn(
+        enabled: visit.value?.recording ?? false,
+        child: Scaffold(
+          appBar: const AppTopBar(),
+          body: visit.when(
+            loading: () => const LoadingView(),
+            error: (error, _) => const ErrorStateView(
+              message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.',
+            ),
+            // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
+            data: (state) =>
+                state.started ? _Recording(state: state) : const _Intro(),
+          ),
         ),
       ),
     );
