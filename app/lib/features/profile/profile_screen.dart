@@ -66,33 +66,66 @@ class _Body extends StatelessWidget {
     // 그 값이 실제보다 작게 나올 수 있고, 갤러리가 맨 아래라 그 넘침이 저장하기를
     // 가렸다(웹 미리보기에서 1픽셀). 이 화면은 높이를 채울 일이 없어 그냥
     // 스크롤한다.
-    return ScreenBody(
+    // 사진과 이름의 회색 면은 화면 양옆 끝까지 채우고, 그 아래 구역들만 화면
+    // 좌우 여백 안에 둔다.
+    return SafeArea(
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: AppSpacing.lg),
-            Center(
+            // 사진과 이름은 일대기 첫 장처럼 연한 회색 면에 둔다. 사진은 회색 면과
+            // 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
+            Container(
+              // 이름 줄은 연필 버튼(48) 높이라 글자 아래가 그만큼 더 비어 보인다.
+              // 그 몫을 빼서 글자 아래 간격이 사진 위 간격(32)과 같아 보이게 한다.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.xxl,
+                AppSpacing.screen,
+                AppSpacing.xxl - _nameRowSlack(context),
+              ),
+              color: AppColors.surface,
               child: Column(
                 children: [
-                  ProfileAvatar(gender: profile.gender, size: 130),
-                  const SizedBox(height: AppSpacing.lg),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.line),
+                      boxShadow: AppShadows.low,
+                    ),
+                    child: ProfileAvatar(gender: profile.gender, size: 120),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // 연필 버튼만큼 왼쪽을 비워 이름 글자가 정확히 가운데에
+                      // 오게 한다. 연필은 글자 바로 옆에 붙는다.
+                      const SizedBox(width: AppSizes.minTouch),
                       Flexible(
                         child: Text(
                           '${profile.name} 어르신',
                           style: AppTypography.sectionTitle,
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                      // 이름도 기본 정보 수정에서 고친다.
+                      // 이름도 기본 정보 수정에서 고친다. 누름 영역(48)은 지키고
+                      // 아이콘만 글자 쪽으로 붙인다.
                       IconButton(
                         onPressed: editBasic,
                         tooltip: '이름 수정',
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.only(left: AppSpacing.xs),
+                        constraints: const BoxConstraints.tightFor(
+                          width: AppSizes.minTouch,
+                          height: AppSizes.minTouch,
+                        ),
+                        // 아래 구역의 수정하기 아이콘과 같은 크기다.
                         icon: const Icon(
                           Icons.edit_outlined,
-                          size: 18,
+                          size: 16,
                           color: AppColors.textSub,
                         ),
                       ),
@@ -101,46 +134,75 @@ class _Body extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.section),
-
-            _Section(
-              title: '기본 정보',
-              onEdit: editBasic,
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
-                  _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
-                  _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-                  _InfoRow(
-                    label: '현재 상태',
-                    value: profile.stage?.label ?? unsupportedValueLabel,
+                  // 회색 면에서 기본 정보까지 다른 구역 사이와 같은 간격을 둔다.
+                  const SizedBox(height: AppSpacing.section),
+
+                  _Section(
+                    title: '기본 정보',
+                    onEdit: editBasic,
+                    child: Column(
+                      children: [
+                        _InfoRow(
+                          label: '성별',
+                          value: _genderLabel(profile.gender),
+                        ),
+                        _InfoRow(
+                          label: '생년월일',
+                          value: _dateLabel(profile.birthDate),
+                        ),
+                        _InfoRow(
+                          label: '연령대',
+                          value: _ageLabel(profile.ageRange),
+                        ),
+                        _InfoRow(
+                          label: '현재 상태',
+                          value: profile.stage?.label ?? unsupportedValueLabel,
+                        ),
+                        if (profile.symptomNote != null)
+                          _InfoRow(label: '메모', value: profile.symptomNote!),
+                      ],
+                    ),
                   ),
-                  if (profile.symptomNote != null)
-                    _InfoRow(label: '메모', value: profile.symptomNote!),
+                  const SizedBox(height: AppSpacing.section),
+
+                  _Section(
+                    title: '세부 정보',
+                    onEdit: () => context.push(AppRoutes.profileEditDetails),
+                    child: _Details(profile: profile),
+                  ),
+                  // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
+                  const SizedBox(height: AppSpacing.section),
+
+                  // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+                  // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
+                  _Section(
+                    title: '갤러리',
+                    child: _Gallery(mockPhotos: bundle.photos),
+                  ),
+                  const SizedBox(height: AppSpacing.section),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.section),
-
-            _Section(
-              title: '세부 정보',
-              onEdit: () => context.push(AppRoutes.profileEditDetails),
-              child: _Details(profile: profile),
-            ),
-            // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
-            const SizedBox(height: AppSpacing.section),
-
-            // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
-            // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
-            _Section(
-              title: '갤러리',
-              child: _Gallery(mockPhotos: bundle.photos),
-            ),
-            const SizedBox(height: AppSpacing.section),
           ],
         ),
       ),
     );
+  }
+
+  /// 이름 줄에서 글자 아래로 더 비는 높이. 줄 높이는 연필 버튼(48)이고 글자는
+  /// 그보다 낮다. 글자를 크게 키워 버튼보다 높아지면 0 이다.
+  static double _nameRowSlack(BuildContext context) {
+    const style = AppTypography.sectionTitle;
+    final textHeight =
+        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
+    return ((AppSizes.minTouch - textHeight) / 2).clamp(0.0, AppSpacing.xxl);
   }
 
   static String _genderLabel(String raw) => switch (raw) {
