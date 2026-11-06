@@ -37,7 +37,7 @@
 | 대화 카드 | card-worker가 카드 12장을 만든다. 1~9번 중에서 골라 면회를 시작하고 10~12번은 면회 중 보충 카드다 | [운영 반영] |
 | 면회 | 기기에서 WAV 16kHz mono로 녹음하고 끝낼 때 참여자 수를 확인한다. 면회 사진 1장을 올릴 수 있다. 녹음하는 동안에는 Android 화면이 저절로 꺼지지 않게 한다 | [운영 반영] 회차와 녹음 전송. 면회 사진은 [develop 구현], 운영 사용 미확인. 화면 켜짐은 [develop 구현](#207)이며 백그라운드 녹음 유지(포그라운드 서비스)는 [미구현] |
 | 소감 | 만족도, 어르신 반응, 카드별 사용 여부와 반응을 저장한 뒤에만 녹음을 서버로 보낸다 | [develop 구현] |
-| 음성 분석과 리포트 | speech-worker가 STT와 화자 분리를 부르고 같은 작업에서 리포트와 변경 제안을 만든다. 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장한다 | [운영 반영] STT와 리포트 생성. 화자 미확인 시 모델 생략은 [develop 구현](#199) |
+| 음성 분석과 리포트 | speech-worker가 STT와 화자 분리를 부르고 같은 작업에서 리포트와 변경 제안을 만든다. 라벨 누락이나 인원 차이로 생성을 막지 않고, 불확실한 이야기 후보는 제안 이유에 확인 필요를 적도록 지시한다 | [운영 반영] STT와 리포트 생성. 화자 조건 제거는 [develop 구현]([#251](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/251)) |
 | 변경 제안 확인 | 이야기 후보와 주제 조정(more, less, exclude)을 보호자가 고치거나 빼고 승인한다. 승인 전에는 반영하지 않는다 | [develop 구현], 운영 사용 미확인 |
 | 다음 회차 반영 | 승인한 이야기와 주제 조정이 다음 카드 생성 입력에 들어간다 | [develop 구현] |
 | 화면 낭독(#180) | 카드 고르기, 면회 녹음과 카드 꺼내기, 소감, 리포트와 변경 제안, 세부 정보 음성 입력 등 핵심 흐름에서 TalkBack이 읽을 이름, 선택 상태, 읽기 순서와 대비를 보완했다 | [develop 구현](#208). 위젯 테스트만 했고 실기기 TalkBack 확인과 낭독 문구의 PM 확인이 남았다 |
@@ -187,7 +187,7 @@
 | 운영 서버 이미지가 10/25 빌드라 develop의 정정 뒤 카드 갱신이 운영에 없다. 운영 앱(versionCode 3)에는 프로필 사진 업로드 화면이 없다 | 운영 미반영 |
 | 녹음 원본의 24시간 상한을 운영에서 강제하지 못한다. 삭제 대기열 실행기와 기한 대조 도구(#204)는 있으나 운영 배포, 주기 실행, 음성 버킷 Lifecycle 보조 규칙은 적용하지 않았다 | 운영 설정 남음 |
 | 사진 분석 동의를 계정별로 확인하는 필드가 DB에 없다. 프로필 사진 설명을 만드는 분석 worker도 없다 | [미구현] |
-| #199는 빈 전사를 리포트 생성 전에 거절하고, 화자 라벨이 예상 인원보다 적거나 화자 미정 구간이 있으면 리포트와 변경 제안 모델을 부르지 않고 화자 미확인 안내만 저장하므로, 그 회차에는 이야기 후보, 주제 조정 제안, 카드별 요약이 없다. 화자가 확인된 회차의 리포트 문장 인물 귀속 전체를 코드로 검사하지는 않는다 | 검사와 모델 생략은 [develop 구현], 귀속 검사는 [미구현] |
+| 빈 전사는 생성 전에 거절한다. [#251](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/251)은 라벨 누락이나 인원 차이에도 리포트와 제안을 생성하고, 불확실한 이야기 후보는 제안 이유에 확인 필요를 적도록 지시한다. 리포트의 인물 귀속이나 확인 필요 문구의 적절성을 코드로 검사하지는 않는다 | 생성 차단 제거는 [develop 구현], 귀속 검사는 [미구현] |
 | 리포트와 변경 제안(#198), 카드 문안(#212)에서 치료 효과를 직접 보장하는 표현을 정규식으로 검사한다. 모든 우회 표현을 판정하지는 않는다. 카드 질문의 최근 기억 시험은 코드로 검사하지 않고 프롬프트에 맡긴다 | [develop 구현] |
 | #203은 녹음 원본 삭제가 실패해도 전사와 리포트는 계속 만들고 삭제 요청을 대기열에 남긴다 | [develop 구현] |
 | #213의 실패한 분석 수동 재요청(6-5)은 전사 보관 기한 안에서만 리포트를 다시 만든다. 자동 재시도는 없다. 실패 전사의 만료 삭제는 worker가 돌아야 실행되므로 worker가 멈추면 늦어진다 | [develop 구현] |
@@ -211,7 +211,7 @@
 | 평가 자료 | [평가 README](evals/README.md) | |
 | 앱과 BE, BE와 AI 사이 API | [API 명세](docs/architecture/api-spec.md), [데이터 계약](docs/architecture/data-contracts.md), [합성 목 데이터](docs/architecture/mock/README.md) | |
 | 카드 첫 생성과 다음 면회 반영 설계 | [주제 카드 전체 설계 검토안](docs/architecture/card-generation-flow.md) | |
-| 11/3 이후 병합한 BE 기능 문서 | [리포트 의료 표현 검사](backend/docs/report-safety.md), [전사 입력과 화자 검사](backend/docs/speech-input-safety.md), [화자 구분 부족 시 해석 차단](backend/docs/speaker-fact-boundary.md), [삭제 실패 분리](backend/docs/audio-deletion-isolation.md), [삭제 대기열](backend/docs/storage-deletion.md), [수동 복구](backend/docs/speech-recovery.md), [짧은 음성 전사](backend/docs/short-speech-transcription.md) | |
+| 11/3 이후 병합한 BE 기능 문서 | [리포트 의료 표현 검사](backend/docs/report-safety.md), [전사 입력과 화자 검사](backend/docs/speech-input-safety.md), [화자 정보와 리포트 생성](backend/docs/speaker-fact-boundary.md), [삭제 실패 분리](backend/docs/audio-deletion-isolation.md), [삭제 대기열](backend/docs/storage-deletion.md), [수동 복구](backend/docs/speech-recovery.md), [짧은 음성 전사](backend/docs/short-speech-transcription.md) | |
 | 기술 결정 | [ADR 목록](docs/architecture/decisions/README.md) | accepted는 구현 완료를 뜻하지 않는다 |
 | 개인정보와 동의 | [법률 검토](docs/legal/README.md), [동의안](docs/legal/consent-draft.md), [기능 대응표](docs/legal/consent-mapping.md) | |
 | 실제 환경 검증 기록 | [10/18 통합 검증](docs/pm/integration-verification-20261018.md) | |
