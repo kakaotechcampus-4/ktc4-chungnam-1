@@ -207,7 +207,10 @@ class _Intro extends ConsumerWidget {
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.xxxl * 2 + AppSpacing.xxl),
+          // 실기기에서 보고 마이크 원을 16 더 내렸다(2026-11-07).
+          const SizedBox(
+            height: AppSpacing.xxxl * 2 + AppSpacing.xxl + AppSpacing.lg,
+          ),
 
           Center(
             child: Container(
