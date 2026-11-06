@@ -56,8 +56,10 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
     final visit = ref.watch(visitControllerProvider).value;
     final already = visit?.cards.map((c) => c.cardId).toSet() ?? const {};
 
+    // 오늘의 대화 카드 화면과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: supplements.when(
         loading: () => const LoadingView(),
         error: (error, _) =>
@@ -119,6 +121,8 @@ class _Body extends StatelessWidget {
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         label: adding
             ? '카드를 추가하고 있어요'
             : picked.isEmpty
@@ -174,6 +178,8 @@ class _AddCardTile extends StatelessWidget {
     // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
     // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
     return SelectableCard(
+      accent: HomeColors.accent,
+      shadows: AppShadows.card,
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,

@@ -33,8 +33,11 @@ class CardsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileId = ref.watch(serverProfileIdProvider);
 
+    // 홈과 같은 색감을 쓴다. 바탕은 오프화이트, 카드는 흰색이고 고르면 초록
+    // 테두리다. 언덕 그림은 홈에만 둔다.
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: profileId.when(
         loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
         error: (error, _) => ErrorStateView(
@@ -244,6 +247,8 @@ class _BodyState extends ConsumerState<_Body> {
     return ScreenBody(
       bottom: PrimaryButton(
         label: '대화 시작하기',
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         // 한 장도 고르지 않으면 시작하지 않는다.
         onPressed: state.canStart
             ? () {
@@ -359,7 +364,7 @@ class _PullToLoad extends StatelessWidget {
                 // 다 차기 전에는 당긴 만큼, 다 차면 돈다.
                 value: loading ? null : pull,
                 strokeWidth: 2.5,
-                color: AppColors.ink,
+                color: HomeColors.accent,
                 backgroundColor: AppColors.line,
               ),
             ),
@@ -389,6 +394,7 @@ class _SelectionSummary extends StatelessWidget {
         AppChip(
           count == 0 ? '아직 고르지 않았어요' : '$count개 선택함',
           tone: count == 0 ? ChipTone.weak : ChipTone.strong,
+          accent: HomeColors.accent,
         ),
         const SizedBox(width: AppSpacing.md),
         Text('최대 ${CardRules.selectableCount}개까지', style: AppTypography.sub),
@@ -418,6 +424,8 @@ class _CardTile extends StatelessWidget {
     // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
     // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
     return SelectableCard(
+      accent: HomeColors.accent,
+      shadows: AppShadows.card,
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,
