@@ -308,26 +308,33 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 340),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Material(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(_radius),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: widget.onOpen,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: content,
+          // 말풍선 몸과 꼬리를 한 모양으로 보고 그 아래에 옅은 그림자를 깐다.
+          child: CustomPaint(
+            painter: const _BubbleShadowPainter(
+              radius: _radius,
+              tail: _tailSize,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Material(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(_radius),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: widget.onOpen,
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: content,
+                    ),
                   ),
                 ),
-              ),
-              const CustomPaint(
-                size: Size(20, 10),
-                painter: _TailPainter(AppColors.surface),
-              ),
-            ],
+                const CustomPaint(
+                  size: _tailSize,
+                  painter: _TailPainter(AppColors.background),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -335,6 +342,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   }
 
   static const _radius = 20.0;
+  static const _tailSize = Size(20, 10);
 }
 
 /// 이야기 제목 상자. 길면 한 줄로 줄이고 끝에 이동 화살표를 둔다.
@@ -353,7 +361,7 @@ class _StoryTitle extends StatelessWidget {
         AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: HomeColors.background,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.line),
       ),
@@ -380,6 +388,51 @@ class _StoryTitle extends StatelessWidget {
   }
 }
 
+/// 꼬리 모양. 왼쪽 위가 (0, 0) 인 [size] 상자 안에 그린다.
+Path _tailPath(Size size) => Path()
+  ..moveTo(0, 0)
+  ..lineTo(size.width, 0)
+  ..quadraticBezierTo(
+    size.width * 0.58,
+    size.height * 0.9,
+    size.width / 2,
+    size.height,
+  )
+  ..quadraticBezierTo(size.width * 0.42, size.height * 0.9, 0, 0)
+  ..close();
+
+/// 말풍선 몸과 꼬리를 합친 모양의 그림자. 리포트 알림 배너보다 조금 진하게 해
+/// 오프화이트 바탕에서 떠 보이게 한다. 장식이라 누름과 화면 낭독기에는 영향이 없다.
+class _BubbleShadowPainter extends CustomPainter {
+  const _BubbleShadowPainter({required this.radius, required this.tail});
+
+  final double radius;
+  final Size tail;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final body = size.height - tail.height;
+    final shape = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 0, size.width, body),
+          Radius.circular(radius),
+        ),
+      )
+      ..addPath(_tailPath(tail), Offset((size.width - tail.width) / 2, body));
+    canvas.drawPath(
+      shape.shift(const Offset(0, 3)),
+      Paint()
+        ..color = const Color(0x33000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BubbleShadowPainter old) =>
+      old.radius != radius || old.tail != tail;
+}
+
 /// 아래를 가리키는 둥근 삼각형 꼬리.
 class _TailPainter extends CustomPainter {
   const _TailPainter(this.color);
@@ -388,18 +441,7 @@ class _TailPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..quadraticBezierTo(
-        size.width * 0.58,
-        size.height * 0.9,
-        size.width / 2,
-        size.height,
-      )
-      ..quadraticBezierTo(size.width * 0.42, size.height * 0.9, 0, 0)
-      ..close();
-    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(_tailPath(size), Paint()..color = color);
   }
 
   @override

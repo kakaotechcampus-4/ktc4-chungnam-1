@@ -140,7 +140,7 @@ void main() {
 
     expect(spinnerInButton(), findsNothing);
     expect(find.text(_button), findsOneWidget);
-    expect(buttonColor(tester), AppColors.ink);
+    expect(buttonColor(tester), HomeColors.accent);
     expect(find.textContaining('대화 카드가 준비됐어요'), findsOneWidget);
     expect(location(router), AppRoutes.home, reason: '다른 화면에 있을 수 있다');
     expect(api.calls.where((c) => c == 'request'), hasLength(1));
@@ -190,7 +190,7 @@ void main() {
 
     expect(find.text(_button), findsOneWidget, reason: '바꾸면 곧 다시 바뀌어 깜빡인다');
     expect(find.text(_making), findsNothing);
-    expect(buttonColor(tester), AppColors.ink);
+    expect(buttonColor(tester), HomeColors.accent);
 
     api.answer.complete(_ready);
     await tester.pump();
@@ -342,7 +342,7 @@ void main() {
       findsOneWidget,
     );
     final decoration = tester.widget<Container>(box.first).decoration;
-    expect((decoration! as BoxDecoration).color, AppColors.surface);
+    expect((decoration! as BoxDecoration).color, HomeColors.background);
     expect(find.textContaining('다른 화면을 봐도 괜찮아요'), findsNothing);
 
     await tester.pump(_poll);

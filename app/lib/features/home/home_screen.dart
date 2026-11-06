@@ -52,6 +52,8 @@ class HomeScreen extends ConsumerWidget {
         hasProfile ? open() : showProfileRequiredDialog(context);
 
     return Scaffold(
+      // 색은 홈에만 둔다(`HomeColors`).
+      backgroundColor: HomeColors.background,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -192,10 +194,10 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// 홈 바닥의 연한 회색 언덕 두 겹. 장식이라 누를 수 없고 화면 낭독기도 읽지 않는다.
+/// 홈 바닥의 연한 세이지 언덕 두 겹. 장식이라 누를 수 없고 화면 낭독기도 읽지 않는다.
 ///
 /// 버튼과 알림은 이 위에 올라간다. 언덕 위 보조 글자(`#5C5C5C`)는 앞 언덕에서
-/// 5.4:1, 오류 글자(`#99392E`)는 5.6:1 이다.
+/// 5.0:1, 오류 글자(`#99392E`)는 5.3:1 이다.
 class _HomeHills extends StatelessWidget {
   const _HomeHills();
 
@@ -222,10 +224,10 @@ class _HillsPainter extends CustomPainter {
   const _HillsPainter();
 
   /// 뒤 언덕. 앞 언덕보다 연하다.
-  static const _back = Color(0xFFF3F3F3);
+  static const _back = HomeColors.hillBack;
 
   /// 앞 언덕.
-  static const _front = Color(0xFFE6E6E6);
+  static const _front = HomeColors.hillFront;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -306,6 +308,8 @@ class _CardButton extends ConsumerWidget {
         PrimaryButton(
           label: making ? '대화 카드를 만들고 있어요' : '오늘의 대화카드 받기',
           loading: making,
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           onPressed: () => needsProfile(() => _getCards(context, ref)),
         ),
         if (stage == CardMaking.remaking) ...[
@@ -379,7 +383,7 @@ class _RemakingNotice extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: HomeColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: const Row(
@@ -472,7 +476,7 @@ class _TopBar extends StatelessWidget {
                             color: AppColors.danger,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: AppColors.background,
+                              color: HomeColors.background,
                               width: 2,
                             ),
                           ),
@@ -522,8 +526,10 @@ class _ProfileSwitcher extends ConsumerWidget {
       children: [
         // 누르면 어르신을 고르는 화면으로 간다.
         Material(
-          color: AppColors.surface,
-          shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+          color: HomeColors.bubble,
+          shape: const StadiumBorder(
+            side: BorderSide(color: HomeColors.bubbleLine),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => context.push(AppRoutes.profileSwitch),
@@ -595,8 +601,10 @@ class _RegisterPill extends StatelessWidget {
       // 오른쪽 아이콘이 없을 때의 알약과 같은 간격이다.
       padding: const EdgeInsets.only(right: AppSpacing.screen - AppSpacing.sm),
       child: Material(
-        color: AppColors.surface,
-        shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+        color: HomeColors.bubble,
+        shape: const StadiumBorder(
+          side: BorderSide(color: HomeColors.bubbleLine),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => context.push(AppRoutes.profileSwitch),
@@ -676,8 +684,9 @@ class _GeneratingNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: HomeColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        boxShadow: AppShadows.high,
       ),
       child: Row(
         children: [
@@ -732,8 +741,9 @@ class _ReportNotice extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: HomeColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
+          boxShadow: AppShadows.high,
         ),
         child: Row(
           children: [
@@ -780,8 +790,9 @@ class _ResumeNotice extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: HomeColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
+          boxShadow: AppShadows.high,
         ),
         child: Row(
           children: [
