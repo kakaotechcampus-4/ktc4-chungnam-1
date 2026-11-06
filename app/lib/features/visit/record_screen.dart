@@ -131,8 +131,10 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       },
       child: KeepScreenOn(
         enabled: visit.value?.recording ?? false,
+        // 홈과 같은 세이지 색감이다(`HomeColors`).
         child: Scaffold(
-          appBar: const AppTopBar(),
+          backgroundColor: HomeColors.background,
+          appBar: const AppTopBar(backgroundColor: HomeColors.background),
           body: visit.when(
             loading: () => const LoadingView(),
             error: (error, _) => const ErrorStateView(
@@ -184,18 +186,16 @@ class _Intro extends ConsumerWidget {
       scrollable: true,
       bottom: PrimaryButton(
         label: '네, 좋아요',
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         onPressed: controller.startRecording,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        // 제목, 보관 안내와 마이크 원을 한 묶음으로 보고 상단바와 아래 버튼
-        // 사이의 가운데에 둔 뒤, 글만 조금 위로 올린다(아래 간격 설명). 본문은 버튼 위 여백(ScreenBody 의 lg)만큼
-        // 버튼보다 위에서 끝나고, 맨 아래에도 lg 를 둔다. 그래서 위에는 그
-        // 둘을 더한 만큼(lg + lg)을 두어 위아래 빈 자리를 같게 한다. 실패
-        // 안내가 뜨면 그만큼 묶음이 위로 올라간다.
+        // 제목은 앞 화면(만남 사진)의 제목과 같은 자리에 두고, 보관 안내와
+        // 마이크 원이 그 아래로 이어진다. 남는 자리는 아래 버튼 쪽에 둔다.
         children: [
-          const SizedBox(height: AppSpacing.lg + AppSpacing.lg),
-          const Spacer(),
+          const SizedBox(height: AppSpacing.visitTitleTop),
           const Text(
             '소중한 대화 내용을\n놓치지 않게 녹음할게요',
             style: AppTypography.screenTitle,
@@ -207,19 +207,21 @@ class _Intro extends ConsumerWidget {
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          // 마이크 원은 그 자리에 두고 글만 32 올린다. 글과 원 사이를 32
-          // 늘리고 맨 아래 여백도 32 늘리면 원은 그대로, 글만 위로 간다.
           const SizedBox(height: AppSpacing.xxxl * 2 + AppSpacing.xxl),
 
           Center(
             child: Container(
               width: 140,
               height: 140,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
+              decoration: const BoxDecoration(
+                color: HomeColors.bubble,
                 shape: BoxShape.circle,
+                // 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
+                border: Border.fromBorderSide(
+                  BorderSide(color: HomeColors.outline, width: 2),
+                ),
               ),
-              child: const Icon(Icons.mic, size: 56, color: AppColors.ink),
+              child: const Icon(Icons.mic, size: 56, color: HomeColors.accent),
             ),
           ),
 
@@ -418,9 +420,13 @@ class _Recording extends ConsumerWidget {
                     height: 112,
                     decoration: BoxDecoration(
                       color: state.recording
-                          ? AppColors.ink
-                          : AppColors.surface,
+                          ? HomeColors.accent
+                          : HomeColors.bubble,
                       shape: BoxShape.circle,
+                      // 멈춘 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
+                      border: state.recording
+                          ? null
+                          : Border.all(color: HomeColors.outline, width: 2),
                     ),
                     child: Icon(
                       state.recording ? Icons.mic : Icons.pause,
@@ -687,6 +693,10 @@ class _CardFan extends StatelessWidget {
   static const _frontHeight = 200.0;
   static const _backHeight = 188.0;
 
+  /// 카드 테두리. [HomeColors.outline] 과 [HomeColors.bubbleLine] 사이로 한
+  /// 단계 연하게 둔다.
+  static const _fanOutline = Color(0xFFB0BAA5);
+
   /// 부채의 축을 카드 아래에 두려고 세 장을 함께 끌어올린 높이.
   static const _lift = 40.0;
 
@@ -733,10 +743,11 @@ class _CardFan extends StatelessWidget {
     width: _width * scale,
     height: height,
     decoration: BoxDecoration(
-      color: front ? AppColors.background : AppColors.surface,
+      color: front ? AppColors.background : HomeColors.bubble,
       borderRadius: BorderRadius.circular(AppRadius.card * scale),
-      border: Border.all(color: AppColors.line),
-      boxShadow: front ? AppShadows.low : null,
+      // 오프화이트 바탕에서 흐려 보이지 않게 테두리와 그림자를 진하게 둔다.
+      border: Border.all(color: _fanOutline, width: 1.5),
+      boxShadow: AppShadows.card,
     ),
   );
 }
@@ -758,7 +769,7 @@ class _PullHint extends StatelessWidget {
         child: Container(
           height: _height + bottomInset,
           padding: EdgeInsets.only(bottom: AppSpacing.xl + bottomInset),
-          color: AppColors.background.withValues(alpha: 0.72),
+          color: HomeColors.background.withValues(alpha: 0.72),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -766,7 +777,7 @@ class _PullHint extends StatelessWidget {
                 width: 44,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.line,
+                  color: HomeColors.bubbleLine,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               ),
@@ -812,9 +823,10 @@ class _ControlButton extends StatelessWidget {
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: AppColors.line, width: 2),
+                color: AppColors.background,
+                border: Border.all(color: HomeColors.outline, width: 2),
               ),
-              child: Icon(icon, size: 30, color: AppColors.ink),
+              child: Icon(icon, size: 30, color: HomeColors.accent),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),

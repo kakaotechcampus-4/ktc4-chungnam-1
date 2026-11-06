@@ -27,7 +27,7 @@ Future<void> showVisitCardsSheet(
     context: context,
     transitionAnimationController: controller,
     isScrollControlled: true,
-    backgroundColor: AppColors.background,
+    backgroundColor: HomeColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
     barrierColor: Colors.black54,
     // 지정하지 않으면 앱 언어(영어)의 `Scrim` 이 읽힌다. 보고서 8쪽은 마이페이지
@@ -55,7 +55,7 @@ class VisitCardsSheetPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Material(
-      color: AppColors.background,
+      color: HomeColors.background,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(AppRadius.card),
@@ -219,7 +219,7 @@ class _DragHandle extends StatelessWidget {
         width: 44,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.line,
+          color: HomeColors.bubbleLine,
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
       ),
@@ -379,9 +379,9 @@ class _CardBarSegment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final still = MediaQuery.disableAnimationsOf(context);
-    // 더한 카드도 처음 고른 카드와 같은 연한 회색이다. 색을 나누니 막대가
+    // 더한 카드도 처음 고른 카드와 같은 연한 색이다. 색을 나누니 막대가
     // 요란해 보였다. 더한 카드는 화면 낭독기 이름으로만 알린다.
-    final color = current ? AppColors.ink : AppColors.line;
+    final color = current ? HomeColors.accent : HomeColors.bubbleLine;
 
     return Semantics(
       container: true,
@@ -438,7 +438,7 @@ class _MainQuestion extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: AppColors.background,
+      color: HomeColors.background,
       // 소제목과 메인 질문 묶음이 위 막대와 아래 이전·다음 버튼 사이의
       // 가운데에 오게 한다. 막대는 이 칸 위쪽 20 지점에서 끝나고(누르는
       // 자리 48 중 아래 20), 버튼은 이 칸 아래쪽 32 지점에서 시작한다(높이
@@ -535,13 +535,15 @@ class _FollowUpQuestion extends StatelessWidget {
         : const Duration(milliseconds: 400);
 
     return Material(
-      color: AppColors.surface,
+      color: HomeColors.bubble,
       child: InkWell(
         onTap: onTap,
         child: Container(
           width: double.infinity,
           decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: AppColors.line, width: 2)),
+            border: Border(
+              top: BorderSide(color: HomeColors.bubbleLine, width: 2),
+            ),
           ),
           padding: const EdgeInsets.fromLTRB(
             0,
@@ -601,8 +603,8 @@ class _FollowUpQuestion extends StatelessWidget {
                         height: 7,
                         decoration: BoxDecoration(
                           color: i == index
-                              ? AppColors.textSub
-                              : AppColors.line,
+                              ? HomeColors.accent
+                              : HomeColors.bubbleLine,
                           borderRadius: BorderRadius.circular(AppRadius.pill),
                         ),
                       ),
@@ -612,9 +614,8 @@ class _FollowUpQuestion extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               Text(
                 '눌러서 다음 꼬리 질문 보기',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textDisabled,
-                ),
+                // 연초록 면 위라 비활성 회색(3.9:1) 대신 보조 글자색을 쓴다.
+                style: AppTypography.caption.copyWith(color: AppColors.textSub),
               ),
             ],
           ),
@@ -659,15 +660,15 @@ class _CardStepButton extends StatelessWidget {
       );
     } else if (forward) {
       (background, foreground, border) = (
-        AppColors.ink,
+        HomeColors.accent,
         AppColors.background,
-        AppColors.ink,
+        HomeColors.accent,
       );
     } else {
       (background, foreground, border) = (
         AppColors.background,
-        AppColors.ink,
-        AppColors.ink,
+        HomeColors.accent,
+        HomeColors.accent,
       );
     }
 
@@ -729,7 +730,7 @@ class _AddCardsBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.background,
+      color: HomeColors.background,
       child: InkWell(
         onTap: onTap,
         child: SafeArea(
@@ -738,12 +739,12 @@ class _AddCardsBar extends StatelessWidget {
             width: double.infinity,
             height: 64,
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.line)),
+              border: Border(top: BorderSide(color: HomeColors.bubbleLine)),
             ),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.add, size: 22, color: AppColors.ink),
+                Icon(Icons.add, size: 22, color: HomeColors.accent),
                 SizedBox(width: AppSpacing.sm),
                 Text('대화 카드 추가', style: AppTypography.bodyStrong),
               ],

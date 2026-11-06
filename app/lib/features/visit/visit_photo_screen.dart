@@ -25,7 +25,10 @@ class VisitPhotoScreen extends ConsumerStatefulWidget {
 
 class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
   /// 촬영 전후로 자리 크기가 같아야 화면이 튀지 않는다.
-  static const _photoBoxHeight = 260.0;
+  static const _photoBoxHeight = 210.0;
+
+  /// 사진 자리의 가장 큰 폭. 4:3 에 가깝게 둔다.
+  static const _photoBoxWidth = 280.0;
 
   /// 카메라가 열려 있는 동안 셔터를 다시 누르지 못하게 한다.
   bool _capturing = false;
@@ -73,19 +76,25 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
     final photoPath = ref.watch(visitPhotoProvider);
     final captured = photoPath != null;
 
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: ScreenBody(
         scrollable: true,
         bottom: captured
             ? PrimaryButton(
                 label: '이 사진으로 시작하기',
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 onPressed: _capturing
                     ? null
                     : () => context.push(AppRoutes.visitRecord),
               )
             : SecondaryButton(
                 label: '사진 없이 시작할게요',
+                // 오프화이트 바탕에서 보이도록 진한 테두리다.
+                borderColor: HomeColors.outline,
                 onPressed: _capturing
                     ? null
                     : () => context.push(AppRoutes.visitRecord),
@@ -93,7 +102,8 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Spacer(flex: 2),
+            // 녹음 안내 화면의 제목과 같은 자리다.
+            const SizedBox(height: AppSpacing.visitTitleTop),
             const Text(
               '오늘의 만남 사진을\n한 장 남겨볼까요?',
               style: AppTypography.screenTitle,
@@ -105,30 +115,39 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
               style: AppTypography.sub,
               textAlign: TextAlign.center,
             ),
-            const Spacer(flex: 2),
+            // 안내 글과 사진 자리 사이, 사진 자리와 셔터 사이를 같게(64) 둔다.
+            const SizedBox(height: AppSpacing.xxl * 2),
 
-            SizedBox(
-              height: _photoBoxHeight,
-              width: double.infinity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.image),
-                child: captured
-                    ? Image.file(
-                        File(photoPath),
-                        fit: BoxFit.cover,
-                        semanticLabel: '찍은 면회 사진',
-                        errorBuilder: (context, error, stackTrace) =>
-                            const _PhotoPlaceholder(
-                              icon: Icons.broken_image_outlined,
-                            ),
-                      )
-                    : const _PhotoPlaceholder(
-                        icon: Icons.photo_camera_outlined,
-                      ),
+            Center(
+              child: Container(
+                height: _photoBoxHeight,
+                width: _photoBoxWidth,
+                // 회색 칸이 오프화이트 바탕에 묻히지 않게 테두리를 둔다. 사진을
+                // 찍은 뒤에도 같은 테두리다.
+                foregroundDecoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.image),
+                  border: Border.all(color: HomeColors.outline),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.image),
+                  child: captured
+                      ? Image.file(
+                          File(photoPath),
+                          fit: BoxFit.cover,
+                          semanticLabel: '찍은 면회 사진',
+                          errorBuilder: (context, error, stackTrace) =>
+                              const _PhotoPlaceholder(
+                                icon: Icons.broken_image_outlined,
+                              ),
+                        )
+                      : const _PhotoPlaceholder(
+                          icon: Icons.photo_camera_outlined,
+                        ),
+                ),
               ),
             ),
 
-            const SizedBox(height: AppSpacing.xxl),
+            const SizedBox(height: AppSpacing.xxl * 2),
 
             Center(
               child: Column(
@@ -156,7 +175,7 @@ class _VisitPhotoScreenState extends ConsumerState<VisitPhotoScreen> {
               ),
             ),
 
-            const Spacer(flex: 3),
+            const Spacer(),
           ],
         ),
       ),
@@ -173,7 +192,7 @@ class _PhotoPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.surface,
-      child: Icon(icon, size: 48, color: AppColors.textDisabled),
+      child: Icon(icon, size: 48, color: HomeColors.accent),
     );
   }
 }
@@ -199,16 +218,16 @@ class _ShutterButton extends StatelessWidget {
           height: 80,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: AppColors.ink, width: 2),
+            border: Border.all(color: HomeColors.accent, width: 2),
           ),
           child: Center(
             child: captured
-                ? const Icon(Icons.refresh, size: 32, color: AppColors.ink)
+                ? const Icon(Icons.refresh, size: 32, color: HomeColors.accent)
                 : Container(
                     width: 60,
                     height: 60,
                     decoration: const BoxDecoration(
-                      color: AppColors.ink,
+                      color: HomeColors.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
