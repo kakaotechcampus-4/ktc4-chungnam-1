@@ -74,6 +74,10 @@ class Mascot extends StatefulWidget {
   static const tapAsset = '$_dir/tap.webp';
   static const successAsset = '$_dir/success.webp';
 
+  /// 눈을 감고 잠든 얼굴. 보호자 위로 화면의 [SleepingMascot] 이 쓴다. 홈에서는
+  /// 쓰지 않아 [assets] 에 넣지 않는다.
+  static const sleepAsset = '$_dir/sleep.webp';
+
   static const assets = [
     idleAsset,
     lookLeftAsset,

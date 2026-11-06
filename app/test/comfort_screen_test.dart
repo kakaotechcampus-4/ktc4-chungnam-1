@@ -10,6 +10,8 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/review/comfort_messages.dart';
 import 'package:saerok/features/review/comfort_screen.dart';
 import 'package:saerok/features/review/review_controller.dart';
+import 'package:saerok/widgets/mascot.dart';
+import 'package:saerok/widgets/sleeping_mascot.dart';
 
 void main() {
   group('점수별 문구', () {
@@ -106,6 +108,44 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('홈으로'), findsOneWidget);
+    });
+
+    testWidgets('잠든 마스코트를 띄운다', (tester) async {
+      await open(tester, satisfaction: 3);
+
+      expect(find.byType(SleepingMascot), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Image &&
+              w.image is AssetImage &&
+              (w.image as AssetImage).assetName == Mascot.sleepAsset,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('움직임을 켜도 떠 있기와 누르기, 화면을 떠나기에 오류가 없다', (tester) async {
+      Mascot.motion = true;
+      addTearDown(() => Mascot.motion = false);
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: Center(child: SleepingMascot())),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.tap(find.byType(SleepingMascot));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.takeException(), isNull);
+
+      // 화면을 떠나면 끝나지 않는 움직임도 함께 정리된다.
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('점수가 없으면 고정 문장만 띄운다', (tester) async {
