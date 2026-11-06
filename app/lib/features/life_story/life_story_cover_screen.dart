@@ -101,9 +101,10 @@ class LifeStoryCoverScreen extends StatelessWidget {
                           const TextSpan(text: '지금까지 '),
                           TextSpan(
                             text: '${book.total}편',
+                            // 편수만 앱의 초록으로 짚어 준다. 오프화이트 위 6.4:1.
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: AppColors.ink,
+                              color: HomeColors.accent,
                             ),
                           ),
                           const TextSpan(text: '의 이야기가 담겨 있어요'),
@@ -209,42 +210,6 @@ class _OpeningBookState extends State<_OpeningBook>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // 책이 바닥에 놓인 것처럼 보이게 하는 그림자 두 겹. 빛이 왼쪽
-            // 위에서 온다고 보고 오른쪽 아래로 넓게 번지는 그림자와, 책 아랫
-            // 변이 바닥에 닿는 자리의 짙고 좁은 그림자를 둔다.
-            const Positioned(
-              left: 12,
-              top: 28,
-              right: -16,
-              bottom: -16,
-              child: _FloorShadow(
-                radius: 12,
-                shadows: [
-                  BoxShadow(
-                    color: Color(0x331C2A22),
-                    blurRadius: 36,
-                    spreadRadius: -2,
-                    offset: Offset(10, 18),
-                  ),
-                ],
-              ),
-            ),
-            const Positioned(
-              left: 4,
-              right: -14,
-              bottom: -14,
-              height: 14,
-              child: _FloorShadow(
-                radius: 40,
-                shadows: [
-                  BoxShadow(
-                    color: Color(0x4D1C2A22),
-                    blurRadius: 12,
-                    offset: Offset(2, 4),
-                  ),
-                ],
-              ),
-            ),
             // 책장 두께. 오른쪽과 아래로 종이 줄이 보이고 책 아래에 그림자가
             // 진다.
             const Positioned(
@@ -288,24 +253,6 @@ class _OpeningBookState extends State<_OpeningBook>
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 책 아래 바닥에 지는 그림자. 면은 투명하고 그림자만 그린다.
-class _FloorShadow extends StatelessWidget {
-  const _FloorShadow({required this.radius, required this.shadows});
-
-  final double radius;
-  final List<BoxShadow> shadows;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: shadows,
       ),
     );
   }
