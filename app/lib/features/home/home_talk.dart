@@ -307,7 +307,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         scale: Tween(begin: 0.92, end: 1.0).animate(curve),
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 340),
+          // 좌우로 너무 길어 보이지 않게 340 에서 줄였다(2026-11-07).
+          constraints: const BoxConstraints(maxWidth: 300),
           // 말풍선 몸과 꼬리를 한 모양으로 보고 그 아래에 옅은 그림자를 깐다.
           child: CustomPaint(
             painter: const _BubbleShadowPainter(

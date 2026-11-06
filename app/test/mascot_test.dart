@@ -115,4 +115,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(_face(Mascot.idleAsset), findsOneWidget);
   });
+
+  testWidgets('카드 완성 얼굴인 동안 잠깐씩 쉬며 다시 축하한다', (tester) async {
+    final controller = MascotController();
+    addTearDown(controller.dispose);
+    var reacted = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Mascot(
+              size: 200,
+              controller: controller,
+              cheerful: true,
+              onReact: () => reacted++,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    controller.celebrate();
+    // 첫 축하(2.6초) 뒤 3.5초 쉬고 다시 축하한다. 축하 중에는 누름을 받지 않는다.
+    await _wait(tester, 6600);
+    await tester.tap(find.byType(Mascot));
+    expect(reacted, 0, reason: '두 번째 축하 중이다');
+
+    // 두 번째 축하가 끝나면 다시 누름을 받는다.
+    await _wait(tester, 2400);
+    await tester.tap(find.byType(Mascot));
+    expect(reacted, 1);
+    await _wait(tester, 1200);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

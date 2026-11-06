@@ -54,8 +54,9 @@ class Mascot extends StatefulWidget {
   final VoidCallback? onReact;
 
   /// `true` 인 동안 평소 얼굴 대신 `><` 신나는 얼굴로 떠 있고 둘러보지
-  /// 않는다. 홈은 카드 완성 말풍선이 떠 있는 동안 켠다. 눌렀을 때의 반응은
-  /// 그대로 한다.
+  /// 않는다. 한 번 뛴 뒤 3.5초 쉬고 다시 반짝이와 함께 통통 뛰기를 되풀이한다
+  /// ([hopping] 이면 따로 뛰지 않는다). 홈은 카드 완성 말풍선이 떠 있는 동안
+  /// 켠다. 눌렀을 때의 반응은 그대로 한다.
   final bool cheerful;
 
   /// `true` 면 떠 있는 대신 제자리에서 천천히 콩콩 뛰고, 뛸 때마다 하트가 한두
@@ -99,6 +100,9 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
   static const _lookSwap = Duration(milliseconds: 650);
   static const _successSwap = Duration(milliseconds: 350);
 
+  /// 신나는 얼굴로 떠 있는 동안 한 번 뛰고 다음에 다시 뛰기까지 쉬는 시간.
+  static const _cheerGap = Duration(milliseconds: 3500);
+
   final _random = math.Random();
 
   late final AnimationController _float = AnimationController(
@@ -129,6 +133,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
   Duration _swap = _quickSwap;
   List<_Heart> _hearts = const [];
   Timer? _lookTimer;
+  Timer? _cheerTimer;
   bool _precached = false;
   bool _still = false;
 
@@ -191,7 +196,10 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
       widget.controller?.addListener(_celebrate);
     }
     // 신나는 얼굴과 평소 얼굴을 오갈 때는 천천히 바꾼다.
-    if (oldWidget.cheerful != widget.cheerful) _swap = _successSwap;
+    if (oldWidget.cheerful != widget.cheerful) {
+      _swap = _successSwap;
+      _scheduleCheer();
+    }
     if (oldWidget.hopping != widget.hopping) _syncMotion();
   }
 
@@ -199,6 +207,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
   void dispose() {
     widget.controller?.removeListener(_celebrate);
     _lookTimer?.cancel();
+    _cheerTimer?.cancel();
     _float.dispose();
     _tap.dispose();
     _success.dispose();
@@ -287,6 +296,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     if (status != AnimationStatus.completed) return;
     if (_phase == MascotPhase.tapReaction) _setPhase(MascotPhase.idle);
     _scheduleLook();
+    _scheduleCheer();
   }
 
   void _celebrate() {
@@ -301,6 +311,26 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     if (status != AnimationStatus.completed) return;
     if (_phase == MascotPhase.success) _setPhase(MascotPhase.idle);
     _scheduleLook();
+    _scheduleCheer();
+  }
+
+  /// [Mascot.cheerful] 인 동안(카드 완성 말풍선이 떠 있는 동안) 잠깐씩 쉬며
+  /// 반짝이와 함께 다시 통통 뛴다.
+  void _scheduleCheer() {
+    _cheerTimer?.cancel();
+    // 온보딩처럼 콩콩 뛰는 중에는 따로 뛰지 않는다.
+    if (!widget.cheerful || widget.hopping || _still) return;
+    _cheerTimer = Timer(_cheerGap, _cheer);
+  }
+
+  void _cheer() {
+    if (!mounted || !widget.cheerful || widget.hopping || _still) return;
+    // 다른 반응 중이거나 다른 화면이 위에 있으면 다음으로 미룬다.
+    if (_phase != MascotPhase.idle || !TickerMode.valuesOf(context).enabled) {
+      _scheduleCheer();
+      return;
+    }
+    _celebrate();
   }
 
   // ── 그리기 ─────────────────────────────────────
