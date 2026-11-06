@@ -484,7 +484,10 @@ void main() {
     Future<void> settle() => tester.pump(const Duration(seconds: 1));
 
     Future<void> startListening() async {
+      // 고른 버튼은 눌린 모습을 잠깐 보인 뒤 넘어간다.
       await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       await settle();
       await tester.tap(find.byIcon(Icons.mic));
       await settle();
