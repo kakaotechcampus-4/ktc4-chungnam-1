@@ -61,78 +61,84 @@ class _Body extends StatelessWidget {
     final profile = bundle.profile;
     void editBasic() => context.push(AppRoutes.profileEditBasic);
 
+    // ScreenBody 의 scrollable 은 내용 높이를 미리 재어(IntrinsicHeight) 화면
+    // 높이를 채운다. 갤러리에서 사진을 눌러 펼친 설명 칸은 여러 줄 입력칸이라
+    // 그 값이 실제보다 작게 나올 수 있고, 갤러리가 맨 아래라 그 넘침이 저장하기를
+    // 가렸다(웹 미리보기에서 1픽셀). 이 화면은 높이를 채울 일이 없어 그냥
+    // 스크롤한다.
     return ScreenBody(
-      scrollable: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: AppSpacing.lg),
-          Center(
-            child: Column(
-              children: [
-                ProfileAvatar(gender: profile.gender, size: 130),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        '${profile.name} 어르신',
-                        style: AppTypography.sectionTitle,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: AppSpacing.lg),
+            Center(
+              child: Column(
+                children: [
+                  ProfileAvatar(gender: profile.gender, size: 130),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${profile.name} 어르신',
+                          style: AppTypography.sectionTitle,
+                        ),
                       ),
-                    ),
-                    // 이름도 기본 정보 수정에서 고친다.
-                    IconButton(
-                      onPressed: editBasic,
-                      tooltip: '이름 수정',
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        size: 18,
-                        color: AppColors.textSub,
+                      // 이름도 기본 정보 수정에서 고친다.
+                      IconButton(
+                        onPressed: editBasic,
+                        tooltip: '이름 수정',
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: 18,
+                          color: AppColors.textSub,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.section),
+            const SizedBox(height: AppSpacing.section),
 
-          _Section(
-            title: '기본 정보',
-            onEdit: editBasic,
-            child: Column(
-              children: [
-                _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
-                _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
-                _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-                _InfoRow(
-                  label: '현재 상태',
-                  value: profile.stage?.label ?? unsupportedValueLabel,
-                ),
-                if (profile.symptomNote != null)
-                  _InfoRow(label: '메모', value: profile.symptomNote!),
-              ],
+            _Section(
+              title: '기본 정보',
+              onEdit: editBasic,
+              child: Column(
+                children: [
+                  _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
+                  _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
+                  _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
+                  _InfoRow(
+                    label: '현재 상태',
+                    value: profile.stage?.label ?? unsupportedValueLabel,
+                  ),
+                  if (profile.symptomNote != null)
+                    _InfoRow(label: '메모', value: profile.symptomNote!),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.section),
+            const SizedBox(height: AppSpacing.section),
 
-          _Section(
-            title: '세부 정보',
-            onEdit: () => context.push(AppRoutes.profileEditDetails),
-            child: _Details(profile: profile),
-          ),
-          // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
-          const SizedBox(height: AppSpacing.section),
+            _Section(
+              title: '세부 정보',
+              onEdit: () => context.push(AppRoutes.profileEditDetails),
+              child: _Details(profile: profile),
+            ),
+            // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
+            const SizedBox(height: AppSpacing.section),
 
-          // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
-          // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
-          _Section(
-            title: '갤러리',
-            child: _Gallery(mockPhotos: bundle.photos),
-          ),
-          const SizedBox(height: AppSpacing.section),
-        ],
+            // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+            // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
+            _Section(
+              title: '갤러리',
+              child: _Gallery(mockPhotos: bundle.photos),
+            ),
+            const SizedBox(height: AppSpacing.section),
+          ],
+        ),
       ),
     );
   }

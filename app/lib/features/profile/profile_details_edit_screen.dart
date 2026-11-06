@@ -98,9 +98,12 @@ class _ProfileDetailsEditScreenState
     return Scaffold(
       appBar: const AppTopBar(),
       body: ScreenBody(
-        scrollable: true,
         // 입력칸이 넷이라 버튼을 아래에 고정하지 않고 본문과 함께 흘려보낸다.
-        child: Padding(
+        // ScreenBody 의 scrollable 은 내용 높이를 미리 재어(IntrinsicHeight) 화면
+        // 높이를 채우는데, 여러 줄 입력칸은 예시 문구가 줄바꿈될 때 그 값이 실제보다
+        // 작게 나와 맨 아래 저장하기 쪽이 넘쳤다. 이 화면은 높이를 채울 일이 없어
+        // 그냥 스크롤한다.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.only(top: AppSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
