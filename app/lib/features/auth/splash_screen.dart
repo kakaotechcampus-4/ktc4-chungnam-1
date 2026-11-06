@@ -56,6 +56,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: HomeColors.background,
       body: ScreenBody(
         scrollable: true,
         child: Column(

@@ -14,8 +14,11 @@ class OnboardingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: HomeColors.background,
       body: ScreenBody(
         bottom: PrimaryButton(
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           label: '입력하러 가기',
           onPressed: () => context.go(AppRoutes.profileCreate),
         ),

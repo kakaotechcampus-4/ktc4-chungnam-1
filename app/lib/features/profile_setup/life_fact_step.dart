@@ -396,6 +396,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
           const SizedBox(height: AppSpacing.section),
 
           AppSurfaceBox(
+            color: HomeColors.bubble,
             child: Column(
               children: [
                 for (final example in widget.step.examples)
@@ -403,9 +404,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Text(
                       example,
-                      style: AppTypography.sub.copyWith(
-                        color: AppColors.textDisabled,
-                      ),
+                      style: AppTypography.sub,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -606,10 +605,18 @@ class _MethodButtonState extends State<_MethodButton>
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
                   decoration: BoxDecoration(
-                    color: Color.lerp(AppColors.background, AppColors.line, t),
+                    color: Color.lerp(
+                      AppColors.background,
+                      HomeColors.bubble,
+                      t,
+                    ),
                     borderRadius: BorderRadius.circular(AppRadius.card),
                     border: Border.all(
-                      color: Color.lerp(AppColors.line, AppColors.ink, t)!,
+                      color: Color.lerp(
+                        HomeColors.outline,
+                        HomeColors.accent,
+                        t,
+                      )!,
                       width: 1 + t,
                     ),
                     boxShadow: AppShadows.low,
@@ -626,7 +633,7 @@ class _MethodButtonState extends State<_MethodButton>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(widget.icon, size: 44, color: AppColors.ink),
+              Icon(widget.icon, size: 44, color: HomeColors.accent),
               const SizedBox(height: AppSpacing.lg),
               Text(widget.label, style: AppTypography.bodyStrong),
             ],
@@ -655,7 +662,7 @@ class _SwitchMethodButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: HomeColors.bubble,
       borderRadius: BorderRadius.circular(AppRadius.pill),
       child: InkWell(
         onTap: onTap,
@@ -666,12 +673,12 @@ class _SwitchMethodButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(color: AppColors.line),
+            border: Border.all(color: HomeColors.bubbleLine),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20, color: AppColors.ink),
+              Icon(icon, size: 20, color: HomeColors.accent),
               const SizedBox(width: AppSpacing.sm),
               Text(
                 label,
@@ -763,7 +770,12 @@ class _MicArea extends StatelessWidget {
     final (Widget primary, Widget? secondary) = switch (phase) {
       _ when listening => (
         const Text('듣고 있어요', style: statusStyle),
-        SecondaryButton(label: '다 말했어요', onPressed: onFinish, expand: false),
+        SecondaryButton(
+          borderColor: HomeColors.outline,
+          label: '다 말했어요',
+          onPressed: onFinish,
+          expand: false,
+        ),
       ),
       _ when transcribing => (
         const Text('말씀을 글로 옮기고 있어요', style: statusStyle),
@@ -784,6 +796,7 @@ class _MicArea extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             SecondaryButton(
+              borderColor: HomeColors.outline,
               label: '재시도',
               icon: Icons.refresh,
               onPressed: onResend,
@@ -837,8 +850,8 @@ class _MicArea extends StatelessWidget {
                       color: failed
                           ? AppColors.danger
                           : listening
-                          ? AppColors.ink
-                          : AppColors.line,
+                          ? HomeColors.accent
+                          : HomeColors.outline,
                       width: 2,
                     ),
                   ),
@@ -850,7 +863,9 @@ class _MicArea extends StatelessWidget {
                           : Icon(
                               Icons.mic,
                               size: _iconSize,
-                              color: failed ? AppColors.danger : AppColors.ink,
+                              color: failed
+                                  ? AppColors.danger
+                                  : HomeColors.accent,
                             ),
                     ),
                   ),
@@ -880,7 +895,7 @@ class _HeardCheck extends StatelessWidget {
       width: 64,
       height: 64,
       decoration: const BoxDecoration(
-        color: AppColors.ink,
+        color: HomeColors.accent,
         shape: BoxShape.circle,
       ),
       child: const Icon(Icons.check, size: 32, color: AppColors.background),
@@ -945,7 +960,7 @@ class _HeardBoxState extends State<_HeardBox> {
       height: lineHeight * _HeardBox._lines + AppSpacing.md * 2,
       decoration: BoxDecoration(
         color: AppColors.background,
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: HomeColors.bubbleLine),
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: Scrollbar(
@@ -1018,15 +1033,23 @@ class _ManualInput extends StatelessWidget {
                 color: AppColors.textDisabled,
               ),
               filled: true,
-              fillColor: AppColors.surface,
+              // 흰 칸에 연한 세이지 테두리다. 흰 칸 위 안내 글자는 4.5:1.
+              fillColor: AppColors.background,
               contentPadding: const EdgeInsets.all(AppSpacing.lg),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                borderSide: BorderSide.none,
+                borderSide: const BorderSide(color: HomeColors.bubbleLine),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                borderSide: const BorderSide(color: HomeColors.bubbleLine),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                borderSide: const BorderSide(color: AppColors.ink, width: 2),
+                borderSide: const BorderSide(
+                  color: HomeColors.accent,
+                  width: 2,
+                ),
               ),
             ),
           ),

@@ -156,7 +156,8 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
     final restart = _cannotShow || (failure != null && needsRestart(failure));
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: ScreenBody(
         scrollable: true,
         // 버튼을 아래에 고정하지 않는다. 약관까지 읽고 내려와야 누를 수
@@ -178,6 +179,8 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
               const SizedBox(height: AppSpacing.xl),
             ] else ...[
               AppTextField(
+                borderColor: HomeColors.outline,
+                focusColor: HomeColors.accent,
                 label: '이름',
                 controller: _name,
                 hintText: '보호자분의 이름을 입력해주세요',
@@ -217,8 +220,11 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
                       Checkbox(
                         value: _allAgreed,
                         onChanged: _toggleAll,
-                        activeColor: AppColors.ink,
-                        side: const BorderSide(color: AppColors.line, width: 2),
+                        activeColor: HomeColors.accent,
+                        side: const BorderSide(
+                          color: HomeColors.outline,
+                          width: 2,
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       const Text('전체 동의', style: AppTypography.bodyStrong),
@@ -240,6 +246,8 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
               const SizedBox(height: AppSpacing.xxl),
 
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: _submitting ? '가입하는 중이에요' : '동의하고 시작하기',
                 onPressed: _submitting ? null : _submit,
               ),
@@ -248,6 +256,7 @@ class _GoogleConsentScreenState extends ConsumerState<GoogleConsentScreen> {
             if (restart) ...[
               const SizedBox(height: AppSpacing.lg),
               SecondaryButton(
+                borderColor: HomeColors.outline,
                 label: '로그인으로 돌아가기',
                 onPressed: () => context.go(AppRoutes.signIn),
               ),

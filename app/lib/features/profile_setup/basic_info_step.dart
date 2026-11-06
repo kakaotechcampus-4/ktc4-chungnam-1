@@ -50,6 +50,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         ],
 
         AppTextField(
+          borderColor: HomeColors.outline,
+          focusColor: HomeColors.accent,
           label: '이름',
           controller: _name,
           required: true,
@@ -162,10 +164,10 @@ class _ChoiceBox extends StatelessWidget {
         height: AppSizes.control,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? AppColors.surface : AppColors.background,
+          color: selected ? HomeColors.bubble : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
           border: Border.all(
-            color: selected ? AppColors.ink : AppColors.line,
+            color: selected ? HomeColors.accent : HomeColors.outline,
             width: selected ? 2 : 1,
           ),
         ),
@@ -198,10 +200,10 @@ class _RadioRow extends StatelessWidget {
         height: AppSizes.control,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         decoration: BoxDecoration(
-          color: selected ? AppColors.surface : AppColors.background,
+          color: selected ? HomeColors.bubble : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
           border: Border.all(
-            color: selected ? AppColors.ink : AppColors.line,
+            color: selected ? HomeColors.accent : HomeColors.outline,
             width: selected ? 2 : 1,
           ),
         ),
@@ -211,10 +213,10 @@ class _RadioRow extends StatelessWidget {
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: selected ? AppColors.ink : AppColors.background,
+                color: selected ? HomeColors.accent : AppColors.background,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: selected ? AppColors.ink : AppColors.line,
+                  color: selected ? HomeColors.accent : HomeColors.outline,
                   width: 2,
                 ),
               ),
@@ -258,8 +260,10 @@ class _NumberPicker extends StatelessWidget {
     return Container(
       height: AppSizes.control,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      // 흰 칸이라 안내 글자의 비활성 회색이 4.5:1 을 지킨다.
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.line),
+        color: AppColors.background,
+        border: Border.all(color: HomeColors.outline),
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: DropdownButtonHideUnderline(
