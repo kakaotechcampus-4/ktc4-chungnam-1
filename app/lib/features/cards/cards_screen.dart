@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,7 +25,7 @@ import 'cards_controller.dart';
 /// C 오늘의 대화 카드.
 ///
 /// 피그마 C-1 ~ C-3 은 별도 화면이 아니라 이 화면의 상태다. 카드를 누르면
-/// 꼬리 질문이 펼쳐지고(C-2), 아래로 밀면 카드가 늘어난다(C-3).
+/// 꼬리 질문이 펼쳐지고(C-2), 끝에서 고리가 다 찰 때까지 당기면 카드가 늘어난다(C-3).
 class CardsScreen extends ConsumerWidget {
   const CardsScreen({super.key});
 
@@ -169,37 +170,62 @@ class _Body extends ConsumerStatefulWidget {
   ConsumerState<_Body> createState() => _BodyState();
 }
 
+/// 카드를 고르는 본문.
+///
+/// 처음 3장을 보여주고, 끝에서 더 당기면 3장씩 더 보여준다. 끝을 넘겨 당기면
+/// 고무줄처럼 버티며 늘어나고(BouncingScrollPhysics), 아래 고리가 당긴 만큼
+/// 채워진다. 손을 뗀 채가 아니라 당기는 채로 고리가 한 바퀴 다 차야 잠깐 돌며
+/// 불러온 뒤 새 카드가 나온다. 살짝 밀었을 때 카드가 나오지 않게 하려는 것이다.
+/// 당길 수 없는 화면 낭독기 사용자를 위해 고리는 `n장 더 보기` 버튼으로도 읽힌다.
 class _BodyState extends ConsumerState<_Body> {
-  /// 끝에 닿은 채로 이만큼 머물러야 카드를 늘린다. 살짝 밀었을 때 우르르
-  /// 나오지 않게 하려는 것이다.
-  static const _holdToLoad = Duration(milliseconds: 700);
+  /// 이만큼 끝을 넘겨 당겨야 고리가 한 바퀴 찬다.
+  static const _pullToLoad = 96.0;
 
-  /// 끝에서 이 안쪽이면 닿은 것으로 본다.
-  static const _bottomSlack = 48.0;
+  /// 고리가 다 찬 뒤 돌며 불러오는 시간.
+  static const _loadingTime = Duration(milliseconds: 600);
 
-  Timer? _holdTimer;
+  /// 끝을 넘겨 당긴 정도(0~1).
+  double _pull = 0;
+
+  /// 고리가 다 차 불러오는 중이다.
+  bool _loading = false;
+
+  Timer? _loadTimer;
 
   @override
   void dispose() {
-    _holdTimer?.cancel();
+    _loadTimer?.cancel();
     super.dispose();
   }
 
-  void _onScroll(ScrollMetrics metrics) {
-    final atBottom = metrics.pixels >= metrics.maxScrollExtent - _bottomSlack;
+  bool _onScroll(ScrollNotification notification) {
+    if (!widget.state.hasMore || _loading) return false;
+    final metrics = notification.metrics;
+    final over = metrics.pixels - metrics.maxScrollExtent;
+    final pull = (over / _pullToLoad).clamp(0.0, 1.0);
+    if (pull != _pull) setState(() => _pull = pull);
 
-    if (!atBottom || !widget.state.hasMore) {
-      _holdTimer?.cancel();
-      _holdTimer = null;
-      return;
-    }
+    // 손으로 당기는 중에 다 찼을 때만 불러온다. 놓은 뒤 튕겨 오르는 힘으로
+    // 차는 것은 세지 않는다.
+    final dragging =
+        notification is ScrollUpdateNotification &&
+        notification.dragDetails != null;
+    if (pull >= 1 && dragging) _load();
+    return false;
+  }
 
-    // 이미 기다리는 중이면 그대로 둔다.
-    if (_holdTimer?.isActive ?? false) return;
-
-    _holdTimer = Timer(_holdToLoad, () {
+  /// 고리를 잠깐 돌린 뒤 카드를 더 보여준다.
+  void _load() {
+    if (_loading || !widget.state.hasMore) return;
+    setState(() => _loading = true);
+    final still = MediaQuery.disableAnimationsOf(context);
+    _loadTimer = Timer(still ? Duration.zero : _loadingTime, () {
       if (!mounted) return;
       ref.read(cardsControllerProvider.notifier).showMore();
+      setState(() {
+        _loading = false;
+        _pull = 0;
+      });
     });
   }
 
@@ -215,77 +241,135 @@ class _BodyState extends ConsumerState<_Body> {
       );
     }
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        _onScroll(notification.metrics);
-        return false;
-      },
-      child: ScreenBody(
-        scrollable: true,
-        bottom: PrimaryButton(
-          label: '대화 시작하기',
-          // 한 장도 고르지 않으면 시작하지 않는다.
-          onPressed: state.canStart
-              ? () {
-                  // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
-                  // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
-                  // (visit_photos.dart). 못 지워도 면회는 시작한다.
-                  ref.invalidate(visitControllerProvider);
-                  ref.invalidate(reviewControllerProvider);
-                  ref.invalidate(visitPhotoProvider);
-                  unawaited(
-                    ref
-                        .read(visitPhotosProvider)
-                        .tidy()
-                        .catchError((Object _) {}),
-                  );
-                  context.push(AppRoutes.visitPhoto);
-                }
-              : null,
+    return ScreenBody(
+      bottom: PrimaryButton(
+        label: '대화 시작하기',
+        // 한 장도 고르지 않으면 시작하지 않는다.
+        onPressed: state.canStart
+            ? () {
+                // 지난 회차의 녹음 시간, 소감과 사진이 남아 있지 않게 비운다.
+                // 지난 사진의 사본은 갤러리에 원본이 있을 때만 지운다
+                // (visit_photos.dart). 못 지워도 면회는 시작한다.
+                ref.invalidate(visitControllerProvider);
+                ref.invalidate(reviewControllerProvider);
+                ref.invalidate(visitPhotoProvider);
+                unawaited(
+                  ref
+                      .read(visitPhotosProvider)
+                      .tidy()
+                      .catchError((Object _) {}),
+                );
+                context.push(AppRoutes.visitPhoto);
+              }
+            : null,
+      ),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        // 웹과 데스크톱에서도 마우스나 트랙패드로 끌어 당겨 볼 수 있게 한다.
+        // 기본값은 마우스 끌기를 받지 않아 고리를 채울 수 없다.
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(
+            context,
+          ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+          child: SingleChildScrollView(
+            // 카드가 적어 화면이 차지 않아도 당길 수 있고, 끝을 넘기면 버틴다.
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: AppSpacing.sm),
+                const Text('오늘의 대화 카드', style: AppTypography.screenTitle),
+                const SizedBox(height: AppSpacing.md),
+                const Text('오늘은 어떤 이야기를 나눠볼까요?', style: AppTypography.body),
+                const SizedBox(height: AppSpacing.xl),
+
+                _SelectionSummary(count: state.selectedIds.length),
+                const SizedBox(height: AppSpacing.xl),
+
+                for (final card in state.visibleCards) ...[
+                  _CardTile(
+                    card: card,
+                    selected: state.selectedIds.contains(card.cardId),
+                    expanded: state.expandedId == card.cardId,
+                    onToggleSelected: () =>
+                        controller.toggleSelected(card.cardId),
+                    onToggleExpanded: () =>
+                        controller.toggleExpanded(card.cardId),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+
+                if (state.hasMore)
+                  _PullToLoad(
+                    pull: _pull,
+                    loading: _loading,
+                    count: state.remaining < CardRules.pageSize
+                        ? state.remaining
+                        : CardRules.pageSize,
+                    onLoad: _load,
+                  ),
+
+                const SizedBox(height: AppSpacing.lg),
+              ],
+            ),
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+}
+
+/// 목록 끝의 고리. 당긴 만큼 채워지고, 다 차면 돌며 불러온다.
+class _PullToLoad extends StatelessWidget {
+  const _PullToLoad({
+    required this.pull,
+    required this.loading,
+    required this.count,
+    required this.onLoad,
+  });
+
+  /// 당긴 정도(0~1).
+  final double pull;
+  final bool loading;
+
+  /// 이번에 더 나올 장수.
+  final int count;
+
+  /// 화면 낭독기로 눌렀을 때. 당기지 않고 바로 불러온다.
+  final VoidCallback onLoad;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '대화 카드 $count장 더 보기',
+      onTap: onLoad,
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        // 고리와 문구를 한 줄에 둔다. 글자를 키워 줄이 넘치면 문구만 줄을 바꾼다.
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(height: AppSpacing.sm),
-            const Text('오늘의 대화 카드', style: AppTypography.screenTitle),
-            const SizedBox(height: AppSpacing.md),
-            const Text('오늘은 어떤 이야기를 나눠볼까요?', style: AppTypography.body),
-            const SizedBox(height: AppSpacing.xl),
-
-            _SelectionSummary(count: state.selectedIds.length),
-            const SizedBox(height: AppSpacing.xl),
-
-            for (final card in state.visibleCards) ...[
-              _CardTile(
-                card: card,
-                selected: state.selectedIds.contains(card.cardId),
-                expanded: state.expandedId == card.cardId,
-                onToggleSelected: () => controller.toggleSelected(card.cardId),
-                onToggleExpanded: () => controller.toggleExpanded(card.cardId),
+            SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                // 다 차기 전에는 당긴 만큼, 다 차면 돈다.
+                value: loading ? null : pull,
+                strokeWidth: 2.5,
+                color: AppColors.ink,
+                backgroundColor: AppColors.line,
               ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            if (state.hasMore)
-              Center(
-                child: TextButton.icon(
-                  onPressed: controller.showMore,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textSub,
-                    minimumSize: const Size(
-                      AppSizes.minTouch,
-                      AppSizes.minTouch,
-                    ),
-                  ),
-                  icon: const Icon(Icons.keyboard_arrow_down, size: 20),
-                  label: Text(
-                    '${state.remaining}장 더 보기',
-                    style: AppTypography.sub,
-                  ),
-                ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Text(
+                loading ? '카드를 불러오고 있어요' : '끝까지 당기면 $count장 더 나와요',
+                style: AppTypography.sub,
               ),
-
-            const SizedBox(height: AppSpacing.lg),
+            ),
           ],
         ),
       ),
@@ -336,62 +420,59 @@ class _CardTile extends StatelessWidget {
       onTap: onToggleExpanded,
       expanded: expanded,
       padding: const EdgeInsets.all(AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // 선택 표시는 카드 전체 높이의 가운데에 둔다. 펼치면 펼친 카드의 가운데로
+      // 함께 옮겨 간다.
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            // 선택 표시를 카드 윗부분 높이의 가운데에 둔다.
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(card.cardTitle, style: AppTypography.bodyStrong),
-                    const SizedBox(height: AppSpacing.sm),
-                    // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는
-                    // 여러 면회에 걸친 묶음이라 고르는 화면에는 두지 않는다.
-                    Text(card.description, style: AppTypography.sub),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다.
-              // 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
-              SelectionToggle(
-                label: cardSelectLabel(card.cardTitle),
-                selected: selected,
-                onTap: onToggleSelected,
-              ),
-            ],
-          ),
-
-          if (expanded) ...[
-            const SizedBox(height: AppSpacing.lg),
-            const Divider(),
-            const SizedBox(height: AppSpacing.lg),
-            Text(card.primaryQuestion, style: AppTypography.bodyStrong),
-            const SizedBox(height: AppSpacing.md),
-            for (final question in card.followUpQuestions)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('· ', style: AppTypography.sub),
-                    Expanded(child: Text(question, style: AppTypography.sub)),
-                  ],
-                ),
-              ),
-          ] else ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              '눌러서 질문 보기',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(card.cardTitle, style: AppTypography.bodyStrong),
+                const SizedBox(height: AppSpacing.sm),
+                // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는 여러 면회에
+                // 걸친 묶음이라 고르는 화면에는 두지 않는다.
+                Text(card.description, style: AppTypography.sub),
+                if (expanded) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  const Divider(),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(card.primaryQuestion, style: AppTypography.bodyStrong),
+                  const SizedBox(height: AppSpacing.md),
+                  for (final question in card.followUpQuestions)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('· ', style: AppTypography.sub),
+                          Expanded(
+                            child: Text(question, style: AppTypography.sub),
+                          ),
+                        ],
+                      ),
+                    ),
+                ] else ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    '눌러서 질문 보기',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textDisabled,
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
+          const SizedBox(width: AppSpacing.md),
+          // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다. 화면
+          // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+          SelectionToggle(
+            label: cardSelectLabel(card.cardTitle),
+            selected: selected,
+            onTap: onToggleSelected,
+          ),
         ],
       ),
     );

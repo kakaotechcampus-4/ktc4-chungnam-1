@@ -8,7 +8,7 @@ import '../../data/providers.dart';
 /// 계약(`docs/architecture/data-contracts.md`)을 따른다.
 /// - 한 회차에 12장을 만들고 선택 화면에서는 앞 9장만 보여준다.
 /// - 뒤 3장은 면회 중 보충용으로 남긴다.
-/// - 처음 3장을 보여주고 아래로 밀면 3장씩 더 보여준다.
+/// - 처음 3장을 보여주고 끝에서 고리가 다 찰 때까지 당기면 3장씩 더 보여준다.
 /// - 선택하지 않은 카드도 지우지 않는다.
 abstract final class CardRules {
   /// 선택 화면에 보여주는 최대 장수.
@@ -37,8 +37,7 @@ class CardsState {
   /// 펼쳐서 꼬리 질문을 보여주는 카드. 한 번에 하나만 펼친다.
   final String? expandedId;
 
-  List<ConversationCard> get visibleCards =>
-      cards.take(visibleCount).toList();
+  List<ConversationCard> get visibleCards => cards.take(visibleCount).toList();
 
   bool get hasMore => visibleCount < cards.length;
 
@@ -104,8 +103,10 @@ class CardsController extends AsyncNotifier<CardsState> {
     final current = state.value;
     if (current == null || !current.hasMore) return;
 
-    final next = (current.visibleCount + CardRules.pageSize)
-        .clamp(0, current.cards.length);
+    final next = (current.visibleCount + CardRules.pageSize).clamp(
+      0,
+      current.cards.length,
+    );
     state = AsyncData(current.copyWith(visibleCount: next));
   }
 }
