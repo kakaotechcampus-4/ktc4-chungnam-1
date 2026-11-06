@@ -100,13 +100,22 @@ class _Progress extends StatelessWidget {
 
   final double value;
 
+  /// 단계를 넘기면 순간이동하지 않고 지금 자리에서 새 자리까지 미끄러지듯
+  /// 자란다(뒤로 가면 줄어든다). 움직임 줄이기가 켜져 있으면 바로 옮긴다.
   @override
   Widget build(BuildContext context) {
-    return LinearProgressIndicator(
-      value: value,
-      minHeight: 4,
-      backgroundColor: AppColors.surface,
-      color: AppColors.ink,
+    final still = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      // 끝값이 바뀌면 지금 값에서 새 끝값으로 움직인다.
+      tween: Tween(begin: value, end: value),
+      duration: still ? Duration.zero : const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      builder: (context, shown, _) => LinearProgressIndicator(
+        value: shown,
+        minHeight: 4,
+        backgroundColor: AppColors.surface,
+        color: AppColors.ink,
+      ),
     );
   }
 }
