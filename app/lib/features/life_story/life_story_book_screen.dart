@@ -17,16 +17,18 @@ class LifeStoryBookScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: LifeStoryBookLoader(
         builder: (context, book) => SafeArea(
           child: ListView(
             padding: const EdgeInsets.only(bottom: AppSpacing.section),
             children: [
-              // 프로필부터 분류까지는 옅은 회색 면에 두고, 최근 이야기와 끊는다.
+              // 프로필부터 분류까지는 연초록 면에 두고, 최근 이야기와 끊는다.
               ColoredBox(
-                color: AppColors.surface,
+                color: HomeColors.bubble,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     AppSpacing.screen,
@@ -64,6 +66,8 @@ class LifeStoryBookScreen extends StatelessWidget {
                     _RecentList(book: book),
                     const SizedBox(height: AppSpacing.xxxl),
                     PrimaryButton(
+                      color: HomeColors.accent,
+                      loadingColor: HomeColors.accentLoading,
                       label: '이야기 추가하기',
                       onPressed: () => context.push(AppRoutes.albumStoryNew),
                     ),
@@ -88,13 +92,13 @@ class _ProfileHeader extends StatelessWidget {
     final profile = book.profile;
     return Column(
       children: [
-        // 회색 면과 구분되게 흰 테를 두르고 바깥에 얇은 선과 그림자를 둔다.
+        // 연초록 면과 구분되게 흰 테를 두르고 바깥에 얇은 선과 그림자를 둔다.
         Container(
           padding: const EdgeInsets.all(AppSpacing.xs),
           decoration: BoxDecoration(
             color: AppColors.background,
             shape: BoxShape.circle,
-            border: Border.all(color: AppColors.line),
+            border: Border.all(color: HomeColors.bubbleLine),
             boxShadow: AppShadows.low,
           ),
           child: ProfileAvatar(gender: profile.gender, size: 112),
@@ -148,6 +152,7 @@ class _CategoryGrid extends StatelessWidget {
                   if (i > 0) const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: AppCard(
+                      borderColor: HomeColors.bubbleLine,
                       onTap: () => _open(context, category),
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.xs,
@@ -156,7 +161,11 @@ class _CategoryGrid extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(category.icon, size: 28, color: AppColors.ink),
+                          Icon(
+                            category.icon,
+                            size: 28,
+                            color: HomeColors.accent,
+                          ),
                           const SizedBox(height: AppSpacing.sm),
                           Text(
                             category.label,
@@ -179,13 +188,14 @@ class _CategoryGrid extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
         ],
         AppCard(
+          borderColor: HomeColors.bubbleLine,
           onTap: () => _open(context, LifeStoryCategory.other),
           child: Row(
             children: [
               Icon(
                 LifeStoryCategory.other.icon,
                 size: 28,
-                color: AppColors.ink,
+                color: HomeColors.accent,
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -238,7 +248,11 @@ class _RecentList extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
                 child: Row(
                   children: [
-                    AppChip(story.category.label, tone: ChipTone.strong),
+                    AppChip(
+                      story.category.label,
+                      tone: ChipTone.strong,
+                      accent: HomeColors.accent,
+                    ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Text(

@@ -52,8 +52,13 @@ class LifeStoryCoverScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 바탕은 홈과 같은 오프화이트다. 책과 꽃잎은 원래 색을 둔다.
     return Scaffold(
-      appBar: const AppTopBar(title: '일대기'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        title: '일대기',
+        backgroundColor: HomeColors.background,
+      ),
       body: LifeStoryBookLoader(
         // 제목, 책, 편수를 한 덩어리로 묶어 화면 가운데에 둔다. 화면이 낮으면
         // 책이 줄어든다.

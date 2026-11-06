@@ -15,8 +15,10 @@ class LifeStoryCategoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: LifeStoryBookLoader(
         builder: (context, book) {
           final stories = book.storiesIn(category);
@@ -38,7 +40,7 @@ class LifeStoryCategoryScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                   decoration: const BoxDecoration(
                     border: Border(
-                      bottom: BorderSide(color: AppColors.ink, width: 2),
+                      bottom: BorderSide(color: HomeColors.accent, width: 2),
                     ),
                   ),
                   child: const Text('목차', style: AppTypography.bodyStrong),
@@ -82,7 +84,12 @@ class _TocItem extends StatelessWidget {
             children: [
               SizedBox(
                 width: 32,
-                child: Text('$number', style: AppTypography.bodyStrong),
+                child: Text(
+                  '$number',
+                  style: AppTypography.bodyStrong.copyWith(
+                    color: HomeColors.accent,
+                  ),
+                ),
               ),
               Expanded(child: Text(story.title, style: AppTypography.body)),
               if (story.createdAt case final createdAt?) ...[

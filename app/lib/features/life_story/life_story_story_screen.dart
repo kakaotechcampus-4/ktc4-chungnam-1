@@ -121,9 +121,12 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
     final book = ref.watch(lifeStoryBookProvider).value;
     final story = book?.find(_storyId) ?? _leavingWith;
 
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
+      backgroundColor: HomeColors.background,
       appBar: AppTopBar(
         title: '목차로',
+        backgroundColor: HomeColors.background,
         actions: [
           if (book != null && story != null) ...[
             IconButton(
@@ -221,11 +224,11 @@ class _StoryPage extends StatelessWidget {
   }
 }
 
-/// 이전, 다음 이야기 버튼. 넘길 이야기가 있으면 검정 면에 흰 글자이고,
-/// 없으면 회색 면에 흐린 글자라 누를 수 없다는 것이 바로 보인다.
+/// 이전, 다음 이야기 버튼. 넘길 이야기가 있으면 초록 면에 흰 글자이고,
+/// 없으면 연초록 면에 흐린 글자라 누를 수 없다는 것이 바로 보인다.
 ///
-/// 검정 면 버튼은 화면에 하나만 두는 것이 원칙(`app/DESIGN.md`)이지만, 여기는
-/// 누를 수 있는지를 한눈에 가리는 것이 더 중요해 둘 다 검정 면으로 둔다.
+/// 주 버튼 면은 화면에 하나만 두는 것이 원칙(`app/DESIGN.md`)이지만, 여기는
+/// 누를 수 있는지를 한눈에 가리는 것이 더 중요해 둘 다 초록 면으로 둔다.
 class _PageButton extends StatelessWidget {
   const _PageButton({required this.label, required this.onPressed});
 
@@ -241,9 +244,9 @@ class _PageButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
+          backgroundColor: HomeColors.accent,
           foregroundColor: AppColors.background,
-          disabledBackgroundColor: AppColors.surface,
+          disabledBackgroundColor: HomeColors.bubble,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
           padding: const EdgeInsets.symmetric(
