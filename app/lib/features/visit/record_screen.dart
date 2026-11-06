@@ -188,11 +188,13 @@ class _Intro extends ConsumerWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        // 제목, 보관 안내와 마이크 원을 한 묶음으로 보고 본문 가운데에 둔다.
-        // 위아래 빈 자리를 같게 나누고, 맨 아래 여백(lg)과 같은 만큼 위에도
-        // 둔다. 실패 안내가 뜨면 그만큼 묶음이 위로 올라간다.
+        // 제목, 보관 안내와 마이크 원을 한 묶음으로 보고 상단바와 아래 버튼
+        // 사이의 가운데에 둔 뒤, 글만 조금 위로 올린다(아래 간격 설명). 본문은 버튼 위 여백(ScreenBody 의 lg)만큼
+        // 버튼보다 위에서 끝나고, 맨 아래에도 lg 를 둔다. 그래서 위에는 그
+        // 둘을 더한 만큼(lg + lg)을 두어 위아래 빈 자리를 같게 한다. 실패
+        // 안내가 뜨면 그만큼 묶음이 위로 올라간다.
         children: [
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.lg),
           const Spacer(),
           const Text(
             '소중한 대화 내용을\n놓치지 않게 녹음할게요',
@@ -205,7 +207,9 @@ class _Intro extends ConsumerWidget {
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.xxxl + AppSpacing.sm),
+          // 마이크 원은 그 자리에 두고 글만 32 올린다. 글과 원 사이를 32
+          // 늘리고 맨 아래 여백도 32 늘리면 원은 그대로, 글만 위로 간다.
+          const SizedBox(height: AppSpacing.xxxl * 2 + AppSpacing.xxl),
 
           Center(
             child: Container(
@@ -226,7 +230,7 @@ class _Intro extends ConsumerWidget {
             _ProblemNotice(problem: problem),
           ],
 
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xxl),
         ],
       ),
     );

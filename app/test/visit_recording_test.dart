@@ -292,6 +292,30 @@ void main() {
       expect(uploads.uploaded[FakeVisitApi.sessionId]?.participantCount, 2);
     });
 
+    testWidgets('녹음 전 안내 묶음은 상단바와 버튼 사이 가운데에서 글만 조금 위다', (tester) async {
+      // 기준 화면 412 x 917 dp 다(`app/README.md`).
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final (container, _, _) = await showScreen(tester, start: false);
+
+      final top = tester.getTopLeft(find.text('소중한 대화 내용을\n놓치지 않게 녹음할게요')).dy;
+      final mic = find.ancestor(
+        of: find.byIcon(Icons.mic),
+        matching: find.byType(Container),
+      );
+      final bottom = tester.getBottomLeft(mic.first).dy;
+      final barBottom = tester.getBottomLeft(find.byType(AppBar)).dy;
+      final buttonTop = tester
+          .getTopLeft(find.widgetWithText(FilledButton, '네, 좋아요'))
+          .dy;
+      // 묶음을 가운데에 둔 뒤 글만 32 올려 묶음 가운데는 16 위에 있다.
+      // 마이크 원은 묶음이 정가운데일 때의 자리 그대로다.
+      expect((top + bottom) / 2, closeTo((barBottom + buttonTop) / 2 - 16, 1));
+
+      await leaveScreen(tester, container);
+    });
+
     testWidgets('녹음 전 안내에서 나가도 상태 수정 오류가 나지 않는다', (tester) async {
       final (container, _, recorder) = await showScreen(tester, start: false);
       expect(find.text('네, 좋아요'), findsOneWidget);
