@@ -36,6 +36,25 @@ class _ProfileWithDetails extends CareProfilesNotifier {
   );
 }
 
+/// 이름이 아주 긴 어르신. 앨범 표지가 깨지지 않는지 본다.
+class _LongNameProfile extends CareProfilesNotifier {
+  @override
+  CareProfiles build() => const CareProfiles(
+    entries: [
+      CareProfileEntry(
+        id: sampleProfileId,
+        basicInfo: EnteredBasicInfo(
+          name: '남궁가나다라마바사아자차카',
+          gender: 'female',
+          birthDate: '1943-03-12',
+          stage: ConditionStage.mildDementia,
+        ),
+      ),
+    ],
+    selectedId: sampleProfileId,
+  );
+}
+
 /// 새 이야기의 그림을 늘 3번으로 미리 고른다.
 class _FixedRandom implements Random {
   @override
@@ -199,6 +218,7 @@ void main() {
       String location, {
       bool reduceMotion = false,
       double textScale = 1,
+      CareProfilesNotifier Function() profiles = _ProfileWithDetails.new,
     }) async {
       tester.view.physicalSize = const Size(1236, 2751);
       tester.view.devicePixelRatio = 3;
@@ -211,7 +231,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              careProfilesProvider.overrideWith(_ProfileWithDetails.new),
+              careProfilesProvider.overrideWith(profiles),
               lifeStoryRandomProvider.overrideWithValue(_FixedRandom()),
             ],
             child: MaterialApp.router(
@@ -247,12 +267,13 @@ void main() {
 
       expect(find.text('쌓아온 이야기'), findsOneWidget);
       expect(find.text('책을 눌러 펼쳐 보세요'), findsOneWidget);
-      expect(find.text('김새록님의'), findsOneWidget);
-      // 책 표지의 `일대기`. 상단바 제목과 하단 탭에도 같은 글자가 있다.
+      // 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나눈다.
+      expect(find.text('김새록 님의'), findsOneWidget);
+      // 책 표지는 `앨범`이다. 상단바 제목과 하단 탭은 `일대기`다.
       expect(
         find.descendant(
-          of: find.bySemanticsLabel('일대기 책 펼치기'),
-          matching: find.text('일대기'),
+          of: find.bySemanticsLabel('앨범 펼치기'),
+          matching: find.text('앨범'),
         ),
         findsOneWidget,
       );
@@ -268,7 +289,7 @@ void main() {
     testWidgets('책을 누르면 펼친 장으로 가고 돌아오면 표지가 다시 덮인다', (tester) async {
       await openAt(tester, AppRoutes.album);
 
-      await tapAndSettle(tester, find.bySemanticsLabel('일대기 책 펼치기'));
+      await tapAndSettle(tester, find.bySemanticsLabel('앨범 펼치기'));
 
       expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
       expect(find.text('김새록'), findsOneWidget);
@@ -277,13 +298,14 @@ void main() {
       await tester.tap(find.byTooltip('뒤로'));
       await tester.pumpAndSettle();
 
-      expect(find.text('김새록님의'), findsOneWidget);
+      // 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나눈다.
+      expect(find.text('김새록 님의'), findsOneWidget);
     });
 
     testWidgets('애니메이션 줄이기가 켜져 있으면 표지를 넘기지 않고 바로 간다', (tester) async {
       await openAt(tester, AppRoutes.album, reduceMotion: true);
 
-      await tester.tap(find.bySemanticsLabel('일대기 책 펼치기'));
+      await tester.tap(find.bySemanticsLabel('앨범 펼치기'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
@@ -409,6 +431,20 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('가족 9'), findsOneWidget);
+    });
+
+    testWidgets('이름이 길어도 앨범 표지가 깨지지 않는다', (tester) async {
+      for (final scale in [1.0, 2.0]) {
+        await openAt(
+          tester,
+          AppRoutes.album,
+          textScale: scale,
+          profiles: _LongNameProfile.new,
+        );
+        expect(tester.takeException(), isNull, reason: '글자 $scale배');
+        expect(find.text('남궁가나다라마바사아자차카 님의'), findsOneWidget);
+        expect(find.text('앨범'), findsOneWidget);
+      }
     });
 
     testWidgets('글자를 두 배로 키워도 깨지지 않는다', (tester) async {

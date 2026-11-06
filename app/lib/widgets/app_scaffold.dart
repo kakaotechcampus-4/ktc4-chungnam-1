@@ -9,10 +9,14 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
     this.onBack,
     this.showBack = true,
     this.actions,
+    this.backgroundColor,
     super.key,
   });
 
   final String? title;
+
+  /// 화면 바탕이 흰색이 아닌 화면에서 바탕과 맞춘다. 없으면 테마의 흰색이다.
+  final Color? backgroundColor;
 
   /// 지정하지 않으면 이전 화면으로 돌아간다.
   final VoidCallback? onBack;
@@ -31,6 +35,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
     final visible = showBack && (onBack != null || canPop);
 
     return AppBar(
+      backgroundColor: backgroundColor,
       leading: visible
           ? IconButton(
               onPressed: onBack ?? () => Navigator.maybePop(context),

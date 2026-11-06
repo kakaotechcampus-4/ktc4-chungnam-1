@@ -200,7 +200,7 @@ void defineAppJourneyTests() {
       await app.tap(find.text('일대기'));
       await app.tap(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == '일대기 책 펼치기',
+          (w) => w is Semantics && w.properties.label == '앨범 펼치기',
         ),
       );
       await app.tap(find.text(journeyProposalTitle));
