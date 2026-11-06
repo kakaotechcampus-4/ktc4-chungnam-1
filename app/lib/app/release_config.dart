@@ -15,6 +15,7 @@ import '../data/auth_api.dart' show apiBaseUrl;
 import '../design/theme.dart';
 import '../features/auth/google_authenticator.dart' show googleServerClientId;
 import '../widgets/app_states.dart';
+import 'app_locale.dart';
 
 /// 릴리스 빌드에서 고쳐야 할 설정 하나.
 ///
@@ -113,6 +114,9 @@ class ReleaseConfigErrorApp extends StatelessWidget {
       title: '새록',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      locale: appLocale,
+      supportedLocales: appSupportedLocales,
+      localizationsDelegates: appLocalizationsDelegates,
       home: Scaffold(
         body: SafeArea(child: ErrorStateView(message: lines.join('\n'))),
       ),
