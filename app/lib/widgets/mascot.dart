@@ -41,6 +41,7 @@ class Mascot extends StatefulWidget {
     this.controller,
     this.onReact,
     this.cheerful = false,
+    this.hopping = false,
   });
 
   /// 정사각 영역의 한 변. 그림자는 이 영역 안 아래쪽에 그린다.
@@ -56,6 +57,10 @@ class Mascot extends StatefulWidget {
   /// 않는다. 홈은 카드 완성 말풍선이 떠 있는 동안 켠다. 눌렀을 때의 반응은
   /// 그대로 한다.
   final bool cheerful;
+
+  /// `true` 면 떠 있는 대신 제자리에서 천천히 콩콩 뛰고, 뛸 때마다 하트가 한두
+  /// 개 떠오른다. 누름에는 반응하지 않는다. 온보딩에서 [cheerful] 과 함께 쓴다.
+  final bool hopping;
 
   /// `false` 면 떠 있기와 둘러보기를 하지 않는다. 끝나지 않는 움직임이
   /// 화면이 멈추기를 기다리는 위젯 테스트를 막으므로
@@ -109,6 +114,12 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     duration: const Duration(milliseconds: 1300),
   );
 
+  /// 콩콩 한 번. 뒤쪽은 쉬는 시간이라 너무 빨리 뛰지 않는다.
+  late final AnimationController _hop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1250),
+  )..addStatusListener(_onHopStatus);
+
   MascotPhase _phase = MascotPhase.idle;
   String _lookAsset = Mascot.lookLeftAsset;
   Duration _swap = _quickSwap;
@@ -135,11 +146,36 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
       }
     }
     _still = !Mascot.motion || MediaQuery.disableAnimationsOf(context);
-    if (_still) {
+    _syncMotion();
+  }
+
+  /// 떠 있기와 콩콩 중 지금 맞는 것을 돌린다.
+  void _syncMotion() {
+    final hop = widget.hopping && !_still;
+    final float = !widget.hopping && !_still;
+    if (float && !_float.isAnimating) {
+      _float.repeat(reverse: true);
+    } else if (!float) {
       _float.stop();
       _float.value = 0;
-    } else if (!_float.isAnimating) {
-      _float.repeat(reverse: true);
+    }
+    if (hop && !_hop.isAnimating) {
+      _hopOnce();
+    } else if (!hop) {
+      _hop.stop();
+      _hop.value = 0;
+    }
+  }
+
+  void _hopOnce() {
+    _spawnHearts();
+    _heart.forward(from: 0);
+    _hop.forward(from: 0);
+  }
+
+  void _onHopStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && widget.hopping && !_still) {
+      _hopOnce();
     }
   }
 
@@ -152,6 +188,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     }
     // 신나는 얼굴과 평소 얼굴을 오갈 때는 천천히 바꾼다.
     if (oldWidget.cheerful != widget.cheerful) _swap = _successSwap;
+    if (oldWidget.hopping != widget.hopping) _syncMotion();
   }
 
   @override
@@ -162,6 +199,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     _tap.dispose();
     _success.dispose();
     _heart.dispose();
+    _hop.dispose();
     super.dispose();
   }
 
@@ -196,6 +234,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     // 다른 화면이 위에 있으면 보이지 않으므로 다음으로 미룬다.
     if (_phase != MascotPhase.idle ||
         widget.cheerful ||
+        widget.hopping ||
         !TickerMode.valuesOf(context).enabled) {
       _scheduleLook();
       return;
@@ -210,12 +249,8 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
     });
   }
 
-  void _onTap() {
-    // 반응 중이거나 축하 중이면 겹치지 않게 무시한다.
-    if (_phase == MascotPhase.tapReaction || _phase == MascotPhase.success) {
-      return;
-    }
-    _lookTimer?.cancel();
+  /// 하트를 한두 개 새로 정한다.
+  void _spawnHearts() {
     _hearts = [
       for (var i = 0, n = 1 + _random.nextInt(2); i < n; i++)
         _Heart(
@@ -227,6 +262,17 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
           size: 0.075 + _random.nextDouble() * 0.02,
         ),
     ];
+  }
+
+  void _onTap() {
+    // 반응 중이거나 축하 중, 콩콩 뛰는 중이면 겹치지 않게 무시한다.
+    if (_phase == MascotPhase.tapReaction ||
+        _phase == MascotPhase.success ||
+        widget.hopping) {
+      return;
+    }
+    _lookTimer?.cancel();
+    _spawnHearts();
     _setPhase(MascotPhase.tapReaction);
     _tap.forward(from: 0);
     _heart.forward(from: 0);
@@ -274,6 +320,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
   /// 몸의 가로 배율, 세로 배율, 위로 뜬 높이(한 변에 대한 비율, 위가 음수).
   _Pose get _pose {
     if (_still) return const _Pose();
+    if (widget.hopping) return _hopFrames.at(_hop.value);
     final floatT = Curves.easeInOutSine.transform(_float.value);
     final floating = _Pose(dy: -0.035 * floatT);
     return switch (_phase) {
@@ -293,7 +340,7 @@ class _MascotState extends State<Mascot> with TickerProviderStateMixin {
         child: SizedBox.square(
           dimension: size,
           child: AnimatedBuilder(
-            animation: Listenable.merge([_float, _tap, _success, _heart]),
+            animation: Listenable.merge([_float, _tap, _success, _heart, _hop]),
             builder: (context, _) {
               final pose = _pose;
               // 얼마나 떠 있는지(0~1). 그림자 크기와 진하기에 쓴다.
@@ -472,6 +519,18 @@ const _tapFrames = _Frames([
 
 /// 성공: 살짝 움츠렸다가 천천히 크게 통, 작게 통, 더 작게 통. 그다음 그대로
 /// 웃는다. 전체 2.6초라 한 번 뛰는 데 0.5초쯤 걸린다.
+/// 콩콩: 살짝 움츠렸다가 통 뛰어올라 내려오고, 작게 눌렸다 펴진 뒤 쉰다.
+/// 전체 1.25초 중 뒤 3분의 1은 쉬어서 차분하게 뛴다.
+const _hopFrames = _Frames([
+  (t: 0, pose: _Pose(), curve: Curves.linear),
+  (t: 0.1, pose: _Pose(sx: 1.06, sy: 0.92), curve: Curves.easeOut),
+  (t: 0.32, pose: _Pose(sx: 0.97, sy: 1.04, dy: -0.11), curve: Curves.easeOut),
+  (t: 0.52, pose: _Pose(), curve: Curves.easeIn),
+  (t: 0.58, pose: _Pose(sx: 1.05, sy: 0.94), curve: Curves.easeOut),
+  (t: 0.68, pose: _Pose(), curve: Curves.easeOut),
+  (t: 1, pose: _Pose(), curve: Curves.linear),
+]);
+
 const _successFrames = _Frames([
   (t: 0, pose: _Pose(), curve: Curves.linear),
   (t: 0.07, pose: _Pose(sx: 1.05, sy: 0.93), curve: Curves.easeOut),
