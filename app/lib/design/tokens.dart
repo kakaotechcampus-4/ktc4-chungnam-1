@@ -16,6 +16,10 @@ abstract final class AppColors {
   /// 비활성 글자. 흰 배경 대비 4.5:1 로 하한이다.
   static const textDisabled = Color(0xFF767676);
 
+  /// 고르지 않은 선택 표시(빈 원)의 테두리. 누를 수 있는 자리를 알리는 그림의
+  /// 하한(흰 배경 3:1)을 지키는 가장 연한 회색이다(3.03:1). 글자에는 쓰지 않는다.
+  static const selectionRing = Color(0xFF949494);
+
   /// 구분선과 테두리.
   static const line = Color(0xFFE0E0E0);
 

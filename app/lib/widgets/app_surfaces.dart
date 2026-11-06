@@ -171,9 +171,11 @@ class SelectionMark extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected ? AppColors.ink : AppColors.background,
         shape: BoxShape.circle,
+        // 빈 원은 3:1 하한을 지키는 가장 연한 회색과 가는 선으로 둔다. 너무
+        // 진해 카드 내용보다 눈에 띄었다.
         border: Border.all(
-          color: selected ? AppColors.ink : AppColors.textDisabled,
-          width: 2,
+          color: selected ? AppColors.ink : AppColors.selectionRing,
+          width: selected ? 2 : 1.5,
         ),
       ),
       child: selected
