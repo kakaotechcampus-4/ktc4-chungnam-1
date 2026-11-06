@@ -416,14 +416,31 @@ void main() {
 
     const needsConsent = '아래 알림 수신 동의에 체크해야 알림을 켤 수 있어요.';
 
-    testWidgets('알림 수신 동의 없이 알림을 켜려 하면 빨간 글로 알리고 켜지 않는다', (tester) async {
+    List<Object?> patches(_FakeAccountServer server) => [
+      for (final r in server.requests)
+        if (r.method == 'PATCH') r.body,
+    ];
+
+    testWidgets('스위치를 끄면 알림 수신 동의를 바로 거둔다', (tester) async {
       final server = _FakeAccountServer();
       await open(tester, server);
       expect(alertOn(tester), isTrue, reason: '동의했으면 켜진 채로 시작한다');
 
-      // 동의를 빼면 알림도 꺼진다.
-      await tester.tap(find.textContaining('알림 수신 동의', findRichText: true));
-      await tester.pump();
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+
+      expect(patches(server), [
+        {'pushNotification': false},
+      ], reason: '알림 동의만 보내고 저장하기를 기다리지 않는다');
+      expect(server.consent['pushNotification'], isFalse);
+      expect(alertOn(tester), isFalse);
+      expect(checked(tester, '알림 수신 동의'), isFalse);
+      expect(find.text('알림을 껐어요.'), findsOneWidget);
+    });
+
+    testWidgets('알림 수신 동의 없이 알림을 켜려 하면 빨간 글로 알리고 켜지 않는다', (tester) async {
+      final server = _FakeAccountServer()..consent['pushNotification'] = false;
+      await open(tester, server);
       expect(alertOn(tester), isFalse);
       expect(find.text(needsConsent), findsNothing);
 
@@ -431,23 +448,55 @@ void main() {
       await settle(tester);
       expect(alertOn(tester), isFalse);
       expect(find.text(needsConsent), findsOneWidget);
+      expect(patches(server), isEmpty);
 
-      // 동의에 체크하면 안내가 사라지고 켤 수 있다. 안내 글에도 같은 이름이
-      // 있어 아래의 동의 줄을 누른다.
+      // 동의에 체크하면 안내가 사라진다. 저장하기 전이라 알림은 아직 꺼져 있다.
+      // 안내 글에도 같은 이름이 있어 아래의 동의 줄을 누른다.
       await tester.tap(
         find.textContaining('알림 수신 동의', findRichText: true).last,
       );
       await tester.pump();
       expect(find.text(needsConsent), findsNothing);
-      expect(alertOn(tester), isTrue, reason: '동의에 체크하면 알림도 같이 켜진다');
+      expect(alertOn(tester), isFalse, reason: '저장하지 않은 동의로 켜지지 않는다');
 
-      // 동의는 둔 채 스위치만 끄고 켤 수 있다.
+      // 체크한 채 스위치를 켜면 동의를 바로 저장한다.
       await tester.tap(find.byType(Switch));
-      await tester.pump();
-      expect(alertOn(tester), isFalse);
-      await tester.tap(find.byType(Switch));
-      await tester.pump();
+      await settle(tester);
+      expect(patches(server), [
+        {'pushNotification': true},
+      ]);
       expect(alertOn(tester), isTrue);
+      expect(find.text('알림을 켰어요.'), findsOneWidget);
+    });
+
+    testWidgets('알림을 끄지 못하면 알리고 켜진 채로 둔다', (tester) async {
+      final server = _FakeAccountServer()..patchOffline = true;
+      await open(tester, server);
+
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+
+      expect(
+        find.text('서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.'),
+        findsOneWidget,
+      );
+      expect(server.consent['pushNotification'], isTrue);
+      expect(alertOn(tester), isTrue, reason: '알림은 계속 온다');
+      expect(checked(tester, '알림 수신 동의'), isTrue);
+    });
+
+    testWidgets('저장하기로 알림 수신 동의를 거두면 스위치도 꺼진다', (tester) async {
+      final server = _FakeAccountServer();
+      await open(tester, server);
+
+      await tester.tap(find.textContaining('알림 수신 동의', findRichText: true));
+      await tester.pump();
+      expect(alertOn(tester), isTrue, reason: '저장하기 전에는 그대로다');
+
+      await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
+      await settle(tester);
+      expect(server.consent['pushNotification'], isFalse);
+      expect(alertOn(tester), isFalse);
     });
 
     testWidgets('계정 약관 동의에는 알림 쓰임새 문구를 두지 않는다', (tester) async {

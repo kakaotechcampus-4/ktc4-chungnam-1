@@ -19,23 +19,6 @@ import '../auth/consent_terms.dart';
 import '../profile_setup/setup_controller.dart';
 import '../push/push_registration.dart';
 
-/// 리포트 완성 알림을 켰는지. `null` 이면 아직 고르지 않아 알림 수신 동의를
-/// 따른다.
-///
-/// 서버에 알림 설정을 저장하는 API 가 없고 앱은 아직 알림을 보내지 않는다.
-/// 그래서 앱을 켜 둔 동안만 기억한다. 어디에 저장할지는 PM, BE 와 정한다.
-final reportAlertOnProvider = NotifierProvider<ReportAlertOn, bool?>(
-  ReportAlertOn.new,
-);
-
-class ReportAlertOn extends Notifier<bool?> {
-  @override
-  bool? build() => null;
-
-  // ignore: use_setters_to_change_properties
-  void set(bool on) => state = on;
-}
-
 /// 설정. 하단 탭 맨 오른쪽의 톱니바퀴로 들어온다.
 ///
 /// 알림 설정과 계정 약관 동의 두 구역이다. 동의는 어르신마다가 아니라 보호자
@@ -103,6 +86,18 @@ class _BodyState extends ConsumerState<_Body>
   /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
   bool _saving = false;
 
+  /// 알림 스위치. 서버에 저장된 알림 수신 동의(1-6 `pushNotification`)다.
+  ///
+  /// 리포트 완료 알림은 이 동의로만 정한다. 동의가 있으면 앱이 기기를 등록하고
+  /// (`push_registration.dart`), 동의를 거두면 서버가 그 계정의 기기 등록을 같은
+  /// 트랜잭션에서 지운다. 그래서 스위치는 따로 기억하지 않고 이 동의를 바로
+  /// 저장한다. 아래 체크만 하고 저장하지 않은 동안에는 켜지지 않는다.
+  bool get _alertOn =>
+      _offlineAlert ?? widget.account.consent[_pushKey]?.granted ?? false;
+
+  /// 로그인하지 않은 목 모드에서 바꾼 스위치. 서버가 없어 화면에서만 기억한다.
+  bool? _offlineAlert;
+
   /// 동의 없이 알림을 켜려 했다. 빨간 안내와 동의 줄 강조를 보인다.
   bool _needsConsent = false;
 
@@ -140,13 +135,49 @@ class _BodyState extends ConsumerState<_Body>
 
   // ── 알림 설정 ──────────────────────────────────
 
+  /// 스위치를 켜고 끈다. 켤 때는 아래 알림 수신 동의에 체크해 두어야 한다.
+  /// 끄면 그 동의도 함께 거둔다. 어느 쪽이든 동의를 바로 저장한다(1-6).
   void _setAlert(bool on) {
+    if (_saving) return;
     if (on && !_pushAgreed) {
       setState(() => _needsConsent = true);
       unawaited(_pointAtConsent());
       return;
     }
-    ref.read(reportAlertOnProvider.notifier).set(on);
+    if (!on) setState(() => _agreed.remove(_pushKey));
+    unawaited(_saveAlert(on));
+  }
+
+  /// 알림 수신 동의만 서버에 저장한다. 다른 동의는 저장하기로 따로 저장한다.
+  Future<void> _saveAlert(bool on) async {
+    if (ref.read(sessionProvider) == null) {
+      // 로그인하지 않은 목 모드는 서버도 알림도 없다. 화면에서만 바꾼다.
+      setState(() => _offlineAlert = on);
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _saving = true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await ref.read(accountApiProvider).updateConsents({_pushKey: on});
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        // 끄지 못했으면 체크를 되돌린다. 알림은 계속 온다.
+        if (!on) _agreed.add(_pushKey);
+      });
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
+      return;
+    }
+    // 서버의 새 동의를 다시 읽는다. 기기 등록도 이 값을 따라 바뀐다.
+    container.invalidate(accountProvider);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(on ? '알림을 켰어요.' : '알림을 껐어요.')));
+    if (mounted) setState(() => _saving = false);
   }
 
   /// 알림 수신 동의 줄을 보이는 자리로 끌어와 두 번 깜빡인다.
@@ -186,12 +217,7 @@ class _BodyState extends ConsumerState<_Body>
       }
       if (_pushAgreed) _needsConsent = false;
     });
-    if (key == _pushKey) _syncAlert();
   }
-
-  /// 알림 수신 동의를 누르면 알림 스위치도 같이 켜고 끈다.
-  void _syncAlert() =>
-      ref.read(reportAlertOnProvider.notifier).set(_pushAgreed);
 
   void _toggleAll(bool? value) {
     setState(() {
@@ -202,7 +228,6 @@ class _BodyState extends ConsumerState<_Body>
       }
       if (_pushAgreed) _needsConsent = false;
     });
-    _syncAlert();
   }
 
   /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 저장하지 못하면
@@ -241,9 +266,6 @@ class _BodyState extends ConsumerState<_Body>
 
   @override
   Widget build(BuildContext context) {
-    // 동의가 없으면 알림은 늘 꺼져 있다.
-    final alertOn = _pushAgreed && (ref.watch(reportAlertOnProvider) ?? true);
-
     return ScreenBody(
       scrollable: true,
       child: Column(
@@ -270,8 +292,8 @@ class _BodyState extends ConsumerState<_Body>
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Switch(
-                  value: alertOn,
-                  onChanged: _setAlert,
+                  value: _alertOn,
+                  onChanged: _saving ? null : _setAlert,
                   activeTrackColor: HomeColors.accent,
                 ),
               ],
