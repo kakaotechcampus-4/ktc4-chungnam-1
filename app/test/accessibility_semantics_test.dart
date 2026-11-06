@@ -340,7 +340,7 @@ void main() {
       expect(groupCenter, closeTo((barBottom + buttonsTop) / 2, 2));
 
       // 경계에 띄운 버튼이 받은 자리를 다 채워 세로로 길어지지 않는다.
-      for (final label in ['다음 카드', '첫 카드']) {
+      for (final label in ['다음 카드', '이전 카드']) {
         final size = tester.getSize(find.bySemanticsLabel(label));
         expect(size.height, inInclusiveRange(64, 80), reason: label);
         expect(size.width, lessThan(200), reason: label);

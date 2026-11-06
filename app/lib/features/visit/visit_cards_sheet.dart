@@ -181,7 +181,9 @@ class _CardsState extends ConsumerState<_Cards> {
                         sortKey: const OrdinalSortKey(2),
                         child: _CardStepButton(
                           forward: false,
-                          enabled: !state.isFirstCard,
+                          // 끝에서 처음으로 돌아가므로 카드가 두 장 이상이면
+                          // 늘 누를 수 있다.
+                          enabled: state.cards.length > 1,
                           onTap: controller.previousCard,
                         ),
                       ),
@@ -190,7 +192,7 @@ class _CardsState extends ConsumerState<_Cards> {
                         sortKey: const OrdinalSortKey(3),
                         child: _CardStepButton(
                           forward: true,
-                          enabled: !state.isLastCard,
+                          enabled: state.cards.length > 1,
                           onTap: controller.nextCard,
                         ),
                       ),
@@ -642,12 +644,11 @@ class _CardStepButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = forward ? (enabled ? '다음' : '마지막') : (enabled ? '이전' : '처음');
+    // 마지막 다음은 첫 카드, 첫 카드 이전은 마지막 카드로 돌아 끝이 없다.
+    final label = forward ? '다음' : '이전';
     // 보이는 글자만으로는 무엇의 다음인지 알 수 없어 화면 낭독기에는 카드라는
     // 것을 붙여 읽는다.
-    final semanticLabel = forward
-        ? (enabled ? '다음 카드' : '마지막 카드')
-        : (enabled ? '이전 카드' : '첫 카드');
+    final semanticLabel = forward ? '다음 카드' : '이전 카드';
 
     final Color background;
     final Color foreground;
@@ -673,9 +674,7 @@ class _CardStepButton extends StatelessWidget {
     }
 
     final icon = Icon(
-      forward
-          ? (enabled ? Icons.chevron_right : Icons.check)
-          : Icons.chevron_left,
+      forward ? Icons.chevron_right : Icons.chevron_left,
       size: 28,
       color: foreground,
     );

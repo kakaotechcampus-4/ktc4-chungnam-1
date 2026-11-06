@@ -568,18 +568,19 @@ class VisitController extends AsyncNotifier<VisitState> {
     state = AsyncData(change(now));
   }
 
-  /// 다음 카드로 넘어간다. 마지막 카드면 아무것도 하지 않는다.
+  /// 다음 카드로 넘어간다. 마지막 카드면 첫 카드로 돌아간다.
   void nextCard() {
     final current = state.value;
-    if (current == null) return;
-    goToCard(current.currentIndex + 1);
+    if (current == null || current.cards.isEmpty) return;
+    goToCard((current.currentIndex + 1) % current.cards.length);
   }
 
-  /// 앞 카드로 돌아간다. 첫 카드면 아무것도 하지 않는다.
+  /// 앞 카드로 돌아간다. 첫 카드면 마지막 카드로 간다.
   void previousCard() {
     final current = state.value;
-    if (current == null) return;
-    goToCard(current.currentIndex - 1);
+    if (current == null || current.cards.isEmpty) return;
+    final count = current.cards.length;
+    goToCard((current.currentIndex - 1 + count) % count);
   }
 
   /// [index] 번째 카드로 옮긴다. 범위 밖이거나 지금 카드면 그대로 둔다.

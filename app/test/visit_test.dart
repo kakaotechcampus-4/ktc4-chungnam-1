@@ -97,7 +97,7 @@ void main() {
   });
 
   group('면회 진행', () {
-    test('마지막 카드에서는 다음으로 넘어가지 않는다', () async {
+    test('마지막 카드에서 다음을 누르면 첫 카드로 돌아간다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
@@ -108,10 +108,10 @@ void main() {
       expect(state.isLastCard, isTrue);
 
       controller.nextCard();
-      expect(container.read(visitControllerProvider).value!.currentIndex, 1);
+      expect(container.read(visitControllerProvider).value!.currentIndex, 0);
     });
 
-    test('이전 카드로 돌아가고, 첫 카드에서는 더 가지 않는다', () async {
+    test('이전 카드로 돌아가고, 첫 카드에서는 마지막 카드로 간다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
@@ -124,7 +124,7 @@ void main() {
 
       controller.previousCard();
       state = container.read(visitControllerProvider).value!;
-      expect(state.currentIndex, 0);
+      expect(state.currentIndex, 1);
     });
 
     test('번호로 원하는 카드에 바로 가고, 꼬리 질문은 처음부터 보인다', () async {
