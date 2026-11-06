@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/auth_api.dart';
 import '../data/providers.dart';
+import '../design/tokens.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
@@ -60,7 +61,11 @@ GoRouter buildRouter() {
           // 다시 띄우면 비어 있으므로, 빈 동의 화면을 보여주지 않고 되돌린다.
           if (pending is! ConsentRequiredResult) {
             return Scaffold(
-              appBar: const AppTopBar(title: '약관 동의'),
+              backgroundColor: HomeColors.background,
+              appBar: const AppTopBar(
+                backgroundColor: HomeColors.background,
+                title: '약관 동의',
+              ),
               body: ErrorStateView(
                 message: '로그인 정보가 없어요.\n로그인부터 다시 해주세요.',
                 onRetry: () => context.go(AppRoutes.signIn),
@@ -244,7 +249,11 @@ GoRouter buildRouter() {
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
-      appBar: const AppTopBar(title: '새록'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '새록',
+      ),
       body: ErrorStateView(
         message: '찾을 수 없는 화면이에요.\n${state.uri}',
         onRetry: () => context.go(AppRoutes.home),
@@ -262,7 +271,8 @@ Widget _withCategory(
   final category = LifeStoryCategory.parse(state.pathParameters['category']!);
   if (category != null) return builder(category);
   return const Scaffold(
-    appBar: AppTopBar(),
+    backgroundColor: HomeColors.background,
+    appBar: AppTopBar(backgroundColor: HomeColors.background),
     body: EmptyStateView(message: '찾을 수 없는 이야기 묶음이에요.'),
   );
 }
@@ -303,6 +313,7 @@ class _TabShell extends ConsumerWidget {
     }
 
     return Scaffold(
+      backgroundColor: HomeColors.background,
       body: child,
       bottomNavigationBar: AppBottomNav(
         current: current,
@@ -345,7 +356,8 @@ class _NeedsProfile extends ConsumerWidget {
     return CareProfilesLoading(
       withTopBar: true,
       child: Scaffold(
-        appBar: const AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
         body: EmptyStateView(
           message: '함께하는 소중한 분을 등록한 뒤\n이용할 수 있어요.',
           icon: Icons.person_add_alt_1_outlined,

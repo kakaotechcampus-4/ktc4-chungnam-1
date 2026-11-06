@@ -108,11 +108,25 @@ class StatusNotice extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (retry) ...[
-                    PrimaryButton(label: primaryLabel!, onPressed: onPrimary),
+                    PrimaryButton(
+                      color: HomeColors.accent,
+                      loadingColor: HomeColors.accentLoading,
+                      label: primaryLabel!,
+                      onPressed: onPrimary,
+                    ),
                     const SizedBox(height: AppSpacing.md),
-                    SecondaryButton(label: '홈으로', onPressed: onHome),
+                    SecondaryButton(
+                      borderColor: HomeColors.outline,
+                      label: '홈으로',
+                      onPressed: onHome,
+                    ),
                   ] else
-                    PrimaryButton(label: '홈으로', onPressed: onHome),
+                    PrimaryButton(
+                      color: HomeColors.accent,
+                      loadingColor: HomeColors.accentLoading,
+                      label: '홈으로',
+                      onPressed: onHome,
+                    ),
                 ],
               ),
             ),

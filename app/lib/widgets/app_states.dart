@@ -75,6 +75,7 @@ class EmptyStateView extends StatelessWidget {
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: AppSpacing.xl),
               SecondaryButton(
+                borderColor: HomeColors.outline,
                 label: actionLabel!,
                 onPressed: onAction,
                 expand: false,
@@ -89,11 +90,7 @@ class EmptyStateView extends StatelessWidget {
 
 /// 오류 안내다. 붉은색을 쓰는 몇 안 되는 자리다.
 class ErrorStateView extends StatelessWidget {
-  const ErrorStateView({
-    required this.message,
-    this.onRetry,
-    super.key,
-  });
+  const ErrorStateView({required this.message, this.onRetry, super.key});
 
   final String message;
   final VoidCallback? onRetry;
@@ -136,6 +133,7 @@ class ErrorStateView extends StatelessWidget {
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.xl),
               SecondaryButton(
+                borderColor: HomeColors.outline,
                 label: '다시 시도',
                 onPressed: onRetry,
                 expand: false,
@@ -171,11 +169,7 @@ class PlaceholderView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.md),
-            Text(
-              detail,
-              style: AppTypography.sub,
-              textAlign: TextAlign.center,
-            ),
+            Text(detail, style: AppTypography.sub, textAlign: TextAlign.center),
           ],
         ),
       ),
