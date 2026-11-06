@@ -9,10 +9,12 @@ from common.llm import ENDPOINTS
 from pydantic import ValidationError
 
 from app.clients.ai_server import AiServerClient
+from app.clients.fcm import FcmClient, ServiceAccount
 from app.core.config import Settings
 from app.core.database import connect
 from app.schemas.visit_report_generation import VisitReportRequest, VisitReportResult
 from app.services.audio_storage import S3AudioStorage
+from app.services.report_notifications import PushReportNotifier, ReportNotifier
 from app.services.speech_analysis_jobs import (
     PostgresSpeechAnalysisJobRepository,
     SpeechAnalysisJob,
@@ -51,6 +53,7 @@ def create_worker(
     database_url = settings.database_url
     lease_seconds = settings.speech_analysis_lease_seconds
     report = None
+    notifier = None
     if not stt_only:
         time_limit = settings.report_generation_time_limit_seconds
         if time_limit + REPORT_SAVE_MARGIN_SECONDS > lease_seconds:
@@ -63,6 +66,7 @@ def create_worker(
             generate=generate or report_generator(settings),
             time_limit_seconds=time_limit,
         )
+        notifier = report_notifier(settings)
     return create_speech_worker(
         jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
             connection, lease_seconds=lease_seconds
@@ -83,6 +87,21 @@ def create_worker(
         lease_seconds=lease_seconds,
         # STT 뒤 같은 작업에서 리포트(8-3)까지 만든다.
         report_generator=report,
+        report_notifier=notifier,
+    )
+
+
+def report_notifier(settings: Settings) -> ReportNotifier | None:
+    """리포트 완료 푸시. 키 파일 경로가 비어 있으면 보내지 않는다.
+
+    경로를 넣었는데 키 파일을 읽지 못하면 worker를 시작하지 않는다. 설정한 푸시가
+    조용히 꺼진 채로 도는 일을 막는다.
+    """
+    if not settings.fcm_credentials_path:
+        return None
+    account = ServiceAccount.from_file(settings.fcm_credentials_path)
+    return PushReportNotifier(
+        FcmClient(account, timeout_seconds=settings.fcm_timeout_seconds)
     )
 
 
