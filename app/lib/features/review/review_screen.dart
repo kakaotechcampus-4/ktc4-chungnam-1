@@ -399,10 +399,12 @@ class _SatisfactionPicker extends StatelessWidget {
                             ? HomeColors.accent
                             : AppColors.background,
                         borderRadius: BorderRadius.circular(AppRadius.card),
+                        // 고르지 않은 칸은 연한 세이지 테두리다. 실기기에서 흰 칸이
+                        // 바탕과 충분히 구분되어 진한 테두리에서 낮췄다(2026-11-07).
                         border: Border.all(
                           color: value == score
                               ? HomeColors.accent
-                              : HomeColors.outline,
+                              : HomeColors.bubbleLine,
                           width: value == score ? 2 : 1,
                         ),
                       ),
@@ -466,7 +468,7 @@ class _ReactionPicker extends StatelessWidget {
                   border: Border.all(
                     color: value == reaction
                         ? HomeColors.accent
-                        : HomeColors.outline,
+                        : HomeColors.bubbleLine,
                     width: value == reaction ? 2 : 1,
                   ),
                 ),

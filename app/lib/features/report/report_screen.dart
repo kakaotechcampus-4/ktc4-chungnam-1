@@ -292,7 +292,13 @@ class _BodyState extends ConsumerState<_Body> {
               if (countText != null) ...[
                 if (cards.summaries.isEmpty)
                   const SizedBox(height: AppSpacing.lg),
-                Text(countText, style: set.sub),
+                Center(
+                  child: Text(
+                    countText,
+                    style: set.sub,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.lg),
               ],
 
