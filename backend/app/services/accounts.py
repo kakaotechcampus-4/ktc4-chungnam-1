@@ -71,7 +71,8 @@ class AccountRepository(Protocol):
     ) -> Account | None:
         """가장 최근 동의 이력을 복사해 `changes` 의 선택 동의만 바꾼 이력을 더한다.
 
-        약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다.
+        약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다. 알림 수신을
+        거두면 그 계정의 푸시 기기 등록(`push_devices`)도 함께 지운다.
         """
         ...
 
@@ -272,6 +273,12 @@ class PostgresAccountRepository:
                     user_id,
                 ),
             )
+            if changes.get("pushNotification") is False:
+                # 알림 수신을 거두면 푸시를 받을 기기 등록(1-7)도 함께 지운다. 발송 때
+                # 동의를 다시 확인하더라도 거둔 계정의 기기 ID 를 남겨 둘 이유가 없다.
+                await self._connection.execute(
+                    "DELETE FROM push_devices WHERE user_id = %s", (user_id,)
+                )
         return await self.get(account_id)
 
     async def delete(
