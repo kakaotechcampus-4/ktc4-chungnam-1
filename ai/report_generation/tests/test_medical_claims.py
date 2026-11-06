@@ -30,3 +30,20 @@ def test_direct_effect_claims_are_flagged(text):
 ])
 def test_medical_topic_and_denial_are_not_effect_claims(text):
     assert not has_medical_effect_claim(text)
+
+
+@pytest.mark.parametrize("text", [
+    "어르신께서 \"치매는 치료할 수 있다더라\"고 말씀하셨어요.",
+    "어르신께서 \"치매는 치료할 수 있습니다.\"라고 말씀하셨어요.",
+    "따님이 이번 대화로 기억력이 회복됐으면 좋겠다고 하셨습니다.",
+    "텔레비전에서 치매를 예방할 수 있다는 운동을 봤다고 하셨어요.",
+    "어르신은 \"새록은 치매를 치료합니다\"라는 광고를 봤다고 하셨어요.",
+])
+def test_quoted_or_reported_speech_is_not_a_claim(text):
+    """어르신이나 가족의 말을 옮긴 문장은 문장 전체가 주장이 아니다(멘토 리뷰 11/5)."""
+    assert not has_medical_effect_claim(text)
+
+
+def test_claim_sentence_is_found_among_other_sentences():
+    text = "고향 이야기를 오래 나눴습니다. 이번 대화는 치매를 치료하는 효과가 있습니다. 다음에도 이어가요."
+    assert has_medical_effect_claim(text)
