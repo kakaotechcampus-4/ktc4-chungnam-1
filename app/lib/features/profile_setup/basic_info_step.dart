@@ -20,8 +20,9 @@ class BasicInfoStep extends StatefulWidget {
   final SetupDraft draft;
   final ValueChanged<SetupDraft> onChanged;
 
-  /// 처음 입력할 때와 프로필 설정에서 고칠 때 제목이 다르다.
-  final String title;
+  /// 처음 입력할 때의 큰 제목. 프로필 설정에서 고칠 때는 상단바에 화면 이름을
+  /// 두므로 `null` 로 넘겨 그리지 않는다.
+  final String? title;
 
   @override
   State<BasicInfoStep> createState() => _BasicInfoStepState();
@@ -43,8 +44,10 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.title, style: AppTypography.screenTitle),
-        const SizedBox(height: AppSpacing.section),
+        if (widget.title case final title?) ...[
+          Text(title, style: AppTypography.screenTitle),
+          const SizedBox(height: AppSpacing.section),
+        ],
 
         AppTextField(
           label: '이름',
@@ -74,7 +77,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
               child: _ChoiceBox(
                 label: '여성',
                 selected: _draft.gender == 'female',
-                onTap: () => widget.onChanged(_draft.copyWith(gender: 'female')),
+                onTap: () =>
+                    widget.onChanged(_draft.copyWith(gender: 'female')),
               ),
             ),
           ],
@@ -113,7 +117,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 value: _draft.birthDay,
                 values: [for (var d = 1; d <= 31; d++) d],
                 suffix: '일',
-                onChanged: (v) => widget.onChanged(_draft.copyWith(birthDay: v)),
+                onChanged: (v) =>
+                    widget.onChanged(_draft.copyWith(birthDay: v)),
               ),
             ),
           ],
@@ -214,7 +219,11 @@ class _RadioRow extends StatelessWidget {
                 ),
               ),
               child: selected
-                  ? const Icon(Icons.check, size: 15, color: AppColors.background)
+                  ? const Icon(
+                      Icons.check,
+                      size: 15,
+                      color: AppColors.background,
+                    )
                   : null,
             ),
             const SizedBox(width: AppSpacing.md),
