@@ -14,6 +14,10 @@ import 'photo_description_store.dart';
 /// 펼쳐지고, 보호자가 직접 고쳐 저장할 수 있다. 설명은 AI 가 만든 후보라서 확인된
 /// 사실처럼 보이지 않게 출처를 함께 적는다. 분석이 끝나지 않은 사진은 설명 대신
 /// 그 상태를 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 적게 한다.
+///
+/// 설명 칸은 높이가 늘어나며 아래에서 살짝 떠오르듯 펼쳐진다. 다 펼쳐지면
+/// 끝까지 내려 칸을 화면 맨 아래에 붙이고, 이미 끝이면 그대로 둔다. 접으면
+/// 펼치기 전 자리로 다시 올라간다. 움직임 줄이기가 켜져 있으면 바로 바꾼다.
 class ProfileGallery extends ConsumerStatefulWidget {
   const ProfileGallery({required this.photos, super.key});
 
@@ -26,7 +30,22 @@ class ProfileGallery extends ConsumerStatefulWidget {
 class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
   static const _columns = 3;
 
+  /// 설명 칸이 펼쳐지고 접히는 시간.
+  static const _unfold = Duration(milliseconds: 280);
+
+  /// 펼친 칸을 보이는 자리로 끌어오거나 되돌리는 시간.
+  static const _scroll = Duration(milliseconds: 350);
+
   String? _selectedId;
+
+  /// 설명 칸을 담는 영역. 펼친 뒤 보이는 자리로 끌어올 때 쓴다.
+  final _panelKey = GlobalKey();
+
+  /// 설명 칸을 열기 전의 스크롤 자리. 접을 때 돌아간다. 닫혀 있으면 `null` 이다.
+  double? _offsetBeforeOpen;
+
+  /// 펼치기가 끝나면 칸을 보이는 자리로 끌어온다.
+  bool _revealWhenUnfolded = false;
   final _text = TextEditingController();
 
   /// 입력칸을 마지막으로 채운 설명. 입력칸이 아직 이 값 그대로면 보호자가 쓰지
@@ -61,16 +80,57 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
       photo.description;
 
   void _toggle(ProfilePhoto photo) {
+    final position = Scrollable.maybeOf(context)?.position;
+    final closing = _selectedId == photo.photoId;
     setState(() {
       _savedId = null;
       _failedId = null;
-      if (_selectedId == photo.photoId) {
+      if (closing) {
         _selectedId = null;
         return;
       }
+      // 처음 열 때의 자리만 기억한다. 다른 사진으로 바꿔도 접으면 여기로 온다.
+      if (_selectedId == null) _offsetBeforeOpen = position?.pixels;
       _selectedId = photo.photoId;
+      _revealWhenUnfolded = true;
       _fill(_currentDescription(photo) ?? '');
     });
+    if (closing) _restoreScroll(position);
+  }
+
+  bool get _still => MediaQuery.disableAnimationsOf(context);
+
+  /// 다 펼쳐지면 설명 칸이 화면 맨 아래에 오도록 끝까지 내린다. 갤러리가
+  /// 화면의 마지막 구역이라 끝까지 내리면 칸이 바닥에 붙고 사진은 그 위에
+  /// 보인다. 이미 끝까지 내려와 있으면 그대로 둔다.
+  void _revealPanel() {
+    if (!_revealWhenUnfolded) return;
+    _revealWhenUnfolded = false;
+    final panel = _panelKey.currentContext;
+    if (panel == null) return;
+    final position = Scrollable.maybeOf(panel)?.position;
+    if (position == null) return;
+    final end = position.maxScrollExtent;
+    if (position.pixels >= end) return;
+    if (_still) {
+      position.jumpTo(end);
+    } else {
+      position.animateTo(end, duration: _scroll, curve: Curves.easeOutCubic);
+    }
+  }
+
+  /// 설명 칸을 접으면 열기 전 자리로 돌아간다.
+  void _restoreScroll(ScrollPosition? position) {
+    final before = _offsetBeforeOpen;
+    _offsetBeforeOpen = null;
+    _revealWhenUnfolded = false;
+    if (position == null || before == null || position.pixels == before) return;
+    final target = before.clamp(0.0, position.maxScrollExtent);
+    if (_still) {
+      position.jumpTo(target);
+    } else {
+      position.animateTo(target, duration: _scroll, curve: Curves.easeOutCubic);
+    }
   }
 
   void _fill(String description) {
@@ -172,29 +232,72 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
     }
 
     final selected = _selected;
+    final unfold = _still ? Duration.zero : _unfold;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ...rows,
-        if (selected != null) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _DescriptionPanel(
-            photo: selected,
-            edited:
-                edited.containsKey(_keyOf(selected)) ||
-                selected.descriptionSource == 'caregiver',
-            controller: _text,
-            current: _currentDescription(selected) ?? '',
-            saving: _savingIds.contains(selected.photoId),
-            saved: _savedId == selected.photoId,
-            saveFailed: _failedId == selected.photoId,
-            onChanged: () => setState(() {
-              _savedId = null;
-              _failedId = null;
-            }),
-            onSave: () => _save(selected),
+        // 높이가 늘고 줄며 펼치고 접는다. 다 펼쳐지면 보이는 자리로 끌어온다.
+        AnimatedSize(
+          // 사진을 바꾸는 동안 앞뒤 설명 칸이 함께 있어 표식은 바깥 한 곳에 둔다.
+          key: _panelKey,
+          duration: unfold,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          // 끝났다는 알림은 마지막 높이를 그리기 전에 온다. 그 장면을 다 그린
+          // 뒤에 끝 위치를 재야 칸이 바닥에 딱 붙는다.
+          onEnd: () => WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _revealPanel();
+          }),
+          child: AnimatedSwitcher(
+            duration: unfold,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: [...previous, ?current],
+            ),
+            // 아래에서 살짝 떠오르며 나타난다.
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween(
+                  begin: const Offset(0, 0.06),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: selected == null
+                ? const SizedBox(
+                    key: ValueKey('closed'),
+                    width: double.infinity,
+                  )
+                : Column(
+                    key: ValueKey(selected.photoId),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppSpacing.lg),
+                      _DescriptionPanel(
+                        photo: selected,
+                        edited:
+                            edited.containsKey(_keyOf(selected)) ||
+                            selected.descriptionSource == 'caregiver',
+                        controller: _text,
+                        current: _currentDescription(selected) ?? '',
+                        saving: _savingIds.contains(selected.photoId),
+                        saved: _savedId == selected.photoId,
+                        saveFailed: _failedId == selected.photoId,
+                        onChanged: () => setState(() {
+                          _savedId = null;
+                          _failedId = null;
+                        }),
+                        onSave: () => _save(selected),
+                      ),
+                    ],
+                  ),
           ),
-        ],
+        ),
       ],
     );
   }
