@@ -282,6 +282,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('합성 주제 이유'), findsNothing);
     });
+
+    testWidgets('글자를 키워도 넘치지 않고 행동 줄은 48 이상이다', (tester) async {
+      await _open(tester, facts: const [], textScale: 1.5);
+
+      expect(tester.takeException(), isNull);
+      for (final label in ['더 자주 꺼내기', '당분간 쉬어가기', '제외하기']) {
+        expect(
+          tester.getSize(_option(label)).height,
+          greaterThanOrEqualTo(48),
+          reason: label,
+        );
+      }
+    });
   });
 
   group('일대기에 추가 카드', () {

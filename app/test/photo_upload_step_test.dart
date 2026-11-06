@@ -218,6 +218,18 @@ void main() {
     expect(find.text('사진을 불러오지 못했어요. 다시 시도해주세요.'), findsOneWidget);
   });
 
+  testWidgets('빼기 버튼은 누를 수 있는 크기다', (tester) async {
+    final picker = _FakePicker([_paths(1)]);
+    await _openPhotoStep(tester, picker);
+
+    await tester.tap(find.text('사진 추가하기'));
+    await tester.pumpAndSettle();
+
+    final size = tester.getSize(find.byTooltip('사진 1 빼기'));
+    expect(size.width, greaterThanOrEqualTo(48));
+    expect(size.height, greaterThanOrEqualTo(48));
+  });
+
   group('마치기를 누르면 올린다', () {
     /// 사진을 고르고 마치기를 누른다. 업로드가 끝나기를 기다리지 않는다.
     Future<ProviderContainer> pickAndFinish(

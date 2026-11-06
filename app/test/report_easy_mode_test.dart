@@ -10,6 +10,7 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/report/report_screen.dart';
 
 void main() {
@@ -112,6 +113,28 @@ void main() {
       );
       expect(find.byIcon(Icons.format_size), findsNothing);
     });
+
+    testWidgets('변경 사항 버튼과 겹치지 않는다', (tester) async {
+      await openReport(tester);
+
+      final easy = tester.getRect(find.text('쉬운 모드'));
+      final primary = tester.getRect(find.text('변경 사항 확인하기'));
+
+      expect(easy.bottom, lessThan(primary.top), reason: '변경 사항 버튼 위에 둔다');
+    });
+
+    testWidgets('확인할 제안이 없어 하단 버튼이 없어도 화면 안에 있다', (tester) async {
+      await openReport(tester, noChanges: true);
+
+      expect(find.text('변경 사항 확인하기'), findsNothing);
+
+      final easy = tester.getRect(find.text('쉬운 모드'));
+      final screen =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+
+      expect(easy.bottom, lessThanOrEqualTo(screen));
+      expect(find.text('쉬운 모드'), findsOneWidget);
+    });
   });
 
   group('쉬운 모드가 바꾸는 것', () {
@@ -131,6 +154,23 @@ void main() {
 
       expect(afterSection, greaterThan(beforeSection));
       expect(afterSection, 26);
+    });
+
+    testWidgets('보조 글자는 커지면서 대비까지 올라간다', (tester) async {
+      await openReport(tester);
+
+      // 날짜는 보조 글자다.
+      final dateFinder = find.textContaining('년');
+      final before = tester.widget<Text>(dateFinder.first).style!;
+      expect(before.color, AppColors.textSub);
+
+      await tester.tap(find.text('쉬운 모드'));
+      await tester.pumpAndSettle();
+
+      final after = tester.widget<Text>(dateFinder.first).style!;
+
+      expect(after.fontSize!, greaterThan(before.fontSize!));
+      expect(after.color, AppColors.ink, reason: '노안에는 크기보다 대비가 더 잘 듣는다');
     });
 
     testWidgets('다시 누르면 원래대로 돌아온다', (tester) async {

@@ -4,6 +4,8 @@
 // 실제 TalkBack 낭독은 확인하지 않는다. 실기기와 에뮬레이터 확인은 따로 한다.
 // 값은 모두 합성이다.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +16,7 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
+import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
@@ -23,6 +26,7 @@ import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
 import 'package:saerok/features/visit/visit_recorder.dart';
+import 'package:saerok/widgets/app_surfaces.dart';
 import 'package:saerok/widgets/app_text_field.dart';
 
 import 'fake_card_api.dart';
@@ -36,6 +40,18 @@ void _useReferenceScreen(WidgetTester tester) {
   tester.view.physicalSize = const Size(1236, 2751);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
+}
+
+/// WCAG 2.x 의 대비. 불투명한 두 색만 다룬다.
+double _contrast(Color a, Color b) {
+  double channel(double v) =>
+      v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  double luminance(Color c) =>
+      0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+
+  final la = luminance(a);
+  final lb = luminance(b);
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
 }
 
 /// 화면 낭독기가 지금 화면을 옮겨 다니는 순서대로 이름을 모은다.
@@ -151,9 +167,36 @@ void main() {
       expect(tester.getSemantics(toggle), isSemantics(isChecked: true));
       handle.dispose();
     });
+
+    // 자리와 폭은 디자인에 따라 바뀔 수 있어 재지 않는다. 48 하한만 본다.
+    testWidgets('고르기 표시의 누르는 자리는 48 x 48 이상이다', (tester) async {
+      await openCards(tester);
+      final size = tester.getSize(find.byType(SelectionToggle).first);
+
+      expect(size.width, greaterThanOrEqualTo(AppSizes.minTouch));
+      expect(size.height, greaterThanOrEqualTo(AppSizes.minTouch));
+    });
   });
 
-  group('선택 표시 대비 (보고서 14쪽)', () {});
+  group('선택 표시 대비 (보고서 14쪽)', () {
+    testWidgets('고르지 않은 빈 원의 테두리는 흰 면과 3:1 이상이다', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Center(child: SelectionMark(selected: false))),
+      );
+      final box = tester.widget<Container>(
+        find.descendant(
+          of: find.byType(SelectionMark),
+          matching: find.byType(Container),
+        ),
+      );
+      final border = (box.decoration! as BoxDecoration).border! as Border;
+
+      expect(
+        _contrast(border.top.color, AppColors.background),
+        greaterThanOrEqualTo(3.0),
+      );
+    });
+  });
 
   group('녹음 (보고서 11쪽)', () {
     Future<void> openRecording(WidgetTester tester) async {
@@ -267,6 +310,7 @@ void main() {
         findsOne,
         reason: '시트 바깥 영역을 영어 Scrim 대신 한국어로 읽는다',
       );
+      expect(find.semantics.byLabel('Scrim'), findsNothing);
       handle.dispose();
     });
 
