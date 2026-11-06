@@ -415,64 +415,48 @@ class _CardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
+    // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+    return SelectableCard(
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      // 선택 표시는 카드 전체 높이의 가운데에 둔다. 펼치면 펼친 카드의 가운데로
-      // 함께 옮겨 간다.
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      selectLabel: cardSelectLabel(card.cardTitle),
+      onToggleSelected: onToggleSelected,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(card.cardTitle, style: AppTypography.bodyStrong),
-                const SizedBox(height: AppSpacing.sm),
-                // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는 여러 면회에
-                // 걸친 묶음이라 고르는 화면에는 두지 않는다.
-                Text(card.description, style: AppTypography.sub),
-                if (expanded) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  const Divider(),
-                  const SizedBox(height: AppSpacing.lg),
-                  Text(card.primaryQuestion, style: AppTypography.bodyStrong),
-                  const SizedBox(height: AppSpacing.md),
-                  for (final question in card.followUpQuestions)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('· ', style: AppTypography.sub),
-                          Expanded(
-                            child: Text(question, style: AppTypography.sub),
-                          ),
-                        ],
-                      ),
-                    ),
-                ] else ...[
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    '눌러서 질문 보기',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.textDisabled,
-                    ),
-                  ),
-                ],
-              ],
+          Text(card.cardTitle, style: AppTypography.bodyStrong),
+          const SizedBox(height: AppSpacing.sm),
+          // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는 여러 면회에
+          // 걸친 묶음이라 고르는 화면에는 두지 않는다.
+          Text(card.description, style: AppTypography.sub),
+          if (expanded) ...[
+            const SizedBox(height: AppSpacing.lg),
+            const Divider(),
+            const SizedBox(height: AppSpacing.lg),
+            Text(card.primaryQuestion, style: AppTypography.bodyStrong),
+            const SizedBox(height: AppSpacing.md),
+            for (final question in card.followUpQuestions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('· ', style: AppTypography.sub),
+                    Expanded(child: Text(question, style: AppTypography.sub)),
+                  ],
+                ),
+              ),
+          ] else ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              '눌러서 질문 보기',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textDisabled,
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          // 카드 본문을 누르면 펼쳐지고, 이 표시를 눌러야 선택된다. 화면
-          // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
-          SelectionToggle(
-            label: cardSelectLabel(card.cardTitle),
-            selected: selected,
-            onTap: onToggleSelected,
-          ),
+          ],
         ],
       ),
     );

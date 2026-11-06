@@ -168,12 +168,30 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('고르기 표시의 누르는 자리는 48 x 48 이상이다', (tester) async {
+    testWidgets('고르기 자리는 카드 오른쪽 3분의 1 전체 높이다', (tester) async {
       await openCards(tester);
-      final size = tester.getSize(find.byType(SelectionToggle).first);
+      final toggle = find.byType(SelectionToggle).first;
+      final card = find.byType(SelectableCard).first;
+      final size = tester.getSize(toggle);
 
       expect(size.width, greaterThanOrEqualTo(AppSizes.minTouch));
       expect(size.height, greaterThanOrEqualTo(AppSizes.minTouch));
+      // 카드는 글자 폭이 아니라 화면 폭(412 - 좌우 여백 20)을 다 쓴다. 원이
+      // 카드 안에 있어야 한다.
+      expect(
+        tester.getSize(card).width,
+        closeTo(412 - AppSpacing.screen * 2, 0.5),
+      );
+      expect(
+        tester.getCenter(find.byType(SelectionMark).first).dx,
+        closeTo(tester.getTopRight(card).dx - 48, 0.5),
+      );
+      expect(size.width, closeTo(tester.getSize(card).width / 3, 0.5));
+      expect(size.height, closeTo(tester.getSize(card).height, 0.5));
+      expect(
+        tester.getTopRight(toggle).dx,
+        closeTo(tester.getTopRight(card).dx, 0.5),
+      );
     });
   });
 

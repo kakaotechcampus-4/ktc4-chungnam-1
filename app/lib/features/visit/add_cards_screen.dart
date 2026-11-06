@@ -46,9 +46,7 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('카드를 추가하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.'),
-      ),
+      const SnackBar(content: Text('카드를 추가하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.')),
     );
   }
 
@@ -173,36 +171,20 @@ class _AddCardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
+    // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+    return SelectableCard(
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,
-      padding: const EdgeInsets.all(AppSpacing.xl),
+      selectLabel: cardSelectLabel(card.cardTitle),
+      onToggleSelected: onToggleSelected,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(card.cardTitle, style: AppTypography.bodyStrong),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(card.description, style: AppTypography.sub),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              SelectionToggle(
-                label: cardSelectLabel(card.cardTitle),
-                selected: selected,
-                onTap: onToggleSelected,
-              ),
-            ],
-          ),
-
+          Text(card.cardTitle, style: AppTypography.bodyStrong),
+          const SizedBox(height: AppSpacing.sm),
+          Text(card.description, style: AppTypography.sub),
           if (expanded) ...[
             const SizedBox(height: AppSpacing.lg),
             const Divider(),
