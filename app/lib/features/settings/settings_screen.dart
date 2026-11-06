@@ -410,8 +410,9 @@ class _CheckLine extends StatelessWidget {
   final Widget label;
   final Widget? below;
 
-  /// 체크박스 누름 영역(48)과 이름 사이 간격을 더한 왼쪽 들여쓰기.
-  static const _indent = AppSizes.minTouch + AppSpacing.xs;
+  /// 줄인 체크박스 자리(40)와 이름 사이 간격을 더한 왼쪽 들여쓰기. 자세히 보기가
+  /// 이름과 같은 왼쪽 선에 온다.
+  static const _indent = 40 + AppSpacing.xs;
 
   @override
   Widget build(BuildContext context) {
@@ -423,11 +424,14 @@ class _CheckLine extends StatelessWidget {
         children: [
           Row(
             children: [
+              // 줄 전체를 눌러 체크하므로 체크박스 자리는 40 으로 줄여 이름과
+              // 아래 자세히 보기 사이를 좁힌다.
               Checkbox(
                 value: checked,
                 onChanged: onChanged,
                 activeColor: HomeColors.accent,
                 side: const BorderSide(color: HomeColors.outline, width: 2),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               const SizedBox(width: AppSpacing.xs),
               Expanded(child: label),
@@ -435,11 +439,11 @@ class _CheckLine extends StatelessWidget {
           ),
           if (below case final below?)
             Padding(
-              padding: const EdgeInsets.only(
-                left: _indent,
-                bottom: AppSpacing.xs,
+              padding: const EdgeInsets.only(left: _indent),
+              child: Transform.translate(
+                offset: const Offset(0, -AppSpacing.xs),
+                child: below,
               ),
-              child: below,
             ),
         ],
       ),
