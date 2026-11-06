@@ -25,7 +25,11 @@ class ReportListScreen extends ConsumerWidget {
     final reports = ref.watch(reportHistoryProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(title: '리포트 기록'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '리포트 기록',
+      ),
       body: reports.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
@@ -81,6 +85,7 @@ class _ReportRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      accent: HomeColors.accent,
       borderColor: HomeColors.outline,
       onTap: () => context.push(AppRoutes.reportOf(report.reportId)),
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -101,6 +106,7 @@ class _ReportRow extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 AppChip(
+                  accent: HomeColors.accent,
                   report.mood?.label ?? unsupportedValueLabel,
                   tone: ChipTone.weak,
                   weakBorder: HomeColors.outline,
@@ -182,11 +188,11 @@ class _PhotoPlaceholder extends StatelessWidget {
     return Container(
       width: _Thumbnail._size,
       height: _Thumbnail._size,
-      color: AppColors.surface,
+      color: HomeColors.bubble,
       child: const Icon(
         Icons.image_outlined,
         size: 32,
-        color: AppColors.textDisabled,
+        color: HomeColors.accent,
       ),
     );
   }
