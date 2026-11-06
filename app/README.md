@@ -139,6 +139,7 @@ SAEROK_TEST_DATABASE_URL=postgresql://<생성과 삭제가 허용된 테스트 D
 | 면회 사진 갤러리 저장 | `gal` 2.3.3 |
 | 새 버전 안내 | `in_app_update` 5.0.0 |
 | 앱 버전 읽기 | `package_info_plus` 10.2.2 |
+| 푸시 알림 | `firebase_core` 5.1.0 / `firebase_messaging` 17.0.1, Gradle `com.google.gms.google-services` 4.4.4 |
 | 기준 화면 | 412 x 917 dp, 세로. 작은 화면과 글자 확대에서도 확인 |
 
 <details>
@@ -685,6 +686,70 @@ WAV 헤더 44바이트는 녹음을 **끝낼 때** 파일 앞에 덮어 쓰인�
 
 - 녹음이 없는 회차에 홈 배너를 반복해 띄우지 않기(#115 병합 뒤).
 - 앱이 백그라운드로 내려갔을 때의 처리와 포그라운드 서비스. 녹음하는 동안 화면을 켜 두는 것만 있다([녹음 중 화면 켜짐](#녹음-중-화면-켜짐)).
+
+## 푸시 알림
+
+리포트 생성이 끝나면 서버가 FCM으로 이 기기에 알린다. 앱은 이 기기를 FCM에 등록해 받은 등록 ID를 서버에 등록하고(1-7), 로그아웃 전에 지우며(1-8), 알림을 누르면 그 리포트를 연다. 서버 쪽 발송은 [backend/README.md](../backend/README.md)의 "리포트 완료 푸시"에 있다.
+
+### 등록 ID
+
+FCM은 예전의 기기 토큰(`getToken`, HTTP v1의 `token`) 대신 Firebase Installation ID(FID)를 쓰도록 바꿨다. `firebase_messaging` 17에서 `getToken`, `onTokenRefresh`, `deleteToken`은 deprecated이고, 앱은 `register()`를 부른 뒤 `onRegistered`로 FID를 받는다. 서버는 HTTP v1 발송의 `fid`에 이 값을 넣는다([FCM 메시지 형식](https://firebase.google.com/docs/reference/fcm/rest/v1/projects.messages), [등록 관리](https://firebase.google.com/docs/cloud-messaging/manage-tokens)). FID는 바뀔 수 있어 `onRegistered`로 새 값이 오면 바꾼다.
+
+### 언제 등록하고 언제 푸는가
+
+| 상황 | 동작 |
+| --- | --- |
+| 로그인했고 알림 수신(선택 동의)에 동의함 | 알림 권한을 묻고(안드로이드 13 이상에서만 창이 뜬다, 앱을 켤 때마다 한 번) FCM에 등록해 FID를 받는다 |
+| 로그인하지 않음, 알림 수신에 동의하지 않음 | 권한을 묻지 않고 Firebase를 초기화하지도 않는다 |
+| 로그아웃, 세션 버림, 프로필 설정에서 알림 수신 동의를 끔 | FCM 등록을 푼다(`unregister`). 등록을 기다리는 중이었어도 푼다 |
+| 다른 계정으로 바뀜 | 그 계정의 동의(1-3)를 다시 읽어 위 기준을 따른다 |
+| 계정(1-3)을 처음 읽는 중이거나 읽지 못함 | 모르는 것으로 보고 그대로 둔다. 연결이 잠깐 끊겼다고 등록을 풀지 않는다 |
+
+알림 권한을 거절해도 등록은 하지만 알림이 보이지 않는다. 앱을 켜자마자 FCM이 스스로 등록하지 않도록 `AndroidManifest.xml`에서 `firebase_messaging_auto_init_enabled`를 껐다. 그래서 동의한 계정이면 앱을 켤 때마다 앱 코드가 직접 `register()`를 부른다.
+
+코드는 [push_messaging.dart](lib/features/push/push_messaging.dart)(Firebase를 감싼 `PushMessaging`)와 [push_registration.dart](lib/features/push/push_registration.dart)(`pushRegistrationProvider`)다. 기본 `pushMessagingProvider`는 아무것도 하지 않는 `NoPushMessaging`이고 `main.dart`의 `rootApp`만 `FirebasePushMessaging`으로 바꾼다. 그래서 기존 위젯 테스트와 여정 테스트는 계정(1-3)을 더 읽지 않고 Firebase도 부르지 않는다. 확인 내용은 `test/push_registration_test.dart`에 있다.
+
+### 서버 등록
+
+| 때 | 서버 호출 |
+| --- | --- |
+| FID를 받음(앱을 켤 때마다, FID가 바뀔 때) | 1-7 `PUT /auth/me/push-devices/{fid}`. 같은 실행에서 같은 FID는 한 번만 보낸다. 실패해도 다시 시도하지 않고 다음에 앱을 켤 때 다시 보낸다 |
+| 프로필 설정의 로그아웃 | 세션을 지우기 **전에** 1-8 `DELETE`. 3초만 기다리고 실패해도 로그아웃한다. 오프라인에서도 로그아웃은 되어야 해서다 |
+| 알림 수신 동의를 끔 | 부르지 않는다. 서버가 1-6에서 그 계정의 등록을 지운다 |
+| 탈퇴 | 부르지 않는다. 서버가 계정과 함께 지운다 |
+
+로그아웃의 1-8은 [profile_screen.dart](lib/features/profile/profile_screen.dart)의 로그아웃 버튼이 `SessionNotifier.signOut()` 앞에서 부른다. `signOut()` 안에서 부르면 `sessionProvider`가 자기에게 의존하는 `pushRegistrationProvider`를 읽게 되어 Riverpod가 순환 의존으로 막는다. 세션이 풀려 로그인 화면으로 가는 경우(`sessionLossProvider`)는 세션이 없어 1-8을 보내지 못한다. 그 서버 등록은 FCM 등록을 푼 뒤 발송이 `UNREGISTERED`로 실패할 때 서버가 지우고, 같은 기기에서 다른 계정이 등록하면 그 계정으로 옮겨진다. API는 [push_device_api.dart](lib/data/push_device_api.dart)이고, 본문 없는 `204`를 받으려고 `ApiClient.put`을 더했다.
+
+### 알림을 받은 뒤
+
+| 상황 | 동작 |
+| --- | --- |
+| 앱이 꺼졌거나 뒤에 있을 때 도착 | 안드로이드가 알림을 띄운다. 채널은 `MainActivity`가 만드는 `report_ready`(리포트 알림)이고 `AndroidManifest.xml`의 `default_notification_channel_id`로 지정했다 |
+| 앱이 화면에 떠 있을 때 도착 | 시스템 알림을 띄우지 않는다(안드로이드 기본). 홈은 만드는 중인 리포트를 5초마다 묻고 있어 `리포트가 도착했어요`가 따로 뜬다. 로컬 알림 패키지는 더하지 않았다 |
+| 알림을 누름 | `data.type == reportReady`의 `sessionId`를 `pendingReportOpenProvider`에 둔다. `main.dart`가 홈에 도착했을 때 그 리포트(`/report/{sessionId}`)를 홈 위에 연다. 앱을 켜는 중이면 스플래시가 세션을 확인하고 홈으로 옮긴 뒤 열고, 녹음 같은 다른 화면에 있으면 끊지 않고 홈으로 돌아올 때 연다 |
+| 로그아웃했거나 알림 수신 동의를 끈 뒤 누름 | 열지 않는다 |
+
+알림 아이콘은 정하지 않아 앱 아이콘을 쓴다. 기기에 따라 흰 사각형으로 보일 수 있다. 다른 어르신의 리포트 알림을 눌렀을 때 고른 어르신을 바꿀지는 정하지 않았다. 리포트 화면은 회차 ID로 읽으므로 고른 어르신과 관계없이 열린다.
+
+### 설정 파일
+
+`android/app/google-services.json`은 Firebase 콘솔에서 받는다. `.gitignore` 대상이라 커밋하지 않고 저장소 밖으로 전달한다. [app/build.gradle.kts](android/app/build.gradle.kts)는 이 파일이 있을 때만 google-services 플러그인을 붙인다. 파일 없이 빌드하면 앱은 Firebase 초기화에 실패한 것으로 보고 등록 없이 지낸다. 서버가 발송에 쓰는 서비스 계정 키는 앱에 넣지 않는다.
+
+디버그 빌드는 받은 FID를 `[push] 등록 ID: ...`로 로그에 남긴다. Firebase 콘솔의 테스트 메시지에 이 값을 넣어 알림이 오는지 확인할 때 쓴다. 릴리스 빌드는 남기지 않는다.
+
+### 확인한 것
+
+2026-11-06 [로컬 작업] 결과(이 브랜치): `flutter analyze` 문제 없음, `flutter test` 870개 통과(새 `push_registration_test.dart` 10개 포함), `flutter build apk --debug`는 `google-services.json`이 있을 때(`processDebugGoogleServices` 실행)와 없을 때 모두 성공. 로컬 Flutter는 3.47.0이라 `pubspec.lock`에는 Firebase 패키지 7개만 더하고 SDK가 고정하는 간접 의존성은 develop 값으로 두었다. CI의 Flutter 3.44.8에서 `flutter pub get --enforce-lockfile`이 통과하는지는 원격 CI에서 확인한다. 실기기에서 권한 창, FID 수신과 콘솔 테스트 메시지 도착은 아직 확인하지 않았다.
+
+2026-11-06 서버 등록과 알림 열기를 더한 뒤: `flutter analyze` 문제 없음, `flutter test` 880개 통과(`push_registration_test.dart` 20개. 서버 등록과 재등록, 등록 실패, 로그아웃 전 1-8과 3초 제한, 알림을 눌러 연 회차와 로그아웃 뒤의 알림), `flutter build apk --debug` 성공. 서버(1-7, 1-8)는 대역으로만 확인했고 실제 BE와 FCM, 실기기 알림 도착과 누른 뒤 이동은 확인하지 않았다.
+
+### 아직 없는 것
+
+- 알림 아이콘, 앱이 화면에 떠 있을 때의 시스템 알림. 알림 `data`(`sessionId`, `analysisId`)는 BE의 테스트 가정을 따랐고 `profileId`는 넣지 않았다(BE, PM 합의 전).
+- 리포트 생성 실패 알림은 서버가 보내지 않는다(PM 확인 필요).
+- 홈에 도착했을 때 리포트를 여는 `main.dart`의 연결은 단위 테스트가 없다. 실기기에서 알림을 눌러 확인한다.
+- 알림 권한을 거절한 보호자에게 다시 안내하는 화면과 권한을 묻는 시점은 FE 임시 기준이다(PM 확인 필요).
+- 실제 사용자 계정에서 쓰기 전 확인: [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)의 푸시 항목.
 
 ## 새 버전 안내
 
