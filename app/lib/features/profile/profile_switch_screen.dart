@@ -301,6 +301,7 @@ class _ProfileSlot extends StatelessWidget {
     return AppCard(
       borderColor: HomeColors.outline,
       accent: HomeColors.accent,
+      selectedColor: HomeColors.bubble,
       selected: profile.selected && !removing,
       onTap: onTap,
       child: Row(

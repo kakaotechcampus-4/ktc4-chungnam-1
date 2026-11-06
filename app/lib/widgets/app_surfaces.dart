@@ -20,11 +20,15 @@ class AppCard extends StatelessWidget {
     this.accent = AppColors.ink,
     this.borderColor = AppColors.line,
     this.shadows = AppShadows.low,
+    this.selectedColor = AppColors.background,
     super.key,
   });
 
   final Widget child;
   final VoidCallback? onTap;
+
+  /// 고른 카드의 면 색. 보통 흰색이고 어르신 바꾸기에서는 연초록이다.
+  final Color selectedColor;
 
   /// 고르지 않은 카드의 테두리 색.
   final Color borderColor;
@@ -46,7 +50,7 @@ class AppCard extends StatelessWidget {
     final content = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: selected ? selectedColor : AppColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
           color: selected ? accent : borderColor,
