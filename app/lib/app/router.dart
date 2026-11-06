@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../data/auth_api.dart';
 import '../data/providers.dart';
-import '../design/tokens.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
@@ -307,8 +306,6 @@ class _TabShell extends ConsumerWidget {
       body: child,
       bottomNavigationBar: AppBottomNav(
         current: current,
-        // 색은 홈에만 둔다. 다른 탭에서는 검정이다.
-        accent: current == AppTab.home ? HomeColors.accent : AppColors.ink,
         onSelected: (tab) {
           switch (tab) {
             case AppTab.album:

@@ -109,7 +109,7 @@ class ScreenBody extends StatelessWidget {
 /// 하단 탭의 종류. 화면에 놓인 순서다.
 enum AppTab { album, report, home, myPage, settings }
 
-/// 하단 탭. 고른 탭 위에 막대를 둔다. 보통 검정이고 홈에서는 [accent] 의 초록이다.
+/// 하단 탭. 고른 탭의 아이콘, 글자와 그 위 막대를 [accent] 의 초록으로 칠한다.
 ///
 /// 탭이 있는 화면들이 이 탭 하나를 함께 쓴다(router.dart 의 `_TabShell`). 고른
 /// 탭이 바뀌면 막대가 그 자리로 미끄러진다. 움직임 줄이기가 켜져 있으면 바로
@@ -118,14 +118,14 @@ class AppBottomNav extends StatelessWidget {
   const AppBottomNav({
     required this.current,
     required this.onSelected,
-    this.accent = AppColors.ink,
+    this.accent = HomeColors.accent,
     super.key,
   });
 
   final AppTab current;
   final ValueChanged<AppTab> onSelected;
 
-  /// 고른 탭의 아이콘, 글자와 막대 색. 홈에서만 초록을 넘긴다.
+  /// 고른 탭의 아이콘, 글자와 막대 색. 어느 탭이든 세이지 초록이다.
   final Color accent;
 
   @override
@@ -195,7 +195,7 @@ class AppBottomNav extends StatelessWidget {
                     ),
                   ],
                 ),
-                // 고른 탭 위의 검정 막대. 누름은 아래 탭이 받는다. 높이는 탭이 정한다.
+                // 고른 탭 위의 초록 막대. 누름은 아래 탭이 받는다. 높이는 탭이 정한다.
                 Positioned.fill(
                   child: IgnorePointer(
                     child: _SlidingIndicator(
@@ -296,7 +296,7 @@ class _SlidingIndicatorState extends State<_SlidingIndicator>
   }
 }
 
-/// 고른 탭 위의 짧고 둥근 막대. 보통 검정이고 홈에서는 초록이다.
+/// 고른 탭 위의 짧고 둥근 초록 막대.
 class _Indicator extends StatelessWidget {
   const _Indicator({required this.color});
 
