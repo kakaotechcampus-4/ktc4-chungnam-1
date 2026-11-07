@@ -136,5 +136,12 @@ Deploy는 배포할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saer
   - 추적 파일 변경: 사전 점검에서 멈췄다.
   - 처리 중인 카드 생성 1건(합성 행): deploy는 사전 점검에서 멈췄고, check는 경고만 남기고 통과했다.
   - 빌드가 깨지는 커밋(Dockerfile 끝에 `RUN false`): 빌드 단계에서 멈췄고, 서버 체크아웃과 이미지 이름이 이전 상태로 돌아갔으며, 멈춘 worker를 다시 켰다. api와 DB는 그대로였다.
+  - 같은 커밋을 다시 배포: 8단계가 통과했다.
+  - 새 api가 시작하자마자 죽는 커밋: 사후 점검이 `/health/live` 2분 대기 뒤 멈췄다. 이어서 이 workflow의 되돌리기 안내를 같은 입력으로 출력해 그 명령을 그대로 실행했고, 세 서비스가 이전 이미지로 돌아와 ready 200이 됐다.
+  - migration이 실패하는 커밋(나눗셈 0 오류): migration에서 멈췄다. PostgreSQL 트랜잭션으로 DB revision과 표는 그대로였고, api는 이전 버전으로 계속 응답했으며, worker는 멈춘 채 남았다. 되돌리기 안내의 명령으로 복구됐다. 이 사이에는 카드 생성과 음성 분석이 멈춰 있으므로 사람이 바로 판단해야 한다.
+  - 백업 실패(DB 이름 오류): 백업에서 멈췄고 worker는 멈추지 않았다.
+  - 사전 점검과 worker 정지 사이에 카드 생성이 새로 생김: worker를 멈추지 않고 실패했으며, worker 재시작 단계는 이미 실행 중인 worker에 영향이 없었다.
+  - api 또는 worker가 이미 꺼진 서버: 사전 점검에서 멈췄다.
+- 실행기 쪽 스크립트: 입력 확인 6가지(정상 2, SHA 형식과 확인 문자열 오류 4), 설정 검사 15가지(운영 값 통과, 누락, 형식 오류, 경로가 저장소 안, 따옴표와 세미콜론 주입 등 거절), 서버 출력에서 정해진 형식만 넘기는 필터, 실패 지점별 되돌리기 안내 5가지를 workflow에서 그대로 꺼내 실행해 기대한 결과를 확인했다. 단계별 SSM 명령 크기는 가장 큰 사전 점검이 약 8.4KB다.
 - Release build의 이미지 단계: 같은 buildx 명령으로 이미지를 만들어 revision 라벨, Alembic head 하나(`b91d2e7c4a60`), 넓힌 모듈 불러오기 검사(`tests/test_container_packages.py` 2개 통과)를 확인했다.
-- 확인하지 않은 것: GitHub Actions에서의 실행, OIDC로 역할 맡기, 실제 SSM 전송(jq로 만드는 명령 목록 포함), Required reviewers 확인 API, 실제 운영 서버의 root 실행과 `sudo -u ubuntu`, umask, Android 빌드와 서명. 앞의 다섯은 `production` 설정 뒤 `mode=check`로 한 번 실행해 확인한다. 이 실행은 운영 DB 백업을 하나 만들고 서버를 바꾸지 않는다.
+- 확인하지 않은 것: GitHub Actions에서의 실행, OIDC로 역할 맡기, 실제 SSM 전송과 상태 대기(jq로 만드는 명령 목록 포함, 이 PC에 jq 없음), Required reviewers 확인 API, 실제 운영 서버의 root 실행과 `sudo -u ubuntu`, umask, Android 빌드와 서명. 앞의 다섯은 `production` 설정 뒤 `mode=check`로 한 번 실행해 확인한다. 이 실행은 운영 DB 백업을 하나 만들고 서버를 바꾸지 않는다.
