@@ -11,7 +11,7 @@ import pytest
 RUNTIME_IMPORTS = (
     "import card_generation, report_generation, proposal_generation; "
     "import app.main, app.workers.card_generation, app.workers.speech_analysis; "
-    "import app.workers.storage_deletion; "
+    "import app.workers.storage_deletion, app.workers.photo_analysis, photo_analysis; "
     "import app.ops.runtime_check, app.ops.runtime_alert, app.ops.storage_audit, app.ops.worker_status; "
     "import app.clients.fcm, app.services.report_notifications; "
     "print('runtime_imports_ok')"

@@ -6,9 +6,9 @@
 A)가 한다. 결과를 저장할 때는 `analysis_status = 'completed'`, `description`, `model`,
 `prompt_version`과 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `photos_lease_check`).
 
-합성 데이터용 worker를 연결했다. 실제 사용자 자료에서는 계정의 사진 분석 동의 조건을
-조회하고 철회 여부를 저장 직전에 다시 검사하는 연결이 필요하다. 현재 실행 진입점은
-운영 환경 실행을 거절한다. 이 제한을 동의 없이 분석해도 된다는 뜻으로 바꾸지 않는다.
+계정의 현재 동의에서 AI 이미지 분석(`photo_analysis`)이 켜진 사진만 가져온다. 동의하지 않은
+계정의 사진은 `pending`으로 남고, 나중에 동의하면 그때 가져간다. 저장 직전에 처리 함수가
+동의를 다시 확인한다(`photo_analysis_pipeline.py`).
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ class PhotoAnalysisQueue:
             WITH candidate AS (
                 SELECT photo_id FROM photos
                  WHERE analysis_status = 'pending' AND session_id IS NULL
+                   AND EXISTS (SELECT 1 FROM profiles pr JOIN current_consents c ON c.user_id = pr.user_id WHERE pr.profile_id = photos.profile_id AND c.photo_analysis)
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1

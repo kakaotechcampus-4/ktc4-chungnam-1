@@ -160,7 +160,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
   "requiredConsents": ["serviceData", "sensitiveData"],
-  "optionalConsents": ["serviceImprovement", "pushNotification"]
+  "optionalConsents": ["serviceImprovement", "pushNotification", "photoAnalysis"]
 }
 ```
 
@@ -250,6 +250,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 - 직전 이력을 복사해 보낸 항목만 바꾼 새 이력 행을 추가한다. 약관 버전은 직전 이력의 값을 쓴다.
 - `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 푸시 기기 등록(1-7)을 모두 지운다.
+- `photoAnalysis`(AI 사진 분석)도 같은 방식으로 바꾼다. 거두면 사진 분석 worker가 그 계정의 사진을 더 가져가지 않고, 분석 중이던 결과도 저장하지 않는다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |

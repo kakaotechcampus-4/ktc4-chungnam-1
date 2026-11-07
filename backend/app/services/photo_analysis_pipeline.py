@@ -52,13 +52,23 @@ class PhotoAnalysisProcessor:
                 "prompt_version=%s, error_code=NULL, lease_expires_at=NULL "
                 "WHERE photo_id=%s AND profile_id=%s AND session_id IS NULL "
                 "AND analysis_status='processing' AND attempt_count=%s "
-                "AND lease_expires_at > clock_timestamp() RETURNING user_description",
+                "AND lease_expires_at > clock_timestamp() "
+                "AND EXISTS (SELECT 1 FROM profiles pr JOIN current_consents c ON c.user_id = pr.user_id WHERE pr.profile_id = photos.profile_id AND c.photo_analysis) "
+                "RETURNING user_description",
                 (result.description, self.model, PROMPT_VERSION, job.photo_id,
                  job.profile_id, job.attempt_count),
             )
             row = await changed.fetchone()
             if row is None:
-                return  # 삭제됐거나 임대를 잃은 작업의 늦은 결과
+                # 분석 중에 동의를 거뒀으면 결과를 버리고 대기로 되돌린다. 다시 동의하면 분석한다.
+                # 삭제됐거나 임대를 잃은 작업의 늦은 결과는 그대로 버린다.
+                await connection.execute(
+                    "UPDATE photos SET analysis_status='pending', lease_expires_at=NULL "
+                    "WHERE photo_id=%s AND analysis_status='processing' AND attempt_count=%s "
+                    "AND NOT EXISTS (SELECT 1 FROM profiles pr JOIN current_consents c ON c.user_id = pr.user_id WHERE pr.profile_id = photos.profile_id AND c.photo_analysis)",
+                    (job.photo_id, job.attempt_count),
+                )
+                return
             if row["user_description"] is None:
                 await connection.execute(
                     "UPDATE card_sets SET stale_at=now() WHERE profile_id=%s "

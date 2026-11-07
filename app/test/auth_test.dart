@@ -45,16 +45,17 @@ void main() {
         'sensitiveData',
         'pushNotification',
         'serviceImprovement',
+        'photoAnalysis',
       });
     });
 
-    test('필수 둘과 선택 둘이다', () {
+    test('필수 둘과 선택 셋이다', () {
       final required = consentTerms.where((t) => t.required).map((t) => t.key);
       final optional = consentTerms.where((t) => !t.required).map((t) => t.key);
 
       expect(required, ['serviceData', 'sensitiveData']);
       // 알림 수신은 선택이다. 법률 문서와 계약 모두 선택으로 적고 있다.
-      expect(optional, ['pushNotification', 'serviceImprovement']);
+      expect(optional, ['pushNotification', 'serviceImprovement', 'photoAnalysis']);
     });
 
     test('모든 항목에 문구와 설명이 있다', () {

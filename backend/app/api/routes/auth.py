@@ -102,6 +102,7 @@ def _to_account_response(account: Account) -> AccountResponse:
             sensitive_data=consents.get("sensitiveData", empty),
             service_improvement=consents.get("serviceImprovement", empty),
             push_notification=consents.get("pushNotification", empty),
+            photo_analysis=consents.get("photoAnalysis", empty),
         ),
         created_at=account.created_at,
     )

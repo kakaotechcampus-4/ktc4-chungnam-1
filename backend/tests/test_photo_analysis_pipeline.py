@@ -17,7 +17,7 @@ from app.workers.photo_analysis import create_worker
 from tests.card_fixtures import completed_card_set, with_db
 from tests.support import run
 from tests.test_card_generation_worker import fake_result
-from tests.test_photo_description import setup, patch
+from tests.test_photo_description import patch, setup as _setup_without_consent
 from tests.test_profile_photos import MemoryImageStorage
 
 
@@ -25,6 +25,15 @@ class FreshSyntheticStorage(MemoryImageStorage):
     async def create_download(self, *, object_key):
         return ImageDownload(url="https://synthetic.invalid/image?signature=test",
                              expires_at=datetime.now(UTC) + timedelta(minutes=5))
+
+
+def setup(url):
+    """사진 분석은 AI 이미지 분석에 동의한 계정의 사진만 가져가므로 동의를 켜 둔다."""
+    api, user, profile, photo = _setup_without_consent(url)
+    granted = user.call("PATCH", "/auth/me/consents", json={"photoAnalysis": True})
+    assert granted.status_code == 200
+    assert granted.json()["consent"]["photoAnalysis"]["granted"] is True
+    return api, user, profile, photo
 
 
 def worker(url, analyze, timeout=1):
@@ -120,11 +129,36 @@ def test_photo_finishes_during_card_generation_result_requires_refresh(migrated_
     assert row["status"] == "completed" and row["stale_at"] is not None
 
 
-def test_production_or_unconfirmed_dataset_is_not_started():
-    with pytest.raises(RuntimeError, match="합성 사진"):
-        create_worker(Settings(environment="production"), synthetic_test_data=True)
-    with pytest.raises(RuntimeError, match="합성 사진"):
+def test_worker_requires_database_bucket_and_ml_key():
+    with pytest.raises(RuntimeError, match="ML API"):
         create_worker(Settings(environment="test"))
+
+
+def test_photo_without_analysis_consent_is_not_taken(migrated_database_url):
+    api, user, profile, photo = _setup_without_consent(migrated_database_url)
+    calls = []
+    assert not run(worker(migrated_database_url, lambda url: calls.append(url)).run_once())
+    assert calls == []
+    row = api.query("SELECT analysis_status, description FROM photos WHERE photo_id=%s", (photo,))[0]
+    assert row == {"analysis_status": "pending", "description": None}
+
+
+def test_consent_withdrawn_during_analysis_discards_result(migrated_database_url):
+    api, user, profile, photo = setup(migrated_database_url)
+
+    def analyze(_url):
+        # 분석 중에 보호자가 AI 이미지 분석 동의를 거둔다.
+        api.query(
+            "INSERT INTO consent_records (user_id, terms_version, service_data, sensitive_data, "
+            " service_improvement, push_notification, photo_analysis) "
+            "SELECT user_id, terms_version, true, true, service_improvement, push_notification, false "
+            "FROM current_consents")
+        return PhotoDescription(description="철회 뒤에 끝난 분석")
+
+    run(worker(migrated_database_url, analyze).run_once())
+    row = api.query("SELECT analysis_status, description, lease_expires_at FROM photos "
+                    "WHERE photo_id=%s", (photo,))[0]
+    assert row == {"analysis_status": "pending", "description": None, "lease_expires_at": None}
 
 
 def test_short_lease_is_refused_before_storage_connection():
@@ -132,7 +166,7 @@ def test_short_lease_is_refused_before_storage_connection():
                         image_s3_bucket="synthetic", ml_api_key="synthetic",
                         photo_analysis_lease_seconds=60)
     with pytest.raises(RuntimeError, match="60초"):
-        create_worker(settings, synthetic_test_data=True)
+        create_worker(settings)
 
 
 def test_job_deleted_before_processing_does_not_send_photo(migrated_database_url):

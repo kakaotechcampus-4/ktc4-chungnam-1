@@ -1,4 +1,4 @@
-"""합성 사진용 실행 진입점. 실제 사용자 동의 연결 전 운영 실행은 허용하지 않는다."""
+"""프로필 사진 분석 worker. AI 이미지 분석에 동의한 계정의 사진만 처리한다(photo_analysis_jobs)."""
 import argparse
 
 from common.llm import ENDPOINTS
@@ -13,9 +13,7 @@ from app.services.photo_analysis_pipeline import PhotoAnalysisProcessor
 from app.workers.base import Worker, run_worker_main
 
 
-def create_worker(settings: Settings, *, synthetic_test_data: bool = False):
-    if settings.environment == "production" or not synthetic_test_data:
-        raise RuntimeError("사진 분석은 현재 별도 테스트 DB의 합성 사진만 실행할 수 있습니다.")
+def create_worker(settings: Settings):
     if not settings.database_url or not settings.image_s3_bucket or not settings.ml_api_key.get_secret_value():
         raise RuntimeError("사진 분석에는 DB, 사진 버킷과 ML API 설정이 필요합니다.")
     model = settings.photo_analysis_model or settings.report_generation_model
@@ -51,13 +49,11 @@ def create_worker(settings: Settings, *, synthetic_test_data: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="새록 합성 사진 분석 worker")
-    parser.add_argument("--synthetic-test-data", action="store_true",
-                        help="별도 테스트 DB에 합성 사진만 있음을 확인한 뒤 사용")
+    parser = argparse.ArgumentParser(description="새록 사진 분석 worker")
     args = argparse.Namespace()
     run_worker_main(
         description=parser.description, parser=parser, namespace=args,
-        create_worker=lambda settings: create_worker(settings, synthetic_test_data=args.synthetic_test_data),
+        create_worker=create_worker,
         poll_seconds=lambda settings: settings.photo_worker_poll_seconds,
     )
 

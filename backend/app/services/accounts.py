@@ -21,7 +21,7 @@ REQUIRED_CONSENTS: tuple[str, ...] = (
     "sensitiveData",
 )
 # 거부해도 계정을 만드는 선택 동의 항목.
-OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement", "pushNotification")
+OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement", "pushNotification", "photoAnalysis")
 
 
 @dataclass(frozen=True)
@@ -131,7 +131,7 @@ class InMemoryAccountRepository:
             for name, granted in changes.items():
                 if not granted:
                     consents[name] = ConsentRecord(granted=False, granted_at=None)
-                elif not consents[name].granted:
+                elif name not in consents or not consents[name].granted:
                     consents[name] = ConsentRecord(granted=True, granted_at=now)
             updated = replace(account, consents=consents)
             self._by_id[account_id] = updated
@@ -157,6 +157,7 @@ _CONSENT_COLUMNS: dict[str, str] = {
     "sensitiveData": "sensitive_data",
     "serviceImprovement": "service_improvement",
     "pushNotification": "push_notification",
+    "photoAnalysis": "photo_analysis",
 }
 
 
@@ -218,13 +219,14 @@ class PostgresAccountRepository:
                 await self._connection.execute(
                     "INSERT INTO consent_records "
                     "(user_id, terms_version, service_data, sensitive_data, "
-                    " service_improvement, push_notification, recorded_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    " service_improvement, push_notification, photo_analysis, recorded_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         UUID(account.account_id),
                         account.consent_version,
+                        # 나중에 더한 선택 동의(예: photoAnalysis)가 없으면 거부로 남긴다.
                         *(
-                            account.consents[name].granted
+                            name in account.consents and account.consents[name].granted
                             for name in _CONSENT_COLUMNS
                         ),
                         account.created_at,
@@ -261,15 +263,17 @@ class PostgresAccountRepository:
             await self._connection.execute(
                 "INSERT INTO consent_records "
                 "(user_id, terms_version, service_data, sensitive_data, "
-                " service_improvement, push_notification, recorded_at) "
+                " service_improvement, push_notification, photo_analysis, recorded_at) "
                 "SELECT user_id, terms_version, service_data, sensitive_data, "
                 "       COALESCE(%s, service_improvement), "
                 "       COALESCE(%s, push_notification), "
+                "       COALESCE(%s, photo_analysis), "
                 "       GREATEST(clock_timestamp(), recorded_at) "
                 "FROM current_consents WHERE user_id = %s",
                 (
                     changes.get("serviceImprovement"),
                     changes.get("pushNotification"),
+                    changes.get("photoAnalysis"),
                     user_id,
                 ),
             )
@@ -307,7 +311,7 @@ class PostgresAccountRepository:
             return None
         cursor = await self._connection.execute(
             "SELECT terms_version, service_data, sensitive_data, "
-            "       service_improvement, push_notification, recorded_at "
+            "       service_improvement, push_notification, photo_analysis, recorded_at "
             "FROM consent_records WHERE user_id = %s "
             "ORDER BY recorded_at, record_id",
             (user["user_id"],),
