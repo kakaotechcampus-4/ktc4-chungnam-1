@@ -127,4 +127,14 @@ Deploy는 배포할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saer
 
 ## 검증 범위
 
-VERIFICATION_PLACEHOLDER
+11/7 로컬에서 확인한 것과 확인하지 않은 것이다. 검사 스크립트와 결과는 PR에 적었다.
+
+- 정적 검사: 세 workflow의 YAML, 모든 `run` 스크립트의 `bash -n`, Deploy가 서버로 보내는 단계 스크립트 9개를 실행기와 같은 방식으로 공통 앞부분과 합쳐 `bash -n`과 `bash --posix -n`, 그 안의 Python 코드 컴파일. 모두 통과했다. 이 PC에는 actionlint와 shellcheck가 없어, PR의 lint 작업(actionlint 1.7.12, 셸 검사 끔)으로 확인한다.
+- 서버 단계 실행: 로컬 Docker에 운영과 같은 구성을 따로 띄웠다(compose 프로젝트 분리, `workers`와 `local-db` 프로필, db 포트와 네트워크 대역만 바꾼 덧붙임 파일, 추적하지 않는 파일 1개). 시작 상태는 11/6 배포 전 커밋 `c066c8ed`, DB revision `a4f6c1d83b29`, revision 라벨 없는 이미지로 운영의 11/6 배포 직전과 같게 맞췄다. 단계 스크립트를 workflow에서 그대로 꺼내 SSM과 같은 방식(base64, 임시 파일, bash)으로 실행했다. Windows Git Bash에서 돌려 `sudo`는 대역을 썼다.
+  - check: 사전 점검과 백업, 격리 복원 검사(`restoreVerified: true`)가 통과했고 서버는 바뀌지 않았다.
+  - deploy: 사전 점검부터 기록까지 8단계가 통과했다. migration `a4f6c1d83b29 → b91d2e7c4a60`이 적용됐고, 세 서비스의 revision 라벨이 대상 커밋이며, 사후 `runtime_check --expected-revision`이 일치했고, 배포 기록이 만들어졌다(추적하지 않는 파일만 있다는 메모).
+  - 추적 파일 변경: 사전 점검에서 멈췄다.
+  - 처리 중인 카드 생성 1건(합성 행): deploy는 사전 점검에서 멈췄고, check는 경고만 남기고 통과했다.
+  - 빌드가 깨지는 커밋(Dockerfile 끝에 `RUN false`): 빌드 단계에서 멈췄고, 서버 체크아웃과 이미지 이름이 이전 상태로 돌아갔으며, 멈춘 worker를 다시 켰다. api와 DB는 그대로였다.
+- Release build의 이미지 단계: 같은 buildx 명령으로 이미지를 만들어 revision 라벨, Alembic head 하나(`b91d2e7c4a60`), 넓힌 모듈 불러오기 검사(`tests/test_container_packages.py` 2개 통과)를 확인했다.
+- 확인하지 않은 것: GitHub Actions에서의 실행, OIDC로 역할 맡기, 실제 SSM 전송(jq로 만드는 명령 목록 포함), Required reviewers 확인 API, 실제 운영 서버의 root 실행과 `sudo -u ubuntu`, umask, Android 빌드와 서명. 앞의 다섯은 `production` 설정 뒤 `mode=check`로 한 번 실행해 확인한다. 이 실행은 운영 DB 백업을 하나 만들고 서버를 바꾸지 않는다.
