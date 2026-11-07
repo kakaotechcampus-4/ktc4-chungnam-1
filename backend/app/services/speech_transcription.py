@@ -18,6 +18,7 @@ from app.services.accounts import Account
 from app.services.audio_storage import AudioStorage
 from app.services.audio_validation import validate_visit_audio
 from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionService
+from app.services.transcript_filters import drop_known_hallucinations
 
 logger = logging.getLogger("saerok.speech_transcription")
 MAX_SECONDS = 300
@@ -77,8 +78,9 @@ async def transcribe_short_audio(
         except TimeoutError as error:
             raise AppError(status_code=504, error_code="AI_SERVER_TIMEOUT",
                            message="음성을 글로 옮기는 시간이 초과되었습니다.", retryable=True) from error
-        # 빈 문자열 판정 이외의 인식 임계값은 AI 담당자 결정과 실측이 필요하다.
-        return result.text.strip()
+        # 빈 문자열 판정 이외의 인식 임계값은 AI 담당자 결정과 실측이 필요하다. 무음에서
+        # 지어내는 알려진 문장만 빼고, 다 빠지면 빈 문자열(앱의 "알아듣지 못함")이 된다.
+        return drop_known_hallucinations(result).text.strip()
     finally:
         cleanup = asyncio.create_task(_cleanup(connection, storage, key))
         try:
