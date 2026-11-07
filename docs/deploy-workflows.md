@@ -40,6 +40,7 @@
 - 제품 테스트는 `product-tests.yml`의 `workflow_call`로 같은 검사를 다시 실행한다.
 - 백엔드 이미지는 `docker buildx build --build-context ai=../ai --build-arg SOURCE_REVISION=<SHA> --load`로 한 번 만든다. api, card-worker, speech-worker가 같은 이미지를 쓴다. 이미지 안에서 DB 없이 Alembic head를 읽고, `tests/test_container_packages.py`를 그 이미지로 실행한다. 이 검사는 API와 worker, 운영 서버에서 `python -m`으로 돌리는 점검과 삭제 도구, 리포트 완료 푸시 모듈을 네트워크 없이 불러온다.
 - Android 빌드는 `SAEROK_API_BASE_URL`과 `SAEROK_GOOGLE_SERVER_CLIENT_ID`를 `--dart-define`으로 넘긴다. [릴리스 설정 검사](../app/lib/app/release_config.dart)와 같은 기준으로 값을 먼저 확인한다. 두 값이 모두 없으면 앱 빌드만 건너뛰고 요약에 적는다. 하나만 있거나 https가 아니면 실패한다.
+- 푸시 알림은 `android/app/google-services.json`이 있을 때만 앱에 붙는다(`app/android/app/build.gradle.kts`). 저장소에 커밋하지 않으므로 `GOOGLE_SERVICES_JSON_BASE64` 시크릿에서 빌드 직전에 만들고, 빌드 뒤 업로드 키와 함께 지운다.
 - versionName과 versionCode는 `app/pubspec.yaml`의 `version`을 쓴다. 수동 실행에서는 `build_name`, `build_number` 입력으로 바꿀 수 있다. 태그 이름과 versionName이 다르면 경고만 남긴다.
 - 업로드 키 시크릿 네 개가 모두 있을 때만 `android/key.properties`를 만들어 업로드 키로 서명하고 끝나면 지운다. keystore 시크릿은 줄바꿈과 공백을 지운 뒤 디코딩하고, 빌드 전에 `keytool -list`로 비밀번호와 별칭이 맞는지 확인한다. 없으면 [build.gradle.kts](../app/android/app/build.gradle.kts)의 기존 동작대로 디버그 키로 서명하고 요약에 `debug`라고 적는다. 이 빌드는 Play에 올릴 수 없고, 실행기마다 디버그 키가 달라 기존 설치본 위에 업데이트되지 않을 수 있다.
 - 공개 저장소의 artifact는 로그인한 GitHub 사용자라면 받을 수 있다. 앱 artifact는 7일만 보관하며, 수동 실행에서는 `upload_app`을 끄고 빌드만 확인할 수 있다. 승인된 비공개 테스트 경로를 대신하지 않는다.
@@ -85,6 +86,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 모드, SHA, 대상 브
 | 저장소 시크릿 또는 변수 | `SAEROK_API_BASE_URL` | Release build의 앱 빌드 | 앱이 쓸 https 서버 주소. 로그 노출을 피하려면 시크릿 |
 | 저장소 시크릿 또는 변수 | `SAEROK_GOOGLE_SERVER_CLIENT_ID` | Release build의 앱 빌드 | `SAEROK_GOOGLE_CLIENT_IDS`와 같은 웹 클라이언트 ID |
 | 저장소 시크릿 | `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD` | 선택 | 업로드 키. 없으면 디버그 키 서명 |
+| 저장소 시크릿 | `GOOGLE_SERVICES_JSON_BASE64` | 선택 | Firebase 콘솔(프로젝트 `ktc4-project-saerok`, 앱 `app.saerok.android`)에서 받은 `google-services.json`을 base64로 바꾼 값. 없으면 푸시 알림이 빠진 앱을 만들고 요약에 `off`로 남긴다. 다른 앱의 설정이면 빌드를 멈춘다 |
 | Environment `production` 설정 | Required reviewers, Deployment branches | Deploy | 승인자 지정. 배포 브랜치를 `main`과 `develop`으로 제한한다. 수동 실행은 고른 브랜치의 workflow 파일을 쓰므로, 제한이 없으면 다른 브랜치에서 고친 workflow가 환경 시크릿을 받을 수 있다 |
 | Environment 시크릿 | `AWS_DEPLOY_ROLE_ARN` | Deploy | 운영진이 만든 역할 `ktc-github-deploy`의 ARN |
 | Environment 시크릿 | `DEPLOY_INSTANCE_ID` | Deploy | 대상 EC2 인스턴스 ID. 로그에서 가리도록 시크릿으로 둔다 |
