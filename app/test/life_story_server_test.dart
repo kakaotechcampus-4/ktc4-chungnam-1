@@ -15,6 +15,7 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 
 import 'fake_profile_server.dart';
@@ -60,6 +61,7 @@ Future<ProviderContainer> _open(
   FakeProfileServer server,
   String location, {
   FakeReportServer? reports,
+  bool cardsBeingMade = false,
 }) async {
   tester.view.physicalSize = const Size(1236, 6000);
   tester.view.devicePixelRatio = 3;
@@ -77,6 +79,8 @@ Future<ProviderContainer> _open(
       (reports ?? FakeReportServer()).override,
       profileSampleProvider.overrideWith((ref) async => sample),
       accountProvider.overrideWith((ref) async => account),
+      if (cardsBeingMade)
+        cardsBeingMadeProvider.overrideWith((ref, profileId) => true),
     ],
   );
   addTearDown(container.dispose);
@@ -219,6 +223,30 @@ void main() {
     expect(find.text('이야기를 지웠어요.'), findsOneWidget);
     expect(find.text('김새록님의 여행에 대한\n이야기입니다.'), findsOneWidget);
     expect(find.text('경주 여행'), findsNothing);
+  });
+
+  testWidgets('카드를 만드는 동안 고치거나 지우려 하면 안내하고 보내지 않는다', (tester) async {
+    final server = _server();
+    final container = await _open(
+      tester,
+      server,
+      AppRoutes.albumCategoryOf('travel'),
+      cardsBeingMade: true,
+    );
+    // 홈 버튼이 카드를 만들기 시작할 때처럼 서버의 어르신 ID 를 읽어 둔다.
+    await tester.runAsync(() => container.read(serverProfileIdProvider.future));
+    await _tap(tester, find.text('경주 여행'));
+    final sent = server.requests.length;
+
+    for (final action in ['이야기 수정', '이야기 지우기']) {
+      await _tap(tester, find.byTooltip(action));
+      expect(find.text('대화 카드를 만들고 있어요'), findsOneWidget);
+      await _tap(tester, find.text('확인'));
+      // 고치는 화면이나 지우기 확인으로 넘어가지 않고 이야기에 남는다.
+      expect(find.text('대화 카드를 만들고 있어요'), findsNothing);
+      expect(find.text('경주 여행'), findsOneWidget);
+    }
+    expect(server.requests.length, sent);
   });
 
   testWidgets('서버에 닿지 못하면 담지 않고 쓰던 내용을 둔다', (tester) async {

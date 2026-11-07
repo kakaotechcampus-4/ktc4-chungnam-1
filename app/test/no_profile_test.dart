@@ -130,6 +130,7 @@ void main() {
       '오늘의 대화카드 받기': () => find.text('오늘의 대화카드 받기'),
       '알림': () => find.byTooltip('알림'),
       '일대기': () => find.text('일대기'),
+      '리포트': () => find.text('리포트'),
     };
     for (final entry in blocked.entries) {
       testWidgets('${entry.key}을 누르면 등록부터 안내한다', (tester) async {
@@ -163,27 +164,24 @@ void main() {
   });
 
   group('마이페이지', () {
-    testWidgets('리포트 기록을 누르면 등록부터 안내한다', (tester) async {
+    testWidgets('마이페이지를 누르면 메뉴 없이 프로필 설정으로 가고 등록부터 안내한다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
       await tapAndSettle(tester, find.text('마이페이지'));
-      await tapAndSettle(tester, find.text('리포트 기록'));
 
-      expect(find.text(registerTitle), findsOneWidget);
-      expect(find.text('오늘의 대화카드 받기'), findsOneWidget);
+      expect(find.text('프로필 설정'), findsOneWidget);
+      expect(find.text('함께하는 소중한 분을 등록하면\n정보를 볼 수 있어요.'), findsOneWidget);
+      for (final hidden in ['기본 정보', '세부 정보', '갤러리', '계정 약관 동의']) {
+        expect(find.text(hidden), findsNothing, reason: '$hidden 은 여기에 없다');
+      }
     });
 
-    testWidgets('프로필 설정에는 계정 항목만 보인다', (tester) async {
+    testWidgets('설정에는 어르신이 없어도 계정 항목이 모두 보인다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
-      await tapAndSettle(tester, find.text('마이페이지'));
-      await tapAndSettle(tester, find.text('프로필 설정'));
+      await tapAndSettle(tester, find.text('설정'));
 
-      expect(find.text('계정 약관 동의'), findsOneWidget);
-      for (final hidden in ['기본 정보', '세부 정보', '갤러리', '내용 추가하기']) {
-        expect(find.text(hidden), findsNothing, reason: '$hidden 은 어르신 항목이다');
-      }
-      for (final shown in ['계정 약관 동의', '저장하기', '로그아웃', '회원탈퇴']) {
+      for (final shown in ['알림 설정', '계정 약관 동의', '저장하기', '로그아웃', '회원탈퇴']) {
         expect(find.text(shown), findsOneWidget, reason: '$shown 은 계정 항목이다');
       }
     });

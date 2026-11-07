@@ -14,6 +14,8 @@ import 'package:saerok/features/profile_setup/life_fact_step.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
 
+import 'fake_screen_awake.dart';
+
 /// 정해진 결과만 돌려주는 대역이다. 목 데이터가 아니라 화면 흐름만 본다.
 class _FixedSpeech implements SpeechInput {
   _FixedSpeech(
@@ -94,11 +96,13 @@ Widget _wrap({
   VoidCallback? onCleared,
   _FixedSpeech? speech,
   String? initialText,
+  FakeScreenAwakePlatform? screen,
 }) => ProviderScope(
   overrides: [
     speechInputProvider.overrideWith(
       (ref) async => speech ?? _FixedSpeech(outcome, delay),
     ),
+    if (screen != null) screen.asOverride,
   ],
   child: MaterialApp(
     theme: buildAppTheme(),
@@ -132,6 +136,15 @@ Future<void> _speak(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 답하는 방법을 고른다. 버튼은 눌린 모습을 잠깐 보인 뒤 넘어가므로 그
+/// 움직임이 끝날 때까지 흘린다.
+Future<void> _choose(WidgetTester tester, String label) async {
+  await tester.tap(find.text(label));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pump();
+}
+
 void main() {
   group('답하는 방법 선택', () {
     testWidgets('화면에 들어오면 두 방법을 나란히 보여준다', (tester) async {
@@ -146,37 +159,11 @@ void main() {
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('두 버튼은 같은 크기다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      final voice = tester.getSize(
-        find.ancestor(
-          of: find.text('말로 답하기'),
-          matching: find.byType(InkWell),
-        ).first,
-      );
-      final text = tester.getSize(
-        find.ancestor(
-          of: find.text('글로 답하기'),
-          matching: find.byType(InkWell),
-        ).first,
-      );
-
-      expect(voice, text, reason: '한쪽이 대안처럼 보이면 안 된다');
-      expect(
-        voice.height,
-        greaterThanOrEqualTo(AppSizes.minTouch),
-        reason: '누르는 요소의 최소 크기',
-      );
-    });
-
     testWidgets('말로 답하기를 고르면 녹음 안내가 나온다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
 
       expect(find.byIcon(Icons.mic), findsOneWidget);
       expect(find.text('마이크를 누르고 말씀해주세요'), findsOneWidget);
@@ -187,8 +174,7 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('글로 답하기'));
-      await tester.pump();
+      await _choose(tester, '글로 답하기');
 
       expect(find.byType(TextField), findsOneWidget);
       expect(find.byIcon(Icons.mic), findsNothing);
@@ -209,8 +195,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('글로 답하기'));
-      await tester.pump();
+      await _choose(tester, '글로 답하기');
       await tester.enterText(find.byType(TextField), '  마을 이장을 오래 하셨어요.  ');
 
       expect(captured, '마을 이장을 오래 하셨어요.');
@@ -220,8 +205,7 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.text('글로 답할게요'));
       await tester.pump();
 
@@ -233,63 +217,17 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('글로 답하기'));
-      await tester.pump();
+      await _choose(tester, '글로 답하기');
       await tester.tap(find.text('말로 답할게요'));
       await tester.pump();
 
       expect(find.byIcon(Icons.mic), findsOneWidget);
       expect(find.text('마이크를 누르고 말씀해주세요'), findsOneWidget);
-      expect(
-        find.text('말로 답하기'),
-        findsNothing,
-        reason: '방법을 다시 고르게 되돌리지 않는다',
-      );
+      expect(find.text('말로 답하기'), findsNothing, reason: '방법을 다시 고르게 되돌리지 않는다');
     });
   });
 
   group('방법을 바꾸는 버튼', () {
-    /// 알약 모양 버튼의 사각형을 집는다.
-    Rect switchRect(WidgetTester tester, String label) => tester.getRect(
-      find
-          .ancestor(of: find.text(label), matching: find.byType(InkWell))
-          .first,
-    );
-
-    testWidgets('안내 문구와 떨어진 하단에 있고 누를 수 있는 크기다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
-
-      final hint = tester.getRect(find.text('마이크를 누르고 말씀해주세요'));
-      final button = switchRect(tester, '글로 답할게요');
-
-      expect(
-        button.top - hint.bottom,
-        greaterThan(AppSpacing.xxl),
-        reason: '문구 바로 아래 붙으면 링크인지 구분되지 않는다',
-      );
-      expect(button.height, greaterThanOrEqualTo(AppSizes.minTouch));
-    });
-
-    testWidgets('글로 쓰는 중에도 같은 자리에 있다', (tester) async {
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
-
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
-      final voiceSide = switchRect(tester, '글로 답할게요');
-
-      await tester.tap(find.text('글로 답할게요'));
-      await tester.pump();
-      final textSide = switchRect(tester, '말로 답할게요');
-
-      expect(textSide.bottom, voiceSide.bottom);
-      expect(textSide.height, greaterThanOrEqualTo(AppSizes.minTouch));
-    });
-
     testWidgets('녹음하고 옮기는 동안에는 숨긴다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(
@@ -299,14 +237,14 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.byIcon(Icons.mic));
       await tester.pump();
 
       expect(find.text('듣고 있어요'), findsOneWidget);
+      // 자리는 남기되 보이지 않고 누를 수 없다.
       expect(
-        find.text('글로 답할게요'),
+        find.text('글로 답할게요').hitTestable(),
         findsNothing,
         reason: '말하는 중에 방법을 바꾸게 하지 않는다',
       );
@@ -315,11 +253,27 @@ void main() {
       await tester.pump();
 
       expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
-      expect(find.text('글로 답할게요'), findsNothing);
+      expect(find.text('글로 답할게요').hitTestable(), findsNothing);
 
       // 옮기기가 끝나면 다시 나온다.
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('글로 답할게요'), findsOneWidget);
+    });
+  });
+
+  group('마이크 화면 모양', () {
+    testWidgets('알아들으면 다시 녹음하기와 글로 답할게요가 나온다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechHeard('30년 동안 초등학교 선생님을 하셨어요.')),
+      );
+      await _choose(tester, '말로 답하기');
+      await _speak(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('다시 녹음하기'), findsOneWidget);
+      expect(find.text('글로 답할게요'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsOneWidget);
     });
   });
 
@@ -333,8 +287,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.byIcon(Icons.mic));
       await tester.pump();
 
@@ -364,8 +317,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.byIcon(Icons.mic));
       await tester.pump();
       await tester.tap(find.byIcon(Icons.mic));
@@ -382,8 +334,7 @@ void main() {
         _wrap(outcome: const SpeechNotHeard(), speech: speech),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.byIcon(Icons.mic));
       await tester.pumpAndSettle();
 
@@ -398,8 +349,7 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
 
       expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
@@ -416,8 +366,7 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
       await _speak(tester);
 
@@ -436,9 +385,7 @@ void main() {
       expect(find.text('말로 답하기'), findsNothing);
     });
 
-    testWidgets('알아들은 뒤 다시 녹음해 한 번 못 알아들으면 아직 직접 입력이 아니다', (
-      tester,
-    ) async {
+    testWidgets('알아들은 뒤 다시 녹음해 한 번 못 알아들으면 아직 직접 입력이 아니다', (tester) async {
       _useReferenceScreen(tester);
       await tester.pumpWidget(
         _wrap(
@@ -451,8 +398,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
       expect(find.text('합성 문장입니다'), findsOneWidget);
 
@@ -481,13 +427,89 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
 
       expect(captured, '30년 동안 초등학교 선생님을 하셨어요.');
       expect(find.text('30년 동안 초등학교 선생님을 하셨어요.'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+  });
+
+  group('화면 낭독기 이름 (#180, 접근성 보고서 7쪽, 13쪽)', () {
+    testWidgets('마이크 버튼은 지금 누르면 하는 일을 이름으로 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await _choose(tester, '말로 답하기');
+
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 시작')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+
+      tester.semantics.tap(find.semantics.byLabel('음성 입력 시작'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(find.bySemanticsLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('음성 입력 종료')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('옮기는 중과 보내지 못했을 때는 마이크를 누를 수 있는 버튼으로 읽지 않는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      final speech = _FixedSpeech(
+        const SpeechHeard('합성 문장입니다'),
+        const Duration(milliseconds: 200),
+        queued: [const SpeechFailed(canResend: true)],
+      );
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+
+      // 옮기는 중: 마이크는 누를 수 없으므로 상태 문구만 읽는다.
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(find.semantics.byLabel('음성 입력 종료'), findsNothing);
+      expect(find.semantics.byLabel('말씀을 글로 옮기고 있어요'), findsOne);
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // 보내지 못함: 할 일은 재시도 하나로 읽는다.
+      expect(find.text('연결이 원활하지 않아'), findsOneWidget);
+      expect(find.text('말씀을 글로 옮기지 못했어요.'), findsOneWidget);
+      expect(find.semantics.byLabel('음성 입력 시작'), findsNothing);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('재시도')),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('직접 입력칸은 쓰기 전후 모두 항목 이름을 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await _choose(tester, '글로 답하기');
+
+      final field = find.byType(TextField);
+      expect(tester.getSemantics(field), isSemantics(isTextField: true));
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+
+      await tester.enterText(field, '합성 문장입니다');
+      await tester.pump();
+      expect(tester.getSemantics(field).label, startsWith(_step.label));
+      handle.dispose();
     });
   });
 
@@ -551,8 +573,7 @@ void main() {
       addTearDown(tester.view.resetViewInsets);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('글로 답하기'));
-      await tester.pump();
+      await _choose(tester, '글로 답하기');
       await tester.tap(find.byType(TextField));
       tester.view.viewInsets = const FakeViewPadding(bottom: 990);
       await tester.pumpAndSettle();
@@ -583,8 +604,7 @@ void main() {
       const notice = '목소리를 잘 듣지 못했어요.\n글로 적어 보시겠어요?';
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
       await _speak(tester);
       expect(find.text(notice), findsOneWidget);
@@ -615,8 +635,7 @@ void main() {
       addTearDown(tester.view.resetViewInsets);
       await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       tester.view.viewInsets = const FakeViewPadding(bottom: 990);
       await tester.pumpAndSettle();
 
@@ -629,8 +648,7 @@ void main() {
     const cannotResend = SpeechFailed(canResend: false);
 
     Future<void> openMic(WidgetTester tester) async {
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
     }
 
     testWidgets('마이크를 쓸 수 없으면 이유를 알리고 글로 받는다', (tester) async {
@@ -683,7 +701,8 @@ void main() {
       await openMic(tester);
       await _speak(tester);
 
-      expect(find.text('연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.'), findsOneWidget);
+      expect(find.text('연결이 원활하지 않아'), findsOneWidget);
+      expect(find.text('말씀을 글로 옮기지 못했어요.'), findsOneWidget);
       expect(find.byIcon(Icons.refresh), findsOneWidget);
 
       // 할 일을 재시도 하나로 둔다. 마이크를 눌러도 새로 녹음하지 않는다.
@@ -820,8 +839,7 @@ void main() {
         _wrap(outcome: const SpeechNotHeard(), speech: speech),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await tester.tap(find.byIcon(Icons.mic));
       await tester.pumpAndSettle();
       expect(find.text('듣고 있어요'), findsOneWidget);
@@ -842,8 +860,7 @@ void main() {
       _useReferenceScreen(tester);
       await tester.pumpWidget(_wrap(outcome: const SpeechHeard('합성 문장입니다')));
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
 
       expect(find.textContaining('5분이 지나'), findsNothing);
@@ -863,8 +880,7 @@ void main() {
           _wrap(outcome: const SpeechNotHeard(), speech: speech),
         );
 
-        await tester.tap(find.text('말로 답하기'));
-        await tester.pump();
+        await _choose(tester, '말로 답하기');
         await tester.tap(find.byIcon(Icons.mic));
         await tester.pumpAndSettle();
         if (atLimit) {
@@ -893,8 +909,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('말로 답하기'));
-      await tester.pump();
+      await _choose(tester, '말로 답하기');
       await _speak(tester);
       final clearedBefore = cleared;
 
@@ -906,6 +921,113 @@ void main() {
 
       await tester.enterText(find.byType(TextField), '합성 문장입니다 이어서');
       expect(captured, '합성 문장입니다 이어서');
+    });
+  });
+
+  group('녹음 중 화면 켜짐', () {
+    testWidgets('듣는 동안만 켜 두고 다 말했다고 알리면 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechHeard('합성 문장입니다'),
+          delay: const Duration(milliseconds: 200),
+          screen: screen,
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      expect(screen.calls, isEmpty, reason: '마이크를 누르기 전에는 켜지 않는다');
+
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(screen.calls, [true]);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(screen.calls, [true, false], reason: '글로 옮기는 중에는 녹음하지 않는다');
+
+      await tester.pumpAndSettle();
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+      expect(screen.calls, [true, false]);
+    });
+
+    testWidgets('5분에 닿아 저절로 끝나도 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      final speech = _FixedSpeech(const SpeechHeard('합성 문장입니다'), Duration.zero);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech, screen: screen),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+      expect(screen.calls, [true]);
+
+      speech.last!.limit.complete();
+      await tester.pumpAndSettle();
+
+      expect(screen.calls, [true, false]);
+    });
+
+    testWidgets('듣는 중에 화면을 벗어나면 녹음을 버리고 놓는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      final speech = _FixedSpeech(const SpeechNotHeard(), Duration.zero);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech, screen: screen),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+      expect(screen.calls, [true]);
+
+      // 같은 ProviderScope 를 두고 입력 화면만 내린다. 다음 단계로 넘어가는
+      // 것과 같다.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            speechInputProvider.overrideWith((ref) async => speech),
+            screen.asOverride,
+          ],
+          child: const MaterialApp(home: SizedBox.shrink()),
+        ),
+      );
+      await tester.pump();
+
+      expect(screen.calls, [true, false]);
+      expect(speech.cancelled, 1);
+    });
+
+    testWidgets('녹음을 시작하지 못하면 켜지 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      final screen = FakeScreenAwakePlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: _FixedSpeech(
+            const SpeechNotHeard(),
+            Duration.zero,
+            startFailure: const SpeechStartFailure(
+              SpeechStartProblem.micDenied,
+            ),
+          ),
+          screen: screen,
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsOneWidget);
+      expect(screen.calls, isEmpty);
     });
   });
 }

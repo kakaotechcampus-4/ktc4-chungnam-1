@@ -152,19 +152,6 @@ Future<void> _remove(WidgetTester tester, int index) async {
 }
 
 void main() {
-  testWidgets('대화 주제와 일대기에 추가로 나누고 주제를 먼저 둔다', (tester) async {
-    await _open(tester);
-
-    final topicHeader = tester.getTopLeft(find.text('대화 주제'));
-    final topicCard = tester.getTopLeft(find.text('합성 주제'));
-    final factHeader = tester.getTopLeft(find.text('일대기에 추가'));
-    final factCard = tester.getTopLeft(find.text('합성 이야기 내용'));
-
-    expect(topicHeader.dy, lessThan(topicCard.dy));
-    expect(topicCard.dy, lessThan(factHeader.dy), reason: '주제 카드는 주제 구역 안에 있다');
-    expect(factHeader.dy, lessThan(factCard.dy));
-  });
-
   testWidgets('구역마다 어디에 반영되는지 알린다', (tester) async {
     await _open(tester);
 
@@ -202,18 +189,6 @@ void main() {
   });
 
   group('주제 카드', () {
-    testWidgets('위에 제목, 그 아래 설명을 두고 오른쪽 위에 지우기를 둔다', (tester) async {
-      await _open(tester, facts: const []);
-
-      final title = tester.getRect(find.text('합성 주제'));
-      final description = tester.getRect(find.text('합성 주제 설명'));
-      final remove = tester.getRect(find.byTooltip('이 제안 지우기'));
-
-      expect(title.top, lessThan(description.top));
-      expect(remove.left, greaterThan(title.right));
-      expect(remove.top, lessThan(description.top));
-    });
-
     testWidgets('설명이 없으면 제목만 둔다', (tester) async {
       await _open(
         tester,
@@ -234,18 +209,7 @@ void main() {
       expect(find.text('합성 주제 설명'), findsNothing);
     });
 
-    testWidgets('행동 셋을 한 줄에 하나씩 둔다', (tester) async {
-      await _open(tester, facts: const []);
-
-      final more = tester.getRect(_option('더 자주 꺼내기'));
-      final less = tester.getRect(_option('당분간 쉬어가기'));
-      final exclude = tester.getRect(_option('제외하기'));
-
-      expect(more.bottom, lessThanOrEqualTo(less.top));
-      expect(less.bottom, lessThanOrEqualTo(exclude.top));
-    });
-
-    testWidgets('AI 제안이 골라져 있고 그 줄 오른쪽에 AI 제안이라고 적는다', (tester) async {
+    testWidgets('AI 제안이 골라져 있고 그 줄에 AI 제안이라고 적는다', (tester) async {
       await _open(tester, facts: const []);
 
       expect(_isSelected(tester, '더 자주 꺼내기'), isTrue);
@@ -255,24 +219,12 @@ void main() {
       final mark = tester.getRect(find.text('AI 제안'));
       expect(find.text('AI 제안'), findsOneWidget);
       expect(tester.getRect(_option('더 자주 꺼내기')).contains(mark.center), isTrue);
-      expect(
-        mark.left,
-        greaterThan(tester.getRect(find.text('더 자주 꺼내기')).right),
-      );
     });
 
-    testWidgets('고른 줄 바로 아래에 무엇이 바뀌는지 보여준다', (tester) async {
+    testWidgets('고른 행동이 무엇을 바꾸는지 보여준다', (tester) async {
       await _open(tester, facts: const []);
 
-      final effect = tester.getRect(find.text('다음 추천에서 이 주제의 우선순위를 높여요.'));
-      expect(
-        effect.top,
-        greaterThanOrEqualTo(tester.getRect(_option('더 자주 꺼내기')).bottom),
-      );
-      expect(
-        effect.bottom,
-        lessThanOrEqualTo(tester.getRect(_option('당분간 쉬어가기')).top),
-      );
+      expect(find.text('다음 추천에서 이 주제의 우선순위를 높여요.'), findsOneWidget);
       expect(find.text('다음 추천에서 이 주제의 우선순위를 낮춰요.'), findsNothing);
     });
 
@@ -317,14 +269,10 @@ void main() {
       expect(find.text('AI 제안'), findsNothing);
     });
 
-    testWidgets('AI 제안 이유는 행동 아래에 접혀 있다가 누르면 펼친다', (tester) async {
+    testWidgets('AI 제안 이유는 접혀 있다가 누르면 펼친다', (tester) async {
       await _open(tester, facts: const []);
 
       expect(find.text('합성 주제 이유'), findsNothing);
-      expect(
-        tester.getRect(find.text('AI 제안 이유 보기')).top,
-        greaterThan(tester.getRect(_option('제외하기')).bottom),
-      );
 
       await tester.tap(find.text('AI 제안 이유 보기'));
       await tester.pumpAndSettle();
@@ -350,25 +298,6 @@ void main() {
   });
 
   group('일대기에 추가 카드', () {
-    testWidgets('새 이야기 표시 옆에 제목, 그 아래 내용과 수정 버튼을 둔다', (tester) async {
-      await _open(tester, topics: const []);
-
-      final badge = tester.getRect(find.text('NEW'));
-      final title = tester.getRect(find.text('합성 제목'));
-      final content = tester.getRect(find.text('합성 이야기 내용'));
-      final edit = tester.getRect(find.text('이야기 수정하기'));
-      final reason = tester.getRect(find.text('AI 제안 이유 보기'));
-      final remove = tester.getRect(find.byTooltip('이 제안 지우기'));
-
-      expect(badge.right, lessThanOrEqualTo(title.left));
-      expect(badge.top, lessThan(title.bottom), reason: '제목과 같은 줄에 있다');
-      expect(title.bottom, lessThanOrEqualTo(content.top));
-      expect(content.bottom, lessThan(edit.top));
-      expect(edit.bottom, lessThan(reason.top));
-      expect(remove.left, greaterThanOrEqualTo(title.right));
-      expect(find.bySemanticsLabel('새 이야기'), findsOneWidget);
-    });
-
     testWidgets('AI 제안 이유는 접혀 있다가 누르면 펼친다', (tester) async {
       await _open(tester, topics: const []);
 

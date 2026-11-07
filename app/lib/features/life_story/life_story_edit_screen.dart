@@ -30,8 +30,13 @@ class LifeStoryEditScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final id = storyId;
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: AppTopBar(title: id == null ? '이야기 추가하기' : '이야기 수정하기'),
+      backgroundColor: HomeColors.background,
+      appBar: AppTopBar(
+        title: id == null ? '이야기 추가하기' : '이야기 수정하기',
+        backgroundColor: HomeColors.background,
+      ),
       body: LifeStoryBookLoader(
         builder: (context, book) {
           final story = id == null ? null : book.find(id);
@@ -149,6 +154,8 @@ class _EditFormState extends ConsumerState<_EditForm> {
       child: ScreenBody(
         scrollable: true,
         bottom: PrimaryButton(
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           label: _saving
               ? '저장하는 중이에요'
               : widget.story == null
@@ -172,6 +179,8 @@ class _EditFormState extends ConsumerState<_EditForm> {
               controller: _title,
               required: true,
               maxLength: LifeStoryDraft.titleMaxLength,
+              borderColor: HomeColors.outline,
+              focusColor: HomeColors.accent,
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -182,6 +191,8 @@ class _EditFormState extends ConsumerState<_EditForm> {
               keyboardType: TextInputType.multiline,
               minLines: 5,
               maxLines: null,
+              borderColor: HomeColors.outline,
+              focusColor: HomeColors.accent,
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: AppSpacing.xxl),
@@ -206,7 +217,7 @@ class _EditFormState extends ConsumerState<_EditForm> {
 /// 분류 고르기. 첫 장의 분류 칸처럼 아이콘과 이름을 둔 칸이다.
 ///
 /// 정사각형 여섯 칸을 세 칸씩 두 줄로 두고, `기타` 는 그 오른쪽에 두 줄
-/// 높이로 세로로 길게 둔다. 고른 칸은 2px 검정 테두리와 체크다.
+/// 높이로 세로로 길게 둔다. 고른 칸은 2px 초록 테두리와 체크다.
 class _CategoryPicker extends StatelessWidget {
   const _CategoryPicker({required this.selected, required this.onSelected});
 
@@ -261,6 +272,8 @@ class _CategoryPicker extends StatelessWidget {
       child: AppCard(
         onTap: () => onSelected(category),
         selected: isSelected,
+        accent: HomeColors.accent,
+        borderColor: HomeColors.outline,
         padding: const EdgeInsets.all(AppSpacing.xs),
         child: Stack(
           children: [
@@ -271,7 +284,7 @@ class _CategoryPicker extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(category.icon, size: 26, color: AppColors.ink),
+                    Icon(category.icon, size: 26, color: HomeColors.accent),
                     const SizedBox(height: AppSpacing.xs),
                     Text(category.label, style: AppTypography.bodyStrong),
                   ],
@@ -282,7 +295,11 @@ class _CategoryPicker extends StatelessWidget {
               const Positioned(
                 top: 0,
                 right: 0,
-                child: SelectionMark(selected: true, size: 18),
+                child: SelectionMark(
+                  selected: true,
+                  size: 18,
+                  accent: HomeColors.accent,
+                ),
               ),
           ],
         ),
@@ -291,7 +308,7 @@ class _CategoryPicker extends StatelessWidget {
   }
 }
 
-/// 고른 분류의 기본 이미지 다섯 장. 고른 것은 2px 검정 테두리와 체크다.
+/// 고른 분류의 기본 이미지 다섯 장. 고른 것은 2px 초록 테두리와 체크다.
 class _ImagePicker extends StatelessWidget {
   const _ImagePicker({
     required this.category,
@@ -323,7 +340,9 @@ class _ImagePicker extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(AppRadius.image),
                         border: Border.all(
-                          color: n == selected ? AppColors.ink : AppColors.line,
+                          color: n == selected
+                              ? HomeColors.accent
+                              : HomeColors.outline,
                           width: n == selected ? 2 : 1,
                         ),
                       ),
@@ -334,7 +353,11 @@ class _ImagePicker extends StatelessWidget {
                       const Positioned(
                         top: AppSpacing.xs,
                         right: AppSpacing.xs,
-                        child: SelectionMark(selected: true, size: 20),
+                        child: SelectionMark(
+                          selected: true,
+                          size: 20,
+                          accent: HomeColors.accent,
+                        ),
                       ),
                   ],
                 ),

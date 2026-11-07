@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../visit/stop_recording_dialog.dart';
 import 'review_controller.dart';
 import 'status_notice.dart';
 import 'submission_controller.dart';
@@ -41,9 +42,22 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   /// 서버에 남긴 뒤에만 넘어간다. 실패하면 이 화면에 남아 다시 누르게 한다.
   Future<void> _submit() async {
-    final sent = await ref
+    var sent = await ref
         .read(submissionProvider.notifier)
         .submit(resumeSessionId: widget.sessionId);
+    if (!mounted) return;
+    if (!sent &&
+        ref.read(submissionProvider).failure ==
+            SubmissionFailure.participantCountRequired) {
+      final count = await showRecordingParticipantDialog(context);
+      if (count == null || !mounted) return;
+      sent = await ref
+          .read(submissionProvider.notifier)
+          .submit(
+            resumeSessionId: widget.sessionId,
+            confirmedParticipantCount: count,
+          );
+    }
     if (!sent || !mounted) return;
 
     // 리포트를 기다리는 화면은 두지 않는다. 만드는 중과 도착은 홈에서 알리고,
@@ -69,6 +83,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       SubmissionFailure.server => '$what 보내지 못했어요. 잠시 후 다시 눌러주세요.',
       SubmissionFailure.noSession => '면회 기록이 없어 소감을 보낼 수 없어요.',
       SubmissionFailure.noRecording => '녹음 파일이 없어 리포트를 만들 수 없어요.',
+      SubmissionFailure.participantCountRequired =>
+        '녹음은 기기에 남아 있어요. 리포트 만들기를 눌러 참여자 수를 확인해 주세요.',
     };
   }
 
@@ -87,7 +103,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     // 받아 놓고 버리게 된다.
     if (widget.sessionId != null && !target.hasValue && !target.hasError) {
       return const Scaffold(
-        appBar: AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           loading: true,
           title: '면회 기록을 불러오고 있어요',
@@ -100,7 +117,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     // 회차로 넘어간 경우라 소감을 받지 않는다.
     if (target case AsyncData(value: null) when widget.sessionId != null) {
       return Scaffold(
-        appBar: const AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           icon: Icons.event_busy_outlined,
           title: '이어서 할 면회를 찾을 수 없어요.',
@@ -115,7 +133,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (failure == SubmissionFailure.noRecording &&
         submission.evaluationSaved) {
       return Scaffold(
-        appBar: const AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           icon: Icons.mic_off_outlined,
           title: noRecordingTitle,
@@ -125,8 +144,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       );
     }
 
+    // 홈과 같은 세이지 색감이다(`HomeColors`). 고른 답은 초록 면이다.
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: ScreenBody(
         scrollable: true,
         bottom: Column(
@@ -145,6 +166,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               const SizedBox(height: AppSpacing.md),
             ],
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: !submission.sending
                   ? '리포트 만들기'
                   : submission.evaluationSaved
@@ -230,28 +253,43 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               number: 'Q4',
               title: '남기고 싶은 말이 있으신가요?',
               detail: '적지 않으셔도 괜찮아요.',
-              child: TextField(
-                controller: _note,
-                onChanged: controller.setFreeNote,
-                maxLines: 4,
-                style: AppTypography.body,
-                decoration: InputDecoration(
-                  hintText: '오늘 기억에 남는 순간을 적어보세요.',
-                  hintStyle: AppTypography.body.copyWith(
-                    color: AppColors.textDisabled,
-                  ),
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  contentPadding: const EdgeInsets.all(AppSpacing.lg),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(
-                      color: AppColors.ink,
-                      width: 2,
+              // 안내 문구는 글을 쓰면 사라진다. 쓰기 전후 모두 무엇을 적는
+              // 칸인지 읽히게 이름을 붙인다(접근성 보고서 13쪽).
+              child: Semantics(
+                label: '남기고 싶은 말',
+                child: TextField(
+                  key: const Key('reviewFreeNote'),
+                  controller: _note,
+                  onChanged: controller.setFreeNote,
+                  maxLines: 4,
+                  style: AppTypography.body,
+                  decoration: InputDecoration(
+                    hintText: '오늘 기억에 남는 순간을 적어보세요.',
+                    hintStyle: AppTypography.body.copyWith(
+                      color: AppColors.textDisabled,
+                    ),
+                    filled: true,
+                    // 흰 칸에 연한 세이지 테두리다. 흰 칸 위 안내 글자는 4.5:1.
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.all(AppSpacing.lg),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      borderSide: const BorderSide(
+                        color: HomeColors.bubbleLine,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      borderSide: const BorderSide(
+                        color: HomeColors.bubbleLine,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      borderSide: const BorderSide(
+                        color: HomeColors.accent,
+                        width: 2,
+                      ),
                     ),
                   ),
                 ),
@@ -286,24 +324,32 @@ class _Question extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              number,
-              style: AppTypography.bodyStrong.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            if (required)
+        // 별표 대신 `필수 응답` 을 읽고, 물음 사이를 제목 단위로 옮겨 다닐 수
+        // 있게 한다(접근성 보고서 6쪽과 같은 문제).
+        Semantics(
+          header: true,
+          label: required ? '$number. $title, 필수 응답' : '$number. $title',
+          excludeSemantics: true,
+          child: Row(
+            children: [
+              // 오프화이트 바탕에서 비활성 회색은 4.5:1 에 못 미쳐 초록으로 쓴다.
               Text(
-                '*',
-                style: AppTypography.sectionTitle.copyWith(
-                  color: AppColors.danger,
+                number,
+                style: AppTypography.bodyStrong.copyWith(
+                  color: HomeColors.accent,
                 ),
               ),
-          ],
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(title, style: AppTypography.sectionTitle)),
+              if (required)
+                Text(
+                  '*',
+                  style: AppTypography.sectionTitle.copyWith(
+                    color: AppColors.danger,
+                  ),
+                ),
+            ],
+          ),
         ),
         if (detail != null) ...[
           const SizedBox(height: AppSpacing.xs),
@@ -333,28 +379,42 @@ class _SatisfactionPicker extends StatelessWidget {
           children: [
             for (var score = 1; score <= 5; score++) ...[
               Expanded(
-                child: InkWell(
+                // 숫자만 읽히면 무엇을 고르는지 알 수 없다. 점수의 뜻과 고른
+                // 상태를 함께 읽는다.
+                child: Semantics(
+                  button: true,
+                  inMutuallyExclusiveGroup: true,
+                  selected: value == score,
+                  label: '$score점, ${_labels[score - 1]}',
                   onTap: () => onChanged(score),
-                  borderRadius: BorderRadius.circular(AppRadius.card),
-                  child: Container(
-                    height: AppSizes.control,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: value == score
-                          ? AppColors.ink
-                          : AppColors.background,
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                      border: Border.all(
-                        color: value == score ? AppColors.ink : AppColors.line,
-                        width: value == score ? 2 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      '$score',
-                      style: AppTypography.bodyStrong.copyWith(
+                  excludeSemantics: true,
+                  child: InkWell(
+                    onTap: () => onChanged(score),
+                    borderRadius: BorderRadius.circular(AppRadius.card),
+                    child: Container(
+                      height: AppSizes.control,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
                         color: value == score
-                            ? AppColors.background
-                            : AppColors.ink,
+                            ? HomeColors.accent
+                            : AppColors.background,
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        // 고르지 않은 칸은 연한 세이지 테두리다. 실기기에서 흰 칸이
+                        // 바탕과 충분히 구분되어 진한 테두리에서 낮췄다(2026-11-07).
+                        border: Border.all(
+                          color: value == score
+                              ? HomeColors.accent
+                              : HomeColors.bubbleLine,
+                          width: value == score ? 2 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        '$score',
+                        style: AppTypography.bodyStrong.copyWith(
+                          color: value == score
+                              ? AppColors.background
+                              : AppColors.ink,
+                        ),
                       ),
                     ),
                   ),
@@ -388,30 +448,40 @@ class _ReactionPicker extends StatelessWidget {
       runSpacing: AppSpacing.md,
       children: [
         for (final reaction in CareRecipientReaction.values)
-          InkWell(
-            onTap: () => onChanged(reaction),
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            child: Container(
-              height: AppSizes.minTouch,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: value == reaction ? AppColors.ink : AppColors.background,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-                border: Border.all(
-                  color: value == reaction ? AppColors.ink : AppColors.line,
-                  width: value == reaction ? 2 : 1,
-                ),
-              ),
-              child: Text(
-                reaction.label,
-                style: AppTypography.body.copyWith(
+          // 고른 칸은 색으로만 달라지므로 선택 상태를 함께 알린다.
+          Semantics(
+            button: true,
+            inMutuallyExclusiveGroup: true,
+            selected: value == reaction,
+            child: InkWell(
+              onTap: () => onChanged(reaction),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: Container(
+                height: AppSizes.minTouch,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
                   color: value == reaction
-                      ? AppColors.background
-                      : AppColors.ink,
-                  fontWeight: value == reaction
-                      ? FontWeight.w600
-                      : FontWeight.w400,
+                      ? HomeColors.accent
+                      : AppColors.background,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: value == reaction
+                        ? HomeColors.accent
+                        : HomeColors.bubbleLine,
+                    width: value == reaction ? 2 : 1,
+                  ),
+                ),
+                child: Text(
+                  reaction.label,
+                  style: AppTypography.body.copyWith(
+                    color: value == reaction
+                        ? AppColors.background
+                        : AppColors.ink,
+                    fontWeight: value == reaction
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                  ),
                 ),
               ),
             ),
@@ -451,6 +521,7 @@ class _CardReactionRow extends StatelessWidget {
     final notUsed = answered && value == null;
 
     return AppSurfaceBox(
+      color: HomeColors.bubble,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -494,22 +565,30 @@ class _Choice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      child: Container(
-        height: AppSizes.minTouch,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.ink : AppColors.background,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.line),
-        ),
-        child: Text(
-          label,
-          style: AppTypography.sub.copyWith(
-            color: selected ? AppColors.background : AppColors.textSub,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+    // 한 카드의 네 칸 중 하나만 고른다. 고른 칸을 화면 낭독기에도 알린다.
+    return Semantics(
+      button: true,
+      inMutuallyExclusiveGroup: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Container(
+          height: AppSizes.minTouch,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? HomeColors.accent : AppColors.background,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: selected ? HomeColors.accent : HomeColors.bubbleLine,
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppTypography.sub.copyWith(
+              color: selected ? AppColors.background : AppColors.textSub,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
         ),
       ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,289 +13,204 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
-import '../auth/auth_providers.dart';
-import '../auth/consent_terms.dart';
-import '../profile_setup/setup_controller.dart';
+import '../profile_setup/photo_picker.dart';
 import '../profile_setup/setup_steps.dart';
 import 'profile_gallery.dart';
 
-/// 프로필 설정.
+/// 프로필 설정. 하단 탭의 마이페이지로 들어온다.
 ///
-/// 피그마에는 `MYPAGE` 로 되어 있으나 화면 이름은 프로필 설정이다. 하단 탭의
-/// 마이페이지를 눌러 뜨는 메뉴에서 들어온다.
+/// 피그마에는 `MYPAGE` 로 되어 있으나 화면 이름은 프로필 설정이다. 지금 고른
+/// 어르신의 사진, 기본 정보, 세부 정보와 갤러리를 보여준다. 계정 약관 동의,
+/// 로그아웃과 회원탈퇴는 설정 탭으로 옮겼다(2026-11-06 디자인 리뉴얼).
 ///
 /// 이름과 생년월일은 계약상 `localOnly` 라 단말에만 두며 외부 요청에 담지 않는다.
 ///
-/// 등록한 어르신이 없으면 어르신 항목을 모두 감추고 계정 약관 동의, 저장하기,
-/// 로그아웃과 회원탈퇴만 보여준다.
+/// 등록한 어르신이 없으면 등록부터 안내한다.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
-    final account = ref.watch(accountProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(title: '프로필 설정'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '프로필 설정',
+      ),
       body: profile.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
           message: '프로필을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(profileProvider),
         ),
-        data: (bundle) => account.when(
-          loading: () => const LoadingView(),
-          error: (error, _) => ErrorStateView(
-            message: '계정 정보를 불러오지 못했어요.',
-            onRetry: () => ref.invalidate(accountProvider),
-          ),
-          data: (account) => _Body(bundle: bundle, account: account),
-        ),
+        data: (bundle) => bundle == null
+            ? EmptyStateView(
+                message: '함께하는 소중한 분을 등록하면\n정보를 볼 수 있어요.',
+                icon: Icons.person_add_alt_1_outlined,
+                actionLabel: '등록하러 가기',
+                onAction: () => context.push(AppRoutes.profileSwitch),
+              )
+            : _Body(bundle: bundle),
       ),
     );
   }
 }
 
-class _Body extends StatefulWidget {
-  const _Body({required this.bundle, required this.account});
+class _Body extends StatelessWidget {
+  const _Body({required this.bundle});
 
-  /// 등록한 어르신이 없으면 `null` 이다.
-  final ProfileBundle? bundle;
-  final Account account;
-
-  @override
-  State<_Body> createState() => _BodyState();
-}
-
-class _BodyState extends State<_Body> {
-  /// 지금 화면에서 동의한 항목의 키. `widget.account.consent` 에서 시작해
-  /// 수정하기 전까지는 회원가입 때 고른 값과 같다.
-  late final Set<String> _agreed;
-
-  @override
-  void initState() {
-    super.initState();
-    _agreed = {
-      for (final entry in widget.account.consent.entries)
-        if (entry.value.granted) entry.key,
-    };
-  }
-
-  bool get _requiredAgreed => consentTerms
-      .where((term) => term.required)
-      .every((term) => _agreed.contains(term.key));
-
-  bool get _allAgreed => _agreed.length == consentTerms.length;
-
-  void _toggleAll(bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.addAll(consentTerms.map((t) => t.key));
-      } else {
-        _agreed.clear();
-      }
-    });
-  }
-
-  void _toggle(String key, bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.add(key);
-      } else {
-        _agreed.remove(key);
-      }
-    });
-  }
-
-  void _showDetails(ConsentTerm term) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.background,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen,
-            0,
-            AppSpacing.screen,
-            AppSpacing.section,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(term.label, style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.md),
-              Text(term.statement, style: AppTypography.body),
-              const SizedBox(height: AppSpacing.xl),
-              for (final line in term.details) ...[
-                Text(line, style: AppTypography.sub),
-                const SizedBox(height: AppSpacing.md),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _editBasic() => context.push(AppRoutes.profileEditBasic);
-
-  /// 지금 보고 있는 어르신의 사진, 기본 정보, 세부 정보와 갤러리다.
-  List<Widget> _elderSections(ProfileBundle bundle) {
-    final profile = bundle.profile;
-    return [
-      Center(
-        child: Column(
-          children: [
-            ProfileAvatar(gender: profile.gender, size: 130),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    '${profile.name} 어르신',
-                    style: AppTypography.sectionTitle,
-                  ),
-                ),
-                // 이름도 기본 정보 수정에서 고친다.
-                IconButton(
-                  onPressed: _editBasic,
-                  tooltip: '이름 수정',
-                  icon: const Icon(
-                    Icons.edit_outlined,
-                    size: 18,
-                    color: AppColors.textSub,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: AppSpacing.section),
-
-      _Section(
-        title: '기본 정보',
-        onEdit: _editBasic,
-        child: Column(
-          children: [
-            _InfoRow(label: '성별', value: _genderLabel(profile.gender)),
-            _InfoRow(label: '생년월일', value: _dateLabel(profile.birthDate)),
-            _InfoRow(label: '연령대', value: _ageLabel(profile.ageRange)),
-            _InfoRow(
-              label: '현재 상태',
-              value: profile.stage?.label ?? unsupportedValueLabel,
-            ),
-            if (profile.symptomNote != null)
-              _InfoRow(label: '메모', value: profile.symptomNote!),
-          ],
-        ),
-      ),
-      const SizedBox(height: AppSpacing.section),
-
-      _Section(
-        title: '세부 정보',
-        onEdit: () => context.push(AppRoutes.profileEditDetails),
-        child: _Details(profile: profile),
-      ),
-      // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
-      const SizedBox(height: AppSpacing.section),
-
-      _Section(
-        title: '갤러리',
-        onEdit: () {},
-        child: ProfileGallery(photos: bundle.photos),
-      ),
-      const SizedBox(height: AppSpacing.section),
-    ];
-  }
+  final ProfileBundle bundle;
 
   @override
   Widget build(BuildContext context) {
-    final bundle = widget.bundle;
+    final profile = bundle.profile;
+    void editBasic() => context.push(AppRoutes.profileEditBasic);
 
-    return ScreenBody(
-      scrollable: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: AppSpacing.lg),
-
-          // 등록한 어르신이 없으면 계정 항목만 보여준다.
-          if (bundle != null) ..._elderSections(bundle),
-
-          // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다. 어르신을
-          // 바꿔도 같은 값이 보인다는 것을 알린다.
-          const Text('계정 약관 동의', style: AppTypography.sectionTitle),
-          const SizedBox(height: AppSpacing.sm),
-          const Text('함께하는 모든 분에게 똑같이 적용돼요.', style: AppTypography.sub),
-          const SizedBox(height: AppSpacing.lg),
-
-          for (final term in consentTerms) ...[
-            _ConsentRow(
-              term: term,
-              checked: _agreed.contains(term.key),
-              onChanged: (value) => _toggle(term.key, value),
-              onDetails: () => _showDetails(term),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Divider(),
-          ),
-
-          InkWell(
-            onTap: () => _toggleAll(!_allAgreed),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Row(
+    // ScreenBody 의 scrollable 은 내용 높이를 미리 재어(IntrinsicHeight) 화면
+    // 높이를 채운다. 갤러리에서 사진을 눌러 펼친 설명 칸은 여러 줄 입력칸이라
+    // 그 값이 실제보다 작게 나올 수 있고, 갤러리가 맨 아래라 그 넘침이 저장하기를
+    // 가렸다(웹 미리보기에서 1픽셀). 이 화면은 높이를 채울 일이 없어 그냥
+    // 스크롤한다.
+    // 사진과 이름 아래에는 덩굴 모양 꾸밈 선을 두어 아래 구역과 나눈다.
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 사진은 바탕과 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
+            Container(
+              // 이름 줄은 연필 버튼(48) 높이라 글자 아래가 그만큼 더 비어 보인다.
+              // 그 몫을 빼서 글자 아래 간격이 사진 위 간격(32)과 같아 보이게 한다.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.xxl,
+                AppSpacing.screen,
+                AppSpacing.xxl - _nameRowSlack(context),
+              ),
+              child: Column(
                 children: [
-                  Checkbox(
-                    value: _allAgreed,
-                    onChanged: _toggleAll,
-                    activeColor: AppColors.ink,
-                    side: const BorderSide(color: AppColors.line, width: 2),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: HomeColors.bubbleLine),
+                      boxShadow: AppShadows.low,
+                    ),
+                    child: ProfileAvatar(gender: profile.gender, size: 120),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  const Text('전체 동의', style: AppTypography.bodyStrong),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 연필 버튼만큼 왼쪽을 비워 이름 글자가 정확히 가운데에
+                      // 오게 한다. 연필은 글자 바로 옆에 붙는다.
+                      const SizedBox(width: AppSizes.minTouch),
+                      Flexible(
+                        child: Text(
+                          '${profile.name} 어르신',
+                          style: AppTypography.sectionTitle,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      // 이름도 기본 정보 수정에서 고친다. 누름 영역(48)은 지키고
+                      // 아이콘만 글자 쪽으로 붙인다.
+                      IconButton(
+                        onPressed: editBasic,
+                        tooltip: '이름 수정',
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.only(left: AppSpacing.xs),
+                        constraints: const BoxConstraints.tightFor(
+                          width: AppSizes.minTouch,
+                          height: AppSizes.minTouch,
+                        ),
+                        // 아래 구역의 수정하기 아이콘과 같은 크기다.
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: 16,
+                          color: AppColors.textSub,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.section),
-
-          PrimaryButton(
-            label: '저장하기',
-            // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
-            onPressed: _requiredAgreed
-                ? () => Navigator.maybePop(context)
-                : null,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          const _SignOutButton(),
-          const SizedBox(height: AppSpacing.xl),
-
-          Center(
-            child: AppTextButton(
-              label: '회원탈퇴',
-              onPressed: () => context.push(AppRoutes.profileDelete),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+              child: _VineDivider(),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 꾸밈 선에서 기본 정보까지 다른 구역 사이와 같은 간격을 둔다.
+                  const SizedBox(height: AppSpacing.section),
 
-          const SizedBox(height: AppSpacing.xl),
-        ],
+                  _Section(
+                    title: '기본 정보',
+                    onEdit: editBasic,
+                    child: Column(
+                      children: [
+                        _InfoRow(
+                          label: '성별',
+                          value: _genderLabel(profile.gender),
+                        ),
+                        _InfoRow(
+                          label: '생년월일',
+                          value: _dateLabel(profile.birthDate),
+                        ),
+                        _InfoRow(
+                          label: '연령대',
+                          value: _ageLabel(profile.ageRange),
+                        ),
+                        _InfoRow(
+                          label: '현재 상태',
+                          value: profile.stage?.label ?? unsupportedValueLabel,
+                        ),
+                        if (profile.symptomNote != null)
+                          _InfoRow(label: '메모', value: profile.symptomNote!),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+
+                  _Section(
+                    title: '세부 정보',
+                    onEdit: () => context.push(AppRoutes.profileEditDetails),
+                    child: _Details(profile: profile),
+                  ),
+                  // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
+                  const SizedBox(height: AppSpacing.section),
+
+                  // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+                  // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
+                  _Section(
+                    title: '갤러리',
+                    child: _Gallery(mockPhotos: bundle.photos),
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// 이름 줄에서 글자 아래로 더 비는 높이. 줄 높이는 연필 버튼(48)이고 글자는
+  /// 그보다 낮다. 글자를 크게 키워 버튼보다 높아지면 0 이다.
+  static double _nameRowSlack(BuildContext context) {
+    const style = AppTypography.sectionTitle;
+    final textHeight =
+        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
+    return ((AppSizes.minTouch - textHeight) / 2).clamp(0.0, AppSpacing.xxl);
   }
 
   static String _genderLabel(String raw) => switch (raw) {
@@ -318,46 +235,81 @@ class _BodyState extends State<_Body> {
       raw.endsWith('s') ? '${raw.substring(0, raw.length - 1)}대' : raw;
 }
 
-/// 로그아웃. 단말 세션과 구글 쪽을 지우고 서버에서도 세션을 폐기한다.
+/// 갤러리의 사진. 서버에 저장한 분은 서버의 사진(2-3)을, 로그인 없이 들어온
+/// 분은 목 사진을 보여준다.
 ///
-/// 서버에 닿지 못해도 로그아웃은 된다(`SessionNotifier.signOut`).
-class _SignOutButton extends ConsumerStatefulWidget {
-  const _SignOutButton();
+/// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
+///
+/// 서버에 저장한 분은 갤러리 아래에서 사진을 더 올린다. [maxProfilePhotos] 장을
+/// 채웠으면 막고 이유를 알린다. 목 사진은 올릴 곳이 없어 두지 않는다.
+class _Gallery extends ConsumerWidget {
+  const _Gallery({required this.mockPhotos});
+
+  final List<ProfilePhoto> mockPhotos;
 
   @override
-  ConsumerState<_SignOutButton> createState() => _SignOutButtonState();
-}
-
-class _SignOutButtonState extends ConsumerState<_SignOutButton> {
-  bool _busy = false;
-
-  Future<void> _signOut() async {
-    setState(() => _busy = true);
-    await ref.read(sessionProvider.notifier).signOut();
-    if (!mounted) return;
-    forgetCareProfiles(ref);
-    context.go(AppRoutes.signIn);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SecondaryButton(
-      label: _busy ? '로그아웃하는 중이에요' : '로그아웃',
-      onPressed: _busy ? null : _signOut,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final server = ref.watch(serverProfilePhotosProvider);
+    return server.when(
+      data: (photos) => photos == null
+          ? ProfileGallery(photos: mockPhotos)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ProfileGallery(photos: photos),
+                const SizedBox(height: AppSpacing.lg),
+                if (photos.length < maxProfilePhotos)
+                  SecondaryButton(
+                    borderColor: HomeColors.outline,
+                    label: '사진 추가하기',
+                    onPressed: () => context.push(
+                      AppRoutes.profilePhotoAdd,
+                      extra: photos.length,
+                    ),
+                  )
+                else ...[
+                  const SecondaryButton(
+                    borderColor: HomeColors.outline,
+                    label: '사진 추가하기',
+                    onPressed: null,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text(
+                    '사진은 $maxProfilePhotos장까지 올릴 수 있어요.',
+                    style: AppTypography.sub,
+                  ),
+                ],
+              ],
+            ),
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('사진을 불러오지 못했어요.', style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            borderColor: HomeColors.outline,
+            label: '다시 시도',
+            onPressed: () => ref.invalidate(serverProfilePhotosProvider),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.child,
-    required this.onEdit,
-  });
+  const _Section({required this.title, required this.child, this.onEdit});
 
   final String title;
   final Widget child;
-  final VoidCallback onEdit;
+
+  /// `null` 이면 머리글에 수정하기를 두지 않는다. 눌러도 갈 곳이 없는 버튼을
+  /// 보이지 않기 위해서다.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -367,15 +319,16 @@ class _Section extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            TextButton.icon(
-              onPressed: onEdit,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSub,
-                minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+            if (onEdit case final onEdit?)
+              TextButton.icon(
+                onPressed: onEdit,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSub,
+                  minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('수정하기', style: AppTypography.caption),
               ),
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('수정하기', style: AppTypography.caption),
-            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -446,10 +399,16 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppSurfaceBox(
+      color: HomeColors.bubble,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppChip(label, tone: ChipTone.weak),
+          AppChip(
+            accent: HomeColors.accent,
+            weakBorder: HomeColors.outline,
+            label,
+            tone: ChipTone.weak,
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(text, style: AppTypography.body),
         ],
@@ -458,97 +417,75 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-/// 동의 항목 한 줄이다. `consent_form.dart` 의 `ConsentRow` 와 같은 모양이다.
-class _ConsentRow extends StatelessWidget {
-  const _ConsentRow({
-    required this.term,
-    required this.checked,
-    required this.onChanged,
-    required this.onDetails,
-  });
-
-  final ConsentTerm term;
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final VoidCallback onDetails;
-
-  static const _labelOffset = 12.0;
-  static const _detailsHeight = 28.0;
+/// 사진과 이름 아래의 꾸밈 선이다. 양 끝으로 갈수록 잦아드는 물결 선 두 줄기가
+/// 가운데의 작은 잎 한 쌍에서 만난다. 장식이라 화면 낭독기는 읽지 않는다.
+class _VineDivider extends StatelessWidget {
+  const _VineDivider();
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!checked),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Checkbox(
-            value: checked,
-            onChanged: onChanged,
-            activeColor: AppColors.ink,
-            side: const BorderSide(color: AppColors.line, width: 2),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: _labelOffset),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: term.required ? '[필수] ' : '[선택] ',
-                        style: AppTypography.body.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: term.required
-                              ? AppColors.danger
-                              : AppColors.textSub,
-                        ),
-                      ),
-                      TextSpan(text: term.label, style: AppTypography.body),
-                    ],
-                  ),
-                ),
-
-                if (term.note != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(term.note!, style: AppTypography.sub),
-                ],
-
-                const SizedBox(height: AppSpacing.sm),
-
-                TextButton(
-                  onPressed: onDetails,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textDisabled,
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size(0, _detailsHeight),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '자세히 보기',
-                        style: AppTypography.sub.copyWith(
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.textDisabled,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    return const ExcludeSemantics(
+      child: SizedBox(
+        height: 24,
+        width: double.infinity,
+        child: CustomPaint(painter: _VinePainter()),
       ),
     );
   }
+}
+
+class _VinePainter extends CustomPainter {
+  const _VinePainter();
+
+  /// 가운데 잎 자리의 반 폭.
+  static const _gap = 22.0;
+
+  /// 물결 한 번의 길이와 가장 큰 높이.
+  static const _wave = 28.0;
+  static const _amplitude = 3.5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    final line = Paint()
+      ..color = HomeColors.outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    // 가운데에서 바깥으로 그린다. 바깥으로 갈수록 물결이 잦아든다.
+    for (final dir in const [-1.0, 1.0]) {
+      final length = cx - _gap;
+      final path = Path()..moveTo(cx + dir * _gap, cy);
+      for (double d = 0; d <= length; d += 1) {
+        final fade = 1 - d / length;
+        final y = cy + math.sin(d / _wave * 2 * math.pi) * _amplitude * fade;
+        path.lineTo(cx + dir * (_gap + d), y);
+      }
+      canvas.drawPath(path, line);
+    }
+
+    // 가운데 잎 한 쌍. 왼쪽 잎은 연한 세이지, 오른쪽 잎은 초록이다.
+    _leaf(canvas, Offset(cx, cy), -1, HomeColors.outline);
+    _leaf(canvas, Offset(cx, cy), 1, HomeColors.accent);
+
+    // 잎이 만나는 자리의 작은 점.
+    canvas.drawCircle(Offset(cx, cy), 2.5, Paint()..color = HomeColors.accent);
+  }
+
+  /// [dir] 쪽으로 비스듬히 올라가는 잎 하나.
+  void _leaf(Canvas canvas, Offset base, double dir, Color color) {
+    final tip = base + Offset(dir * 16, -7);
+    final path = Path()
+      ..moveTo(base.dx, base.dy)
+      ..quadraticBezierTo(base.dx + dir * 6, base.dy - 10, tip.dx, tip.dy)
+      ..quadraticBezierTo(base.dx + dir * 10, base.dy + 2, base.dx, base.dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_VinePainter oldDelegate) => false;
 }

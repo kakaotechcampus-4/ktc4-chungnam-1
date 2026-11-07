@@ -62,6 +62,16 @@ CARD_SET = OwnedResource(
     ),
 )
 
+CARD = OwnedResource(
+    error_code="CARD_NOT_FOUND",
+    message="대화 카드를 찾을 수 없습니다.",
+    query=(
+        "SELECT c.profile_id FROM conversation_cards c "
+        "JOIN profiles p ON p.profile_id = c.profile_id "
+        "WHERE c.card_id = %s AND p.user_id = %s"
+    ),
+)
+
 VISIT_SESSION = OwnedResource(
     error_code="VISIT_SESSION_NOT_FOUND",
     message="면회 기록을 찾을 수 없습니다.",

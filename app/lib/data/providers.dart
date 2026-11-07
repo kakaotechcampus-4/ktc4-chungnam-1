@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
 import 'mock_repository.dart';
@@ -22,9 +23,18 @@ final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
 );
 
-final accountProvider = FutureProvider<Account>(
-  (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
-);
+/// 로그인한 계정과 가장 최근 동의 이력(1-3). 로그인하지 않았으면 목 계정이다.
+///
+/// 계정이 바뀌면 다시 읽는다.
+final accountProvider = FutureProvider<Account>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  if (accountId == null) {
+    return ref.watch(mockRepositoryProvider).loadAccount();
+  }
+  return ref.watch(accountApiProvider).me();
+});
 
 /// 환자 정보 입력에서 받은 기본 정보다.
 class EnteredBasicInfo {
@@ -497,14 +507,19 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
 /// 기본 정보와 세부 정보 네 항목은 입력한 값이다. 그 밖의 생애 정보는 아직 목
-/// 데이터 그대로다. 사진은 목 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
-/// 올린 사진으로 바뀐다.
+/// 데이터 그대로다.
+///
+/// 서버에 저장한 분의 사진은 여기 담지 않는다. 갤러리가
+/// [serverProfilePhotosProvider] 로 따로 읽는다. 사진을 읽지 못해도 이름과 정보는
+/// 보여야 해서다. 로그인 없이 들어온 분은 목 사진을 이 분의 `photos[]` 로 붙인다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
   final entered = selected?.basicInfo;
   if (selected == null || entered == null) return null;
 
+  final online = ref.watch(sessionProvider.select((s) => s != null));
+  final onServer = online && selected.remoteId != null;
   final mock = bundle.profile;
   final details = selected.details;
   return ProfileBundle(
@@ -517,7 +532,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,
-      photoIds: mock.photoIds,
+      photoIds: onServer ? const [] : mock.photoIds,
       occupation: details.occupation,
       hometown: details.hometown,
       hobby: details.hobby,
@@ -525,9 +540,104 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
+    photos: onServer
+        ? const []
+        : [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
+
+/// 사진 분석(3-2)이 끝났는지 다시 묻는 간격. 테스트는 짧게 바꾼다.
+///
+/// 명세는 간격을 정하지 않는다. 리포트 상태를 묻는 간격과 같게 둔다.
+final photoAnalysisPollIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
+/// 지금 계정이 AI 사진 분석(선택 동의 `photoAnalysis`)에 동의했는지. 계정을 읽는
+/// 중이거나 읽지 못했으면 `null` 이다.
+///
+/// 동의하지 않은 계정의 사진은 사진 분석 worker 가 가져가지 않아 `pending` 으로
+/// 남는다. 갤러리는 이때 "분석 중"을 보이지 않고 보호자가 바로 설명을 적게 하며,
+/// 사진 상태도 다시 묻지 않는다.
+final photoAnalysisWantedProvider = Provider<bool?>((ref) {
+  final account = ref.watch(accountProvider).value;
+  if (account == null) return null;
+  return account.consent['photoAnalysis']?.granted ?? false;
+});
+
+/// 서버에 저장한 지금 어르신의 프로필 사진(2-3). 올린 순서대로다.
+///
+/// 로그인하지 않았거나 서버에 저장하지 않은 분이면 `null` 이고, 갤러리는
+/// [profileProvider] 의 목 사진을 쓴다.
+///
+/// 분석이 끝나지 않은 사진(`pending`, `processing`)은 3-2 로 끝날 때까지 묻고 그
+/// 자리를 바꾼다. 묻지 못하면 다음 차례에 다시 묻는다. 갤러리를 떠나면 묻지
+/// 않고, 다시 열면 처음부터 읽는다. `imageUrl` 은 수명이 짧아 다시 열 때 새로
+/// 받는다.
+class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
+  /// 읽을 때마다 올라간다. 지난 읽기의 폴링은 버린다.
+  int _round = 0;
+
+  @override
+  Future<List<ProfilePhoto>?> build() async {
+    final round = ++_round;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) return null;
+
+    final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
+    // 분석에 동의하지 않은 계정의 사진은 끝나지 않으므로 묻지 않는다.
+    if (!_stale(round) &&
+        photos.any(_analyzing) &&
+        ref.read(photoAnalysisWantedProvider) != false) {
+      // 상태를 돌려준 뒤에 묻기 시작한다.
+      Future<void>(() => _poll(round));
+    }
+    return photos;
+  }
+
+  static bool _analyzing(ProfilePhoto photo) => switch (photo.analysisStatus) {
+    PhotoAnalysisStatus.completed || PhotoAnalysisStatus.failed => false,
+    _ => true,
+  };
+
+  bool _stale(int round) => !ref.mounted || round != _round;
+
+  Future<void> _poll(int round) async {
+    if (_stale(round)) return;
+    final interval = ref.read(photoAnalysisPollIntervalProvider);
+    final api = ref.read(profileApiProvider);
+    while (true) {
+      await Future<void>.delayed(interval);
+      if (_stale(round)) return;
+      final photos = state.value;
+      if (photos == null || !photos.any(_analyzing)) return;
+      // 묻는 사이 동의를 거뒀으면 그만 묻는다.
+      if (ref.read(photoAnalysisWantedProvider) == false) return;
+
+      final next = [...photos];
+      for (var i = 0; i < next.length; i++) {
+        if (!_analyzing(next[i])) continue;
+        try {
+          next[i] = await api.photo(next[i].photoId);
+        } on ApiFailure {
+          // 이번에는 묻지 못했다. 다음 차례에 다시 묻는다.
+        }
+        if (_stale(round)) return;
+      }
+      state = AsyncData(next);
+    }
+  }
+}
+
+final serverProfilePhotosProvider =
+    AsyncNotifierProvider.autoDispose<
+      ServerProfilePhotosNotifier,
+      List<ProfilePhoto>?
+    >(ServerProfilePhotosNotifier.new);
 
 /// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
 String ageRangeOf(String birthDate, DateTime today) {
@@ -684,7 +794,7 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
@@ -697,6 +807,7 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
   });
@@ -710,6 +821,7 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
@@ -771,6 +883,18 @@ class _ReportNoticesNotifier
     _set(key, null);
   }
 
+  /// [reportId] 를 확인했다. 지금 알림이 그 리포트의 도착이면 지운다. 다른
+  /// 리포트(리포트 기록에서 연 지난 리포트)의 알림이면 남긴다. 목 데이터의 도착
+  /// 알림은 가리키는 리포트가 없어 목 리포트를 열면 지운다.
+  void acknowledge(_NoticeKey key, String reportId) {
+    _acknowledged.add(reportId);
+    final notice = state[key];
+    if (notice == null || notice.notice != ReportNotice.ready) return;
+    if (notice.reportId != null && notice.reportId != reportId) return;
+    _nextRound(key);
+    _set(key, null);
+  }
+
   void arrive(_NoticeKey key) {
     _nextRound(key);
     _set(key, const ReportNoticeInfo(ReportNotice.ready));
@@ -803,6 +927,33 @@ class _ReportNoticesNotifier
       const ReportNoticeInfo(ReportNotice.generating, fromServer: true),
     );
     unawaited(_follow(key, round, remoteProfileId, analysisId: analysisId));
+  }
+
+  /// 녹음을 시작해 서버에 회차가 생겼다(5-1). 서버의 가장 최근 회차가 평가
+  /// 전인 이 회차가 되므로, 5-4 를 다시 묻지 않고 같은 알림으로 바꾼다. 앞
+  /// 회차를 기다리던 흐름은 끊는다.
+  void visitStarted(_NoticeKey key, String sessionId, String startedAt) {
+    _synced.add(key);
+    _nextRound(key);
+    String? visitDate;
+    try {
+      visitDate = VisitProgress(
+        sessionId: sessionId,
+        status: VisitStatus.evaluationPending,
+        startedAt: startedAt,
+      ).visitDate;
+    } on FormatException {
+      // 날짜를 읽지 못해도 이어서 할 회차는 알린다. 배너는 날짜 없이 뜬다.
+    }
+    _set(
+      key,
+      ReportNoticeInfo(
+        ReportNotice.evaluationPending,
+        reportId: sessionId,
+        visitDate: visitDate,
+        fromServer: true,
+      ),
+    );
   }
 
   /// 이 자리를 아직 서버에 묻지 않았으면 가장 최근 회차로 알림을 정한다.
@@ -953,6 +1104,7 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
     );
@@ -1027,6 +1179,14 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     if (key != null) _notices.dismiss(key, reportId: reportId);
   }
 
+  /// 확인할 제안이 없는 리포트를 열었다. 지금 알림이 그 리포트의 도착이면
+  /// 지운다. 서버가 그 회차를 계속 `completed` 로 주어도 이번 실행에서는 다시
+  /// 띄우지 않는다.
+  void acknowledge(String reportId) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.acknowledge(key, reportId);
+  }
+
   /// 리포트가 만들어졌다.
   void arrive() {
     final key = _currentNoticeKey(ref);
@@ -1051,6 +1211,16 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     } else {
       _notices.startMockGenerating(key);
     }
+  }
+
+  /// 녹음을 시작해 회차를 만들었다(5-1). 홈에 `평가 이어서 하기` 를 띄운다.
+  ///
+  /// 홈은 서버의 회차(5-4)를 어르신마다 앱을 켠 뒤 한 번만 묻는다. 그래서
+  /// 면회 중 녹음 화면을 떠나 홈에 오면, 앱을 다시 켜기 전에는 이어갈 배너가
+  /// 없었다(#234). [startedAt] 은 5-1 이 준 `startedAt` 이다.
+  void visitStarted({required String sessionId, required String startedAt}) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.visitStarted(key, sessionId, startedAt);
   }
 
   /// 회차 상태를 묻지 못했을 때 다시 묻는다. 서버에 저장한 분일 때만 묻는다.

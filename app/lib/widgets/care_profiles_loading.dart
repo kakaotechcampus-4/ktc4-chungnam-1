@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../design/tokens.dart';
 import 'app_scaffold.dart';
 import 'app_states.dart';
 
@@ -36,6 +37,12 @@ class CareProfilesLoading extends ConsumerWidget {
       _ => child,
     };
     if (identical(body, child)) return child;
-    return Scaffold(appBar: withTopBar ? const AppTopBar() : null, body: body);
+    return Scaffold(
+      backgroundColor: HomeColors.background,
+      appBar: withTopBar
+          ? const AppTopBar(backgroundColor: HomeColors.background)
+          : null,
+      body: body,
+    );
   }
 }

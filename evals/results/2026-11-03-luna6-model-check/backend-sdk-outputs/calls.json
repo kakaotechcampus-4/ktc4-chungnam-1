@@ -1,0 +1,173 @@
+{
+  "used": 6,
+  "runs": [
+    {
+      "name": "report-clear",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 6.5,
+      "calls": [
+        {
+          "seconds": 6.4,
+          "usage": {
+            "input_tokens": 1275,
+            "output_tokens": 375,
+            "total_tokens": 1650,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 1272
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-clear",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 4.7,
+      "calls": [
+        {
+          "seconds": 4.7,
+          "usage": {
+            "input_tokens": 1961,
+            "output_tokens": 434,
+            "total_tokens": 2395,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 1958
+            },
+            "output_token_details": {
+              "reasoning": 202
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "report-merged",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 4.5,
+      "calls": [
+        {
+          "seconds": 4.5,
+          "usage": {
+            "input_tokens": 973,
+            "output_tokens": 207,
+            "total_tokens": 1180,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-merged",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 3.3,
+      "calls": [
+        {
+          "seconds": 3.3,
+          "usage": {
+            "input_tokens": 1572,
+            "output_tokens": 213,
+            "total_tokens": 1785,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 1569
+            },
+            "output_token_details": {
+              "reasoning": 190
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "report-third",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 4.1,
+      "calls": [
+        {
+          "seconds": 4.1,
+          "usage": {
+            "input_tokens": 1075,
+            "output_tokens": 253,
+            "total_tokens": 1328,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 1072
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-third",
+      "requested_model": "gpt-6-luna",
+      "max_output_tokens": 16000,
+      "effort": "low",
+      "calls_attempted": 1,
+      "wall_seconds": 1.6,
+      "calls": [
+        {
+          "seconds": 1.6,
+          "usage": {
+            "input_tokens": 1706,
+            "output_tokens": 80,
+            "total_tokens": 1786,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 1703
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    }
+  ]
+}

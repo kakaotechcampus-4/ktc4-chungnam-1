@@ -169,7 +169,8 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
     final proposal = ref.watch(reportProposalsProvider(widget.reportId));
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: proposal.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
@@ -247,7 +248,12 @@ class _NothingToReview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ScreenBody(
-      bottom: PrimaryButton(label: '홈으로', onPressed: onDone),
+      bottom: PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '홈으로',
+        onPressed: onDone,
+      ),
       child: const EmptyStateView(
         message: '새로 확인할 변경 사항이 없어요.',
         icon: Icons.inbox_outlined,
@@ -290,6 +296,8 @@ class _Body extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
           ],
           PrimaryButton(
+            color: HomeColors.accent,
+            loadingColor: HomeColors.accentLoading,
             label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
             onPressed: onApply,
           ),
@@ -395,6 +403,10 @@ class _TopicCard extends StatelessWidget {
     final description = proposal.topic.description;
 
     return AppCard(
+      accent: HomeColors.accent,
+      borderColor: HomeColors.outline,
+      // 오프화이트 바탕에서 카드가 떠 보이게 목록 카드보다 조금 진한 그림자다.
+      shadows: AppShadows.card,
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -504,10 +516,12 @@ class _ActionOption extends StatelessWidget {
       selected: selected,
       inMutuallyExclusiveGroup: true,
       child: Material(
-        color: selected ? AppColors.ink : AppColors.background,
+        color: selected ? HomeColors.accent : AppColors.background,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: BorderSide(color: selected ? AppColors.ink : AppColors.line),
+          side: BorderSide(
+            color: selected ? HomeColors.accent : HomeColors.outline,
+          ),
         ),
         child: InkWell(
           onTap: onTap,
@@ -521,12 +535,16 @@ class _ActionOption extends StatelessWidget {
               ),
               child: Row(
                 children: [
+                  // 고르지 않은 빈 원은 흰 면과 3:1 이상 구분되는 회색으로
+                  // 그린다(접근성 보고서 14쪽). 줄의 테두리는 그대로 둔다.
                   Icon(
                     selected
                         ? Icons.check_circle
                         : Icons.radio_button_unchecked,
                     size: 22,
-                    color: selected ? AppColors.background : AppColors.line,
+                    color: selected
+                        ? AppColors.background
+                        : AppColors.textDisabled,
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -616,7 +634,10 @@ class _ReasonFold extends StatelessWidget {
               AppSpacing.xl,
               AppSpacing.xl,
             ),
-            child: AppSurfaceBox(child: Text(reason, style: AppTypography.sub)),
+            child: AppSurfaceBox(
+              color: HomeColors.bubble,
+              child: Text(reason, style: AppTypography.sub),
+            ),
           ),
       ],
     );
@@ -676,6 +697,10 @@ class _LifeFactCard extends StatelessWidget {
     final content = edited?.content ?? proposal.content;
 
     return AppCard(
+      accent: HomeColors.accent,
+      borderColor: HomeColors.outline,
+      // 오프화이트 바탕에서 카드가 떠 보이게 목록 카드보다 조금 진한 그림자다.
+      shadows: AppShadows.card,
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -736,7 +761,11 @@ class _LifeFactCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: AppSpacing.lg),
-                SecondaryButton(label: '이야기 수정하기', onPressed: onEdit),
+                SecondaryButton(
+                  borderColor: HomeColors.outline,
+                  label: '이야기 수정하기',
+                  onPressed: onEdit,
+                ),
               ],
             ),
           ),
@@ -767,7 +796,7 @@ class _NewBadge extends StatelessWidget {
             vertical: 2,
           ),
           decoration: BoxDecoration(
-            color: AppColors.ink,
+            color: HomeColors.accent,
             borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Text(

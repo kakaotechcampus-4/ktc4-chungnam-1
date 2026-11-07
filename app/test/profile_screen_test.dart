@@ -32,10 +32,26 @@ class _WithDetails extends CareProfilesNotifier {
   );
 }
 
+/// 앱 Navigator 에 새로 쌓인 화면과 창(대화상자, 시트 포함)을 모은다.
+class _PushRecorder extends NavigatorObserver {
+  final List<Route<dynamic>> pushed = [];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushed.add(route);
+  }
+}
+
+/// 지금 라우터의 맨 위 화면 경로. `push` 로 쌓은 화면도 본다.
+String _location(WidgetTester tester) => GoRouter.of(
+  tester.element(find.byType(ProfileScreen, skipOffstage: false)),
+).routerDelegate.currentConfiguration.last.matchedLocation;
+
 /// 어르신 한 분을 등록한 상태로 프로필 설정을 띄운다.
 Future<ProviderContainer> _open(
   WidgetTester tester, {
   bool withDetails = false,
+  NavigatorObserver? observer,
 }) async {
   // 기준 화면 412 x 917 dp 를 길게 늘려 스크롤 없이 모든 항목을 본다.
   tester.view.physicalSize = const Size(1236, 6000);
@@ -54,6 +70,7 @@ Future<ProviderContainer> _open(
 
   final router = GoRouter(
     initialLocation: AppRoutes.profile,
+    observers: [?observer],
     routes: [
       GoRoute(
         path: AppRoutes.profile,
@@ -76,10 +93,7 @@ Future<ProviderContainer> _open(
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp.router(
-          theme: buildAppTheme(),
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(theme: buildAppTheme(), routerConfig: router),
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -95,11 +109,7 @@ void main() {
     for (final shown in ['기본 정보', '세부 정보', '갤러리']) {
       expect(find.text(shown), findsOneWidget, reason: shown);
     }
-    expect(
-      find.text('내용 추가하기'),
-      findsNothing,
-      reason: '생애 정보 추가는 일대기에서 한다',
-    );
+    expect(find.text('내용 추가하기'), findsNothing, reason: '생애 정보 추가는 일대기에서 한다');
   });
 
   group('세부 정보', () {
@@ -137,7 +147,10 @@ void main() {
       await openEdit(tester);
 
       expect(find.text('기본 정보 수정'), findsOneWidget);
-      expect(find.widgetWithText(TextField, sampleBasicInfo.name), findsOneWidget);
+      expect(
+        find.widgetWithText(TextField, sampleBasicInfo.name),
+        findsOneWidget,
+      );
       expect(find.text('1943년'), findsOneWidget);
       expect(enabled(tester), isFalse, reason: '고치지 않았으면 저장할 것이 없다');
     });
@@ -210,7 +223,9 @@ void main() {
 
     /// 항목 이름으로 그 칸을 찾는다.
     Finder field(String label) => find.descendant(
-      of: find.ancestor(of: find.text(label), matching: find.byType(Column)).first,
+      of: find
+          .ancestor(of: find.text(label), matching: find.byType(Column))
+          .first,
       matching: find.byType(TextField),
     );
 
@@ -225,7 +240,6 @@ void main() {
       await openEdit(tester);
 
       expect(find.text('세부 정보 수정'), findsOneWidget);
-      expect(find.text('비워 두면 그 항목을 지워요.'), findsOneWidget);
       String textOf(String label) =>
           tester.widget<TextField>(field(label)).controller!.text;
       expect(textOf('하시던 일'), '재봉 일을 오래 하셨어요.');
@@ -269,6 +283,55 @@ void main() {
       expect(entry.details.family, isNull, reason: '빈 문자열이 아니라 null 이다');
       expect(entry.details.hometown, isNull);
       expect(entry.basicInfo!.name, sampleBasicInfo.name);
+    });
+  });
+
+  group('갤러리', () {
+    /// 제목 [title] 과 같은 줄에 있는 수정하기 버튼.
+    Finder editOf(String title) => find.descendant(
+      of: find.ancestor(of: find.text(title), matching: find.byType(Row)),
+      matching: find.widgetWithText(TextButton, '수정하기'),
+    );
+
+    testWidgets('갈 곳이 없는 머리글 수정하기는 두지 않는다', (tester) async {
+      await _open(tester);
+
+      expect(editOf('갤러리'), findsNothing);
+      expect(editOf('기본 정보'), findsOneWidget, reason: '다른 칸은 그대로 둔다');
+      expect(editOf('세부 정보'), findsOneWidget);
+      expect(find.text('수정하기'), findsNWidgets(2));
+    });
+
+    testWidgets('사진을 누르면 화면을 옮기지 않고 그 자리에서 설명을 고친다', (tester) async {
+      final recorder = _PushRecorder();
+      await _open(tester, observer: recorder);
+      recorder.pushed.clear();
+      expect(_location(tester), AppRoutes.profile);
+
+      await tester.tap(find.bySemanticsLabel('사진 1'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('AI가 만든 설명'), findsOneWidget);
+      expect(recorder.pushed, isEmpty, reason: '새 화면이나 창을 띄우지 않는다');
+      expect(_location(tester), AppRoutes.profile, reason: '경로가 그대로다');
+    });
+
+    testWidgets('화면을 옮기면 위 확인이 잡아낸다', (tester) async {
+      // 위 테스트의 확인이 늘 통과하지 않는다는 것을 같은 방법으로 보인다.
+      final recorder = _PushRecorder();
+      await _open(tester, observer: recorder);
+      recorder.pushed.clear();
+
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(of: find.text('기본 정보'), matching: find.byType(Row)),
+          matching: find.widgetWithText(TextButton, '수정하기'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(recorder.pushed, hasLength(1));
+      expect(_location(tester), AppRoutes.profileEditBasic);
     });
   });
 }

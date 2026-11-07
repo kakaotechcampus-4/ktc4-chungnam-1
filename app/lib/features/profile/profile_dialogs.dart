@@ -73,19 +73,32 @@ Future<bool> showChoiceDialog(
   return chosen ?? false;
 }
 
+/// 알리기만 하는 창. [showChoiceDialog] 와 같은 모양에 버튼이 하나다.
+Future<void> showNoticeDialog(
+  BuildContext context, {
+  required String title,
+  required String detail,
+  String label = '확인',
+}) => showDialog<bool>(
+  context: context,
+  builder: (context) =>
+      _ChoiceDialog(title: title, detail: detail, primaryLabel: label),
+);
+
 /// 제목, 설명과 두 버튼만 있는 창이다. 만남 끝내기 확인 창과 같은 모양이다.
+/// [secondaryLabel] 이 없으면 버튼 하나로 알리기만 한다.
 class _ChoiceDialog extends StatelessWidget {
   const _ChoiceDialog({
     required this.title,
     required this.detail,
     required this.primaryLabel,
-    required this.secondaryLabel,
+    this.secondaryLabel,
   });
 
   final String title;
   final String detail;
   final String primaryLabel;
-  final String secondaryLabel;
+  final String? secondaryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -118,14 +131,19 @@ class _ChoiceDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: primaryLabel,
                 onPressed: () => Navigator.of(context).pop(true),
               ),
-              const SizedBox(height: AppSpacing.md),
-              SecondaryButton(
-                label: secondaryLabel,
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
+              if (secondaryLabel case final secondary?) ...[
+                const SizedBox(height: AppSpacing.md),
+                SecondaryButton(
+                  borderColor: HomeColors.outline,
+                  label: secondary,
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+              ],
             ],
           ),
         ),

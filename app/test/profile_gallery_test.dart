@@ -87,6 +87,8 @@ Future<ProviderContainer> _open(
   List<ProfilePhoto>? photos,
   _FakeStore? store,
   ProviderContainer? container,
+  // 기본은 AI 사진 분석에 동의한 계정이다. 동의하지 않은 계정은 false 를 넘긴다.
+  bool? analysisWanted = true,
 }) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
@@ -100,6 +102,7 @@ Future<ProviderContainer> _open(
           photoDescriptionStoreProvider.overrideWithValue(
             store ?? _FakeStore(),
           ),
+          photoAnalysisWantedProvider.overrideWithValue(analysisWanted),
         ],
       );
   if (container == null) addTearDown(scope.dispose);
@@ -130,6 +133,29 @@ bool _enabled(WidgetTester tester, Finder button) =>
     tester.widget<FilledButton>(button).onPressed != null;
 
 void main() {
+  testWidgets('다시 조회한 보호자 설명은 AI 실패 상태여도 남고 출처를 구분한다', (tester) async {
+    await _open(
+      tester,
+      photos: [
+        ProfilePhoto(
+          photoId: 'photo-restored',
+          profileId: 'profile_001',
+          imageUrl: 'asset:assets/images/family.webp',
+          analysisStatus: PhotoAnalysisStatus.failed,
+          description: '서버에 저장해 둔 설명',
+          descriptionSource: 'caregiver',
+          createdAt: '2026-11-03T00:00:00Z',
+        ),
+      ],
+    );
+    await tester.tap(find.bySemanticsLabel('사진 1'));
+    await tester.pump();
+    expect(find.text('서버에 저장해 둔 설명'), findsOneWidget);
+    expect(find.text('사진에 대한 설명'), findsOneWidget);
+    expect(find.text('AI가 만든 설명'), findsNothing);
+    expect(find.text('분석 실패'), findsNothing);
+  });
+
   testWidgets('올린 사진을 보여주고 분석 상태를 칸에 붙인다', (tester) async {
     await _open(tester);
 
@@ -161,7 +187,10 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('사진 1'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '  어머니 칠순 잔치 때 찍은 가족사진이에요.  ');
+    await tester.enterText(
+      find.byType(TextField),
+      '  어머니 칠순 잔치 때 찍은 가족사진이에요.  ',
+    );
     await tester.pump();
 
     expect(_enabled(tester, _saveButton()), isTrue);
@@ -334,6 +363,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           photoDescriptionStoreProvider.overrideWithValue(_FakeStore()),
+          photoAnalysisWantedProvider.overrideWithValue(true),
         ],
       );
       addTearDown(container.dispose);
@@ -372,10 +402,7 @@ void main() {
       session.restore(_sessionOf('account_a'));
       await _open(tester, container: container);
       await openPhoto1(tester);
-      expect(
-        find.widgetWithText(TextField, 'A 계정이 고친 설명이에요.'),
-        findsOneWidget,
-      );
+      expect(find.widgetWithText(TextField, 'A 계정이 고친 설명이에요.'), findsOneWidget);
     });
 
     testWidgets('같은 목 사진이라도 다른 어르신에게는 보이지 않는다', (tester) async {
@@ -436,6 +463,112 @@ void main() {
       expect(bundle.photos.map((photo) => photo.profileId).toSet(), {
         sampleProfileId,
       });
+    });
+  });
+
+  group('열어 둔 사진의 분석이 끝나면', () {
+    /// 같은 갤러리에 새 사진 목록을 넘긴다. 3-2 로 분석 상태를 다시 받은 때다.
+    Future<void> show(WidgetTester tester, List<ProfilePhoto> photos) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            photoDescriptionStoreProvider.overrideWithValue(_FakeStore()),
+            photoAnalysisWantedProvider.overrideWithValue(true),
+          ],
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: ProfileGallery(
+                  key: const ValueKey('gallery'),
+                  photos: photos,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('새로 온 설명을 입력칸에 채운다', (tester) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await show(tester, [_photo('photo_1', PhotoAnalysisStatus.processing)]);
+      await tester.tap(find.bySemanticsLabel('사진 1, 분석 중'));
+      await tester.pumpAndSettle();
+
+      await show(tester, [
+        _photo('photo_1', PhotoAnalysisStatus.completed, description: _aiText),
+      ]);
+
+      expect(find.widgetWithText(TextField, _aiText), findsOneWidget);
+    });
+
+    testWidgets('보호자가 쓰고 있던 내용은 덮어쓰지 않는다', (tester) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await show(tester, [
+        _photo('photo_1', PhotoAnalysisStatus.completed, description: _aiText),
+      ]);
+      await tester.tap(find.bySemanticsLabel('사진 1'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '보호자가 쓰던 설명');
+      await tester.pump();
+
+      await show(tester, [
+        _photo(
+          'photo_1',
+          PhotoAnalysisStatus.completed,
+          description: '다시 받은 설명이에요.',
+        ),
+      ]);
+
+      expect(find.widgetWithText(TextField, '보호자가 쓰던 설명'), findsOneWidget);
+    });
+  });
+
+  group('AI 사진 분석에 동의하지 않은 계정', () {
+    testWidgets('분석하지 않는 사진에 "분석 중"을 붙이지 않는다', (tester) async {
+      await _open(tester, analysisWanted: false);
+
+      expect(find.bySemanticsLabel('사진 2'), findsOneWidget);
+      expect(find.text('분석 중'), findsNothing);
+      // 실패한 사진은 동의와 관계없이 실패를 알린다.
+      expect(find.bySemanticsLabel('사진 3, 분석 실패'), findsOneWidget);
+    });
+
+    testWidgets('기다리게 하지 않고 바로 직접 적어 저장하게 한다', (tester) async {
+      final store = _FakeStore();
+      await _open(tester, store: store, analysisWanted: false);
+
+      await tester.tap(find.bySemanticsLabel('사진 2'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('만들고 있어요'), findsNothing);
+      expect(find.textContaining('AI 사진 분석에 동의하지 않아'), findsOneWidget);
+      expect(find.text('사진에 대한 설명'), findsOneWidget);
+      expect(find.text('AI가 만든 설명'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '마당에서 찍은 사진이에요.');
+      await tester.pump();
+      await tester.tap(_saveButton());
+      await tester.pumpAndSettle();
+
+      expect(store.saved, [('photo_2', '마당에서 찍은 사진이에요.')]);
+      expect(find.text('설명을 저장했어요.'), findsOneWidget);
+    });
+
+    testWidgets('계정을 아직 읽지 못했으면 지금처럼 기다리라고 알린다', (tester) async {
+      await _open(tester, analysisWanted: null);
+
+      await tester.tap(find.bySemanticsLabel('사진 2, 분석 중'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('만들고 있어요'), findsOneWidget);
     });
   });
 }

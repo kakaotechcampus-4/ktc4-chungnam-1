@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
@@ -28,6 +29,7 @@ import 'package:saerok/features/auth/splash_screen.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
+import 'package:saerok/features/settings/settings_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
@@ -243,6 +245,10 @@ Widget _app({
         builder: (context, state) => const ProfileScreen(),
       ),
       GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.profileDelete,
         builder: (context, state) => const ProfileDeleteScreen(),
       ),
@@ -258,6 +264,11 @@ Widget _app({
       // 로그인하면 어르신 목록을 서버에서 불러온다. 실제 주소로 나가지 않게 한다.
       FakeProfileServer().override,
       FakeReportServer().override,
+      // 프로필 설정의 계정 약관 동의는 로그인하면 서버(1-3)에서 읽는다. 이
+      // 테스트는 로그인과 탈퇴만 보므로 목 계정을 쓴다.
+      accountProvider.overrideWith(
+        (ref) => const MockRepository().loadAccount(),
+      ),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
@@ -519,6 +530,7 @@ void main() {
         'sensitiveData': true,
         'pushNotification': false,
         'serviceImprovement': false,
+        'photoAnalysis': false,
       }, reason: '고르지 않은 항목은 거부로 보낸다. 임의로 true 를 넣지 않는다');
       expect(
         sent!.containsKey('displayName'),
@@ -631,7 +643,8 @@ void main() {
         'sensitiveData': false,
         'pushNotification': false,
         'serviceImprovement': false,
-      }, reason: '계약의 네 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
+        'photoAnalysis': false,
+      }, reason: '계약의 다섯 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
       expect(find.text('처음 오셨네요'), findsOneWidget);
     });
 
@@ -908,7 +921,7 @@ void main() {
       expect(google.signOutCalls, 1);
     });
 
-    testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
+    testWidgets('설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
       final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
@@ -926,12 +939,12 @@ void main() {
           google: _FakeGoogleAuthenticator(),
           store: store,
           session: _signedIn(),
-          initialLocation: AppRoutes.profile,
+          initialLocation: AppRoutes.settings,
           photos: photos,
         ),
       );
 
-      final button = find.widgetWithText(OutlinedButton, '로그아웃');
+      final button = find.widgetWithText(TextButton, '로그아웃');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();

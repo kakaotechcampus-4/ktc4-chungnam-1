@@ -21,7 +21,7 @@ REQUIRED_CONSENTS: tuple[str, ...] = (
     "sensitiveData",
 )
 # 거부해도 계정을 만드는 선택 동의 항목.
-OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement", "pushNotification")
+OPTIONAL_CONSENTS: tuple[str, ...] = ("serviceImprovement", "pushNotification", "photoAnalysis")
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,8 @@ class AccountRepository(Protocol):
     ) -> Account | None:
         """가장 최근 동의 이력을 복사해 `changes` 의 선택 동의만 바꾼 이력을 더한다.
 
-        약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다.
+        약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다. 알림 수신을
+        거두면 그 계정의 푸시 기기 등록(`push_devices`)도 함께 지운다.
         """
         ...
 
@@ -130,7 +131,7 @@ class InMemoryAccountRepository:
             for name, granted in changes.items():
                 if not granted:
                     consents[name] = ConsentRecord(granted=False, granted_at=None)
-                elif not consents[name].granted:
+                elif name not in consents or not consents[name].granted:
                     consents[name] = ConsentRecord(granted=True, granted_at=now)
             updated = replace(account, consents=consents)
             self._by_id[account_id] = updated
@@ -156,6 +157,7 @@ _CONSENT_COLUMNS: dict[str, str] = {
     "sensitiveData": "sensitive_data",
     "serviceImprovement": "service_improvement",
     "pushNotification": "push_notification",
+    "photoAnalysis": "photo_analysis",
 }
 
 
@@ -217,13 +219,14 @@ class PostgresAccountRepository:
                 await self._connection.execute(
                     "INSERT INTO consent_records "
                     "(user_id, terms_version, service_data, sensitive_data, "
-                    " service_improvement, push_notification, recorded_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    " service_improvement, push_notification, photo_analysis, recorded_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         UUID(account.account_id),
                         account.consent_version,
+                        # 나중에 더한 선택 동의(예: photoAnalysis)가 없으면 거부로 남긴다.
                         *(
-                            account.consents[name].granted
+                            name in account.consents and account.consents[name].granted
                             for name in _CONSENT_COLUMNS
                         ),
                         account.created_at,
@@ -260,18 +263,26 @@ class PostgresAccountRepository:
             await self._connection.execute(
                 "INSERT INTO consent_records "
                 "(user_id, terms_version, service_data, sensitive_data, "
-                " service_improvement, push_notification, recorded_at) "
+                " service_improvement, push_notification, photo_analysis, recorded_at) "
                 "SELECT user_id, terms_version, service_data, sensitive_data, "
                 "       COALESCE(%s, service_improvement), "
                 "       COALESCE(%s, push_notification), "
+                "       COALESCE(%s, photo_analysis), "
                 "       GREATEST(clock_timestamp(), recorded_at) "
                 "FROM current_consents WHERE user_id = %s",
                 (
                     changes.get("serviceImprovement"),
                     changes.get("pushNotification"),
+                    changes.get("photoAnalysis"),
                     user_id,
                 ),
             )
+            if changes.get("pushNotification") is False:
+                # 알림 수신을 거두면 푸시를 받을 기기 등록(1-7)도 함께 지운다. 발송 때
+                # 동의를 다시 확인하더라도 거둔 계정의 기기 ID 를 남겨 둘 이유가 없다.
+                await self._connection.execute(
+                    "DELETE FROM push_devices WHERE user_id = %s", (user_id,)
+                )
         return await self.get(account_id)
 
     async def delete(
@@ -300,7 +311,7 @@ class PostgresAccountRepository:
             return None
         cursor = await self._connection.execute(
             "SELECT terms_version, service_data, sensitive_data, "
-            "       service_improvement, push_notification, recorded_at "
+            "       service_improvement, push_notification, photo_analysis, recorded_at "
             "FROM consent_records WHERE user_id = %s "
             "ORDER BY recorded_at, record_id",
             (user["user_id"],),

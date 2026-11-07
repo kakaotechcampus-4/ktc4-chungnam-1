@@ -8,10 +8,19 @@ class PrimaryButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.expand = true,
+    this.loading = false,
+    this.color,
+    this.loadingColor,
     super.key,
   });
 
   final String label;
+
+  /// 면 색. 비우면 검정이다. 흰 글자와 4.5:1 이상인 색만 쓴다.
+  final Color? color;
+
+  /// [color] 를 바꿨을 때 [loading] 의 면. 흰 글자와 4.5:1 이상이어야 한다.
+  final Color? loadingColor;
 
   /// `null` 이면 비활성 상태로 보여준다.
   final VoidCallback? onPressed;
@@ -19,17 +28,33 @@ class PrimaryButton extends StatelessWidget {
   /// 가로 폭을 가득 채운다.
   final bool expand;
 
+  /// 누른 일이 진행 중이다. 면을 조금 흐리게 하고 글자 앞에 도는 표시를 두며
+  /// 다시 누를 수 없게 한다. 비활성(회색)과는 다르게 보이도록 검정을 옅게만
+  /// 한다. 흰 글자와의 대비는 약 5.9:1 이다.
+  final bool loading;
+
+  /// [loading] 일 때의 면. 흰 바탕 위에서 `#646464` 쯤으로 보인다.
+  static final _loadingBackground = AppColors.ink.withValues(alpha: 0.65);
+
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null;
+    final enabled = onPressed != null || loading;
+    final text = Text(
+      label,
+      style: AppTypography.button.copyWith(
+        color: enabled ? AppColors.background : AppColors.textDisabled,
+      ),
+    );
     final button = SizedBox(
       height: AppSizes.control,
       child: FilledButton(
-        onPressed: onPressed,
+        onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
+          backgroundColor: color ?? AppColors.ink,
           foregroundColor: AppColors.background,
-          disabledBackgroundColor: AppColors.line,
+          disabledBackgroundColor: loading
+              ? (loadingColor ?? _loadingBackground)
+              : AppColors.line,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -38,12 +63,23 @@ class PrimaryButton extends StatelessWidget {
           ),
           textStyle: AppTypography.button,
         ),
-        child: Text(
-          label,
-          style: AppTypography.button.copyWith(
-            color: enabled ? AppColors.background : AppColors.textDisabled,
-          ),
-        ),
+        child: loading
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppColors.background,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Flexible(child: text),
+                ],
+              )
+            : text,
       ),
     );
     return expand ? SizedBox(width: double.infinity, child: button) : button;
@@ -57,6 +93,7 @@ class SecondaryButton extends StatelessWidget {
     required this.onPressed,
     this.expand = true,
     this.icon,
+    this.borderColor = AppColors.line,
     super.key,
   });
 
@@ -66,6 +103,9 @@ class SecondaryButton extends StatelessWidget {
 
   /// 글자 앞에 둘 아이콘. 없으면 글자만 둔다.
   final IconData? icon;
+
+  /// 테두리 색. 오프화이트 바탕에서는 [HomeColors.outline] 처럼 진하게 준다.
+  final Color borderColor;
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +118,7 @@ class SecondaryButton extends StatelessWidget {
           foregroundColor: AppColors.ink,
           disabledForegroundColor: AppColors.textDisabled,
           backgroundColor: AppColors.background,
-          side: const BorderSide(color: AppColors.line),
+          side: BorderSide(color: borderColor),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
@@ -102,7 +142,11 @@ class SecondaryButton extends StatelessWidget {
 
 /// 면 없이 글자만 있는 버튼이다. 밑줄로 누를 수 있음을 알린다.
 class AppTextButton extends StatelessWidget {
-  const AppTextButton({required this.label, required this.onPressed, super.key});
+  const AppTextButton({
+    required this.label,
+    required this.onPressed,
+    super.key,
+  });
 
   final String label;
   final VoidCallback? onPressed;

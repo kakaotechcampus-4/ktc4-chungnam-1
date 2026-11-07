@@ -21,6 +21,10 @@ import 'report_text.dart';
 ///
 /// `변경 사항 확인하기` 는 확인할 제안(7-3 의 `pending`)이 남았을 때만 둔다. 홈
 /// 알림에서 들어왔는지, 리포트 기록에서 들어왔는지는 보지 않는다.
+///
+/// 확인할 제안이 없으면 확인을 마칠 버튼이 없으므로, 리포트와 제안을 모두 읽으면
+/// 이 리포트의 홈 도착 알림을 지운다. 어느 하나라도 읽는 중이거나 읽지 못했으면
+/// 지우지 않는다. 제안이 남았으면 변경 사항 확인을 마쳐야 지운다.
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({required this.reportId, super.key});
 
@@ -31,7 +35,8 @@ class ReportScreen extends ConsumerWidget {
     final report = ref.watch(reportProvider(reportId));
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: report.when(
         loading: () => const LoadingView(message: '리포트를 여는 중이에요'),
         error: (error, _) => ErrorStateView(
@@ -121,6 +126,7 @@ class _CardSection {
     required this.summaries,
     required this.notUsed,
     required this.unevaluated,
+    required this.noCardUsed,
   });
 
   /// 보호자의 답을 보고 나눈다.
@@ -134,7 +140,12 @@ class _CardSection {
     List<String>? selectedCardIds,
   ) {
     if (reviews == null) {
-      return _CardSection(summaries: summaries, notUsed: 0, unevaluated: 0);
+      return _CardSection(
+        summaries: summaries,
+        notUsed: 0,
+        unevaluated: 0,
+        noCardUsed: false,
+      );
     }
     bool used(String cardId) =>
         reviews.any((r) => r.cardId == cardId && r.wasUsed);
@@ -149,10 +160,23 @@ class _CardSection {
       unevaluated: selectedCardIds == null
           ? 0
           : selectedCardIds.where((id) => !answered.contains(id)).length,
+      noCardUsed: !reviews.any((r) => r.wasUsed),
     );
   }
 
   final List<CardSummary> summaries;
+
+  /// 보호자의 답을 읽었고 쓴 카드가 하나도 없다.
+  ///
+  /// 요약이 비어도 쓴 카드가 있으면 `false` 다. 리포트가 카드 요약을 만들지
+  /// 않았을 때(예: 화자를 확인하지 못한 대화) 다룬 카드가 없다고 적으면 보호자의
+  /// 답과 다른 말을 하게 된다. 답을 읽지 못했을 때도 `false` 로 두어 다룬 카드가
+  /// 없다고 단정하지 않는다.
+  final bool noCardUsed;
+
+  /// 요약이 없을 때 보여줄 안내.
+  String get emptyMessage =>
+      noCardUsed ? '이번 만남에서 다룬 카드가 없어요.' : '이번 리포트에는 카드별 요약이 없어요.';
 
   /// 쓰지 않았다고 답한 카드 수.
   final int notUsed;
@@ -174,6 +198,26 @@ class _BodyState extends ConsumerState<_Body> {
   /// 이 화면에 머무는 동안만 기억한다. 앱 전체로 넓히거나 저장하는 것은
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 이 위젯은 리포트를 읽은 뒤에만 그려진다. 남은 것은 제안을 읽었는지다.
+    ref.listenManual(reportProposalsProvider(widget.report.reportId), (
+      _,
+      next,
+    ) {
+      if (next.isLoading || next.hasError) return;
+      if (!(next.value?.nothingPending ?? false)) return;
+      // 화면을 그리는 중에 알림 상태를 바꾸지 않도록 미룬다.
+      Future.microtask(() {
+        if (!mounted) return;
+        ref
+            .read(reportNoticeProvider.notifier)
+            .acknowledge(widget.report.reportId);
+      });
+    }, fireImmediately: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +254,8 @@ class _BodyState extends ConsumerState<_Body> {
           bottom: !hasChanges
               ? null
               : PrimaryButton(
+                  color: HomeColors.accent,
+                  loadingColor: HomeColors.accentLoading,
                   label: '변경 사항 확인하기',
                   onPressed: () =>
                       context.push(AppRoutes.reportChangesOf(report.reportId)),
@@ -237,20 +283,28 @@ class _BodyState extends ConsumerState<_Body> {
                 const SizedBox(height: AppSpacing.section),
               ],
 
-              Text('오늘의 만남', style: set.section),
+              // 화면 낭독기에서 제목 단위로 옮겨 다닐 수 있게 한다.
+              Semantics(
+                header: true,
+                child: Text('오늘의 만남', style: set.section),
+              ),
               const SizedBox(height: AppSpacing.lg),
               AppSurfaceBox(
+                color: HomeColors.bubble,
                 padding: EdgeInsets.all(set.cardPadding),
                 child: _Summary(text: report.summaryText, set: set),
               ),
               const SizedBox(height: AppSpacing.section),
 
-              Text('대화 카드별 반응', style: set.section),
+              Semantics(
+                header: true,
+                child: Text('대화 카드별 반응', style: set.section),
+              ),
               const SizedBox(height: AppSpacing.lg),
 
               if (cards.summaries.isEmpty)
-                const EmptyStateView(
-                  message: '이번 만남에서 다룬 카드가 없어요.',
+                EmptyStateView(
+                  message: cards.emptyMessage,
                   icon: Icons.style_outlined,
                 )
               else
@@ -262,7 +316,13 @@ class _BodyState extends ConsumerState<_Body> {
               if (countText != null) ...[
                 if (cards.summaries.isEmpty)
                   const SizedBox(height: AppSpacing.lg),
-                Text(countText, style: set.sub),
+                Center(
+                  child: Text(
+                    countText,
+                    style: set.sub,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.lg),
               ],
 
@@ -327,8 +387,8 @@ class _Summary extends StatelessWidget {
 
 /// 날짜와 기분을 적는 줄이다.
 ///
-/// 기본 모드는 예전처럼 한 줄에 나란히 둔다. 쉬운 모드는 글자가 커져 한 줄로는
-/// 가로가 넘치므로 칩을 아래로 내린다.
+/// 기본 모드는 예전처럼 한 줄에 나란히 두고, 넘치면 칩을 다음 줄로 내린다. 쉬운
+/// 모드는 글자가 커져 한 줄로는 가로가 넘치므로 칩을 아래로 내린다.
 class _MetaLine extends StatelessWidget {
   const _MetaLine({
     required this.date,
@@ -345,8 +405,18 @@ class _MetaLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = Text(date, style: set.sub);
-    final chip = AppChip(mood, style: set.chip);
+    final chip = AppChip(
+      accent: HomeColors.accent,
+      weakBorder: HomeColors.outline,
+      mood,
+      style: set.chip,
+    );
 
+    // 날짜와 만남 표시를 한 번에 읽는다.
+    return MergeSemantics(child: _layout(label, chip));
+  }
+
+  Widget _layout(Widget label, Widget chip) {
     if (stacked) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,12 +428,13 @@ class _MetaLine extends StatelessWidget {
       );
     }
 
-    return Row(
-      children: [
-        label,
-        const SizedBox(width: AppSpacing.md),
-        chip,
-      ],
+    // 한 줄에 들어가면 나란히, 시스템 글자를 키워 넘치면 칩을 다음 줄로 내린다.
+    // Row 는 1.3배에서 오른쪽으로 넘쳤다(412dp, 2026-11-08 위젯 테스트).
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.md,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [label, chip],
     );
   }
 }
@@ -383,21 +454,27 @@ class _CardSummaryTile extends StatelessWidget {
     // 글자 크기를 키운 기기에서도 두 줄을 유지한다.
     final twoLines = MediaQuery.textScalerOf(context).scale(lineHeight) * 2;
 
-    return AppCard(
-      padding: EdgeInsets.all(set.cardPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(summary.topicTitle, style: set.cardTitle),
-          const SizedBox(height: AppSpacing.md),
-          ConstrainedBox(
-            constraints: BoxConstraints(minHeight: twoLines),
-            child: SizedBox(
-              width: double.infinity,
-              child: Text(summary.summary, style: style),
+    // 카드 제목과 반응을 한 항목으로 읽는다. 따로 읽히면 어느 카드의 반응인지
+    // 이어 듣기 어렵다.
+    return MergeSemantics(
+      child: AppCard(
+        accent: HomeColors.accent,
+        borderColor: HomeColors.outline,
+        padding: EdgeInsets.all(set.cardPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary.topicTitle, style: set.cardTitle),
+            const SizedBox(height: AppSpacing.md),
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: twoLines),
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(summary.summary, style: style),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -419,36 +496,47 @@ class _EasyModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = on ? AppColors.background : AppColors.ink;
 
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: on ? AppColors.ink : AppColors.background,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: on ? AppColors.ink : AppColors.line),
-        boxShadow: AppShadows.high,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => onChanged(!on),
+    // 켜고 끄는 버튼이라 화면 낭독기에 켜짐과 꺼짐을 알린다. 아이콘은 읽지 않는다.
+    return Semantics(
+      container: true,
+      button: true,
+      toggled: on,
+      label: '쉬운 모드',
+      onTap: () => onChanged(!on),
+      excludeSemantics: true,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: on ? HomeColors.accent : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 켜졌다는 것을 색만으로 알리지 않는다(`app/DESIGN.md` 접근성).
-                Icon(
-                  on ? Icons.check : Icons.format_size,
-                  size: 24,
-                  color: foreground,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '쉬운 모드',
-                  style: AppTypography.bodyStrong.copyWith(color: foreground),
-                ),
-              ],
+          border: Border.all(
+            color: on ? HomeColors.accent : HomeColors.outline,
+          ),
+          boxShadow: AppShadows.high,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onChanged(!on),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 켜졌다는 것을 색만으로 알리지 않는다(`app/DESIGN.md` 접근성).
+                  Icon(
+                    on ? Icons.check : Icons.format_size,
+                    size: 24,
+                    color: foreground,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    '쉬운 모드',
+                    style: AppTypography.bodyStrong.copyWith(color: foreground),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -478,6 +566,7 @@ class _VisitPhoto extends StatelessWidget {
             height: _height,
             width: double.infinity,
             fit: BoxFit.cover,
+            semanticLabel: '면회 사진',
           )
         : Image.network(
             url,
@@ -487,7 +576,7 @@ class _VisitPhoto extends StatelessWidget {
             semanticLabel: '면회 사진',
             errorBuilder: (context, error, stackTrace) => Container(
               height: _height,
-              color: AppColors.surface,
+              color: HomeColors.bubble,
               alignment: Alignment.center,
               child: const Text('사진을 열지 못했어요', style: AppTypography.sub),
             ),

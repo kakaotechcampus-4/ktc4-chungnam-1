@@ -7,6 +7,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
+import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
 import 'visit_camera.dart';
@@ -28,6 +29,10 @@ enum VisitRecordingProblem {
 
   /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
   sessionFailed,
+
+  /// 카드를 받은 뒤 프로필이나 일대기를 고쳐 5-1 이 그 묶음을 받지 않았다
+  /// (`CARD_SET_NEEDS_REFRESH`). 다시 눌러도 같으므로 카드를 다시 준비해야 한다.
+  cardsOutdated,
 }
 
 /// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
@@ -69,6 +74,7 @@ class VisitState {
     this.problem,
     this.participantCount,
     this.photoUpload = VisitPhotoUpload.none,
+    this.addedCardIds = const {},
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -106,6 +112,9 @@ class VisitState {
 
   final VisitPhotoUpload photoUpload;
 
+  /// 면회 중에 보충해 더한 카드. 카드 번호 칩을 다른 색으로 그리는 데 쓴다.
+  final Set<String> addedCardIds;
+
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
 
@@ -120,8 +129,7 @@ class VisitState {
 
   bool get isLastCard => currentIndex >= cards.length - 1;
 
-  /// 진행률. 화면의 `1/3`, `33%` 표시에 쓴다.
-  double get progress => cards.isEmpty ? 0 : (currentIndex + 1) / cards.length;
+  bool get isFirstCard => currentIndex <= 0;
 
   /// `00:05:38` 형태로 보여준다.
   String get elapsedLabel {
@@ -143,6 +151,7 @@ class VisitState {
     VisitRecordingProblem? problem,
     int? participantCount,
     VisitPhotoUpload? photoUpload,
+    Set<String>? addedCardIds,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -158,6 +167,7 @@ class VisitState {
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
     photoUpload: photoUpload ?? this.photoUpload,
+    addedCardIds: addedCardIds ?? this.addedCardIds,
   );
 }
 
@@ -261,6 +271,9 @@ class VisitController extends AsyncNotifier<VisitState> {
       ),
     );
     _startTicker();
+    // 녹음 중에 앱이 죽어도 다시 켰을 때 이 회차의 파일을 찾도록 바로 적어 둔다.
+    // 끝내지 못한 파일의 머리글은 보내기 전에 고친다(repairUnfinishedRecording).
+    unawaited(_rememberUpload());
   }
 
   /// 고른 카드로 회차를 만든다. 성공하면 `true` 다.
@@ -292,15 +305,49 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
 
       _update((now) => now.copyWith(sessionId: session.sessionId));
+      _announceVisit(session);
       // 녹음은 사진을 기다리지 않는다.
       unawaited(_uploadPhoto(retryOnce: true));
       return true;
-    } on ApiFailure {
-      _fail(VisitRecordingProblem.sessionFailed);
+    } on ApiFailure catch (failure) {
+      if (failure case ApiServerFailure(errorCode: 'CARD_SET_NEEDS_REFRESH')) {
+        _fail(VisitRecordingProblem.cardsOutdated);
+        // 뒤에 있는 카드 화면이 다시 확인해 옛 카드를 감추고 홈으로 돌려보내게
+        // 한다. 받아 둔 묶음은 버리지 않는다. 이 회차가 그 묶음을 보고 있다.
+        // 지우면 시작하지 않은 상태로 남아 카드 화면이 기다리기만 하므로
+        // 다시 확인하게 한다.
+        final profileId = ref.read(serverProfileIdProvider).value;
+        if (profileId != null) {
+          unawaited(
+            ref.read(cardGenerationProvider(profileId).notifier).start(),
+          );
+        }
+      } else {
+        _fail(VisitRecordingProblem.sessionFailed);
+      }
       return false;
     } finally {
       _creatingSession = false;
     }
+  }
+
+  /// 회차가 생겨 서버가 이 카드 묶음을 면회 중(`inVisit`)으로, 이 회차를 평가
+  /// 전으로 본다. 카드 화면과 홈이 서버에 다시 묻지 않아도 그 상태를 보게 한다.
+  ///
+  /// 그러지 않으면 녹음 화면에서 뒤로 나왔을 때 카드 화면은 고르기와
+  /// `대화 시작하기` 를 그대로 보여주고(다시 누르면 `CARD_SET_ALREADY_USED`),
+  /// 홈은 앱을 다시 켜기 전까지 `평가 이어서 하기` 를 띄우지 않는다(#234).
+  void _announceVisit(VisitSession session) {
+    final profileId = ref.read(serverProfileIdProvider).value;
+    if (profileId != null) {
+      ref.read(cardGenerationProvider(profileId).notifier).visitStarted();
+    }
+    ref
+        .read(reportNoticeProvider.notifier)
+        .visitStarted(
+          sessionId: session.sessionId,
+          startedAt: session.startedAt,
+        );
   }
 
   /// 올리지 못한 면회 사진을 다시 올린다. 녹음 화면의 버튼이 부른다.
@@ -420,21 +467,46 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// [participantCount] 는 종료 모달에서 보호자가 확인해 준 사람 수다. 모달을
   /// 거치지 않고 화면을 떠난 경우에는 넘기지 않는다. 확인받지 않은 수를 대신
   /// 지어내지 않는다.
-  Future<void> stopRecording({int? participantCount}) async {
+  ///
+  /// 녹음 화면의 `dispose` 에서는 [stopRecordingOnLeave] 를 쓴다.
+  Future<void> stopRecording({int? participantCount}) =>
+      _stop(participantCount: participantCount, deferStateChange: false);
+
+  /// 녹음 화면이 사라질 때(`State.dispose`) 부른다.
+  ///
+  /// 열린 파일은 [stopRecording] 처럼 이 호출 안에서 바로 닫기 시작한다. 닫을
+  /// 파일이 없을 때의 상태 변경만 다음 microtask 로 미룬다. `dispose` 는 위젯
+  /// 트리를 정리하는 중에 불리므로, 거기서 상태를 바로 바꾸면 디버그 빌드의
+  /// Riverpod 이 `Tried to modify a provider while the widget tree was
+  /// building` 을 던진다. 파일을 닫은 뒤의 상태 변경은 `await` 다음이라 이미
+  /// 정리가 끝난 뒤다.
+  Future<void> stopRecordingOnLeave() =>
+      _stop(participantCount: null, deferStateChange: true);
+
+  Future<void> _stop({
+    required int? participantCount,
+    required bool deferStateChange,
+  }) async {
     _stopTicker();
-    final current = state.value;
-    if (current == null) return;
+    if (state.value == null) return;
 
     if (!_fileOpen) {
-      state = AsyncData(
-        current.copyWith(
-          recording: false,
-          participantCount: participantCount,
-        ),
+      if (deferStateChange) {
+        await Future<void>.microtask(() {});
+        if (!ref.mounted) return;
+      }
+      _update(
+        (now) =>
+            now.copyWith(recording: false, participantCount: participantCount),
       );
+      // 화면을 떠날 때는 새로 적을 것이 없다. 파일은 닫을 때 이미 적었고, 그
+      // 사이 제출이 끝나 보냈다고 적었을 수 있다. 다시 적으면 보낸 녹음이
+      // 보낼 녹음으로 돌아가 앱을 다시 켰을 때 또 보내려 든다.
+      if (deferStateChange) return;
       await _rememberUpload();
       return;
     }
+    final current = state.value!;
     _fileOpen = false;
 
     VisitRecording? saved;
@@ -445,6 +517,21 @@ class VisitController extends AsyncNotifier<VisitState> {
     } on Exception {
       problem = VisitRecordingProblem.saveFailed;
     }
+    // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다.
+    final startedPath = current.recordingPath;
+    if (saved == null && startedPath != null) {
+      try {
+        if (repairUnfinishedRecording(startedPath)) {
+          saved = VisitRecording(path: startedPath);
+          problem = current.problem;
+        }
+      } on FileSystemException {
+        // 고치지 못했다. 저장 실패로 둔다.
+      }
+    }
+    // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
+    // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
+    if (!ref.mounted) return;
 
     _update(
       (now) => now.copyWith(
@@ -455,11 +542,36 @@ class VisitController extends AsyncNotifier<VisitState> {
         clearProblem: problem == null,
       ),
     );
+    if (saved == null && startedPath != null) {
+      // 시작할 때 적어 둔 기록을 다시 보낼 목록에서 뺀다. 살리지 못한 파일을
+      // 앱을 다시 켰을 때 보내려 들지 않게 한다.
+      await _dropUpload(startedPath);
+      return;
+    }
     await _rememberUpload();
   }
 
+  /// 살리지 못한 녹음을 다시 보낼 목록에서 뺀다. 파일과 회차 연결은 남긴다.
+  Future<void> _dropUpload(String path) async {
+    final sessionId = state.value?.sessionId;
+    if (sessionId == null) return;
+    try {
+      await ref
+          .read(pendingUploadsProvider)
+          .markUploaded(
+            PendingUpload(
+              sessionId: sessionId,
+              audioPath: path,
+              participantCount: state.value?.participantCount,
+            ),
+          );
+    } on Exception {
+      // 적지 못하면 다시 보내기에서 서버가 거절할 때 정리된다.
+    }
+  }
+
   /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수
-  /// 있게 하려는 것이다. 회차, 파일, 참여자 수가 모두 있을 때만 적는다.
+  /// 있게 하려는 것이다. 참여자 수를 아직 확인하지 않았어도 파일 연결은 남긴다.
   ///
   /// 적지 못해도 면회는 막지 않는다. 앱이 켜져 있는 동안은 이 상태가 파일과
   /// 참여자 수를 들고 있다.
@@ -468,7 +580,11 @@ class VisitController extends AsyncNotifier<VisitState> {
     final sessionId = now?.sessionId;
     final path = now?.recordingPath;
     final count = now?.participantCount;
-    if (sessionId == null || path == null || count == null) return;
+    if (sessionId == null ||
+        path == null ||
+        now?.problem == VisitRecordingProblem.saveFailed) {
+      return;
+    }
 
     try {
       await ref
@@ -512,16 +628,31 @@ class VisitController extends AsyncNotifier<VisitState> {
     state = AsyncData(change(now));
   }
 
-  /// 다음 카드로 넘어간다. 마지막 카드면 아무것도 하지 않는다.
+  /// 다음 카드로 넘어간다. 마지막 카드면 첫 카드로 돌아간다.
   void nextCard() {
     final current = state.value;
-    if (current == null || current.isLastCard) return;
-    state = AsyncData(
-      current.copyWith(
-        currentIndex: current.currentIndex + 1,
-        followUpIndex: 0,
-      ),
-    );
+    if (current == null || current.cards.isEmpty) return;
+    goToCard((current.currentIndex + 1) % current.cards.length);
+  }
+
+  /// 앞 카드로 돌아간다. 첫 카드면 마지막 카드로 간다.
+  void previousCard() {
+    final current = state.value;
+    if (current == null || current.cards.isEmpty) return;
+    final count = current.cards.length;
+    goToCard((current.currentIndex - 1 + count) % count);
+  }
+
+  /// [index] 번째 카드로 옮긴다. 범위 밖이거나 지금 카드면 그대로 둔다.
+  ///
+  /// 화면에 보이는 카드만 바꾼다. 서버에 알리는 것은 없다. 꼬리 질문은 그
+  /// 카드의 첫 질문부터 다시 보여준다.
+  void goToCard(int index) {
+    final current = state.value;
+    if (current == null) return;
+    if (index < 0 || index >= current.cards.length) return;
+    if (index == current.currentIndex) return;
+    state = AsyncData(current.copyWith(currentIndex: index, followUpIndex: 0));
   }
 
   /// 꼬리 질문을 다음 것으로 넘긴다. 마지막이면 처음으로 돌아간다.
@@ -559,8 +690,10 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _update((now) {
       final have = now.cards.map((c) => c.cardId).toSet();
+      final fresh = added.where((c) => !have.contains(c.cardId)).toList();
       return now.copyWith(
-        cards: [...now.cards, ...added.where((c) => !have.contains(c.cardId))],
+        cards: [...now.cards, ...fresh],
+        addedCardIds: {...now.addedCardIds, for (final c in fresh) c.cardId},
       );
     });
     return true;
@@ -569,6 +702,17 @@ class VisitController extends AsyncNotifier<VisitState> {
 
 final visitControllerProvider =
     AsyncNotifierProvider<VisitController, VisitState>(VisitController.new);
+
+/// 이번 실행에서 녹음을 시작해 회차를 만든 면회다. 녹음 화면을 떠나도 남는다.
+///
+/// [visit] 은 [visitControllerProvider] 의 값이다. 부르는 쪽이 면회 상태를 새로
+/// 만들지 않도록 있을 때만 읽어 넘긴다. 다시 만드는 중이면 앞 값이 남아 있을
+/// 수 있어(다른 어르신으로 바꾼 경우 등) 믿지 않는다. 회차가 없으면 `null` 이다.
+VisitState? startedVisitOf(AsyncValue<VisitState>? visit) {
+  if (visit == null || visit.isLoading) return null;
+  final state = visit.value;
+  return state?.sessionId == null ? null : state;
+}
 
 /// 면회 중 보충용으로 남겨 둔 카드다.
 ///

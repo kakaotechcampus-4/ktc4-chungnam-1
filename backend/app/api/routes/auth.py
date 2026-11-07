@@ -12,16 +12,21 @@
 로그아웃(`POST /auth/logout`)은 그 세션을 폐기하고, 탈퇴(`DELETE /auth/me`)는 계정과
 동의 이력을 지운 뒤 그 세션을 폐기한다. 탈퇴 이유를 고르면 계정과 연결하지 않고 함께
 저장한다. 선택 동의는 `PATCH /auth/me/consents` 로 바꾼다.
+
+리포트 완료 푸시를 받을 기기는 `PUT /auth/me/push-devices/{fid}` 로 등록하고
+`DELETE /auth/me/push-devices/{fid}` 로 해제한다.
 """
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Path, Response, status
 
 from app.api.deps import (
     AccountServiceDep,
     CurrentAccountDep,
     CurrentSessionDep,
+    DbConnectionDep,
     GoogleVerifierDep,
     SessionRevocationsDep,
     SettingsDep,
@@ -46,6 +51,11 @@ from app.services.accounts import (
     Withdrawal,
 )
 from app.schemas.common import ErrorResponse
+from app.services.push_devices import (
+    FID_PATTERN,
+    register_push_device,
+    unregister_push_device,
+)
 from app.services.session_tokens import TokenIssuer
 
 logger = logging.getLogger("saerok.auth")
@@ -61,6 +71,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     """
     descriptions = {
         401: "인증 실패",
+        403: "알림 수신 미동의",
         404: "계정 없음",
         409: "동의 버전 불일치",
         422: "요청 형식 오류, 필수 동의 누락 또는 필수 동의 변경",
@@ -91,6 +102,7 @@ def _to_account_response(account: Account) -> AccountResponse:
             sensitive_data=consents.get("sensitiveData", empty),
             service_improvement=consents.get("serviceImprovement", empty),
             push_notification=consents.get("pushNotification", empty),
+            photo_analysis=consents.get("photoAnalysis", empty),
         ),
         created_at=account.created_at,
     )
@@ -272,3 +284,59 @@ async def delete_current_account(
     # 요청에 쓴 세션은 여기서 폐기해 단말에 남더라도 다시 통과하지 않게 한다.
     await revocations.revoke(session)
     logger.info("account_deleted", extra={"auth_provider": account.provider})
+
+
+# FCM 등록 ID(FID). 경로에 실어 보낸다.
+PushDeviceId = Annotated[
+    str,
+    Path(
+        pattern=FID_PATTERN,
+        description="앱이 FCM 에 등록하고 받은 Firebase Installation ID(FID)",
+    ),
+]
+
+
+@router.put(
+    "/me/push-devices/{fid}",
+    summary="푸시 받을 기기 등록",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses=_errors(401, 403, 404, 422, 503),
+)
+async def register_current_push_device(
+    fid: PushDeviceId,
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+) -> Response:
+    """리포트 완료 푸시를 받을 이 기기의 FID 를 등록. 같은 요청을 다시 보내면 등록 시각만 새로 함.
+
+    다른 계정에 등록된 FID 면 이 계정으로 옮김. 알림 수신에 동의하지 않았으면 거절함.
+
+    API 명세 1-7
+    """
+
+    await register_push_device(connection, account.account_id, fid)
+    logger.info("push_device_registered")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/me/push-devices/{fid}",
+    summary="푸시 받을 기기 해제",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses=_errors(401, 404, 422, 503),
+)
+async def unregister_current_push_device(
+    fid: PushDeviceId,
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+) -> Response:
+    """이 계정에 등록된 FID 를 지움. 등록되지 않았거나 다른 계정의 FID 여도 오류가 아님.
+
+    API 명세 1-8
+    """
+
+    await unregister_push_device(connection, account.account_id, fid)
+    logger.info("push_device_unregistered")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
