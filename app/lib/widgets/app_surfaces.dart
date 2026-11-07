@@ -8,13 +8,15 @@ import '../design/tokens.dart';
 /// 구분한다. `app/DESIGN.md` 의 상태 규칙을 따른다.
 ///
 /// 눌러서 펼치는 카드는 [expanded] 를 넘긴다. 화면 낭독기가 버튼과 펼침 여부를
-/// 함께 읽는다. 테두리의 [selected] 는 화면 낭독기에 알리지 않는다. 고르는
+/// 함께 읽는다. Flutter 는 펼침 여부를 Android 16 이상에서만 TalkBack 에 넘기므로,
+/// 누르면 무엇이 되는지를 [tapHint] 로도 알린다(접근성 보고서 10쪽). 테두리의 [selected] 는 화면 낭독기에 알리지 않는다. 고르는
 /// 동작은 [SelectionToggle] 이 따로 알린다.
 class AppCard extends StatelessWidget {
   const AppCard({
     required this.child,
     this.onTap,
     this.expanded,
+    this.tapHint,
     this.selected = false,
     this.padding = const EdgeInsets.all(AppSpacing.lg),
     super.key,
@@ -25,6 +27,10 @@ class AppCard extends StatelessWidget {
 
   /// 펼치는 카드면 지금 펼쳐졌는지. `null` 이면 펼치는 카드가 아니다.
   final bool? expanded;
+
+  /// 두 번 탭하면 무엇이 되는지. TalkBack 이 "두 번 탭하여 …" 로 읽는다. 예:
+  /// `질문 펼치기`. `null` 이면 기본 안내를 쓴다.
+  final String? tapHint;
 
   final bool selected;
   final EdgeInsets padding;
@@ -50,6 +56,7 @@ class AppCard extends StatelessWidget {
     return Semantics(
       button: true,
       expanded: expanded,
+      onTapHint: tapHint,
       child: Material(
         color: Colors.transparent,
         child: InkWell(

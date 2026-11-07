@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:saerok/app/app_locale.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/mock_repository.dart';
@@ -21,6 +22,8 @@ import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
 import 'package:saerok/features/home/my_page_menu.dart';
+import 'package:saerok/features/profile_setup/basic_info_step.dart';
+import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/report/report_screen.dart';
 import 'package:saerok/features/review/review_screen.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
@@ -169,6 +172,28 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('카드 본문은 두 번 탭하면 질문을 펼치거나 접는다고 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openCards(tester);
+      final title = mockSet.cards.first.cardTitle;
+      String? hint() =>
+          tester.getSemantics(find.text(title)).hintOverrides?.onTapHint;
+
+      // Android 15 의 TalkBack 은 펼침 여부를 읽지 않아 두 번 탭 안내로 알린다.
+      expect(hint(), '질문 펼치기');
+      tester.semantics.tap(
+        find.semantics.byLabel(RegExp(RegExp.escape(title))).first,
+      );
+      await tester.pumpAndSettle();
+      expect(hint(), '질문 접기');
+      expect(
+        tester.getSemantics(find.text(title)),
+        isSemantics(isExpanded: true),
+        reason: 'Android 16 이상을 위한 펼침 여부도 그대로 둔다',
+      );
+      handle.dispose();
+    });
+
     testWidgets('고르기 표시의 누르는 자리는 48 x 48 이상이다', (tester) async {
       await openCards(tester);
       final size = tester.getSize(find.byType(SelectionToggle).first);
@@ -197,6 +222,59 @@ void main() {
       );
       // 카드 테두리 같은 다른 선은 바꾸지 않는다.
       expect(AppColors.line, const Color(0xFFE0E0E0));
+    });
+
+    testWidgets('현재 상태의 빈 동그라미도 3:1 이상이고 선택 여부를 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      var draft = const SetupDraft();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: StatefulBuilder(
+                builder: (context, setState) => BasicInfoStep(
+                  draft: draft,
+                  onChanged: (next) => setState(() => draft = next),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final stage = ConditionStage.values.first.label;
+      final circles = tester
+          .widgetList<Container>(find.byType(Container))
+          .map((c) => c.decoration)
+          .whereType<BoxDecoration>()
+          .where((d) => d.shape == BoxShape.circle)
+          .toList();
+      expect(circles, hasLength(ConditionStage.values.length));
+      for (final circle in circles) {
+        expect(
+          _contrast((circle.border! as Border).top.color, AppColors.background),
+          greaterThanOrEqualTo(3.0),
+        );
+      }
+
+      expect(
+        tester.getSemantics(find.text(stage)),
+        isSemantics(
+          hasCheckedState: true,
+          isChecked: false,
+          isInMutuallyExclusiveGroup: true,
+        ),
+      );
+      await tester.ensureVisible(find.text(stage));
+      await tester.tap(find.text(stage));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(find.text(stage)),
+        isSemantics(isChecked: true),
+      );
+      handle.dispose();
     });
   });
 
@@ -588,6 +666,47 @@ void main() {
     });
   });
 
+  group('앱 언어 (보고서 8쪽, 12쪽)', () {
+    testWidgets('앱 언어는 한국어이고 메뉴 손잡이를 영어 Dismiss 로 읽지 않는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            locale: appLocale,
+            supportedLocales: appSupportedLocales,
+            localizationsDelegates: appLocalizationsDelegates,
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => showMyPageMenu(context),
+                    child: const Text('메뉴 열기'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final context = tester.element(find.text('메뉴 열기'));
+      expect(Localizations.localeOf(context), const Locale('ko', 'KR'));
+
+      await tester.tap(find.text('메뉴 열기'));
+      await tester.pumpAndSettle();
+
+      expect(find.semantics.byLabel('Dismiss'), findsNothing);
+      expect(
+        find.semantics.byLabel(
+          MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        ),
+        findsWidgets,
+      );
+      handle.dispose();
+    });
+  });
+
   group('마이페이지 메뉴 (보고서 8쪽, 일부)', () {
     testWidgets('메뉴 바깥 영역은 영어 Scrim 대신 한국어로 읽는다', (tester) async {
       final handle = tester.ensureSemantics();
@@ -615,7 +734,6 @@ void main() {
       expect(find.text('프로필 설정'), findsOneWidget);
       expect(find.semantics.byLabel('메뉴 닫기'), findsOne);
       expect(find.semantics.byLabel('Scrim'), findsNothing);
-      // 손잡이의 `Dismiss` 는 앱 언어를 따르므로 이 변경으로 바뀌지 않는다.
 
       tester.semantics.tap(find.semantics.byLabel('메뉴 닫기'));
       await tester.pumpAndSettle();

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/app_locale.dart';
 import 'app/release_config.dart';
 import 'app/router.dart';
 import 'app/routes.dart';
@@ -99,6 +100,9 @@ class _SaerokAppState extends ConsumerState<SaerokApp> {
       title: '새록',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      locale: appLocale,
+      supportedLocales: appSupportedLocales,
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: _router,
       builder: (context, child) => AppUpdateWatcher(
         router: _router,
