@@ -272,6 +272,9 @@ jobs:
           out() { echo "SAEROK_OUT $1=$2"; }
           # api를 뺀 서비스가 worker다.
           workers() { for s in $SERVICES; do [ "$s" = api ] || printf '%s ' "$s"; done; }
+          # 컨테이너가 이미 있는 worker. 이번 배포로 처음 생기는 worker는 이전 체크아웃의 compose에
+          # 없어서 stop과 start가 "no such service"로 실패한다. 그런 worker는 빼고, 6단계 up에서 처음 켠다.
+          existing_workers() { for s in $(workers); do [ -z "$(dc ps -a -q "$s" 2>/dev/null)" ] || printf '%s ' "$s"; done; return 0; }
           HOST
           } > "$RUNNER_TEMP/host-prelude.sh"
 
@@ -503,10 +506,13 @@ jobs:
           rc=0
           "$PY" "$STATE_DIR/active_jobs.py" "$STATE_DIR/runtime-before-stop.json" || rc=$?
           [ "$rc" -eq 0 ] || { echo "IN_PROGRESS_WORK: worker를 멈추지 않았습니다. 작업이 끝난 뒤 다시 실행합니다"; exit 1; }
-          list=$(workers)
+          list=$(existing_workers)
           state_set WORKERS "$list"
-          # shellcheck disable=SC2086
-          dc stop $list
+          # 목록이 비면 서비스 이름 없이 stop이 불려 api와 DB까지 멈춘다.
+          if [ -n "$list" ]; then
+            # shellcheck disable=SC2086
+            dc stop $list
+          fi
           echo "WORKERS_STOPPED $list"
           HOST
           ssm_run stop-workers "$RUNNER_TEMP/step.sh" 2100
@@ -703,9 +709,11 @@ jobs:
           source "$RUNNER_TEMP/deploy-lib.sh"
           cat > "$RUNNER_TEMP/step.sh" <<'HOST'
           list=$(state_get WORKERS)
-          [ -n "$list" ] || list=$(workers)
-          # shellcheck disable=SC2086
-          dc start $list
+          [ -n "$list" ] || list=$(existing_workers)
+          if [ -n "$list" ]; then
+            # shellcheck disable=SC2086
+            dc start $list
+          fi
           dc ps
           echo "WORKERS_RESTARTED $list"
           HOST
