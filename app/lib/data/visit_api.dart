@@ -82,7 +82,7 @@ class ServerVisitApi implements VisitApi {
     );
     final photoId = body['photoId'];
     if (photoId is! String || photoId.isEmpty) {
-      throw const ApiUnexpectedResponseFailure('photoId 가 없다');
+      throw _client.unexpected('photoId 가 없다');
     }
     return photoId;
   }
@@ -130,18 +130,13 @@ class ServerVisitApi implements VisitApi {
     );
     final analysisId = body['analysisId'];
     if (analysisId is! String || analysisId.isEmpty) {
-      throw const ApiUnexpectedResponseFailure('analysisId 가 없다');
+      throw _client.unexpected('analysisId 가 없다');
     }
     return analysisId;
   }
 
-  static VisitSession _session(Map<String, dynamic> body) {
-    try {
-      return VisitSession.fromJson(body);
-    } on TypeError {
-      throw const ApiUnexpectedResponseFailure('회차 형식이 다르다');
-    }
-  }
+  VisitSession _session(Map<String, dynamic> body) =>
+      _client.read('회차', () => VisitSession.fromJson(body));
 }
 
 /// 6-2 가 이미 끝났거나 실패로 끝난 회차라고 거절했는지. 다시 보내도 받지

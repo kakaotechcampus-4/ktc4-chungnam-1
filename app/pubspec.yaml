@@ -1,5 +1,5 @@
 name: saerok
-description: "A new Flutter project."
+description: "새록: 보호자의 면회 대화 준비와 기록을 돕는 안드로이드 앱"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+5
 
 environment:
   sdk: ^3.12.2
@@ -29,6 +29,9 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
+    sdk: flutter
+  # 앱 언어를 한국어로 둔다. 화면 낭독기 음성과 Flutter 기본 문구가 따른다.
+  flutter_localizations:
     sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
@@ -47,9 +50,20 @@ dependencies:
   image_picker: ^1.2.3
   # D-1 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 11 이상은 권한을 받지 않는다.
   gal: ^2.3.3
+  # 새 버전 안내. 구글 플레이의 앱 내 업데이트(유연한 업데이트)를 쓴다. 플레이에서 설치한 앱에서만 동작한다.
+  in_app_update: ^5.0.0
+  # 설치된 앱의 versionCode 를 읽어 요청 헤더(X-App-Version-Code)로 서버에 알린다.
+  package_info_plus: ^10.2.2
+  # 리포트 완료 푸시 알림. 기기 토큰(FCM)을 받아 서버가 이 기기로 알림을 보내게 한다.
+  # android/app/google-services.json 이 있어야 켜진다(커밋 대상 아님, app/README.md 참고).
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  # 앱 전체 여정(test/journey/)을 기기나 에뮬레이터에서 돌린다. integration_test/ 참고.
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

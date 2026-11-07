@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
@@ -345,6 +346,15 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     // 남기고 예시와 방법 바꾸기를 숨긴다. 키보드를 내리면 되돌린다.
     final typing = _phase == _Phase.manualInput && _keyboardOpen;
 
+    // 녹음이 시작된 뒤 다 말했다고 알리거나 5분에 닿을 때까지만 화면을 켜
+    // 둔다. 글로 옮기는 중, 시작 실패와 화면을 벗어날 때는 놓는다.
+    return KeepScreenOn(
+      enabled: _recording != null,
+      child: _content(choosing: choosing, typing: typing),
+    );
+  }
+
+  Widget _content({required bool choosing, required bool typing}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -394,6 +404,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
             // 키보드가 오르내리며 앞의 항목이 빠져도 입력칸을 새로 만들지 않게
             // 한다. 새로 만들면 포커스를 잃고 키보드가 내려간다.
             key: const ValueKey('manualInput'),
+            label: widget.step.label,
             controller: _manual,
             // 쓰기 시작하면 안내를 숨긴다. 키보드가 올라온 좁은 화면에서 안내가
             // 입력칸을 밀어 일부가 가려졌다.
@@ -618,31 +629,45 @@ class _MicArea extends StatelessWidget {
                     color: AppColors.background,
                   ),
                 )
-              : InkWell(
-                  onTap: onTap,
-                  customBorder: const CircleBorder(),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: failed
-                            ? AppColors.danger
-                            : listening
-                            ? AppColors.ink
-                            : AppColors.line,
-                        width: listening ? 3 : 2,
+              // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
+              // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
+              // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
+              : ExcludeSemantics(
+                  excluding: onTap == null,
+                  child: Semantics(
+                    button: true,
+                    label: listening ? '음성 입력 종료' : '음성 입력 시작',
+                    child: InkWell(
+                      onTap: onTap,
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: failed
+                                ? AppColors.danger
+                                : listening
+                                ? AppColors.ink
+                                : AppColors.line,
+                            width: listening ? 3 : 2,
+                          ),
+                        ),
+                        child: transcribing
+                            ? const Padding(
+                                padding: EdgeInsets.all(36),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : Icon(
+                                Icons.mic,
+                                size: 48,
+                                color: failed
+                                    ? AppColors.danger
+                                    : AppColors.ink,
+                              ),
                       ),
                     ),
-                    child: transcribing
-                        ? const Padding(
-                            padding: EdgeInsets.all(36),
-                            child: CircularProgressIndicator(strokeWidth: 3),
-                          )
-                        : Icon(
-                            Icons.mic,
-                            size: 48,
-                            color: failed ? AppColors.danger : AppColors.ink,
-                          ),
                   ),
                 ),
         ),
@@ -766,11 +791,15 @@ class _HeardBoxState extends State<_HeardBox> {
 
 class _ManualInput extends StatelessWidget {
   const _ManualInput({
+    required this.label,
     required this.controller,
     super.key,
     required this.notice,
     required this.onChanged,
   });
+
+  /// 화면 낭독기가 입력칸 이름으로 읽는 항목 이름. 예: `하시던 일`.
+  final String label;
 
   final TextEditingController controller;
 
@@ -793,29 +822,34 @@ class _ManualInput extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
-        TextField(
-          // 안내가 빠져도 입력칸을 새로 만들지 않게 한다. 포커스를 잃으면
-          // 키보드가 내려간다.
-          key: const ValueKey('manualField'),
-          controller: controller,
-          onChanged: onChanged,
-          maxLines: 4,
-          style: AppTypography.body,
-          decoration: InputDecoration(
-            hintText: '여기를 눌러 직접 작성해주세요.',
-            hintStyle: AppTypography.body.copyWith(
-              color: AppColors.textDisabled,
-            ),
-            filled: true,
-            fillColor: AppColors.surface,
-            contentPadding: const EdgeInsets.all(AppSpacing.lg),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              borderSide: const BorderSide(color: AppColors.ink, width: 2),
+        // 안내 문구는 글을 쓰면 사라진다. 쓰기 전후 모두 무엇을 적는 칸인지
+        // 읽히게 항목 이름을 붙인다(접근성 보고서 13쪽).
+        Semantics(
+          label: label,
+          child: TextField(
+            // 안내가 빠져도 입력칸을 새로 만들지 않게 한다. 포커스를 잃으면
+            // 키보드가 내려간다.
+            key: const ValueKey('manualField'),
+            controller: controller,
+            onChanged: onChanged,
+            maxLines: 4,
+            style: AppTypography.body,
+            decoration: InputDecoration(
+              hintText: '여기를 눌러 직접 작성해주세요.',
+              hintStyle: AppTypography.body.copyWith(
+                color: AppColors.textDisabled,
+              ),
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.all(AppSpacing.lg),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                borderSide: const BorderSide(color: AppColors.ink, width: 2),
+              ),
             ),
           ),
         ),

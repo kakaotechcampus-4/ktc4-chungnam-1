@@ -34,6 +34,20 @@ def test_rejects_invalid_failover_connection_timeout(value) -> None:
         Settings(_env_file=None, ai_server_failover_connect_timeout_seconds=value)
 
 
+def test_generation_model_defaults_and_environment_override(monkeypatch) -> None:
+    monkeypatch.delenv("SAEROK_CARD_GENERATION_MODEL", raising=False)
+    monkeypatch.delenv("SAEROK_REPORT_GENERATION_MODEL", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.card_generation_model == "gpt-6-luna"
+    assert settings.report_generation_model == "gpt-6-luna"
+
+    monkeypatch.setenv("SAEROK_CARD_GENERATION_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("SAEROK_REPORT_GENERATION_MODEL", "gpt-5.6-luna")
+    previous = Settings(_env_file=None)
+    assert previous.card_generation_model == "gpt-5.6-luna"
+    assert previous.report_generation_model == "gpt-5.6-luna"
+
+
 # 아래 두 개는 환경변수를 직접 읽는 경로를 검사한다. 값을 생성자로 넘기면
 # pydantic-settings 의 환경변수 디코딩 단계를 건너뛰어서, `google_client_ids` 의
 # NoDecode 가 빠져도 통과해 버린다.

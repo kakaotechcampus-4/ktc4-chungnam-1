@@ -288,7 +288,7 @@ D8 결정 전이므로 구현하지 않는다. decmoon05 의견의 방향을 택
 2. ~~`LifeFact`, `create_life_fact`, `list_life_facts`와 응답 변환(`to_life_fact_response`)에 두 값을 더한다.~~ 완료. 7-4 테스트도 그대로 통과한다.
 3. ~~2-6, 2-7의 요청 검증과 저장~~ 완료
 4. ~~2-9 삭제~~ 완료. 행만 지우는 임시 안이다.
-5. ~~4-1 입력에서 없는 `factId` 근거를 빼는 처리~~ 완료(`card_sets._without_deleted_facts`). 작업 B의 코드이므로 작업 B 담당의 확인이 필요하다.
+5. ~~4-1 입력에서 없는 `factId` 근거를 빼는 처리~~ 완료(`card_sets._without_missing_evidence`, 11/5 제외한 주제의 근거 사진도 함께 빼도록 이름을 바꿈). 작업 B의 코드이므로 작업 B 담당의 확인이 필요하다.
 6. ~~API 명세 2절과 LifeFact, 공통 데이터 계약, [backend/README.md](../../README.md#프로필과-생애-정보-api)를 고친다.~~ 완료. 필드 이름은 임시로 적었다.
 7. 미정 사항 D1~D10이 결정되면 해당 절과 코드를 고친다. 특히 D1, D2가 다른 이름으로 정해지면 스키마의 alias와 DB 열 이름, 테스트를 함께 바꾼다.
 

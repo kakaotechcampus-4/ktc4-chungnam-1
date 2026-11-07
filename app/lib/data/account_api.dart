@@ -26,13 +26,8 @@ class AccountApi {
       _read(await _client.patch('/auth/me/consents', changes));
 
   /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
-  static Account _read(Map<String, dynamic> body) {
-    try {
-      return Account.fromJson(body);
-    } on TypeError catch (error) {
-      throw ApiUnexpectedResponseFailure('계정 응답 모양이 다르다: $error');
-    }
-  }
+  Account _read(Map<String, dynamic> body) =>
+      _client.read('계정', () => Account.fromJson(body));
 }
 
 /// 동의 저장 실패를 보호자에게 보여줄 문구로 옮긴다.

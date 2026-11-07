@@ -1,9 +1,8 @@
 # ck STT 예비 서버의 SSH 운영 연결
 
-상태: 2026-11-03 KST PM의 자동 전환 적용 요청으로 임시 배포. GitHub PR 게시와 병합은 미실행.
-
-이 문서는 SSH 운영 연결 PR의 범위다. GPU 실행 설정과 BE 전환 코드는 각각 별도 PR로
-검토한다. 세 브랜치는 develop에서 따로 분리했으며 운영 연결에는 두 코드 변경이 먼저 필요하다.
+상태: 2026-11-03 KST PM의 자동 전환 적용 요청으로 음성 worker만 임시 배포했다.
+GPU 실행 설정(#188), BE 전환 코드(#189)와 이 SSH 운영 연결(#190)은 develop에 병합됐다.
+정식 이미지 교체와 임시 override 해제는 아래 운영 전 확인 항목에 따라 따로 진행한다.
 
 기본 개인 GPU의 Tailscale 연결을 유지한다. 기본 서버에 연결하지 못할 때만 ck로 한 번
 전환한다. ck를 기본으로 바꾸거나 개인 PC를 중계 서버로 사용하지 않는다.
@@ -60,6 +59,22 @@ namespace 안에 임시 SSH 연결을 만들고 후보 클라이언트를 별도
 - BE는 `ops/stt-backup/run-tunnel.sh`와 `saerok-stt-backup.service`를 사용한다.
   주소, 포트, 검증된 known_hosts와 전용 키 경로는 서버 내부 EnvironmentFile에만 둔다.
   SSH 연결이 끊기면 10초 간격으로 재연결하며 호스트 키 검사를 유지한다.
+  `/etc/saerok-stt-backup.env`에는 아래 값을 둔다. 필수 값이 비어 있거나 포트가 1~65535
+  범위를 벗어나면 `run-tunnel.sh`는 SSH를 실행하지 않고 종료한다.
+
+  | 변수 | 필수 | 기본값과 의미 |
+  | --- | --- | --- |
+  | `SAEROK_STT_BACKUP_SSH_HOST` | 필수 | ck SSH 접속 주소 |
+  | `SAEROK_STT_BACKUP_BIND_HOST` | 필수 | 터널을 바인딩할 BE Docker bridge의 사설 IPv4 주소. 사설 주소가 아니면 종료 |
+  | `SAEROK_STT_BACKUP_SSH_KEY_FILE` | 필수 | BE에서 생성한 ck 전용 개인 키 경로. 읽을 수 없으면 종료 |
+  | `SAEROK_STT_BACKUP_KNOWN_HOSTS_FILE` | 필수 | 지문을 대조한 ck 호스트 키의 known_hosts 경로. 읽을 수 없으면 종료 |
+  | `SAEROK_STT_BACKUP_SSH_PORT` | 선택 | 기본 `22` |
+  | `SAEROK_STT_BACKUP_SSH_USER` | 선택 | 기본 `saerok-stt-tunnel` |
+  | `SAEROK_STT_BACKUP_LOCAL_PORT` | 선택 | BE 쪽 수신 포트. 기본 `18081` |
+  | `SAEROK_STT_BACKUP_REMOTE_PORT` | 선택 | ck loopback STT 포트. 기본 `18001`이며 `run-stt.sh`의 포트와 같아야 함 |
+
+  worker의 `SAEROK_AI_SERVER_BACKUP_URL`은 이 파일이 아니라 worker 환경에 두며,
+  `BIND_HOST`와 `LOCAL_PORT`로 만든 주소를 가리킨다.
 - ck는 Supervisor 4.3.0을 별도 가상 환경에 설치해 `ops/ck-backup/`의 설정으로 해당
   STT 프로세스만 관리한다. 관리 소켓은 0600의 Unix 소켓이며 HTTP 관리 포트는 열지 않는다.
   시작 중 연속 실패는 세 번까지만 재시도한다.

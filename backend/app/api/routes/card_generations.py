@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Path, Response, status
 
 from app.api.deps import CurrentAccountDep, DbConnectionDep, SettingsDep
 from app.core.errors import AppError
@@ -9,9 +9,11 @@ from app.schemas.card_generation import CardGenerationStatus, CardSet
 from app.services.card_sets import (
     current_card_set,
     generation_status,
+    session_card_set,
+    set_card_liked,
     start_card_generation,
 )
-from app.services.ownership import PROFILE, require_owned
+from app.services.ownership import CARD, PROFILE, VISIT_SESSION, require_owned
 
 
 router = APIRouter(tags=["card-generations"])
@@ -101,3 +103,67 @@ async def get_current_card_set(
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
     return await current_card_set(connection, profile_id)
+
+
+@router.get(
+    "/api/v1/visit-sessions/{session_id}/card-set",
+    summary="회차에 쓴 카드 묶음 조회",
+    response_model=CardSet,
+    response_model_by_alias=True,
+)
+async def get_session_card_set(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    session_id: Annotated[UUID, Path()],
+) -> CardSet:
+    """회차에 쓴 카드 묶음. 평가가 끝나 4-3에서 더는 나오지 않는 묶음도 다시 볼 수 있음.
+
+    API 명세 4-4
+    """
+
+    await require_owned(connection, VISIT_SESSION, session_id, account_id=account.account_id)
+    return await session_card_set(connection, session_id)
+
+
+@router.put(
+    "/api/v1/cards/{card_id}/like",
+    summary="카드에 좋았어요 표시",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def like_card(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    card_id: Annotated[UUID, Path()],
+) -> Response:
+    """보호자가 원하는 카드에만 남기는 표시. 이미 표시한 카드면 그대로 둠.
+
+    보호자 평가(6-1)와 따로 저장하며 평가 뒤에도 켜고 끌 수 있음.
+
+    API 명세 4-5
+    """
+
+    await require_owned(connection, CARD, card_id, account_id=account.account_id)
+    await set_card_liked(connection, card_id, liked=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/api/v1/cards/{card_id}/like",
+    summary="카드의 좋았어요 표시 지우기",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def unlike_card(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    card_id: Annotated[UUID, Path()],
+) -> Response:
+    """표시를 지움. 표시하지 않은 카드여도 오류가 아님.
+
+    API 명세 4-6
+    """
+
+    await require_owned(connection, CARD, card_id, account_id=account.account_id)
+    await set_card_liked(connection, card_id, liked=False)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

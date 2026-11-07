@@ -11,7 +11,7 @@
     result = combine(request.analysis_id, report, proposals)     # #106 응답 하나
 
 #106이 응답 전체를 거절하는 규칙은 코드로 미리 거름. 카드 요약은 반응이 positive·neutral·negative인 카드에만, 카드당 하나.
-화자 라벨은 1~8명이고 null 구간은 누구의 말로도 단정하지 않게 프롬프트에 적어 둠.
+report-3은 라벨 누락과 인원 차이에도 대화 맥락으로 화자를 추론하되, 근거가 부족한 귀속은 단정하지 않도록 지시함.
 """
 
 __all__ = ["generate_report", "PROMPT", "PROMPT_VERSION"]

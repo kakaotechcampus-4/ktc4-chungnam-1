@@ -61,6 +61,11 @@ abstract final class AppRoutes {
   static String visitUploadOf(String sessionId) =>
       '$visitUpload?session=$sessionId';
 
+  static String analysisRetryOf(String sessionId, String analysisId) => Uri(
+    path: visitUpload,
+    queryParameters: {'session': sessionId, 'analysis': analysisId},
+  ).toString();
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
 
@@ -95,6 +100,10 @@ abstract final class AppRoutes {
   /// 지금 보고 있는 어르신의 세부 정보 네 항목 수정. 프로필 설정에서 들어간다.
   /// 피그마 설계 없음.
   static const profileEditDetails = '/profile/edit/details';
+
+  /// 등록을 마친 어르신의 사진 더 올리기. 프로필 설정의 갤러리에서 들어간다.
+  /// `extra` 로 이미 올린 사진 수를 받는다. 피그마 설계 없음(B-7 화면을 쓴다).
+  static const profilePhotoAdd = '/profile/photos/add';
 
   /// 함께하는 소중한 분. 홈 상단의 어르신 알약을 누르면 들어온다. 피그마 설계 없음.
   static const profileSwitch = '/profiles';

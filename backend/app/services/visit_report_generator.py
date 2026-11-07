@@ -18,6 +18,7 @@
   아무것도 저장하지 않는다. 리포트 저장과 작업 `completed`는 같은 트랜잭션이다.
 
 응답 검증 규칙
+- 화자 라벨 누락이나 입력 인원과의 차이로 생성을 차단하지 않는다. 빈 전사는 실패한다.
 - `cardSummaries`는 요청 카드 중 `reaction`이 `positive`, `neutral`, `negative`인
   카드만, 카드당 하나다.
 - `topicProposals`는 요청 카드 안에서 카드당 최대 1개다.
@@ -37,6 +38,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
+from common.medical_claims import has_medical_effect_claim
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -57,7 +59,6 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 
 _SUMMARIZED_REACTIONS = {"positive", "neutral", "negative"}
 _NOT_EVALUATED_REACTIONS = {"notUsed", None}
-
 
 
 class ReportDeadline:
@@ -110,6 +111,8 @@ class VisitReportGenerator:
         deadline = ReportDeadline(self._time_limit_seconds)
         session_uuid = UUID(session_id)
         profile_id, request = await build_request(connection, session_uuid, speech)
+        deadline.check()
+        _require_transcript(request)
         result = await _run_until(deadline, lambda: self._generate(request, deadline))
         validate_result(request, result)
         # 마감 직후 도착한 결과도 저장하지 않는다.
@@ -212,7 +215,15 @@ async def build_request(
     )
     life_facts = [ReportLifeFact(**row) for row in await cursor.fetchall()]
 
+    cursor = await connection.execute(
+        "SELECT participant_count FROM speech_analysis_jobs "
+        "WHERE session_id = %s AND analysis_id::text = %s",
+        (session_id, speech.analysis_id),
+    )
+    job = await cursor.fetchone()
+
     request = VisitReportRequest(
+        participant_count=job["participant_count"] if job else None,
         analysis_id=speech.analysis_id,
         visit_date=session["visit_date"],
         evaluation=ReportEvaluation(
@@ -240,9 +251,28 @@ async def build_request(
     return profile_id, request
 
 
+def _require_transcript(request: VisitReportRequest) -> None:
+    if not any(segment.text.strip() for segment in request.transcript.segments):
+        raise AppError(
+            status_code=502, error_code="EMPTY_TRANSCRIPT",
+            message="리포트에 사용할 전사 내용이 없습니다.",
+        )
+
+
 def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
     """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    generated_texts = [
+        result.title, result.body,
+        *(item.summary for item in result.card_summaries),
+        *(item.reason for item in result.topic_proposals),
+        *(text for item in result.life_fact_proposals
+          for text in (item.title, item.content, item.reason)),
+    ]
+    if any(has_medical_effect_claim(text) for text in generated_texts):
+        raise AppError(status_code=502, error_code="UNSAFE_MEDICAL_CLAIM",
+                       message="리포트에 확인되지 않은 의료 효과 표현이 있어 저장하지 않았습니다.")
     reactions = {card.card_id: card.reaction for card in request.cards}
+    _require_transcript(request)
 
     summary_cards = [summary.card_id for summary in result.card_summaries]
     if any(count > 1 for count in Counter(summary_cards).values()) or any(

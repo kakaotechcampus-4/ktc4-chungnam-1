@@ -21,7 +21,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/report.md"
-PROMPT_VERSION = "report-1"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "report-3"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _TITLE_MAX = 200              # #106 응답 검증과 같은 길이
 
 
@@ -33,9 +33,10 @@ def generate_report(request: VisitReportRequest, *, model: str, api_key: str, at
     if model not in ENDPOINTS:
         raise VisitReportError("INVALID_REQUEST", f"모르는 model: {model}")
     refs = card_refs(request)
+    payload = llm_payload(request, refs, with_facts=False)
     try:
         out = invoke_structured(chat_model(ChatConfig(model=model, api_key=api_key)), _Report,
-                                [("system", PROMPT.read_text(encoding="utf-8")), ("user", llm_payload(request, refs, with_facts=False))],
+                                [("system", PROMPT.read_text(encoding="utf-8")), ("user", payload)],
                                 "면회 리포트", attempts, on_retry)
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"

@@ -19,8 +19,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../features/app_update/app_update.dart';
 import '../features/auth/auth_providers.dart';
 import '../features/auth/session_refresher.dart';
+import 'app_version.dart';
 import 'auth_api.dart' show apiBaseUrl;
 
 // ── 실패 ────────────────────────────────────────────
@@ -78,6 +80,11 @@ final class ApiSignedOutFailure extends ApiFailure {
   String toString() => 'ApiSignedOutFailure()';
 }
 
+/// 서버가 이 앱 버전으로는 처리하지 않는다고 분명히 알렸는지(`426`).
+/// [isUpdateRequiredStatus] 를 본다.
+bool isUpdateRequired(ApiFailure failure) =>
+    failure is ApiServerFailure && isUpdateRequiredStatus(failure.statusCode);
+
 // ── 클라이언트 ──────────────────────────────────────
 
 class ApiClient {
@@ -86,6 +93,8 @@ class ApiClient {
     this.beforeRequest,
     this.reauthenticate,
     this.continues,
+    this.onContractMismatch,
+    this.appVersionCode,
     String baseUrl = apiBaseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
@@ -121,6 +130,17 @@ class ApiClient {
   /// 다른 계정으로 로그인했으면 [ApiSignedOutFailure] 로 멈춰, 앞 계정에서 시작한
   /// 요청을 다른 계정으로 보내지 않는다. 없으면 묻지 않는다.
   final bool Function(String startedAuthorization)? continues;
+
+  /// 앱이 서버와 맞지 않아서 생겼을 수 있는 실패를 알린다. 실패는 그대로
+  /// 던지며, 이 값은 앱 업데이트 안내([AppUpdateController])에만 쓴다.
+  ///
+  /// 서버의 거절([suggestsContractMismatch])이거나 성공 응답을 읽지 못했을
+  /// 때다([read], [unexpected]). 앱이 구버전이면 생기는 모양이지만 앱의 버그여도
+  /// 같으므로, 이것만으로 업데이트가 필요하다고 단정하지 않는다.
+  final void Function(ApiFailure failure)? onContractMismatch;
+
+  /// 설치된 앱의 versionCode. 있으면 요청마다 [appVersionCodeHeader] 로 싣는다.
+  final String? appVersionCode;
 
   final String _baseUrl;
   final http.Client _client;
@@ -186,6 +206,10 @@ class ApiClient {
     timeout,
   );
 
+  /// 본문 없이 둔다(1-7). 성공 응답은 빈 `204` 이므로 아무것도 돌려주지 않는다.
+  Future<void> put(String path) =>
+      _send(() async => _client.put(_uri(path), headers: _headers()), timeout);
+
   void close() {
     if (_ownsClient) _client.close();
   }
@@ -202,6 +226,7 @@ class ApiClient {
     return {
       'Authorization': header,
       if (json) 'Content-Type': 'application/json',
+      appVersionCodeHeader: ?appVersionCode,
     };
   }
 
@@ -211,10 +236,30 @@ class ApiClient {
     Duration limit,
   ) async {
     final decoded = _decode(await _send(request, limit));
-    if (decoded is! Map<String, dynamic>) {
-      throw const ApiUnexpectedResponseFailure('응답이 객체가 아니다');
-    }
+    if (decoded is! Map<String, dynamic>) throw unexpected('응답이 객체가 아니다');
     return decoded;
+  }
+
+  /// 성공 응답을 읽는다. 계약과 달라 읽지 못하면 [ApiUnexpectedResponseFailure]
+  /// 로 던지고 [onContractMismatch] 로 알린다. [what] 은 개발 중 확인에만 쓴다.
+  T read<T>(String what, T Function() parse) {
+    try {
+      return parse();
+    } on ApiUnexpectedResponseFailure catch (failure) {
+      onContractMismatch?.call(failure);
+      rethrow;
+    } on TypeError catch (error) {
+      throw unexpected('$what 응답 모양이 다르다: $error');
+    } on FormatException catch (error) {
+      throw unexpected('$what: ${error.message}');
+    }
+  }
+
+  /// 성공 응답이 계약과 다르다는 실패를 만들고 [onContractMismatch] 로 알린다.
+  ApiUnexpectedResponseFailure unexpected(String detail) {
+    final failure = ApiUnexpectedResponseFailure(detail);
+    onContractMismatch?.call(failure);
+    return failure;
   }
 
   /// 요청을 보내고 연결 실패와 서버의 거절을 [ApiFailure] 로 옮긴다.
@@ -246,13 +291,17 @@ class ApiClient {
 
     if (response.statusCode >= 400) {
       final decoded = _decode(response);
-      throw decoded is Map<String, dynamic>
+      final failure = decoded is Map<String, dynamic>
           ? ApiServerFailure(
               statusCode: response.statusCode,
               errorCode: decoded['errorCode'] as String?,
               retryable: decoded['retryable'] as bool? ?? false,
             )
           : ApiServerFailure(statusCode: response.statusCode);
+      if (suggestsContractMismatch(failure.statusCode, failure.errorCode)) {
+        onContractMismatch?.call(failure);
+      }
+      throw failure;
     }
     return response;
   }
@@ -302,6 +351,10 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     beforeRequest: refresher.refreshIfExpiring,
     reauthenticate: refresher.retryAfterUnauthorized,
     continues: refresher.continues,
+    appVersionCode: ref.read(appVersionCodeProvider),
+    onContractMismatch: (failure) => ref
+        .read(appUpdateControllerProvider.notifier)
+        .suspectOutdated(certain: isUpdateRequired(failure)),
   );
   ref.onDispose(api.close);
   return api;

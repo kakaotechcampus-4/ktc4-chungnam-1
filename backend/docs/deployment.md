@@ -61,7 +61,7 @@ uv run pytest
    | 80 | 전체 | 인증서 발급과 갱신 확인. 확인 요청의 출발지 IP는 정해져 있지 않다 |
    | 443 | 전체 또는 팀원 IP | 앱의 HTTPS 요청 |
 
-4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다.
+4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다. 컨테이너는 인스턴스 메타데이터(IMDSv2)까지 네트워크를 한 단계 더 거치므로, 인스턴스의 메타데이터 응답 홉 제한이 1이면 `api`와 `speech-worker`가 역할 자격증명을 받지 못해 S3 업로드가 실패한다. 인스턴스 설정의 메타데이터 옵션에서 홉 제한을 2로 둔다(`aws ec2 modify-instance-metadata-options --instance-id <인스턴스 ID> --http-put-response-hop-limit 2 --http-endpoint enabled`).
 5. 저장소를 받고 develop을 쓴다.
 
    ```bash
@@ -79,6 +79,7 @@ uv run pytest
 
    | 항목 | 값 |
    | --- | --- |
+   | `SAEROK_ENVIRONMENT` | `production`. 자동 API 문서(`/docs`, `/redoc`, `/openapi.json`)를 닫는다 |
    | `SAEROK_POSTGRES_PASSWORD` | db 컨테이너를 쓸 때 새로 만든 비밀번호 |
    | `SAEROK_DATABASE_URL` | db 컨테이너면 `postgresql+psycopg://saerok:<비밀번호>@db:5432/saerok` |
    | `SAEROK_SESSION_SECRET` | `openssl rand -base64 48`로 만든 값. 로컬 개발의 값과 다르게 둔다 |
@@ -87,6 +88,9 @@ uv run pytest
    | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. GPU 서버의 Tailscale 주소인 `http://<GPU 서버의 Tailscale IP>:8001`을 넣는다 |
    | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
    | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
+   | `SAEROK_FCM_KEY_FILE`, `SAEROK_FCM_CREDENTIALS_PATH` | 리포트 완료 푸시. 아래 "리포트 완료 푸시 키"를 따른다. 둘 다 비우면 푸시 없이 리포트만 만든다 |
+
+   **리포트 완료 푸시 키**: Firebase 콘솔 → 프로젝트 설정 → 서비스 계정에서 받은 키 파일을 저장소 밖(예: `/opt/saerok/secrets/fcm-service-account.json`)에 두고 `chmod 600`으로 다른 사용자가 읽지 못하게 한다. `SAEROK_FCM_KEY_FILE`에 그 호스트 경로를, `SAEROK_FCM_CREDENTIALS_PATH`에 `/run/secrets/fcm-service-account.json`을 넣는다. compose가 키를 `speech-worker`에만 읽기 전용으로 붙이며 이미지에는 넣지 않는다. 경로를 넣었는데 키를 읽지 못하면 `speech-worker`가 시작하지 않는다. 키 경로와 값은 이 문서, 이슈와 PR에 남기지 않는다.
 
 7. DB, migration, API와 카드 worker, HTTPS 앞단 순서로 띄운다.
 
@@ -112,14 +116,16 @@ docker compose run --rm api alembic upgrade head
 docker compose up -d api card-worker
 ```
 
-상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
+상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
 
 ### worker 종료와 유예 시간
 
 `docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.
 
-- 유예 시간은 `card-worker`와 `speech-worker` 모두 `stop_grace_period: 180s`다. 2026-10-18 [통합 검증](../../docs/pm/integration-verification-20261018.md)에서 작업 생성부터 리포트 준비까지 약 38초(준비된 모델, 단일 실행)였고, 그 3~5배 범위의 상한에 맞췄다. 카드 생성은 실측이 없어 설정 주석의 1~2분을 덮는 같은 값을 쓴다.
-- 유예 시간을 넘기면 Docker가 SIGKILL로 끝낸다. 처리 중이던 작업은 임대(음성 900초, 카드 300초)가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다. 코드가 허용하는 처리 시간(STT 응답 대기 600초, 리포트 생성 600초)보다 짧으므로 긴 녹음은 이렇게 끊길 수 있다. 녹음 길이별 처리 시간을 측정한 뒤 다시 정한다.
+- 기본 유예 시간은 카드 360초, 녹음 1860초다. 카드 임대 300초와 저장 여유 60초, 녹음은 전사와 리포트에 각각 부여하는 임대 900초의 합과 여유 60초를 사용한다. 단일 녹음의 38초 실측을 모든 작업의 상한으로 사용하지 않는다.
+- `.env`의 `SAEROK_CARD_STOP_GRACE_SECONDS`, `SAEROK_SPEECH_STOP_GRACE_SECONDS`로 Compose 유예를 조정할 수 있다. 임대 설정이나 override를 바꿨다면 `python scripts/check_shutdown_budget.py --compose-file compose.yml`로 실제 합성 설정을 검사한다. 추가 override를 사용하면 같은 옵션으로 파일을 순서대로 모두 지정한다. 이 명령은 `docker compose config`만 읽고 컨테이너를 바꾸지 않는다. 비밀 값이 포함될 수 있는 config 원문은 출력하지 않는다.
+- 유예 시간은 작업의 무조건 성공을 보장하지 않는다. 외부 호출이나 DB가 멈추거나 유예를 넘기면 여전히 강제 종료될 수 있다. API 접수를 차단하고 진행 중 작업이 끝났는지 확인한 뒤 교체한다. worker만 멈춰도 API는 새 작업을 받을 수 있다.
+- `docker compose stop -t`처럼 시간을 별도 지정하면 Compose 설정을 덮어쓴다. 배포 중 짧은 `-t`를 붙이지 않는다. 유예 안에 끝나지 않은 작업과 임대 만료는 별도 장애로 기록하며, 유예 시간 증가가 분석 재시도 기능을 구현한 것은 아니다.
 - 기다리지 않고 바로 끝내야 하면 `docker compose kill <서비스>`를 쓴다. 로컬에서 직접 실행한 worker는 Ctrl+C를 두 번 누르면 바로 끝난다.
 
 ### 앱 연결

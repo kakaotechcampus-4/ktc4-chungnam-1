@@ -14,7 +14,9 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import '../auth/auth_providers.dart';
+import '../push/push_registration.dart';
 import '../auth/consent_terms.dart';
+import '../profile_setup/photo_picker.dart';
 import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_steps.dart';
 import 'profile_gallery.dart';
@@ -182,7 +184,9 @@ class _BodyState extends ConsumerState<_Body> {
       showDragHandle: true,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
       ),
       builder: (context) => SafeArea(
         child: Padding(
@@ -275,9 +279,10 @@ class _BodyState extends ConsumerState<_Body> {
       // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
       const SizedBox(height: AppSpacing.section),
 
+      // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
+      // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
       _Section(
         title: '갤러리',
-        onEdit: () {},
         child: _Gallery(mockPhotos: bundle.photos),
       ),
       const SizedBox(height: AppSpacing.section),
@@ -405,6 +410,9 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
     setState(() => _busy = true);
     final container = ProviderScope.containerOf(context, listen: false);
     final router = GoRouter.of(context);
+    // 세션이 남아 있을 때 이 기기의 푸시 등록을 서버에서 지운다(1-8). 짧게만
+    // 기다리고 실패해도 로그아웃을 이어간다.
+    await container.read(pushRegistrationProvider.notifier).releaseForSignOut();
     await container.read(sessionProvider.notifier).signOut();
     forgetCareProfilesIn(container);
     router.go(AppRoutes.signIn);
@@ -423,6 +431,9 @@ class _SignOutButtonState extends ConsumerState<_SignOutButton> {
 /// 분은 목 사진을 보여준다.
 ///
 /// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
+///
+/// 서버에 저장한 분은 갤러리 아래에서 사진을 더 올린다. [maxProfilePhotos] 장을
+/// 채웠으면 막고 이유를 알린다. 목 사진은 올릴 곳이 없어 두지 않는다.
 class _Gallery extends ConsumerWidget {
   const _Gallery({required this.mockPhotos});
 
@@ -432,7 +443,31 @@ class _Gallery extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final server = ref.watch(serverProfilePhotosProvider);
     return server.when(
-      data: (photos) => ProfileGallery(photos: photos ?? mockPhotos),
+      data: (photos) => photos == null
+          ? ProfileGallery(photos: mockPhotos)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ProfileGallery(photos: photos),
+                const SizedBox(height: AppSpacing.lg),
+                if (photos.length < maxProfilePhotos)
+                  SecondaryButton(
+                    label: '사진 추가하기',
+                    onPressed: () => context.push(
+                      AppRoutes.profilePhotoAdd,
+                      extra: photos.length,
+                    ),
+                  )
+                else ...[
+                  const SecondaryButton(label: '사진 추가하기', onPressed: null),
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text(
+                    '사진은 $maxProfilePhotos장까지 올릴 수 있어요.',
+                    style: AppTypography.sub,
+                  ),
+                ],
+              ],
+            ),
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
         child: Center(child: CircularProgressIndicator()),
@@ -453,15 +488,14 @@ class _Gallery extends ConsumerWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.child,
-    required this.onEdit,
-  });
+  const _Section({required this.title, required this.child, this.onEdit});
 
   final String title;
   final Widget child;
-  final VoidCallback onEdit;
+
+  /// `null` 이면 머리글에 수정하기를 두지 않는다. 눌러도 갈 곳이 없는 버튼을
+  /// 보이지 않기 위해서다.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -471,15 +505,16 @@ class _Section extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            TextButton.icon(
-              onPressed: onEdit,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSub,
-                minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+            if (onEdit case final onEdit?)
+              TextButton.icon(
+                onPressed: onEdit,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSub,
+                  minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('수정하기', style: AppTypography.caption),
               ),
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('수정하기', style: AppTypography.caption),
-            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

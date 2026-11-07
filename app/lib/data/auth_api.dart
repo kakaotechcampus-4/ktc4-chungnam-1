@@ -13,6 +13,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'app_version.dart';
+
 /// 서버 주소. 빌드할 때 넘긴다.
 ///
 ///     flutter run --dart-define=SAEROK_API_BASE_URL=http://10.0.2.2:8000
@@ -226,6 +228,8 @@ class AuthApi {
     String baseUrl = apiBaseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
+    this.appVersionCode,
+    this.onContractMismatch,
   }) : _baseUrl = _trimSlash(baseUrl),
        _client = client ?? http.Client(),
        _ownsClient = client == null;
@@ -235,17 +239,27 @@ class AuthApi {
   final bool _ownsClient;
   final Duration timeout;
 
+  /// 설치된 앱의 versionCode. 있으면 요청마다 [appVersionCodeHeader] 로 싣는다.
+  final String? appVersionCode;
+
+  /// 앱이 서버와 맞지 않아서 생겼을 수 있는 실패를 알린다. 실패는 그대로
+  /// 던지며, 이 값은 앱 업데이트 안내에만 쓴다. 기준은 `ApiClient` 와 같다
+  /// ([suggestsContractMismatch], 성공 응답을 읽지 못함).
+  final void Function(AuthFailure failure)? onContractMismatch;
+
   /// 구글 ID 토큰을 검증받는다.
   ///
   /// 계정이 있으면 [AuthenticatedResult], 없으면 [ConsentRequiredResult] 다.
   Future<GoogleLoginResult> signInWithGoogle(String idToken) async {
     final body = await _post('/auth/google', {'idToken': idToken});
     final status = body['status'];
-    return switch (status) {
-      'authenticated' => AuthenticatedResult.fromJson(body),
-      'consentRequired' => ConsentRequiredResult.fromJson(body),
-      _ => throw AuthUnexpectedResponseFailure('모르는 status: $status'),
-    };
+    return _read(
+      () => switch (status) {
+        'authenticated' => AuthenticatedResult.fromJson(body),
+        'consentRequired' => ConsentRequiredResult.fromJson(body),
+        _ => throw AuthUnexpectedResponseFailure('모르는 status: $status'),
+      },
+    );
   }
 
   /// 필수 동의를 제출한다. 여기서 계정과 동의 이력이 함께 만들어진다.
@@ -266,7 +280,7 @@ class AuthApi {
       // 서버 모델이 `extra="forbid"` 라 보내지 않을 값은 아예 넣지 않는다.
       if (trimmed != null && trimmed.isNotEmpty) 'displayName': trimmed,
     });
-    return AuthenticatedResult.fromJson(body);
+    return _read(() => AuthenticatedResult.fromJson(body));
   }
 
   /// 보관한 세션이 아직 살아 있는지 확인하고 계정을 다시 읽는다.
@@ -278,11 +292,11 @@ class AuthApi {
       await _send(
         () => _client.get(
           Uri.parse('$_baseUrl/auth/me'),
-          headers: {'Authorization': authorizationHeader},
+          headers: _headers({'Authorization': authorizationHeader}),
         ),
       ),
     );
-    return AuthAccount.fromJson(body);
+    return _read(() => AuthAccount.fromJson(body));
   }
 
   /// 서버에서 이 세션을 폐기한다. 성공하면 만료 전이라도 다시 쓰이지 않는다.
@@ -290,7 +304,7 @@ class AuthApi {
     await _send(
       () => _client.post(
         Uri.parse('$_baseUrl/auth/logout'),
-        headers: {'Authorization': authorizationHeader},
+        headers: _headers({'Authorization': authorizationHeader}),
       ),
     );
   }
@@ -303,7 +317,7 @@ class AuthApi {
     await _send(
       () => _client.delete(
         Uri.parse('$_baseUrl/auth/me'),
-        headers: {'Authorization': authorizationHeader},
+        headers: _headers({'Authorization': authorizationHeader}),
       ),
     );
   }
@@ -320,7 +334,7 @@ class AuthApi {
       await _send(
         () => _client.post(
           Uri.parse('$_baseUrl$path'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers({'Content-Type': 'application/json'}),
           body: jsonEncode(payload),
         ),
       ),
@@ -340,16 +354,37 @@ class AuthApi {
       throw const AuthNetworkFailure();
     }
 
-    if (response.statusCode >= 400) throw _serverFailure(response);
+    if (response.statusCode >= 400) {
+      final failure = _serverFailure(response);
+      if (suggestsContractMismatch(failure.statusCode, failure.errorCode)) {
+        onContractMismatch?.call(failure);
+      }
+      throw failure;
+    }
     return response;
   }
 
-  static Map<String, dynamic> _object(http.Response response) {
+  Map<String, String> _headers(Map<String, String> headers) => {
+    ...headers,
+    appVersionCodeHeader: ?appVersionCode,
+  };
+
+  Map<String, dynamic> _object(http.Response response) => _read(() {
     final decoded = _decode(response);
     if (decoded is! Map<String, dynamic>) {
       throw const AuthUnexpectedResponseFailure('응답이 객체가 아니다');
     }
     return decoded;
+  });
+
+  /// 성공 응답을 읽는다. 계약과 달라 읽지 못하면 [onContractMismatch] 로 알린다.
+  T _read<T>(T Function() parse) {
+    try {
+      return parse();
+    } on AuthUnexpectedResponseFailure catch (failure) {
+      onContractMismatch?.call(failure);
+      rethrow;
+    }
   }
 
   /// 공통 `ErrorResponse` 를 읽는다. 읽지 못해도 상태 코드는 남긴다.

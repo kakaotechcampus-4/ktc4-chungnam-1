@@ -777,7 +777,7 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
@@ -790,6 +790,7 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
   });
@@ -803,6 +804,7 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
@@ -860,6 +862,18 @@ class _ReportNoticesNotifier
     for (final id in [reportId, state[key]?.reportId]) {
       if (id != null) _acknowledged.add(id);
     }
+    _nextRound(key);
+    _set(key, null);
+  }
+
+  /// [reportId] 를 확인했다. 지금 알림이 그 리포트의 도착이면 지운다. 다른
+  /// 리포트(리포트 기록에서 연 지난 리포트)의 알림이면 남긴다. 목 데이터의 도착
+  /// 알림은 가리키는 리포트가 없어 목 리포트를 열면 지운다.
+  void acknowledge(_NoticeKey key, String reportId) {
+    _acknowledged.add(reportId);
+    final notice = state[key];
+    if (notice == null || notice.notice != ReportNotice.ready) return;
+    if (notice.reportId != null && notice.reportId != reportId) return;
     _nextRound(key);
     _set(key, null);
   }
@@ -1073,6 +1087,7 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
     );
@@ -1145,6 +1160,14 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   void dismiss({String? reportId}) {
     final key = _currentNoticeKey(ref);
     if (key != null) _notices.dismiss(key, reportId: reportId);
+  }
+
+  /// 확인할 제안이 없는 리포트를 열었다. 지금 알림이 그 리포트의 도착이면
+  /// 지운다. 서버가 그 회차를 계속 `completed` 로 주어도 이번 실행에서는 다시
+  /// 띄우지 않는다.
+  void acknowledge(String reportId) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.acknowledge(key, reportId);
   }
 
   /// 리포트가 만들어졌다.

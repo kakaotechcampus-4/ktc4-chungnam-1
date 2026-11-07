@@ -23,7 +23,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/proposals.md"
-PROMPT_VERSION = "proposals-1"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "proposals-5"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _FACT_TITLE_MAX = 100            # #106 응답 검증과 같은 길이
 
 
@@ -35,9 +35,10 @@ def generate_proposals(request: VisitReportRequest, *, model: str, api_key: str,
     if model not in ENDPOINTS:
         raise VisitReportError("INVALID_REQUEST", f"모르는 model: {model}")
     refs = card_refs(request)
+    payload = llm_payload(request, refs, with_facts=True)
     try:
         out = invoke_structured(chat_model(ChatConfig(model=model, api_key=api_key)), _Proposals,
-                                [("system", PROMPT.read_text(encoding="utf-8")), ("user", llm_payload(request, refs, with_facts=True))],
+                                [("system", PROMPT.read_text(encoding="utf-8")), ("user", payload)],
                                 "변경 제안", attempts, on_retry)
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"
