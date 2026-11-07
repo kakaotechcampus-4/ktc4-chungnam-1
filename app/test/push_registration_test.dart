@@ -103,8 +103,18 @@ class _FakePush implements PushMessaging {
     return sessionId;
   }
 
+  /// 켜면 알림 열기 구독을 풀 때 해제가 끝나지 않는다. 실제 onMessageOpenedApp 이
+  /// 그랬다(2026-11-08 Galaxy S22).
+  bool openedCancelNeverEnds = false;
+
   @override
-  Stream<String> get openedReportSessions => _opened.stream;
+  Stream<String> get openedReportSessions {
+    if (!openedCancelNeverEnds) return _opened.stream;
+    final controller = StreamController<String>(
+      onCancel: () => Completer<void>().future,
+    );
+    return controller.stream;
+  }
 
   Future<void> close() async {
     await _ids.close();
@@ -297,6 +307,28 @@ void main() {
     expect(container.read(pushRegistrationProvider), 'fid-2');
     // 권한은 앱을 켤 때마다 한 번만 묻는다.
     expect(push.permissionRequests, 1);
+  });
+
+  test('알림 열기 구독 해제가 끝나지 않아도 등록을 풀고, 다시 동의하면 다시 등록한다', () async {
+    final (:container, :push, :server, :devices) = _setUp();
+    push.openedCancelNeverEnds = true;
+    container.read(sessionProvider.notifier).restore(_session('account-a'));
+    await pumpEventQueue();
+    expect(container.read(pushRegistrationProvider), 'fid-1');
+
+    server.push = false;
+    container.invalidate(accountProvider);
+    await pumpEventQueue();
+    expect(push.unregisterCalls, 1);
+    expect(container.read(pushRegistrationProvider), isNull);
+
+    server.push = true;
+    container.invalidate(accountProvider);
+    await pumpEventQueue();
+    expect(push.registerCalls, 2);
+    expect(container.read(pushRegistrationProvider), 'fid-1');
+    // 동의를 거두면 서버가 기기 등록을 지우므로 같은 ID 라도 다시 보낸다.
+    expect(devices.calls, ['PUT fid-1', 'PUT fid-1']);
   });
 
   test('계정을 다시 읽지 못해도 등록을 풀지 않는다', () async {

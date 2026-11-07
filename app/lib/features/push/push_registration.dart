@@ -137,8 +137,11 @@ class PushRegistrationController extends Notifier<String?> {
     final openedReports = _openedReports;
     _registrations = null;
     _openedReports = null;
-    await registrations?.cancel();
-    await openedReports?.cancel();
+    // 구독 해제가 끝나기를 기다리지 않는다. 알림 열기 스트림(onMessageOpenedApp)의
+    // 해제는 끝나지 않아, 기다리면 아래 상태 정리와 FCM 등록 풀기에 닿지 못한다
+    // (2026-11-08 Galaxy S22 디버그 로그로 확인).
+    unawaited(registrations?.cancel());
+    unawaited(openedReports?.cancel());
     if (!ref.mounted) return;
     state = null;
     if (!_registered) return;
