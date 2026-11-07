@@ -161,6 +161,7 @@ jobs:
       version_name: ${{ steps.version.outputs.name }}
       version_code: ${{ steps.version.outputs.code }}
       signing: ${{ steps.signing.outputs.mode }}
+      push: ${{ steps.firebase.outputs.mode }}
       apk_sha256: ${{ steps.files.outputs.apk_sha256 }}
       aab_sha256: ${{ steps.files.outputs.aab_sha256 }}
     env:
@@ -276,6 +277,31 @@ jobs:
             echo "::warning::업로드 키 시크릿이 없어 디버그 키로 서명합니다. 이 빌드는 Play에 올릴 수 없습니다."
             echo "mode=debug" >> "$GITHUB_OUTPUT"
           fi
+      # 푸시(FCM)는 android/app/google-services.json이 있을 때만 붙는다(build.gradle.kts).
+      # 파일은 커밋하지 않으므로 시크릿에서 만든다. 없으면 푸시 없는 앱이 되므로 경고하고 요약에 남긴다.
+      - name: Prepare Firebase config
+        id: firebase
+        if: steps.config.outputs.ready == 'true'
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::warning::GOOGLE_SERVICES_JSON_BASE64 시크릿이 없어 푸시 알림이 빠진 앱을 만듭니다."
+            echo "mode=off" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          umask 077
+          config=android/app/google-services.json
+          if ! printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '\r\n\t ' | base64 --decode > "$config"; then
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64를 base64로 디코딩하지 못했습니다."
+            exit 1
+          fi
+          # 다른 앱의 설정을 넣으면 빌드는 되지만 푸시가 오지 않는다. 패키지 이름을 확인한다.
+          if ! jq -e '[.client[].client_info.android_client_info.package_name] | index("app.saerok.android")' "$config" > /dev/null; then
+            echo "::error::google-services.json에 app.saerok.android 앱이 없습니다."
+            exit 1
+          fi
+          echo "mode=on" >> "$GITHUB_OUTPUT"
       - name: Use JDK 17 from the runner image
         if: steps.config.outputs.ready == 'true'
         run: echo "JAVA_HOME=${JAVA_HOME_17_X64}" >> "$GITHUB_ENV"
@@ -304,7 +330,7 @@ jobs:
           flutter build appbundle "${args[@]}"
       - name: Remove signing files
         if: always()
-        run: rm -f android/key.properties "${RUNNER_TEMP}/upload-keystore.jks"
+        run: rm -f android/key.properties "${RUNNER_TEMP}/upload-keystore.jks" android/app/google-services.json
       - name: Check built version and hash files
         id: files
         if: steps.config.outputs.ready == 'true'
@@ -360,6 +386,7 @@ jobs:
           VERSION_NAME: ${{ needs.android.outputs.version_name }}
           VERSION_CODE: ${{ needs.android.outputs.version_code }}
           SIGNING: ${{ needs.android.outputs.signing }}
+          PUSH: ${{ needs.android.outputs.push }}
           APK_SHA256: ${{ needs.android.outputs.apk_sha256 }}
           AAB_SHA256: ${{ needs.android.outputs.aab_sha256 }}
         run: |
@@ -378,14 +405,14 @@ jobs:
             --arg head "$ALEMBIC_HEAD" \
             --arg versionName "$VERSION_NAME" \
             --arg versionCode "$VERSION_CODE" \
-            --arg signing "$SIGNING" \
+            --arg signing "$SIGNING"             --arg push "$PUSH" \
             --arg apk "$APK_SHA256" \
             --arg aab "$AAB_SHA256" \
             '{commit: $commit, ref: $ref, run: $run,
               results: {productTests: $tests, backendImage: $imageResult, android: $androidResult},
               backend: {imageTag: $imageTag, imageId: $imageId, imageDigest: $imageDigest, alembicHead: $head, pushed: false},
               android: {built: ($appBuilt == "true"), versionName: $versionName, versionCode: $versionCode, signing: $signing,
-                        apkSha256: $apk, aabSha256: $aab}}' \
+                        push: $push, apkSha256: $apk, aabSha256: $aab}}' \
             > "${RUNNER_TEMP}/manifest/release-manifest.json"
           {
             echo "## 배포 후보 ${GITHUB_SHA:0:12}"
@@ -401,12 +428,16 @@ jobs:
             echo "| Alembic head | \`${ALEMBIC_HEAD:-없음}\` |"
             echo "| Android | ${ANDROID_RESULT}, versionName \`${VERSION_NAME:-없음}\`, versionCode \`${VERSION_CODE:-없음}\` |"
             echo "| 앱 서명 | ${SIGNING:-없음} |"
+            echo "| 푸시 설정(google-services.json) | ${PUSH:-없음} |"
             echo "| APK SHA-256 | \`${APK_SHA256:-없음}\` |"
             echo "| AAB SHA-256 | \`${AAB_SHA256:-없음}\` |"
             echo
             echo "- 이미지는 레지스트리에 올리지 않았다. 서버 배포는 같은 SHA로 다시 빌드하므로 이미지 ID는 달라질 수 있고, revision 라벨과 Alembic head로 대조한다."
             if [ "$APP_BUILT" != "true" ]; then
               echo "- 앱의 서버 주소와 구글 클라이언트 ID 설정이 없어 앱 빌드를 건너뛰었다. docs/deploy-workflows.md의 설정 항목을 넣으면 만든다."
+            fi
+            if [ "$PUSH" = "off" ]; then
+              echo "- GOOGLE_SERVICES_JSON_BASE64 시크릿이 없어 푸시 알림이 빠진 앱이다. 리포트 완료 알림이 오지 않는다."
             fi
             if [ "$SIGNING" = "debug" ]; then
               echo "- 업로드 키가 없어 디버그 키로 서명했다. Play에 올릴 수 없고 기존 설치본 위에 업데이트되지 않을 수 있다."
