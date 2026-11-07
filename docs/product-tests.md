@@ -15,6 +15,7 @@ Flutter 정적 검사와 테스트, Python 정적 검사, BE 테스트, AI 단�
 | `backend/` | 테스트 뒤 `app.openapi()`를 `openapi.json`으로 저장해 `openapi-schema` 결과물로 14일 보관 | 서버가 실제로 여는 API 경로와 요청, 응답 형식. 손으로 쓴 명세와 경로 목록이 같은지는 테스트(`test_api_spec_routes.py`)가 따로 본다 |
 | `backend/` | `uv run --locked --with mypy==2.2.0 mypy --follow-imports=silent --ignore-missing-imports app` | BE 코드 전체의 타입 검사. 첫 결과로 오류 수를 확인하기 전까지 실패해도 CI를 막지 않는다(`continue-on-error`). 그 뒤 범위와 막을지를 정한다 |
 | `ai/` | `uv sync --locked`, `uv run --locked pytest -ra` | 카드, 리포트와 변경 제안의 단위 테스트 및 카드 자료 조회 DB 검사 |
+| `backend/` + `app/` | `uv run --locked python scripts/run_app_server_e2e.py --flutter <flutter>` | 앱과 실제 BE의 E2E. 앱의 실제 API 코드로 실제 BE, 카드와 음성 worker, PostgreSQL을 잇고 구글 로그인, 모델, S3, STT만 합성으로 바꾼다. 가입부터 푸시 기기 등록과 해제, 두 번째 면회와 탈퇴까지([FE README](../app/README.md#앱과-실제-서버-e2e)). 화면, 실제 마이크와 기기, 실제 푸시 발송과 수신, 사진 분석 worker는 보지 않는다 |
 | `stt-server/` | `uv sync --locked`, `PYTHONPATH=src uv run --locked python -m unittest discover -s tests -v` | 입력 검증, 화자 정렬, 오류 처리와 합성 응답을 사용하는 파이프라인 검사 |
 | 저장소 루트 | `uvx ruff@0.17.3 check --select E9,F63,F7,F82 backend ai stt-server` | Python 문법 오류, 정의되지 않은 이름, 잘못된 비교 같은 실행 전에 알 수 있는 오류. 형식과 스타일 규칙은 아직 넣지 않음 |
 

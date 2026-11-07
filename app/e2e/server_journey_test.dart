@@ -20,12 +20,14 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:saerok/data/account_api.dart';
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/card_api.dart';
 import 'package:saerok/data/models.dart';
 import 'package:saerok/data/profile_api.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/data/push_device_api.dart';
 import 'package:saerok/data/report_api.dart';
 import 'package:saerok/data/visit_api.dart';
 
@@ -96,6 +98,30 @@ void main() {
       final me = await auth.me(authorization);
       expect(me.accountId, signedIn.account.accountId);
       expect(me.displayName, 'E2E 합성 보호자');
+
+      // 1-6, 1-7, 1-8: 알림 수신에 동의해야 푸시 받을 기기를 등록할 수 있고, 동의를 거두면
+      // 서버가 그 계정의 등록을 지운다. 실제 FCM 발송은 하지 않고 서버 API 까지만 본다.
+      final accounts = AccountApi(api);
+      final pushDevices = PushDeviceApi(api);
+      const fid = 'e2e-synthetic-fid-0001';
+      Matcher refusedForConsent() => throwsA(
+        isA<ApiServerFailure>()
+            .having((f) => f.statusCode, 'statusCode', 403)
+            .having(
+              (f) => f.errorCode,
+              'errorCode',
+              'PUSH_NOTIFICATION_CONSENT_REQUIRED',
+            ),
+      );
+      await expectLater(pushDevices.register(fid), refusedForConsent());
+      final pushOn = await accounts.updateConsents({'pushNotification': true});
+      expect(pushOn.consent['pushNotification']!.granted, isTrue);
+      await pushDevices.register(fid);
+      await pushDevices.register(fid); // 같은 기기를 다시 등록해도 된다.
+      final pushOff = await accounts.updateConsents({'pushNotification': false});
+      expect(pushOff.consent['pushNotification']!.granted, isFalse);
+      await expectLater(pushDevices.register(fid), refusedForConsent());
+      await pushDevices.unregister(fid); // 동의나 등록이 없어도 204 다.
 
       // 2-2, 2-4, 2-6, 2-1, 2-3: 프로필과 세부 정보, 이야기 한 개.
       final created = await profiles.create(
