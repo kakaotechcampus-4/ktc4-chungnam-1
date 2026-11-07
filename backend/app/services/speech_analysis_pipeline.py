@@ -21,6 +21,7 @@ from app.services.speech_analysis_jobs import (
     SpeechAnalysisJobRepository,
     SpeechAnalysisStatus,
 )
+from app.services.transcript_filters import drop_known_hallucinations
 from app.workers.base import OpenConnection, Worker
 
 # STT 서버는 처리 기한(`dataExpiresAt`)이 자기 시각 + 24시간을 넘으면 거절한다
@@ -313,6 +314,8 @@ class SpeechAnalysisProcessor:
             dataExpiresAt=job.data_expires_at,
         )
         result = await self._ai_server.analyze_speech(payload)
+        # 무음에서 STT가 지어내는 알려진 문장("다음 영상에서 만나요" 등)은 대화가 아니다.
+        result = drop_known_hallucinations(result)
         # 리포트는 전체 text가 아니라 segments만 받는다. 빈 구간 목록이나 공백뿐인
         # 전사로 보호자 소감만 사용해 녹음 분석 결과를 만들어서는 안 된다.
         if not any(segment.text.strip() for segment in result.segments):
