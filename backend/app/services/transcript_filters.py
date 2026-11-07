@@ -3,7 +3,8 @@
 Whisper 계열 모델은 말소리가 없는 구간에 영상 끝맺음 같은 문장을 만들어 낸다.
 2026-11-07 Galaxy S22 실기기 시험에서 아무도 말하지 않은 녹음이 두 번(세부 정보
 음성 입력, 15초 면회 녹음) 모두 "다음 영상에서 만나요."로 옮겨졌고, 면회 쪽은 그
-문장으로 리포트 제목까지 만들어졌다.
+문장으로 리포트 제목까지 만들어졌다. 11/8 무음 녹음에서는 백업 STT가 "한글자막 by
+한효정"을 반복하거나 자막과 유료 광고 안내 문구를 만들었다.
 
 구간 문장 전체가 아래 목록과 같을 때만 버린다. 대화 안에 섞인 말은 건드리지 않고,
 "감사합니다"처럼 면회에서 실제로 할 만한 말은 목록에 넣지 않는다. 확률이나 무음
@@ -37,8 +38,16 @@ _KNOWN_HALLUCINATIONS = frozenset(
         "오늘영상은여기까지",
     }
 )
-# 방송 끝맺음("MBC 뉴스 OOO입니다") 꼴. 이름 자리는 2~4자다.
-_NEWS_SIGNOFF = re.compile(r"^(mbc|kbs|sbs|ytn|jtbc)뉴스[가-힣]{2,4}입니다$")
+# 문장 전체가 이 꼴이면 버린다(공백과 문장부호를 지운 소문자 기준).
+_PATTERNS = (
+    # 방송 끝맺음("MBC 뉴스 OOO입니다"). 이름 자리는 2~4자다.
+    re.compile(r"^(mbc|kbs|sbs|ytn|jtbc)뉴스[가-힣]{2,4}입니다$"),
+    # 자막 제작자 표시("한글자막 by 한효정", "자막 제공 OOO").
+    re.compile(r"^(한글)?자막(제작|제공|편집)?(by|제공|협찬)[가-힣a-z0-9]{0,20}$"),
+    # 영상 앞머리의 광고 안내("이 영상은 유료 광고를 포함하고 있습니다").
+    re.compile(r"^(이|본)?영상은?(유료)?광고를?포함하고있습니다$"),
+    re.compile(r"^자막(제공)?및광고를?포함하고있습니다$"),
+)
 _NOT_WORD = re.compile(r"[\s\W_]+", re.UNICODE)
 
 
@@ -51,7 +60,9 @@ def is_known_hallucination(text: str) -> bool:
     normalized = _normalize(text)
     if not normalized:
         return False
-    return normalized in _KNOWN_HALLUCINATIONS or bool(_NEWS_SIGNOFF.match(normalized))
+    if normalized in _KNOWN_HALLUCINATIONS:
+        return True
+    return any(pattern.match(normalized) for pattern in _PATTERNS)
 
 
 def drop_known_hallucinations(result: SpeechAnalysisResult) -> SpeechAnalysisResult:

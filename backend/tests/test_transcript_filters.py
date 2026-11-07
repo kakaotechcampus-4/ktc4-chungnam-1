@@ -19,6 +19,10 @@ from tests.test_short_speech_transcription import submit as short_submit
         "시청해 주셔서 감사합니다.",
         "구독과 좋아요 부탁드립니다.",
         "MBC 뉴스 이덕영입니다.",
+        "한글자막 by 한효정",
+        "한글 자막 by 한효정",
+        "이 영상은 유료 광고를 포함하고 있습니다.",
+        "자막 제공 및 광고를 포함하고 있습니다.",
     ],
 )
 def test_known_hallucinations_are_recognized(text):
@@ -33,6 +37,9 @@ def test_known_hallucinations_are_recognized(text):
         "다음 영상에서 만나요 그런 말을 손녀가 자주 해.",
         "시장에서 국수 가게를 했어.",
         "다음에 또 만나요.",
+        "아토",
+        "자막을 켜고 드라마를 보셨어요.",
+        "광고에 나오던 노래를 좋아하셨지.",
     ],
 )
 def test_real_speech_is_kept(text):
