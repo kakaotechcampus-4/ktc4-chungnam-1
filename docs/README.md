@@ -14,6 +14,7 @@
 | STT와 화자 분리 서버 | [STT 서버 README](../stt-server/README.md) | [STT 파이프라인 설계](../stt-server/docs/stt-pipeline.md) |
 | 평가 자료와 실행 상태 | [평가 README](../evals/README.md) | `evals/cases/`, `evals/expected/` |
 | PR 자동 테스트와 범위 | [제품 테스트 CI](product-tests.md) | 테스트 DB 격리, 실행 명령과 미검증 범위 |
+| 배포 후보 빌드와 승인 배포 workflow | [배포 workflow](deploy-workflows.md) | 자동화 범위, 설정할 시크릿과 변수, 되돌리기 |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
 | 주제 카드의 첫 생성과 다음 면회 반영 | [주제 카드 전체 설계 검토안](architecture/card-generation-flow.md) | 입력, 사진 설명 사용, 피드백, AI 프롬프트와 남은 선택 |
 | 앱과 BE, BE와 AI 서버 사이의 API | [API 명세](architecture/api-spec.md) | [DB 스키마](../backend/database/init.sql) |
