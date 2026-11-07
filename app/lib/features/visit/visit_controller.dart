@@ -297,6 +297,7 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
 
       _update((now) => now.copyWith(sessionId: session.sessionId));
+      _announceVisit(session);
       // 녹음은 사진을 기다리지 않는다.
       unawaited(_uploadPhoto(retryOnce: true));
       return true;
@@ -320,6 +321,25 @@ class VisitController extends AsyncNotifier<VisitState> {
     } finally {
       _creatingSession = false;
     }
+  }
+
+  /// 회차가 생겨 서버가 이 카드 묶음을 면회 중(`inVisit`)으로, 이 회차를 평가
+  /// 전으로 본다. 카드 화면과 홈이 서버에 다시 묻지 않아도 그 상태를 보게 한다.
+  ///
+  /// 그러지 않으면 녹음 화면에서 뒤로 나왔을 때 카드 화면은 고르기와
+  /// `대화 시작하기` 를 그대로 보여주고(다시 누르면 `CARD_SET_ALREADY_USED`),
+  /// 홈은 앱을 다시 켜기 전까지 `평가 이어서 하기` 를 띄우지 않는다(#234).
+  void _announceVisit(VisitSession session) {
+    final profileId = ref.read(serverProfileIdProvider).value;
+    if (profileId != null) {
+      ref.read(cardGenerationProvider(profileId).notifier).visitStarted();
+    }
+    ref
+        .read(reportNoticeProvider.notifier)
+        .visitStarted(
+          sessionId: session.sessionId,
+          startedAt: session.startedAt,
+        );
   }
 
   /// 올리지 못한 면회 사진을 다시 올린다. 녹음 화면의 버튼이 부른다.
@@ -620,6 +640,17 @@ class VisitController extends AsyncNotifier<VisitState> {
 
 final visitControllerProvider =
     AsyncNotifierProvider<VisitController, VisitState>(VisitController.new);
+
+/// 이번 실행에서 녹음을 시작해 회차를 만든 면회다. 녹음 화면을 떠나도 남는다.
+///
+/// [visit] 은 [visitControllerProvider] 의 값이다. 부르는 쪽이 면회 상태를 새로
+/// 만들지 않도록 있을 때만 읽어 넘긴다. 다시 만드는 중이면 앞 값이 남아 있을
+/// 수 있어(다른 어르신으로 바꾼 경우 등) 믿지 않는다. 회차가 없으면 `null` 이다.
+VisitState? startedVisitOf(AsyncValue<VisitState>? visit) {
+  if (visit == null || visit.isLoading) return null;
+  final state = visit.value;
+  return state?.sessionId == null ? null : state;
+}
 
 /// 면회 중 보충용으로 남겨 둔 카드다.
 ///

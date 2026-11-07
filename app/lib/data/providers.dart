@@ -912,6 +912,33 @@ class _ReportNoticesNotifier
     unawaited(_follow(key, round, remoteProfileId, analysisId: analysisId));
   }
 
+  /// 녹음을 시작해 서버에 회차가 생겼다(5-1). 서버의 가장 최근 회차가 평가
+  /// 전인 이 회차가 되므로, 5-4 를 다시 묻지 않고 같은 알림으로 바꾼다. 앞
+  /// 회차를 기다리던 흐름은 끊는다.
+  void visitStarted(_NoticeKey key, String sessionId, String startedAt) {
+    _synced.add(key);
+    _nextRound(key);
+    String? visitDate;
+    try {
+      visitDate = VisitProgress(
+        sessionId: sessionId,
+        status: VisitStatus.evaluationPending,
+        startedAt: startedAt,
+      ).visitDate;
+    } on FormatException {
+      // 날짜를 읽지 못해도 이어서 할 회차는 알린다. 배너는 날짜 없이 뜬다.
+    }
+    _set(
+      key,
+      ReportNoticeInfo(
+        ReportNotice.evaluationPending,
+        reportId: sessionId,
+        visitDate: visitDate,
+        fromServer: true,
+      ),
+    );
+  }
+
   /// 이 자리를 아직 서버에 묻지 않았으면 가장 최근 회차로 알림을 정한다.
   void syncOnce(_NoticeKey key, String remoteProfileId) {
     if (!_synced.add(key)) return;
@@ -1167,6 +1194,16 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     } else {
       _notices.startMockGenerating(key);
     }
+  }
+
+  /// 녹음을 시작해 회차를 만들었다(5-1). 홈에 `평가 이어서 하기` 를 띄운다.
+  ///
+  /// 홈은 서버의 회차(5-4)를 어르신마다 앱을 켠 뒤 한 번만 묻는다. 그래서
+  /// 면회 중 녹음 화면을 떠나 홈에 오면, 앱을 다시 켜기 전에는 이어갈 배너가
+  /// 없었다(#234). [startedAt] 은 5-1 이 준 `startedAt` 이다.
+  void visitStarted({required String sessionId, required String startedAt}) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.visitStarted(key, sessionId, startedAt);
   }
 
   /// 회차 상태를 묻지 못했을 때 다시 묻는다. 서버에 저장한 분일 때만 묻는다.

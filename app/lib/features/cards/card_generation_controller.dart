@@ -65,6 +65,17 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     return ref.mounted && _stage != CardMaking.checking;
   }
 
+  /// 녹음을 시작해 이 묶음으로 회차를 만들었다(5-1). 서버는 이제 이 묶음을
+  /// `inVisit` 으로 본다. 다시 묻지 않고 그 상태로 바꾼다.
+  ///
+  /// 뒤에 남은 카드 화면이 고르기와 `대화 시작하기` 를 감추고 이어서 하기를
+  /// 보여주게 하려는 것이다. 같은 묶음으로 5-1 을 다시 보내면
+  /// `CARD_SET_ALREADY_USED` 로 거절된다. 묻는 중이던 흐름은 끊는다.
+  void visitStarted() {
+    _run++;
+    state = const AsyncData(CardGenerationStatus.inVisit);
+  }
+
   /// [flow] 를 새 흐름으로 돌리고 끝나면 상태에 담는다.
   Future<void> _begin(
     Future<CardGenerationStatus> Function(CardApi api, int run) flow,
