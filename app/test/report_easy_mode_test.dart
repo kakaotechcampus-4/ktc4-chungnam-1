@@ -123,6 +123,32 @@ void main() {
       expect(easy.bottom, lessThan(primary.top), reason: '변경 사항 버튼 위에 둔다');
     });
 
+    for (final scale in [1.3, 2.0]) {
+      testWidgets('시스템 글자 $scale배에서도 끝까지 내리면 본문을 가리지 않는다', (tester) async {
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await openReport(tester, noChanges: true);
+
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -20000));
+        await tester.pumpAndSettle();
+
+        final easy = tester.getRect(find.text('쉬운 모드'));
+        final texts = find.descendant(
+          of: find.byType(Scrollable).first,
+          matching: find.byType(Text),
+        );
+        var lowest = 0.0;
+        for (final element in texts.evaluate()) {
+          final text = element.widget as Text;
+          if (text.data == '쉬운 모드') continue;
+          final box = element.renderObject! as RenderBox;
+          final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+          if (bottom > lowest) lowest = bottom;
+        }
+        expect(lowest, lessThanOrEqualTo(easy.top), reason: '마지막 글이 버튼 위에서 끝난다');
+      });
+    }
+
     testWidgets('확인할 제안이 없어 하단 버튼이 없어도 화면 안에 있다', (tester) async {
       await openReport(tester, noChanges: true);
 

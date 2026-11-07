@@ -353,12 +353,19 @@ class _Item extends StatelessWidget {
                 color: color,
               ),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: AppTypography.caption.copyWith(
-                  color: color,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              // 시스템 글자를 크게 키우면 "마이페이지"가 두 줄로 꺾였다(1.3배,
+              // Galaxy S22). 한 줄을 지키고 칸보다 길면 그만큼만 줄인다.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: AppTypography.caption.copyWith(
+                    color: color,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ),
             ],

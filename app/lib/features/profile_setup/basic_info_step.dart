@@ -289,6 +289,18 @@ class _NumberPicker extends StatelessWidget {
             for (final v in values)
               DropdownMenuItem(value: v, child: Text('$v$suffix')),
           ],
+          // 고른 값은 칸 안에서 한 줄로 보인다. 세 칸으로 나눈 폭에서는 "1933년"이
+          // 두 줄로 꺾였다(Galaxy S22). 길면 칸에 맞게 줄인다.
+          selectedItemBuilder: (context) => [
+            for (final v in values)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('$v$suffix', maxLines: 1, softWrap: false),
+                ),
+              ),
+          ],
           onChanged: (v) {
             if (v != null) onChanged(v);
           },
