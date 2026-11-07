@@ -1,7 +1,9 @@
 // 앱이 뜨고 첫 화면 이동이 이어지는지 확인한다.
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/app/app_locale.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
@@ -48,5 +50,11 @@ void main() {
 
     expect(find.text('오늘의 만남을 준비해요'), findsOneWidget);
     expect(find.byType(GoogleSignInButton), findsOneWidget);
+
+    // TalkBack 이 한국어 음성으로 읽도록 앱 언어를 한국어로 둔다(#231).
+    expect(
+      Localizations.localeOf(tester.element(find.text('오늘의 만남을 준비해요'))),
+      appLocale,
+    );
   });
 }

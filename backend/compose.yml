@@ -6,6 +6,13 @@
 # - caddy: 개발 서버에서 HTTPS로 api를 공개할 때 `--profile https`로 켠다.
 name: saerok
 
+# 기본 json-file 로그는 크기 제한이 없어 오래 띄워 두면 디스크를 채운다. 서비스마다 30MB까지만 남긴다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   api:
     build:
@@ -20,6 +27,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test:
         - CMD
@@ -45,6 +53,7 @@ services:
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
     stop_grace_period: ${SAEROK_CARD_STOP_GRACE_SECONDS:-360}s
     restart: unless-stopped
+    logging: *default-logging
 
   speech-worker:
     build:
@@ -66,6 +75,7 @@ services:
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
     stop_grace_period: ${SAEROK_SPEECH_STOP_GRACE_SECONDS:-1860}s
     restart: unless-stopped
+    logging: *default-logging
 
   db:
     image: postgres:17
@@ -80,6 +90,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "saerok", "-d", "saerok"]
       interval: 10s
@@ -101,6 +112,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   postgres-data:

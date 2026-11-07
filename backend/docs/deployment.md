@@ -61,7 +61,7 @@ uv run pytest
    | 80 | 전체 | 인증서 발급과 갱신 확인. 확인 요청의 출발지 IP는 정해져 있지 않다 |
    | 443 | 전체 또는 팀원 IP | 앱의 HTTPS 요청 |
 
-4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다.
+4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다. 컨테이너는 인스턴스 메타데이터(IMDSv2)까지 네트워크를 한 단계 더 거치므로, 인스턴스의 메타데이터 응답 홉 제한이 1이면 `api`와 `speech-worker`가 역할 자격증명을 받지 못해 S3 업로드가 실패한다. 인스턴스 설정의 메타데이터 옵션에서 홉 제한을 2로 둔다(`aws ec2 modify-instance-metadata-options --instance-id <인스턴스 ID> --http-put-response-hop-limit 2 --http-endpoint enabled`).
 5. 저장소를 받고 develop을 쓴다.
 
    ```bash
@@ -116,7 +116,7 @@ docker compose run --rm api alembic upgrade head
 docker compose up -d api card-worker
 ```
 
-상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. `docker compose down -v`는 DB 볼륨까지 지운다.
+상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
 
 ### worker 종료와 유예 시간
 

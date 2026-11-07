@@ -176,6 +176,7 @@
 | [STT 예비 서버 전환](backend/docs/stt-backup.md), [ck 예비 서버 SSH 연결](backend/docs/stt-backup-ssh.md) | 예비 STT 설정, 전환 조건과 SSH 운영 연결 |
 | [비동기 면회 음성 STT 구현 및 테스트 가이드](backend/docs/async-speech-analysis.md) | 음성 분석 구현 파일, 환경 설정, 합성 WAV 시험 |
 | [FE README의 Play 업로드용 빌드](app/README.md#play-업로드용-빌드) | 업로드 키 서명과 versionCode 규칙 |
+| [배포 후보 빌드와 승인 배포 workflow](docs/deploy-workflows.md) | CI 다음 단계. Release build로 이미지와 앱을 만들고, Deploy로 승인 뒤 운영 서버에 백업, migration, 교체를 실행 |
 | [작업 중단과 실패 후 복구 기준](docs/architecture/processing-recovery.md) | 녹음 전송, STT, 리포트 실패 복구(상태 `proposed`) |
 
 배포는 수동 절차다. 11/3 이후 병합한 운영 도구와 절차를 운영 서버에 적용한 기록은 아직 없다.

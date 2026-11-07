@@ -98,11 +98,7 @@ class _GenerationState extends ConsumerState<_Generation> {
           message: '대화 카드를 만들지 못했어요.\n다시 시도하면 새로 만들어요.',
           onRetry: controller.start,
         ),
-        // 면회를 이어서 하는 흐름은 회차 연결과 함께 붙인다.
-        CardGenerationStatus.inVisit => const EmptyStateView(
-          message: '아직 마치지 않은 면회가 있어요.',
-          icon: Icons.style_outlined,
-        ),
+        CardGenerationStatus.inVisit => _InVisit(profileId: widget.profileId),
         // 생성 흐름은 none 과 running 을 남기지 않는다. 아직 시작하지 않은
         // null 은 들어온 직후 한 프레임뿐이라 기다리는 화면을 그대로 둔다.
         null || CardGenerationStatus.none || CardGenerationStatus.running =>
@@ -116,6 +112,92 @@ String _failureMessage(Object error) => switch (error) {
   ApiNetworkFailure() => '서버에 연결하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 시도해주세요.',
   _ => '대화 카드를 불러오지 못했어요.\n잠시 후 다시 시도해주세요.',
 };
+
+/// 평가 전 회차가 이 묶음을 쓰는 중이다(`inVisit`). 녹음을 시작한 뒤 녹음
+/// 화면을 떠났거나, 그 뒤 앱을 다시 켠 경우다.
+///
+/// 그 회차의 평가를 이어서 한다(#234). 홈 배너의 `평가 이어서 하기` 와 같은
+/// 화면이다. 녹음 화면으로는 돌려보내지 않는다. 녹음 화면을 떠날 때 파일을
+/// 닫아 같은 파일에 이어 녹음할 수 없고, 새로 녹음하면 회차마다 파일 하나를
+/// 받는 6-2 에 앞 녹음이 빠진다. 같은 묶음으로 면회를 다시 시작하면 5-1 이
+/// `CARD_SET_ALREADY_USED` 로 거절하므로 카드 고르기도 두지 않는다.
+class _InVisit extends ConsumerStatefulWidget {
+  const _InVisit({required this.profileId});
+
+  final String profileId;
+
+  @override
+  ConsumerState<_InVisit> createState() => _InVisitState();
+}
+
+class _InVisitState extends ConsumerState<_InVisit> {
+  bool _finding = false;
+  Object? _failure;
+
+  Future<void> _continue() async {
+    if (_finding) return;
+    setState(() {
+      _finding = true;
+      _failure = null;
+    });
+    try {
+      final sessionId = await _sessionInVisit();
+      if (!mounted) return;
+      if (sessionId == null) {
+        // 그 사이 평가를 마쳤거나 묶음이 바뀌었다. 상태부터 다시 묻는다.
+        unawaited(
+          ref.read(cardGenerationProvider(widget.profileId).notifier).start(),
+        );
+        return;
+      }
+      unawaited(context.push(AppRoutes.visitReviewOf(sessionId)));
+    } on ApiFailure catch (failure) {
+      if (mounted) setState(() => _failure = failure);
+    } finally {
+      if (mounted) setState(() => _finding = false);
+    }
+  }
+
+  /// 이 묶음을 쓰는 회차. 이번 실행에서 시작한 면회면 면회 상태가 안다. 앱을
+  /// 다시 켰으면 4-3 의 `usedBySessionId` 다. 받아 둔 묶음은 회차를 만들기 전에
+  /// 받은 것일 수 있어 새로 받는다.
+  Future<String?> _sessionInVisit() async {
+    final visit = startedVisitOf(
+      ref.exists(visitControllerProvider)
+          ? ref.read(visitControllerProvider)
+          : null,
+    );
+    if (visit != null) return visit.sessionId;
+    try {
+      final set = await ref.refresh(currentCardSetProvider.future);
+      return set.usedBySessionId;
+    } on ApiServerFailure catch (failure) {
+      // 쓸 묶음이 없다(`CARD_GENERATION_NOT_FOUND`). 평가를 마친 경우다.
+      if (failure.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_finding) {
+      return const LoadingView(message: '이어서 할 면회를 찾고 있어요');
+    }
+    final failure = _failure;
+    if (failure != null) {
+      return ErrorStateView(
+        message: _failureMessage(failure),
+        onRetry: _continue,
+      );
+    }
+    return EmptyStateView(
+      message: '아직 마치지 않은 면회가 있어요.\n평가를 마치면 새 대화 카드를 받을 수 있어요.',
+      icon: Icons.style_outlined,
+      actionLabel: '평가 이어서 하기',
+      onAction: _continue,
+    );
+  }
+}
 
 /// 쓸 묶음이 준비된 뒤의 카드 고르기.
 ///
@@ -429,6 +511,7 @@ class _CardTile extends StatelessWidget {
       selected: selected,
       onTap: onToggleExpanded,
       expanded: expanded,
+      tapHint: expanded ? '질문 접기' : '질문 펼치기',
       selectLabel: cardSelectLabel(card.cardTitle),
       onToggleSelected: onToggleSelected,
       child: Column(

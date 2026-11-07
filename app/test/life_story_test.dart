@@ -15,6 +15,7 @@ import 'package:saerok/features/life_story/life_story.dart';
 import 'package:saerok/features/life_story/life_story_image.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 import 'package:saerok/widgets/app_surfaces.dart';
+import 'package:saerok/widgets/profile_avatar.dart';
 
 import 'sample_profile.dart';
 
@@ -321,6 +322,37 @@ void main() {
       // 가족은 세부 정보 하나와 목 이야기 셋, 일은 세부 정보 하나와 목 이야기 하나.
       expect(find.text('4편'), findsOneWidget);
       expect(find.text('2편'), findsNWidgets(2), reason: '일과 취미');
+    });
+
+    testWidgets('프로필은 분류 목록과 나눠 한 항목으로 읽는다 (접근성 보고서 9쪽)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openAt(tester, AppRoutes.albumBook);
+
+      final header = find.ancestor(
+        of: find.byType(ProfileAvatar),
+        matching: find.byType(MergeSemantics),
+      );
+      expect(header, findsOneWidget);
+      final label = tester.getSemantics(header).label;
+      expect(label, contains('년'), reason: '이름과 생년월일을 함께 읽는다');
+      // 분류 이름 `일` 은 생년월일의 `일` 과 겹쳐 두 글자 이상인 분류로 본다.
+      for (final category in LifeStoryCategory.values) {
+        if (category.label.length < 2) continue;
+        expect(label, isNot(contains(category.label)));
+      }
+      expect(label, isNot(contains('어떤 이야기를 볼까요?')));
+      expect(
+        tester.getBottomLeft(header).dy,
+        lessThan(tester.getTopLeft(find.widgetWithText(AppCard, '가족')).dy),
+        reason: '초점 테두리가 분류 목록까지 감싸지 않는다',
+      );
+
+      // 제목도 회색 면 전체가 아니라 제목 글자만 감싼다.
+      final title = find.text('어떤 이야기를 볼까요?');
+      expect(tester.getSemantics(title), isSemantics(isHeader: true));
+      final titleRect = tester.getSemantics(title).rect;
+      expect(titleRect.height, lessThan(tester.getSize(title).height * 2));
+      handle.dispose();
     });
 
     testWidgets('최근 추가된 이야기는 최근 것부터 세 편이다', (tester) async {
