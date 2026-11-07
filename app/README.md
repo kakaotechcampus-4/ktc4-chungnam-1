@@ -737,7 +737,7 @@ FCM은 예전의 기기 토큰(`getToken`, HTTP v1의 `token`) 대신 Firebase I
 | 다른 계정으로 바뀜 | 그 계정의 동의(1-3)를 다시 읽어 위 기준을 따른다 |
 | 계정(1-3)을 처음 읽는 중이거나 읽지 못함 | 모르는 것으로 보고 그대로 둔다. 연결이 잠깐 끊겼다고 등록을 풀지 않는다 |
 
-알림 권한을 거절해도 등록은 하지만 알림이 보이지 않는다. 앱을 켜자마자 FCM이 스스로 등록하지 않도록 `AndroidManifest.xml`에서 `firebase_messaging_auto_init_enabled`를 껐다. 그래서 동의한 계정이면 앱을 켤 때마다 앱 코드가 직접 `register()`를 부른다.
+알림 권한을 거절해도 등록은 하지만 알림이 보이지 않는다. 앱을 켜자마자 FCM이 스스로 등록하지 않도록 `AndroidManifest.xml`에서 `firebase_messaging_auto_init_enabled`를 껐다. 그래서 동의한 계정이면 앱을 켤 때마다 앱 코드가 직접 `register()`를 부른다. 이 등록 ID(FID) 방식은 `firebase_messaging_installation_id_enabled`를 켜 두어야 쓸 수 있다. 빠지면 `register()`가 `IllegalStateException: API disabled`로 실패해 등록 ID를 받지 못하고 서버(1-7)에도 등록하지 않는다(2026-11-07 Galaxy S22 실기기에서 확인).
 
 코드는 [push_messaging.dart](lib/features/push/push_messaging.dart)(Firebase를 감싼 `PushMessaging`)와 [push_registration.dart](lib/features/push/push_registration.dart)(`pushRegistrationProvider`)다. 기본 `pushMessagingProvider`는 아무것도 하지 않는 `NoPushMessaging`이고 `main.dart`의 `rootApp`만 `FirebasePushMessaging`으로 바꾼다. 그래서 기존 위젯 테스트와 여정 테스트는 계정(1-3)을 더 읽지 않고 Firebase도 부르지 않는다. 확인 내용은 `test/push_registration_test.dart`에 있다.
 
