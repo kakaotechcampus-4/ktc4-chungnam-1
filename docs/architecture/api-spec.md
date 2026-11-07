@@ -1411,6 +1411,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ### 8-4. `POST /internal/v1/image-analyses` — 신규
 
+아래는 내부 계약이다. 로컬 worker는 리포트와 같은 방식으로 `ai/photo_analysis` 함수를 직접 호출하며 이 HTTP 경로를 공개하지 않는다. 합성 사진용 연결과 운영 적용 조건은 [사진 분석 실행 문서](../../backend/docs/photo-analysis.md)를 따른다.
+
 프로필 사진만 요청한다. 면회 사진은 요청하지 않는다.
 
 요청

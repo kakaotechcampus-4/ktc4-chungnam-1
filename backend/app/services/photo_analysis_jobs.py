@@ -6,10 +6,9 @@
 A)가 한다. 결과를 저장할 때는 `analysis_status = 'completed'`, `description`, `model`,
 `prompt_version`과 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `photos_lease_check`).
 
-**사진 동의 설계 전에는 worker에 연결하지 않는다.** ADR-001의 2026-10-05 개정안은 사진
-보관 동의와 AI 분석 동의를 나누고, 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지
-못하게 한다. 지금은 `pending`인 프로필 사진을 모두 가져오므로, 분석 동의의 저장 위치와
-"분석하지 않는 사진"의 상태가 정해지면 그 조건을 가져오기 조건에 더한 뒤 사용한다.
+합성 데이터용 worker를 연결했다. 실제 사용자 자료에서는 계정의 사진 분석 동의 조건을
+조회하고 철회 여부를 저장 직전에 다시 검사하는 연결이 필요하다. 현재 실행 진입점은
+운영 환경 실행을 거절한다. 이 제한을 동의 없이 분석해도 된다는 뜻으로 바꾸지 않는다.
 """
 
 from __future__ import annotations
@@ -77,7 +76,7 @@ class PhotoAnalysisQueue:
             """
             UPDATE photos
                SET analysis_status = 'failed', error_code = %s, lease_expires_at = NULL
-             WHERE photo_id = %s AND analysis_status = 'processing'
+             WHERE photo_id = %s AND analysis_status = 'processing' AND attempt_count = %s
             """,
-            (error_code, job.photo_id),
+            (error_code, job.photo_id, job.attempt_count),
         )

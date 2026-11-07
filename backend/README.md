@@ -512,7 +512,7 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 - 프로필당 5장이다(`PHOTO_LIMIT_EXCEEDED`, 409). 면회 사진은 세지 않는다. 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 세고, 행을 넣을 때 프로필 행을 `FOR UPDATE`로 잠근 뒤 다시 센다. S3 업로드 동안에는 잠그지 않는다.
 - 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다. 행이 없어 trigger가 넣어 주지 않기 때문이다.
-- 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져갈 대상이지만, worker는 아직 연결하지 않았다(위 worker 절의 `PhotoAnalysisQueue`).
+- 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져간다. [합성 사진 분석 실행과 운영 적용 조건](docs/photo-analysis.md)을 따른다. 현재 운영 환경 실행은 거절하며 실제 ML API 품질 검사는 별도다.
 - 면회 사진과 다른 계정의 사진은 3-2에서 없는 사진과 같은 `PROFILE_PHOTO_NOT_FOUND`(404)다.
 
 ### 공통 처리 순서
