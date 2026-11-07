@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app_locale.dart';
 import 'app/release_config.dart';
+import 'app/report_open_policy.dart';
 import 'app/router.dart';
 import 'app/routes.dart';
 import 'data/app_version.dart';
@@ -61,16 +62,18 @@ class _SaerokAppState extends ConsumerState<SaerokApp> {
     super.dispose();
   }
 
-  /// 리포트 완료 알림을 눌렀으면 홈에 도착했을 때 그 리포트를 연다.
+  /// 리포트 완료 알림을 눌렀으면 보기만 하는 화면에서 그 리포트를 연다.
   ///
-  /// 스플래시, 로그인과 녹음 같은 다른 화면에서는 기다린다. 홈 위에 리포트를 올려
-  /// 뒤로 가면 홈으로 돌아온다.
+  /// 스플래시, 로그인, 녹음과 평가처럼 하던 일이 있는 화면에서는 기다린다
+  /// ([canOpenReportOver]). 지금 화면 위에 리포트를 올려 뒤로 가면 돌아온다.
   void _openPendingReport() {
     if (ref.read(pendingReportOpenProvider) == null) return;
     final location = _router.routerDelegate.currentConfiguration.uri.path;
-    if (location != AppRoutes.home) return;
+    if (!canOpenReportOver(location)) return;
     final sessionId = ref.read(pendingReportOpenProvider.notifier).take();
     if (sessionId == null) return;
+    // 이미 그 리포트를 보고 있으면 한 번 더 올리지 않는다.
+    if (location == AppRoutes.reportOf(sessionId)) return;
     // 라우터가 이동을 알리는 중에 다시 이동하지 않도록 다음 차례로 미룬다.
     Future.microtask(() => _router.push(AppRoutes.reportOf(sessionId)));
   }
