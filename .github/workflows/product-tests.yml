@@ -102,6 +102,59 @@ jobs:
           path: backend/openapi.json
           retention-days: 14
 
+  # 앱의 실제 API 코드로 실제 BE, 카드 worker, 음성 worker와 PostgreSQL을 잇는 전체 여정(app/README.md
+  # "앱과 실제 서버 E2E"). 구글 로그인, 모델, S3, STT만 합성으로 바꾸므로 비밀값이 필요 없다.
+  # 가입부터 프로필, 카드, 면회, 녹음, 리포트, 두 번째 면회, 탈퇴까지 한 번에 돈다.
+  e2e:
+    name: App and backend E2E (synthetic boundaries)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saelog_ci
+          POSTGRES_PASSWORD: isolated_ci_database
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saelog_ci -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONUTF8: '1'
+      SAEROK_TEST_DATABASE_URL: postgresql://saelog_ci:isolated_ci_database@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            ai/uv.lock
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - name: Install app packages
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+      - name: Install backend packages
+        working-directory: backend
+        run: uv sync --locked
+      # 빈 임시 DB에 migration을 적용하고 BE와 worker를 띄운 뒤 app/e2e/server_journey_test.dart를 돌린다.
+      # 끝나면 임시 DB를 지운다.
+      - name: Run app and backend journey
+        working-directory: backend
+        run: uv run --locked python scripts/run_app_server_e2e.py --flutter "$(command -v flutter)"
+
   ai:
     name: AI tests and PostgreSQL (no model calls)
     runs-on: ubuntu-24.04
