@@ -14,7 +14,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
-import 'my_page_menu.dart';
+import 'home_talk.dart';
 
 /// 시작 화면.
 ///
@@ -43,141 +43,226 @@ class HomeScreen extends ConsumerWidget {
     final hasProfile = ref.watch(
       careProfilesProvider.select((p) => p.hasSelected),
     );
-    final name = ref.watch(profileProvider).value?.profile.name;
+    final shown = ref.watch(profileProvider).value?.profile;
+    final name = shown?.name;
+    final profileKey = shown?.profileId;
 
     // 어르신이 있어야 쓰는 기능이다. 없으면 등록부터 안내한다.
     void needsProfile(VoidCallback open) =>
         hasProfile ? open() : showProfileRequiredDialog(context);
 
     return Scaffold(
-      body: Column(
+      // 색은 홈에만 둔다(`HomeColors`).
+      backgroundColor: HomeColors.background,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          // 만드는 중에는 아직 볼 것이 없으므로 점을 찍지 않는다.
-          _TopBar(
-            hasNotice: notice == ReportNotice.ready,
-            onNotice: () =>
-                needsProfile(() => context.push(AppRoutes.notifications)),
-          ),
-          Expanded(
-            child: ScreenBody(
-              bottom: Column(
-                children: [
-                  _CardButton(needsProfile: needsProfile),
-                  // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
-                  // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
-                  if (notice != null) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    switch (notice) {
-                      // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
-                      ReportNotice.generating => _GeneratingNotice(date: date),
-                      ReportNotice.ready => _ReportNotice(
-                        date: date,
-                        // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
-                        onTap: () {
-                          if (reportId == null) return;
-                          context.push(AppRoutes.reportOf(reportId));
-                        },
-                      ),
-                      ReportNotice.failed => _ResumeNotice(
-                        date: date,
-                        title: '리포트를 만들지 못했어요',
-                        hint: '눌러서 분석 다시 요청하기',
-                        icon: Icons.error_outline,
-                        onTap: () {
-                          final analysisId = info?.analysisId;
-                          if (reportId == null || analysisId == null) return;
-                          context.push(
-                            AppRoutes.analysisRetryOf(reportId, analysisId),
-                          );
-                        },
-                      ),
-                      // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
-                      // 서버의 알림이라 회차 ID 가 있다.
-                      ReportNotice.evaluationPending => _ResumeNotice(
-                        date: date,
-                        title: '평가 이어서 하기',
-                        hint: '평가를 마치면 리포트를 만들어요',
-                        onTap: () {
-                          if (reportId == null) return;
-                          context.push(AppRoutes.visitReviewOf(reportId));
-                        },
-                      ),
-                      ReportNotice.audioPending => _ResumeNotice(
-                        date: date,
-                        title: '음성 다시 보내기',
-                        hint: '녹음을 보내면 리포트를 만들어요',
-                        onTap: () {
-                          if (reportId == null) return;
-                          context.push(AppRoutes.visitUploadOf(reportId));
-                        },
-                      ),
-                      // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
-                      ReportNotice.checkFailed => _ResumeNotice(
-                        date: null,
-                        icon: Icons.refresh,
-                        title: '리포트 상태를 확인하지 못했어요',
-                        hint: '눌러서 다시 확인하기',
-                        onTap: () =>
-                            ref.read(reportNoticeProvider.notifier).retry(),
-                      ),
-                    },
-                  ],
-                ],
+          const _HomeHills(),
+          Column(
+            children: [
+              // 만드는 중에는 아직 볼 것이 없으므로 점을 찍지 않는다.
+              _TopBar(
+                hasNotice: notice == ReportNotice.ready,
+                onNotice: () =>
+                    needsProfile(() => context.push(AppRoutes.notifications)),
               ),
-              // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
-              // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
-              // 붙는 순간 아래로 넘친다.
-              child: Align(
-                alignment: const Alignment(0, -0.2),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '새록',
-                      style: AppTypography.screenTitle.copyWith(
-                        fontSize: 44,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
-                    // 이름을 읽는 동안에는 이름 없이 묻는다.
-                    Text(
-                      name == null
-                          ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                          : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
-                      style: AppTypography.body,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    Flexible(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.image),
-                        child: Image.asset('assets/images/main.webp'),
-                      ),
-                    ),
-                  ],
+              Expanded(
+                child: ScreenBody(
+                  bottom: Column(
+                    children: [
+                      _CardButton(needsProfile: needsProfile),
+                      // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
+                      // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
+                      if (notice != null) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        switch (notice) {
+                          // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
+                          ReportNotice.generating => _GeneratingNotice(
+                            date: date,
+                          ),
+                          ReportNotice.ready => _ReportNotice(
+                            date: date,
+                            // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.reportOf(reportId));
+                            },
+                          ),
+                          ReportNotice.failed => _ResumeNotice(
+                            date: date,
+                            title: '리포트를 만들지 못했어요',
+                            hint: '눌러서 분석 다시 요청하기',
+                            icon: Icons.error_outline,
+                            onTap: () {
+                              final analysisId = info?.analysisId;
+                              if (reportId == null || analysisId == null) {
+                                return;
+                              }
+                              context.push(
+                                AppRoutes.analysisRetryOf(reportId, analysisId),
+                              );
+                            },
+                          ),
+                          // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
+                          // 서버의 알림이라 회차 ID 가 있다.
+                          ReportNotice.evaluationPending => _ResumeNotice(
+                            date: date,
+                            title: '평가 이어서 하기',
+                            hint: '평가를 마치면 리포트를 만들어요',
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.visitReviewOf(reportId));
+                            },
+                          ),
+                          ReportNotice.audioPending => _ResumeNotice(
+                            date: date,
+                            title: '음성 다시 보내기',
+                            hint: '녹음을 보내면 리포트를 만들어요',
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.visitUploadOf(reportId));
+                            },
+                          ),
+                          // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
+                          ReportNotice.checkFailed => _ResumeNotice(
+                            date: null,
+                            icon: Icons.refresh,
+                            title: '리포트 상태를 확인하지 못했어요',
+                            hint: '눌러서 다시 확인하기',
+                            onTap: () =>
+                                ref.read(reportNoticeProvider.notifier).retry(),
+                          ),
+                        },
+                      ],
+                    ],
+                  ),
+                  // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
+                  // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
+                  // 붙는 순간 아래로 넘친다.
+                  //
+                  // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
+                  // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문을
+                  // 스크롤한다. 글자를 잘리게 두지 않는다(`app/DESIGN.md`).
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      final roomy =
+                          MediaQuery.textScalerOf(context).scale(1) <= 1.3 &&
+                          box.maxHeight >= 300;
+                      final content = Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                          // 이름을 읽는 동안에는 이름 없이 묻는다.
+                          Text(
+                            name == null
+                                ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                                : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
+                            // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
+                            style: AppTypography.sectionTitle,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.xxl),
+                          // 어르신을 바꾸면 인사말부터 다시 시작한다.
+                          if (roomy)
+                            Flexible(child: HomeTalk(key: ValueKey(profileKey)))
+                          else
+                            HomeTalk(
+                              key: ValueKey(profileKey),
+                              mascotSize: 140,
+                            ),
+                        ],
+                      );
+                      const alignment = Alignment(0, -0.2);
+                      if (roomy) {
+                        return Align(alignment: alignment, child: content);
+                      }
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: box.maxHeight),
+                          child: Align(alignment: alignment, child: content),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNav(
-        current: AppTab.home,
-        onSelected: (tab) {
-          switch (tab) {
-            case AppTab.album:
-              needsProfile(() => context.push(AppRoutes.album));
-            case AppTab.home:
-              break;
-            case AppTab.myPage:
-              showMyPageMenu(context);
-          }
-        },
+    );
+  }
+}
+
+/// 홈 바닥의 연한 세이지 언덕 두 겹. 장식이라 누를 수 없고 화면 낭독기도 읽지 않는다.
+///
+/// 버튼과 알림은 이 위에 올라간다. 언덕 위 보조 글자(`#5C5C5C`)는 앞 언덕에서
+/// 5.0:1, 오류 글자(`#99392E`)는 5.3:1 이다.
+class _HomeHills extends StatelessWidget {
+  const _HomeHills();
+
+  @override
+  Widget build(BuildContext context) {
+    return const IgnorePointer(
+      child: ExcludeSemantics(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: FractionallySizedBox(
+            widthFactor: 1,
+            heightFactor: 0.22,
+            child: RepaintBoundary(
+              child: CustomPaint(painter: _HillsPainter()),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _HillsPainter extends CustomPainter {
+  const _HillsPainter();
+
+  /// 뒤 언덕. 앞 언덕보다 연하다.
+  static const _back = HomeColors.hillBack;
+
+  /// 앞 언덕.
+  static const _front = HomeColors.hillFront;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // 참고 시안의 윤곽을 따랐다. 꼭대기는 눌리지 않게 둥글게 부풀린다.
+    // 뒤 언덕은 왼쪽 꼭대기에서 오른쪽으로 내려가고, 앞 언덕은 왼쪽이 낮고
+    // 가운데가 완만하다가 오른쪽에서 둥글게 솟는다.
+    final back = Path()
+      ..moveTo(0, h * 0.05)
+      ..cubicTo(w * 0.025, h * 0.012, w * 0.06, 0, w * 0.10, 0)
+      ..cubicTo(w * 0.16, 0, w * 0.24, h * 0.03, w * 0.33, h * 0.09)
+      ..cubicTo(w * 0.42, h * 0.15, w * 0.50, h * 0.21, w * 0.62, h * 0.23)
+      ..cubicTo(w * 0.78, h * 0.25, w * 0.90, h * 0.22, w, h * 0.18)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..close();
+    canvas.drawPath(back, Paint()..color = _back);
+
+    final front = Path()
+      ..moveTo(0, h * 0.45)
+      ..cubicTo(w * 0.05, h * 0.36, w * 0.13, h * 0.29, w * 0.24, h * 0.275)
+      ..cubicTo(w * 0.34, h * 0.26, w * 0.42, h * 0.29, w * 0.50, h * 0.285)
+      ..cubicTo(w * 0.57, h * 0.28, w * 0.63, h * 0.20, w * 0.70, h * 0.12)
+      ..cubicTo(w * 0.77, h * 0.045, w * 0.84, 0, w * 0.91, 0)
+      ..cubicTo(w * 0.95, 0, w * 0.98, h * 0.005, w, h * 0.012)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..close();
+    canvas.drawPath(front, Paint()..color = _front);
+  }
+
+  @override
+  bool shouldRepaint(_HillsPainter oldDelegate) => false;
 }
 
 /// `오늘의 대화카드 받기`. 카드 화면으로 가기 전에 여기서 쓸 묶음을 준비한다.
@@ -223,6 +308,8 @@ class _CardButton extends ConsumerWidget {
         PrimaryButton(
           label: making ? '대화 카드를 만들고 있어요' : '오늘의 대화카드 받기',
           loading: making,
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           onPressed: () => needsProfile(() => _getCards(context, ref)),
         ),
         if (stage == CardMaking.remaking) ...[
@@ -237,6 +324,8 @@ class _CardButton extends ConsumerWidget {
   }
 
   Future<void> _getCards(BuildContext context, WidgetRef ref) async {
+    // 기다리는 동안 볼 이야기를 말풍선에 꺼낸다.
+    ref.read(homeTalkNudgeProvider.notifier).nudge();
     // 이미 읽은 값이 있으면 기다리지 않는다. 누르자마자 버튼이 돌게 한다.
     final profileId =
         ref.read(serverProfileIdProvider).value ??
@@ -294,7 +383,7 @@ class _RemakingNotice extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: HomeColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: const Row(
@@ -387,7 +476,7 @@ class _TopBar extends StatelessWidget {
                             color: AppColors.danger,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: AppColors.background,
+                              color: HomeColors.background,
                               width: 2,
                             ),
                           ),
@@ -437,8 +526,10 @@ class _ProfileSwitcher extends ConsumerWidget {
       children: [
         // 누르면 어르신을 고르는 화면으로 간다.
         Material(
-          color: AppColors.surface,
-          shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+          color: HomeColors.bubble,
+          shape: const StadiumBorder(
+            side: BorderSide(color: HomeColors.bubbleLine),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => context.push(AppRoutes.profileSwitch),
@@ -510,8 +601,10 @@ class _RegisterPill extends StatelessWidget {
       // 오른쪽 아이콘이 없을 때의 알약과 같은 간격이다.
       padding: const EdgeInsets.only(right: AppSpacing.screen - AppSpacing.sm),
       child: Material(
-        color: AppColors.surface,
-        shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+        color: HomeColors.bubble,
+        shape: const StadiumBorder(
+          side: BorderSide(color: HomeColors.bubbleLine),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => context.push(AppRoutes.profileSwitch),
@@ -591,8 +684,9 @@ class _GeneratingNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: HomeColors.background,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        boxShadow: AppShadows.high,
       ),
       child: Row(
         children: [
@@ -647,8 +741,9 @@ class _ReportNotice extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: HomeColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
+          boxShadow: AppShadows.high,
         ),
         child: Row(
           children: [
@@ -695,8 +790,9 @@ class _ResumeNotice extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: HomeColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
+          boxShadow: AppShadows.high,
         ),
         child: Row(
           children: [

@@ -35,7 +35,8 @@ class ReportScreen extends ConsumerWidget {
     final report = ref.watch(reportProvider(reportId));
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: report.when(
         loading: () => const LoadingView(message: '리포트를 여는 중이에요'),
         error: (error, _) => ErrorStateView(
@@ -253,6 +254,8 @@ class _BodyState extends ConsumerState<_Body> {
           bottom: !hasChanges
               ? null
               : PrimaryButton(
+                  color: HomeColors.accent,
+                  loadingColor: HomeColors.accentLoading,
                   label: '변경 사항 확인하기',
                   onPressed: () =>
                       context.push(AppRoutes.reportChangesOf(report.reportId)),
@@ -287,6 +290,7 @@ class _BodyState extends ConsumerState<_Body> {
               ),
               const SizedBox(height: AppSpacing.lg),
               AppSurfaceBox(
+                color: HomeColors.bubble,
                 padding: EdgeInsets.all(set.cardPadding),
                 child: _Summary(text: report.summaryText, set: set),
               ),
@@ -312,7 +316,13 @@ class _BodyState extends ConsumerState<_Body> {
               if (countText != null) ...[
                 if (cards.summaries.isEmpty)
                   const SizedBox(height: AppSpacing.lg),
-                Text(countText, style: set.sub),
+                Center(
+                  child: Text(
+                    countText,
+                    style: set.sub,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.lg),
               ],
 
@@ -395,7 +405,12 @@ class _MetaLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = Text(date, style: set.sub);
-    final chip = AppChip(mood, style: set.chip);
+    final chip = AppChip(
+      accent: HomeColors.accent,
+      weakBorder: HomeColors.outline,
+      mood,
+      style: set.chip,
+    );
 
     // 날짜와 만남 표시를 한 번에 읽는다.
     return MergeSemantics(child: _layout(label, chip));
@@ -442,6 +457,8 @@ class _CardSummaryTile extends StatelessWidget {
     // 이어 듣기 어렵다.
     return MergeSemantics(
       child: AppCard(
+        accent: HomeColors.accent,
+        borderColor: HomeColors.outline,
         padding: EdgeInsets.all(set.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -489,9 +506,11 @@ class _EasyModeButton extends StatelessWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: on ? AppColors.ink : AppColors.background,
+          color: on ? HomeColors.accent : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(color: on ? AppColors.ink : AppColors.line),
+          border: Border.all(
+            color: on ? HomeColors.accent : HomeColors.outline,
+          ),
           boxShadow: AppShadows.high,
         ),
         child: Material(
@@ -556,7 +575,7 @@ class _VisitPhoto extends StatelessWidget {
             semanticLabel: '면회 사진',
             errorBuilder: (context, error, stackTrace) => Container(
               height: _height,
-              color: AppColors.surface,
+              color: HomeColors.bubble,
               alignment: Alignment.center,
               child: const Text('사진을 열지 못했어요', style: AppTypography.sub),
             ),

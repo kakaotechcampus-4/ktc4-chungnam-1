@@ -9,10 +9,18 @@ class PrimaryButton extends StatelessWidget {
     required this.onPressed,
     this.expand = true,
     this.loading = false,
+    this.color,
+    this.loadingColor,
     super.key,
   });
 
   final String label;
+
+  /// 면 색. 비우면 검정이다. 흰 글자와 4.5:1 이상인 색만 쓴다.
+  final Color? color;
+
+  /// [color] 를 바꿨을 때 [loading] 의 면. 흰 글자와 4.5:1 이상이어야 한다.
+  final Color? loadingColor;
 
   /// `null` 이면 비활성 상태로 보여준다.
   final VoidCallback? onPressed;
@@ -42,10 +50,10 @@ class PrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
+          backgroundColor: color ?? AppColors.ink,
           foregroundColor: AppColors.background,
           disabledBackgroundColor: loading
-              ? _loadingBackground
+              ? (loadingColor ?? _loadingBackground)
               : AppColors.line,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
@@ -85,6 +93,7 @@ class SecondaryButton extends StatelessWidget {
     required this.onPressed,
     this.expand = true,
     this.icon,
+    this.borderColor = AppColors.line,
     super.key,
   });
 
@@ -94,6 +103,9 @@ class SecondaryButton extends StatelessWidget {
 
   /// 글자 앞에 둘 아이콘. 없으면 글자만 둔다.
   final IconData? icon;
+
+  /// 테두리 색. 오프화이트 바탕에서는 [HomeColors.outline] 처럼 진하게 준다.
+  final Color borderColor;
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +118,7 @@ class SecondaryButton extends StatelessWidget {
           foregroundColor: AppColors.ink,
           disabledForegroundColor: AppColors.textDisabled,
           backgroundColor: AppColors.background,
-          side: const BorderSide(color: AppColors.line),
+          side: BorderSide(color: borderColor),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),

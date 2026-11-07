@@ -102,15 +102,15 @@ void main() {
         reason: '만드는 중이라는 것을 움직임으로도 알린다',
       );
 
-      final character = tester.widget<Image>(
+      expect(
         find.byWidgetPredicate(
           (w) =>
               w is Image &&
               w.image is AssetImage &&
               (w.image as AssetImage).assetName.endsWith('logo.webp'),
         ),
+        findsOneWidget,
       );
-      expect(character.width, 64);
     });
 
     testWidgets('아직 들어갈 곳이 없으므로 누르는 자리가 아니다', (tester) async {

@@ -7,7 +7,6 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
-import 'my_page_menu.dart';
 
 /// 알림. 홈의 왼쪽 상단 알림 아이콘을 누르면 뜬다(피그마 설계 없음).
 ///
@@ -28,23 +27,16 @@ class NoticeScreen extends ConsumerWidget {
         : ref.watch(visitReportProvider);
 
     return Scaffold(
-      appBar: AppTopBar(
-        actions: [
-          // 홈의 메뉴 아이콘과 같다. 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
-          IconButton(
-            onPressed: null,
-            tooltip: '메뉴',
-            icon: Icon(Icons.menu, size: 26, color: AppColors.textDisabled),
-          ),
-        ],
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '알림',
       ),
       body: ScreenBody(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: AppSpacing.lg),
-            Text('알림', style: AppTypography.screenTitle),
-            const SizedBox(height: AppSpacing.xxl),
             Expanded(
               child: notice == null
                   ? const EmptyStateView(
@@ -99,24 +91,12 @@ class NoticeScreen extends ConsumerWidget {
           ],
         ),
       ),
-      bottomNavigationBar: AppBottomNav(
-        current: AppTab.home,
-        onSelected: (tab) {
-          switch (tab) {
-            case AppTab.album:
-              context.push(AppRoutes.album);
-            case AppTab.home:
-              context.go(AppRoutes.home);
-            case AppTab.myPage:
-              showMyPageMenu(context);
-          }
-        },
-      ),
     );
   }
 }
 
-/// 알림 한 건이다. 지금은 이 한 건뿐이지만, 이력이 여러 건이 되면 목록의
+/// 알림 한 건이다. 테두리 상자 안에 날짜(작은 회색), 제목(크고 굵게),
+/// 안내(오른쪽 끝, 누를 수 있으면 화살표)를 둔다. 이력이 여러 건이 되면 목록의
 /// 항목 하나가 되는 자리다.
 class _NoticeRow extends StatelessWidget {
   const _NoticeRow({
@@ -146,29 +126,88 @@ class _NoticeRow extends StatelessWidget {
       _ => onOpen,
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
+    // 남는 높이를 채우지 않고 위에 붙는다.
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Material(
+        color: AppColors.background,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          side: const BorderSide(color: HomeColors.outline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-            child: Column(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (date != null) ...[
-                  Text(_friendlyDate(date!), style: AppTypography.bodyStrong),
-                  const SizedBox(height: AppSpacing.xs),
-                ],
-                Text(title, style: AppTypography.body),
-                const SizedBox(height: AppSpacing.xs),
-                Text(hint, style: AppTypography.sub),
+                // 알림임을 알리는 편지 아이콘. 장식이라 화면 읽기에서 뺀다.
+                const ExcludeSemantics(child: _NoticeIcon()),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  // 내용 높이만큼만 차지한다. 기본값(max)이면 화면을 채운다.
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (date != null) ...[
+                        Text(_friendlyDate(date!), style: AppTypography.sub),
+                        const SizedBox(height: AppSpacing.xs),
+                      ],
+                      Text(title, style: AppTypography.sectionTitle),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              hint,
+                              style: AppTypography.sub,
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          if (onTap != null) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            const Icon(
+                              Icons.chevron_right,
+                              size: 22,
+                              color: AppColors.textSub,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        const Divider(color: AppColors.line, height: 1),
-      ],
+      ),
+    );
+  }
+}
+
+/// 연회색 원 안의 편지 아이콘.
+class _NoticeIcon extends StatelessWidget {
+  const _NoticeIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: HomeColors.bubble,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.mail_outline_rounded,
+        size: 24,
+        color: HomeColors.accent,
+      ),
     );
   }
 }

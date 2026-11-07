@@ -72,9 +72,9 @@ void main() {
     expect(find.textContaining('분석이 끝나면'), findsNothing);
     expect(find.textContaining('만드는 데만'), findsNothing);
     expect(recordingRetentionNotice, contains('다음 대화 준비'));
-    expect(recordingRetentionNotice, contains('서버로 보낸 녹음 파일은 분석 후 바로 지워요'));
-    expect(recordingRetentionNotice, contains('이 휴대폰에는'));
-    expect(recordingRetentionNotice, contains('녹음이 남아요'));
+    expect(recordingRetentionNotice, contains('서버에서는 분석 후 지우고'));
+    expect(recordingRetentionNotice, contains('휴대폰에만 남겨요'));
+    expect(recordingRetentionNotice.split('\n'), hasLength(2));
     expect(find.text('네, 좋아요'), findsOneWidget);
     expect(
       recorder.calls,

@@ -54,8 +54,8 @@ class ConsentRow extends StatelessWidget {
           Checkbox(
             value: checked,
             onChanged: onChanged,
-            activeColor: AppColors.ink,
-            side: const BorderSide(color: AppColors.line, width: 2),
+            activeColor: HomeColors.accent,
+            side: const BorderSide(color: HomeColors.outline, width: 2),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -89,11 +89,11 @@ class ConsentRow extends StatelessWidget {
 
                 // 자세히 보기를 이름과 같은 줄에 두면 이름이 쓸 수 있는 폭이
                 // 316 에서 245 로 줄어 네 항목 중 셋이 줄바꿈된다. 아래 줄로
-                // 내리고 글자를 한 단계 흐리게 둔다.
+                // 내리고 글자를 보조 글자색으로 둔다(오프화이트 위 비활성 회색은 4.3:1).
                 TextButton(
                   onPressed: onDetails,
                   style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textDisabled,
+                    foregroundColor: AppColors.textSub,
                     padding: EdgeInsets.zero,
                     alignment: Alignment.centerLeft,
                     minimumSize: const Size(0, _detailsHeight),
@@ -102,16 +102,11 @@ class ConsentRow extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        '자세히 보기',
-                        style: AppTypography.sub.copyWith(
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
+                      Text('자세히 보기', style: AppTypography.sub),
                       const Icon(
                         Icons.chevron_right,
                         size: 18,
-                        color: AppColors.textDisabled,
+                        color: AppColors.textSub,
                       ),
                     ],
                   ),

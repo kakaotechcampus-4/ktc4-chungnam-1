@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
+import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../visit/stop_recording_dialog.dart';
 import 'status_notice.dart';
@@ -36,7 +37,8 @@ class UploadRetryScreen extends ConsumerWidget {
     void goHome() => context.go(AppRoutes.home);
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       // 다시 보내기를 누르면 지난 실패 대신 보내는 중을 다시 보여준다.
       body: result.when(
         skipLoadingOnRefresh: false,

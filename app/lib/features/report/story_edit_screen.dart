@@ -64,10 +64,16 @@ class _StoryEditScreenState extends State<StoryEditScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(title: '이야기 수정하기'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '이야기 수정하기',
+      ),
       body: ScreenBody(
         scrollable: true,
         bottom: PrimaryButton(
+          color: HomeColors.accent,
+          loadingColor: HomeColors.accentLoading,
           label: '수정 완료',
           onPressed: _filled ? _done : null,
         ),
@@ -76,6 +82,8 @@ class _StoryEditScreenState extends State<StoryEditScreen> {
           children: [
             const SizedBox(height: AppSpacing.xl),
             AppTextField(
+              borderColor: HomeColors.outline,
+              focusColor: HomeColors.accent,
               label: '제목',
               controller: _title,
               required: true,
@@ -84,6 +92,8 @@ class _StoryEditScreenState extends State<StoryEditScreen> {
             ),
             const SizedBox(height: AppSpacing.xl),
             AppTextField(
+              borderColor: HomeColors.outline,
+              focusColor: HomeColors.accent,
               label: '내용',
               controller: _content,
               required: true,
@@ -107,7 +117,9 @@ class StoryEditMissingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: HomeColors.background,
       appBar: AppTopBar(
+        backgroundColor: HomeColors.background,
         title: '이야기 수정하기',
         onBack: () => context.go(AppRoutes.home),
       ),

@@ -251,6 +251,8 @@ class JourneyServer {
               : _ok(proposal);
         case 'POST proposals/review':
           return _review(session, (body! as Map).cast());
+        case 'PATCH cards':
+          return _addCards(session, (body! as Map).cast());
       }
       return _notFound();
     }
@@ -397,12 +399,38 @@ class JourneyServer {
     final session = _Session(
       sessionId: _id('4', _next++),
       setId: latest.setId,
-      selectedCardIds: selected,
+      selectedCardIds: [...selected],
       // 회차마다 날을 달리해 홈 알림의 날짜로 구분한다.
       startedAt: '2026-11-0${_sessions.length + 1}T14:00:00+09:00',
     );
     _sessions.add(session);
     return _ok(session.toJson(), 201);
+  }
+
+  /// 5-3 면회 중 보충 카드. 같은 묶음의 10~12번만 받고, 이미 더한 카드는
+  /// 무시한다.
+  _Reply _addCards(_Session session, Map<String, Object?> body) {
+    if (session.status != 'evaluationPending') {
+      return _error(409, 'INVALID_SESSION_STATE');
+    }
+    final ids = (body['cardIds'] as List?)?.cast<String>() ?? const [];
+    final set = _sets.firstWhere((s) => s.setId == session.setId);
+    final supplements = {
+      for (final card in set.cards)
+        if ((card['position']! as int) >= 10) card['cardId']! as String,
+    };
+    if (ids.isEmpty ||
+        ids.length > 3 ||
+        ids.toSet().length != ids.length ||
+        !ids.every(supplements.contains)) {
+      return _error(422, 'INVALID_CARD_SELECTION');
+    }
+    for (final id in ids) {
+      if (!session.selectedCardIds.contains(id)) {
+        session.selectedCardIds.add(id);
+      }
+    }
+    return _ok(session.toJson());
   }
 
   _Reply _saveEvaluation(_Session session, Map<String, Object?> body) {

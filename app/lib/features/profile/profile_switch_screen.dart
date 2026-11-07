@@ -47,7 +47,8 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     final pendingSetups = ref.watch(pendingSetupsProvider);
 
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: summaries.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
@@ -78,6 +79,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
                 const SizedBox(height: AppSpacing.xl),
                 if (_removing)
                   SecondaryButton(
+                    borderColor: HomeColors.outline,
                     label: '지우지 않을게요',
                     onPressed: () => setState(() => _removing = false),
                   )
@@ -297,6 +299,9 @@ class _ProfileSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      borderColor: HomeColors.outline,
+      accent: HomeColors.accent,
+      selectedColor: HomeColors.bubble,
       selected: profile.selected && !removing,
       onTap: onTap,
       child: Row(
@@ -312,7 +317,10 @@ class _ProfileSlot extends StatelessWidget {
           if (removing)
             const _RemoveMark()
           else
-            SelectionMark(selected: profile.selected),
+            SelectionMark(
+              accent: HomeColors.accent,
+              selected: profile.selected,
+            ),
         ],
       ),
     );
@@ -340,6 +348,8 @@ class _PendingSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      borderColor: HomeColors.outline,
+      accent: HomeColors.accent,
       onTap: onTap,
       child: Row(
         children: [
@@ -348,11 +358,11 @@ class _PendingSlot extends StatelessWidget {
             width: _photo,
             height: _photo,
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: HomeColors.bubble,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.line),
+              border: Border.all(color: HomeColors.bubbleLine),
             ),
-            child: const Icon(Icons.edit_outlined, color: AppColors.textSub),
+            child: const Icon(Icons.edit_outlined, color: HomeColors.accent),
           ),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
@@ -382,7 +392,7 @@ class _PendingTag extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: HomeColors.outline),
       ),
       child: Text(
         '입력 중',
@@ -402,6 +412,8 @@ class _EmptySlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      borderColor: HomeColors.outline,
+      accent: HomeColors.accent,
       onTap: onTap,
       child: Row(
         children: [
@@ -409,11 +421,11 @@ class _EmptySlot extends StatelessWidget {
             width: _photo,
             height: _photo,
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: HomeColors.bubble,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.line),
+              border: Border.all(color: HomeColors.bubbleLine),
             ),
-            child: const Icon(Icons.add, color: AppColors.textSub),
+            child: const Icon(Icons.add, color: HomeColors.accent),
           ),
           const SizedBox(width: AppSpacing.lg),
           const Expanded(child: Text('소중한 분 더하기', style: AppTypography.body)),

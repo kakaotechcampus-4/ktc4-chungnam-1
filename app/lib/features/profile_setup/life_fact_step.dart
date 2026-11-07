@@ -337,6 +337,24 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     if (heard == null) widget.onCleared();
   }
 
+  /// 원 아래 보조 내용(한 줄 글과 버튼)이 차지하는 가장 큰 높이.
+  static double _extraHeight(BuildContext context) {
+    const style = AppTypography.body;
+    final line =
+        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
+    return AppSpacing.sm + line + AppSpacing.md + AppSizes.minTouch;
+  }
+
+  _MicArea _micArea(_MicPart part) => _MicArea(
+    part: part,
+    phase: _phase,
+    heardText: _heardText,
+    onStart: _startListening,
+    onFinish: _recording == null ? null : _finishListening,
+    onResend: _resend,
+    stoppedAtLimit: _stoppedAtLimit,
+  );
+
   @override
   Widget build(BuildContext context) {
     final choosing = _phase == _Phase.choosing;
@@ -378,6 +396,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
           const SizedBox(height: AppSpacing.section),
 
           AppSurfaceBox(
+            color: HomeColors.bubble,
             child: Column(
               children: [
                 for (final example in widget.step.examples)
@@ -385,9 +404,7 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Text(
                       example,
-                      style: AppTypography.sub.copyWith(
-                        color: AppColors.textDisabled,
-                      ),
+                      style: AppTypography.sub,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -414,35 +431,77 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
                 : widget.onCaptured(value.trim()),
           )
         else
-          _MicArea(
-            phase: _phase,
-            heardText: _heardText,
-            onStart: _startListening,
-            onFinish: _recording == null ? null : _finishListening,
-            onRetry: _retry,
-            onResend: _resend,
-            stoppedAtLimit: _stoppedAtLimit,
-          ),
+          _micArea(_MicPart.main),
 
-        const Spacer(flex: 3),
+        // 마이크 화면에서는 원 아래 빈 공간의 맨 위에 보조 내용(다 말했어요,
+        // 둘째 줄 안내)을 둔다. 원과 첫 줄 안내는 위아래 같은 빈 공간 사이
+        // 한가운데에 오고, 보조 내용은 높이 계산에 들지 않아 상태가 바뀌어도 원이
+        // 오르내리지 않는다.
+        if (!choosing && _phase != _Phase.manualInput && _phase != _Phase.heard)
+          Expanded(
+            flex: 3,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // 보조 내용이 들어갈 높이를 알린다. 등록 화면은 내용 높이를
+                // 미리 재어 모자라면 스크롤하므로, 좁거나 글자가 커도 이 영역이
+                // 이만큼은 남아 버튼이 늘 눌린다.
+                SizedBox(width: double.infinity, height: _extraHeight(context)),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: _micArea(_MicPart.extra),
+                ),
+              ],
+            ),
+          )
+        else
+          const Spacer(flex: 3),
 
         // 방법을 바꾸는 길은 안내 문구에서 멀리 떼어 화면 아래에 둔다. 문구
         // 바로 밑에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지 않는다.
         if (typing || (_phase == _Phase.manualInput && _voiceUnavailable))
           const SizedBox.shrink()
         else if (_phase == _Phase.manualInput)
-          _SwitchMethodButton(
-            icon: Icons.record_voice_over_outlined,
-            label: _cameFromFailure ? '다시 녹음하기' : '말로 답할게요',
-            onTap: _startVoice,
+          Center(
+            child: _SwitchMethodButton(
+              icon: Icons.record_voice_over_outlined,
+              label: _cameFromFailure ? '다시 녹음하기' : '말로 답할게요',
+              onTap: _startVoice,
+            ),
           )
-        else if (!choosing &&
-            _phase != _Phase.listening &&
-            _phase != _Phase.transcribing)
-          _SwitchMethodButton(
-            icon: Icons.chat_bubble_outline,
-            label: '글로 답할게요',
-            onTap: _startText,
+        else if (!choosing)
+          // 알아들은 뒤에는 다시 녹음하기를 글로 답할게요 옆에 같은 알약으로
+          // 둔다. 5분에 닿아 멈췄으면 그 결과를 한 번에 버리지 않게 숨긴다.
+          // 한 줄에 다 들어가지 않으면 두 줄로 넘긴다.
+          //
+          // 듣는 중과 옮기는 중에는 방법을 바꾸지 못하게 숨기되 자리는 남긴다.
+          // 자리까지 빼면 화면 높이가 바뀌어 위의 마이크 원이 오르내린다.
+          Visibility(
+            visible:
+                _phase != _Phase.listening && _phase != _Phase.transcribing,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                if (_phase == _Phase.heard && !_stoppedAtLimit)
+                  _SwitchMethodButton(
+                    icon: Icons.refresh,
+                    label: '다시 녹음하기',
+                    onTap: _retry,
+                  ),
+                _SwitchMethodButton(
+                  icon: Icons.chat_bubble_outline,
+                  label: '글로 답할게요',
+                  onTap: _startText,
+                ),
+              ],
+            ),
           ),
       ],
     );
@@ -484,7 +543,10 @@ class _InputMethodChoice extends StatelessWidget {
   }
 }
 
-class _MethodButton extends StatelessWidget {
+/// 답하는 방법 하나. 누르면 바탕이 진해지고 테두리가 검어지며 살짝 눌린 뒤
+/// 다음 화면으로 넘어간다. 바로 넘어가면 무엇을 눌렀는지 보이지 않는다.
+/// 움직임 줄이기가 켜져 있으면 바로 넘어간다.
+class _MethodButton extends StatefulWidget {
   const _MethodButton({
     required this.icon,
     required this.label,
@@ -496,20 +558,86 @@ class _MethodButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_MethodButton> createState() => _MethodButtonState();
+}
+
+class _MethodButtonState extends State<_MethodButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  )..addStatusListener(_onPressed);
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  void _tap() {
+    if (_press.isAnimating || _press.isCompleted) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      widget.onTap();
+      return;
+    }
+    _press.forward();
+  }
+
+  void _onPressed(AnimationStatus status) {
+    if (status == AnimationStatus.completed) widget.onTap();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-      child: SizedBox(
-        // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다.
-        height: 96,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 44, color: AppColors.ink),
-            const SizedBox(height: AppSpacing.lg),
-            Text(label, style: AppTypography.bodyStrong),
-          ],
+    return Semantics(
+      button: true,
+      child: AnimatedBuilder(
+        animation: _press,
+        builder: (context, child) {
+          final t = Curves.easeOut.transform(_press.value);
+          return Transform.scale(
+            scale: 1 - 0.04 * t,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _tap,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+                  decoration: BoxDecoration(
+                    color: Color.lerp(
+                      AppColors.background,
+                      HomeColors.bubble,
+                      t,
+                    ),
+                    borderRadius: BorderRadius.circular(AppRadius.card),
+                    border: Border.all(
+                      color: Color.lerp(
+                        HomeColors.outline,
+                        HomeColors.accent,
+                        t,
+                      )!,
+                      width: 1 + t,
+                    ),
+                    boxShadow: AppShadows.low,
+                  ),
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        },
+        child: SizedBox(
+          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다.
+          height: 96,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(widget.icon, size: 44, color: HomeColors.accent),
+              const SizedBox(height: AppSpacing.lg),
+              Text(widget.label, style: AppTypography.bodyStrong),
+            ],
+          ),
         ),
       ),
     );
@@ -533,34 +661,33 @@ class _SwitchMethodButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Material(
-        color: AppColors.surface,
+    return Material(
+      color: HomeColors.bubble,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          child: Container(
-            height: AppSizes.minTouch,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: Border.all(color: AppColors.line),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 20, color: AppColors.ink),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  label,
-                  style: AppTypography.sub.copyWith(
-                    color: AppColors.ink,
-                    fontWeight: FontWeight.w600,
-                  ),
+        child: Container(
+          height: AppSizes.minTouch,
+          // 두 알약(다시 녹음하기, 글로 답할게요)이 기준 화면 한 줄에 들어가는 여백.
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: HomeColors.bubbleLine),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: HomeColors.accent),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                label,
+                style: AppTypography.sub.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -568,25 +695,28 @@ class _SwitchMethodButton extends StatelessWidget {
   }
 }
 
+/// 마이크 화면에서 그릴 부분. [main] 은 원과 첫 줄 안내(알아들은 뒤에는 체크와
+/// 결과 상자), [extra] 는 원 아래 빈 공간 맨 위에 두는 보조 내용이다.
+enum _MicPart { main, extra }
+
 class _MicArea extends StatelessWidget {
   const _MicArea({
+    required this.part,
     required this.phase,
     required this.heardText,
     required this.onStart,
     required this.onFinish,
-    required this.onRetry,
     required this.onResend,
     required this.stoppedAtLimit,
   });
 
+  final _MicPart part;
   final _Phase phase;
   final String? heardText;
   final VoidCallback onStart;
 
   /// 녹음을 끝낸다. 녹음이 시작되기 전에는 없다.
   final VoidCallback? onFinish;
-
-  final VoidCallback onRetry;
 
   /// 보내지 못한 녹음을 다시 보낸다.
   final VoidCallback onResend;
@@ -611,99 +741,17 @@ class _MicArea extends StatelessWidget {
         ? onFinish
         : onStart;
 
-    return Column(
-      children: [
-        // 알아들은 뒤에는 결과 상자를 둘 자리를 내려고 체크를 작게 그린다.
-        SizedBox(
-          width: heard ? 64 : 120,
-          height: heard ? 64 : 120,
-          child: heard
-              ? Container(
-                  decoration: const BoxDecoration(
-                    color: AppColors.ink,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check,
-                    size: 32,
-                    color: AppColors.background,
-                  ),
-                )
-              // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
-              // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
-              // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
-              : ExcludeSemantics(
-                  excluding: onTap == null,
-                  child: Semantics(
-                    button: true,
-                    label: listening ? '음성 입력 종료' : '음성 입력 시작',
-                    child: InkWell(
-                      onTap: onTap,
-                      customBorder: const CircleBorder(),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: failed
-                                ? AppColors.danger
-                                : listening
-                                ? AppColors.ink
-                                : AppColors.line,
-                            width: listening ? 3 : 2,
-                          ),
-                        ),
-                        child: transcribing
-                            ? const Padding(
-                                padding: EdgeInsets.all(36),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                ),
-                              )
-                            : Icon(
-                                Icons.mic,
-                                size: 48,
-                                color: failed
-                                    ? AppColors.danger
-                                    : AppColors.ink,
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
+    // 원과 첫 줄 안내가 한 묶음으로 위의 예시 상자와 아래 알약 사이 한가운데에
+    // 온다. 둘째 줄이나 버튼 같은 보조 내용은 [_MicPart.extra] 로 따로 그린다.
+    const statusStyle = AppTypography.body;
 
-        if (listening) ...[
-          const Text('듣고 있어요', style: AppTypography.body),
+    if (heard) {
+      // 체크와 결과 상자도 위아래 여백을 같게 두어 한가운데에 온다.
+      return Column(
+        children: [
           const SizedBox(height: AppSpacing.lg),
-          SecondaryButton(label: '다 말했어요', onPressed: onFinish, expand: false),
-        ] else if (transcribing) ...[
-          const Text('말씀을 글로 옮기고 있어요', style: AppTypography.body),
-        ] else if (sendFailed) ...[
-          // 인터넷이 끊긴 경우와 서버가 처리하지 못한 경우를 함께 덮는다.
-          // 확인하지 않은 원인을 단정하지 않는다.
-          Text(
-            '연결이 원활하지 않아\n말씀을 글로 옮기지 못했어요.',
-            style: AppTypography.body.copyWith(color: AppColors.danger),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          SecondaryButton(
-            label: '재시도',
-            icon: Icons.refresh,
-            onPressed: onResend,
-            expand: false,
-          ),
-        ] else if (failed) ...[
-          Text(
-            '목소리를 잘 듣지 못했어요.',
-            style: AppTypography.body.copyWith(color: AppColors.danger),
-          ),
-          // 처음 안내가 실패 문구로 바뀌면 마이크를 다시 누르면 된다는 것을
-          // 알기 어렵다. 버튼을 따로 두지 않고 할 일을 마이크 하나로 둔다.
-          const SizedBox(height: AppSpacing.sm),
-          const Text('마이크를 눌러 다시 말씀해주세요.', style: AppTypography.sub),
-        ] else if (heard) ...[
+          const _PopIn(child: _HeardCheck()),
+          const SizedBox(height: AppSpacing.xl),
           if (stoppedAtLimit) ...[
             const Text(
               "5분이 지나 녹음을 멈췄어요.\n이어서 적으려면 '글로 답할게요'를 눌러주세요.",
@@ -713,19 +761,164 @@ class _MicArea extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
           ],
           _HeardBox(text: heardText ?? ''),
-          // 5분을 말한 결과를 한 번에 버리지 않게 다시 녹음하기를 숨긴다. 다시
-          // 녹음하려면 글로 답할게요 → 말로 답할게요로 간다.
-          if (!stoppedAtLimit) ...[
-            const SizedBox(height: AppSpacing.sm),
-            TextButton(
-              onPressed: onRetry,
-              style: TextButton.styleFrom(foregroundColor: AppColors.textSub),
-              child: const Text('다시 녹음하기', style: AppTypography.sub),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+      );
+    }
+
+    // 묶음에 들어가는 첫 줄과 보조 자리에 넣는 나머지.
+    final (Widget primary, Widget? secondary) = switch (phase) {
+      _ when listening => (
+        const Text('듣고 있어요', style: statusStyle),
+        SecondaryButton(
+          borderColor: HomeColors.outline,
+          label: '다 말했어요',
+          onPressed: onFinish,
+          expand: false,
+        ),
+      ),
+      _ when transcribing => (
+        const Text('말씀을 글로 옮기고 있어요', style: statusStyle),
+        null,
+      ),
+      // 인터넷이 끊긴 경우와 서버가 처리하지 못한 경우를 함께 덮는다.
+      // 확인하지 않은 원인을 단정하지 않는다.
+      _ when sendFailed => (
+        Text(
+          '연결이 원활하지 않아',
+          style: statusStyle.copyWith(color: AppColors.danger),
+        ),
+        Column(
+          children: [
+            Text(
+              '말씀을 글로 옮기지 못했어요.',
+              style: statusStyle.copyWith(color: AppColors.danger),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SecondaryButton(
+              borderColor: HomeColors.outline,
+              label: '재시도',
+              icon: Icons.refresh,
+              onPressed: onResend,
+              expand: false,
             ),
           ],
-        ] else
-          const Text('마이크를 누르고 말씀해주세요', style: AppTypography.sub),
+        ),
+      ),
+      // 처음 안내가 실패 문구로 바뀌면 마이크를 다시 누르면 된다는 것을 알기
+      // 어렵다. 버튼을 따로 두지 않고 할 일을 마이크 하나로 둔다.
+      _ when failed => (
+        Text(
+          '목소리를 잘 듣지 못했어요.',
+          style: statusStyle.copyWith(color: AppColors.danger),
+        ),
+        const Text('마이크를 눌러 다시 말씀해주세요.', style: AppTypography.sub),
+      ),
+      _ => (const Text('마이크를 누르고 말씀해주세요', style: statusStyle), null),
+    };
+
+    if (part == _MicPart.extra) {
+      if (secondary == null) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.sm),
+        child: Center(child: secondary),
+      );
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          width: _micSize,
+          height: _micSize,
+          // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
+          // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
+          // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
+          child: ExcludeSemantics(
+            excluding: onTap == null,
+            child: Semantics(
+              button: true,
+              label: listening ? '음성 입력 종료' : '음성 입력 시작',
+              child: InkWell(
+                onTap: onTap,
+                customBorder: const CircleBorder(),
+                // 대기, 듣는 중, 옮기는 중 모두 같은 크기와 두께의 원이다.
+                // 색만 바뀐다.
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: failed
+                          ? AppColors.danger
+                          : listening
+                          ? HomeColors.accent
+                          : HomeColors.outline,
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: _iconSize,
+                      child: transcribing
+                          ? const CircularProgressIndicator(strokeWidth: 3)
+                          : Icon(
+                              Icons.mic,
+                              size: _iconSize,
+                              color: failed
+                                  ? AppColors.danger
+                                  : HomeColors.accent,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        primary,
       ],
+    );
+  }
+
+  /// 마이크 원의 지름과 그 안의 아이콘(또는 도는 표시) 크기. 모든 상태가 같다.
+  static const _micSize = 120.0;
+  static const _iconSize = 48.0;
+}
+
+/// 다 알아들었다는 체크.
+class _HeardCheck extends StatelessWidget {
+  const _HeardCheck();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: const BoxDecoration(
+        color: HomeColors.accent,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.check, size: 32, color: AppColors.background),
+    );
+  }
+}
+
+/// 작게 시작해 통 튀어나오며 커진다. 움직임 줄이기가 켜져 있으면 바로 보인다.
+class _PopIn extends StatelessWidget {
+  const _PopIn({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: still ? 1 : 0, end: 1),
+      duration: still ? Duration.zero : const Duration(milliseconds: 520),
+      curve: Curves.elasticOut,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: child,
     );
   }
 }
@@ -767,7 +960,7 @@ class _HeardBoxState extends State<_HeardBox> {
       height: lineHeight * _HeardBox._lines + AppSpacing.md * 2,
       decoration: BoxDecoration(
         color: AppColors.background,
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: HomeColors.bubbleLine),
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: Scrollbar(
@@ -840,15 +1033,23 @@ class _ManualInput extends StatelessWidget {
                 color: AppColors.textDisabled,
               ),
               filled: true,
-              fillColor: AppColors.surface,
+              // 흰 칸에 연한 세이지 테두리다. 흰 칸 위 안내 글자는 4.5:1.
+              fillColor: AppColors.background,
               contentPadding: const EdgeInsets.all(AppSpacing.lg),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                borderSide: BorderSide.none,
+                borderSide: const BorderSide(color: HomeColors.bubbleLine),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                borderSide: const BorderSide(color: HomeColors.bubbleLine),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                borderSide: const BorderSide(color: AppColors.ink, width: 2),
+                borderSide: const BorderSide(
+                  color: HomeColors.accent,
+                  width: 2,
+                ),
               ),
             ),
           ),

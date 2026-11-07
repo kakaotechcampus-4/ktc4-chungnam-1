@@ -198,7 +198,7 @@ void main() {
     });
   });
 
-  group('프로필 설정의 동의 저장', () {
+  group('설정의 동의 저장', () {
     Future<void> settle(WidgetTester tester) async {
       for (var i = 0; i < 20; i++) {
         await tester.runAsync(
@@ -243,7 +243,7 @@ void main() {
       addTearDown(container.dispose);
       container.read(sessionProvider.notifier).restore(_session());
 
-      // 저장한 뒤 이전 화면으로 돌아가는지 보려고 홈 위에 연다.
+      // 하단 탭처럼 홈 위에 설정을 연다.
       final router = buildRouter();
       addTearDown(router.dispose);
       router.go(AppRoutes.home);
@@ -259,7 +259,7 @@ void main() {
         );
       });
       await settle(tester);
-      router.push(AppRoutes.profile);
+      router.push(AppRoutes.settings);
       await settle(tester);
       return router;
     }
@@ -293,7 +293,11 @@ void main() {
         'serviceImprovement': true,
       }, reason: '바꾸지 않은 항목은 보내지 않는다');
       expect(find.text('동의를 저장했어요.'), findsOneWidget);
-      expect(find.text('계정 약관 동의'), findsNothing, reason: '저장하면 화면을 닫는다');
+      expect(
+        find.text('계정 약관 동의'),
+        findsOneWidget,
+        reason: '설정은 탭 화면이라 저장해도 그대로 둔다',
+      );
     });
 
     testWidgets('저장 중 화면을 떠나도 다시 열면 저장한 동의를 보여준다', (tester) async {
@@ -314,7 +318,7 @@ void main() {
       await settle(tester);
       expect(server.consent['serviceImprovement'], isTrue);
 
-      router.push(AppRoutes.profile);
+      router.push(AppRoutes.settings);
       await settle(tester);
       expect(checked(tester, '서비스 개선 활용 동의'), isTrue);
     });
@@ -345,7 +349,7 @@ void main() {
       final router = await open(tester, server);
 
       expect(find.text('계정 정보를 불러오지 못했어요.'), findsOneWidget);
-      await tester.tap(find.widgetWithText(OutlinedButton, '로그아웃'));
+      await tester.tap(find.widgetWithText(TextButton, '로그아웃'));
       await settle(tester);
 
       final container = ProviderScope.containerOf(
@@ -365,7 +369,7 @@ void main() {
         ..logoutHold = answer.future;
       final router = await open(tester, server);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, '로그아웃'));
+      await tester.tap(find.widgetWithText(TextButton, '로그아웃'));
       // 응답을 기다리는 동안 세션이 지워져 설정 화면이 다시 그려진다.
       await settle(tester);
       expect(find.text('계정 정보를 불러오지 못했어요.'), findsNothing);
@@ -387,6 +391,7 @@ void main() {
       await settle(tester);
 
       expect(server.requests.where((r) => r.method == 'PATCH'), isEmpty);
+      expect(find.text('바꾼 동의가 없어요.'), findsOneWidget);
     });
 
     testWidgets('저장하지 못하면 알리고 화면에 남는다', (tester) async {
@@ -404,6 +409,103 @@ void main() {
       );
       expect(find.text('계정 약관 동의'), findsOneWidget);
       expect(server.consent['pushNotification'], isTrue, reason: '저장되지 않았다');
+    });
+
+    bool alertOn(WidgetTester tester) =>
+        tester.widget<Switch>(find.byType(Switch)).value;
+
+    const needsConsent = '아래 알림 수신 동의에 체크해야 알림을 켤 수 있어요.';
+
+    List<Object?> patches(_FakeAccountServer server) => [
+      for (final r in server.requests)
+        if (r.method == 'PATCH') r.body,
+    ];
+
+    testWidgets('스위치를 끄면 알림 수신 동의를 바로 거둔다', (tester) async {
+      final server = _FakeAccountServer();
+      await open(tester, server);
+      expect(alertOn(tester), isTrue, reason: '동의했으면 켜진 채로 시작한다');
+
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+
+      expect(patches(server), [
+        {'pushNotification': false},
+      ], reason: '알림 동의만 보내고 저장하기를 기다리지 않는다');
+      expect(server.consent['pushNotification'], isFalse);
+      expect(alertOn(tester), isFalse);
+      expect(checked(tester, '알림 수신 동의'), isFalse);
+      expect(find.text('알림을 껐어요.'), findsOneWidget);
+    });
+
+    testWidgets('알림 수신 동의 없이 알림을 켜려 하면 빨간 글로 알리고 켜지 않는다', (tester) async {
+      final server = _FakeAccountServer()..consent['pushNotification'] = false;
+      await open(tester, server);
+      expect(alertOn(tester), isFalse);
+      expect(find.text(needsConsent), findsNothing);
+
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      expect(alertOn(tester), isFalse);
+      expect(find.text(needsConsent), findsOneWidget);
+      expect(patches(server), isEmpty);
+
+      // 동의에 체크하면 안내가 사라진다. 저장하기 전이라 알림은 아직 꺼져 있다.
+      // 안내 글에도 같은 이름이 있어 아래의 동의 줄을 누른다.
+      await tester.tap(
+        find.textContaining('알림 수신 동의', findRichText: true).last,
+      );
+      await tester.pump();
+      expect(find.text(needsConsent), findsNothing);
+      expect(alertOn(tester), isFalse, reason: '저장하지 않은 동의로 켜지지 않는다');
+
+      // 체크한 채 스위치를 켜면 동의를 바로 저장한다.
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      expect(patches(server), [
+        {'pushNotification': true},
+      ]);
+      expect(alertOn(tester), isTrue);
+      expect(find.text('알림을 켰어요.'), findsOneWidget);
+    });
+
+    testWidgets('알림을 끄지 못하면 알리고 켜진 채로 둔다', (tester) async {
+      final server = _FakeAccountServer()..patchOffline = true;
+      await open(tester, server);
+
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+
+      expect(
+        find.text('서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.'),
+        findsOneWidget,
+      );
+      expect(server.consent['pushNotification'], isTrue);
+      expect(alertOn(tester), isTrue, reason: '알림은 계속 온다');
+      expect(checked(tester, '알림 수신 동의'), isTrue);
+    });
+
+    testWidgets('저장하기로 알림 수신 동의를 거두면 스위치도 꺼진다', (tester) async {
+      final server = _FakeAccountServer();
+      await open(tester, server);
+
+      await tester.tap(find.textContaining('알림 수신 동의', findRichText: true));
+      await tester.pump();
+      expect(alertOn(tester), isTrue, reason: '저장하기 전에는 그대로다');
+
+      await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
+      await settle(tester);
+      expect(server.consent['pushNotification'], isFalse);
+      expect(alertOn(tester), isFalse);
+    });
+
+    testWidgets('계정 약관 동의에는 알림 쓰임새 문구를 두지 않는다', (tester) async {
+      await open(tester, _FakeAccountServer());
+
+      // 위 알림 설정에 한 번만 있다.
+      expect(find.text('만남 리포트가 완성되면 알려드려요.'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, '로그아웃'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, '회원탈퇴'), findsOneWidget);
     });
   });
 }

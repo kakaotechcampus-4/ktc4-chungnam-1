@@ -90,6 +90,8 @@ flutter:
   assets:
     - assets/mock/
     - assets/images/
+    # 홈 마스코트의 상태별 그림. 모두 같은 600x600 투명 캔버스다.
+    - assets/images/mascot/
     # 구글이 배포한 로그인 버튼 이미지다. 출처와 남긴 이유는
     # assets/signin-assets/README.md 에 있다.
     - assets/signin-assets/Android/png@4x/light/android_light_rd_na@4x.png

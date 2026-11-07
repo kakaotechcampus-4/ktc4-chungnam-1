@@ -46,7 +46,9 @@ class ProfileSetupScreen extends ConsumerWidget {
         if (!didPop) controller.back();
       },
       child: Scaffold(
+        backgroundColor: HomeColors.background,
         appBar: AppTopBar(
+          backgroundColor: HomeColors.background,
           onBack: () {
             if (!controller.back()) context.pop();
           },
@@ -100,13 +102,22 @@ class _Progress extends StatelessWidget {
 
   final double value;
 
+  /// 단계를 넘기면 순간이동하지 않고 지금 자리에서 새 자리까지 미끄러지듯
+  /// 자란다(뒤로 가면 줄어든다). 움직임 줄이기가 켜져 있으면 바로 옮긴다.
   @override
   Widget build(BuildContext context) {
-    return LinearProgressIndicator(
-      value: value,
-      minHeight: 4,
-      backgroundColor: AppColors.surface,
-      color: AppColors.ink,
+    final still = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      // 끝값이 바뀌면 지금 값에서 새 끝값으로 움직인다.
+      tween: Tween(begin: value, end: value),
+      duration: still ? Duration.zero : const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      builder: (context, shown, _) => LinearProgressIndicator(
+        value: shown,
+        minHeight: 4,
+        backgroundColor: HomeColors.bubble,
+        color: HomeColors.accent,
+      ),
     );
   }
 }
@@ -190,12 +201,19 @@ class _ActionsState extends State<_Actions> {
     final addingId = widget.addingId;
 
     if (_saving) {
-      return const PrimaryButton(label: '저장하는 중이에요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '저장하는 중이에요',
+        onPressed: null,
+      );
     }
 
     // 기본 정보는 모두 채워야 넘어간다. 로그인했으면 여기서 서버에 만든다.
     if (state.isBasicInfo) {
       return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         label: '다음',
         onPressed: state.draft.basicInfoFilled
             ? () => _save(() => controller.submitBasicInfo(addingId: addingId))
@@ -208,8 +226,17 @@ class _ActionsState extends State<_Actions> {
     if (step != null) {
       final captured = state.draft.facts.containsKey(step.category);
       return captured
-          ? PrimaryButton(label: '다음', onPressed: controller.next)
-          : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
+          ? PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: '다음',
+              onPressed: controller.next,
+            )
+          : SecondaryButton(
+              borderColor: HomeColors.outline,
+              label: '건너뛰기',
+              onPressed: controller.next,
+            );
     }
 
     // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다. 마치면 입력한 분을
@@ -230,14 +257,28 @@ class _ActionsState extends State<_Actions> {
     }
 
     if (!draft.hasPhoto) {
-      return SecondaryButton(label: '건너뛰기', onPressed: finish);
+      return SecondaryButton(
+        borderColor: HomeColors.outline,
+        label: '건너뛰기',
+        onPressed: finish,
+      );
     }
     if (draft.isUploadingPhotos) {
-      return const PrimaryButton(label: '올리는 중이에요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '올리는 중이에요',
+        onPressed: null,
+      );
     }
     // 완료를 보고 직접 넘어가도록 자동으로 옮기지 않는다.
     if (draft.allPhotosUploaded) {
-      return PrimaryButton(label: '홈으로', onPressed: finish);
+      return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '홈으로',
+        onPressed: finish,
+      );
     }
     if (draft.hasFailedPhoto) {
       final retryable = draft.photos.any(
@@ -255,18 +296,26 @@ class _ActionsState extends State<_Actions> {
         children: [
           if (retryable) ...[
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: '다시 올리기',
               onPressed: controller.uploadPhotos,
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
           SecondaryButton(
+            borderColor: HomeColors.outline,
             label: '올리지 못한 사진은 빼고 마치기',
             onPressed: dropAndGoHome,
           ),
         ],
       );
     }
-    return PrimaryButton(label: '마치기', onPressed: controller.uploadPhotos);
+    return PrimaryButton(
+      color: HomeColors.accent,
+      loadingColor: HomeColors.accentLoading,
+      label: '마치기',
+      onPressed: controller.uploadPhotos,
+    );
   }
 }

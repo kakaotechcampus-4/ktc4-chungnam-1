@@ -96,21 +96,26 @@ class _ProfileDetailsEditScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '세부 정보 수정',
+      ),
       body: ScreenBody(
-        scrollable: true,
         // 입력칸이 넷이라 버튼을 아래에 고정하지 않고 본문과 함께 흘려보낸다.
-        child: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xl),
+        // ScreenBody 의 scrollable 은 내용 높이를 미리 재어(IntrinsicHeight) 화면
+        // 높이를 채우는데, 여러 줄 입력칸은 예시 문구가 줄바꿈될 때 그 값이 실제보다
+        // 작게 나와 맨 아래 저장하기 쪽이 넘쳤다. 이 화면은 높이를 채울 일이 없어
+        // 그냥 스크롤한다.
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(top: AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('세부 정보 수정', style: AppTypography.screenTitle),
-              const SizedBox(height: AppSpacing.md),
-              const Text('비워 두면 그 항목을 지워요.', style: AppTypography.sub),
-              const SizedBox(height: AppSpacing.section),
               for (final step in lifeFactSteps) ...[
                 AppTextField(
+                  borderColor: HomeColors.outline,
+                  focusColor: HomeColors.accent,
                   label: step.label,
                   controller: _fields[step.category],
                   maxLines: null,
@@ -121,6 +126,8 @@ class _ProfileDetailsEditScreenState
                 const SizedBox(height: AppSpacing.xxl),
               ],
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: _saving ? '저장하는 중이에요' : '저장하기',
                 onPressed: _changed && !_saving ? _save : null,
               ),

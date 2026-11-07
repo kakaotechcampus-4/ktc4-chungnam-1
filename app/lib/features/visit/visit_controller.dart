@@ -74,6 +74,7 @@ class VisitState {
     this.problem,
     this.participantCount,
     this.photoUpload = VisitPhotoUpload.none,
+    this.addedCardIds = const {},
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -111,6 +112,9 @@ class VisitState {
 
   final VisitPhotoUpload photoUpload;
 
+  /// 면회 중에 보충해 더한 카드. 카드 번호 칩을 다른 색으로 그리는 데 쓴다.
+  final Set<String> addedCardIds;
+
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
 
@@ -125,8 +129,7 @@ class VisitState {
 
   bool get isLastCard => currentIndex >= cards.length - 1;
 
-  /// 진행률. 화면의 `1/3`, `33%` 표시에 쓴다.
-  double get progress => cards.isEmpty ? 0 : (currentIndex + 1) / cards.length;
+  bool get isFirstCard => currentIndex <= 0;
 
   /// `00:05:38` 형태로 보여준다.
   String get elapsedLabel {
@@ -148,6 +151,7 @@ class VisitState {
     VisitRecordingProblem? problem,
     int? participantCount,
     VisitPhotoUpload? photoUpload,
+    Set<String>? addedCardIds,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -163,6 +167,7 @@ class VisitState {
     problem: clearProblem ? null : (problem ?? this.problem),
     participantCount: participantCount ?? this.participantCount,
     photoUpload: photoUpload ?? this.photoUpload,
+    addedCardIds: addedCardIds ?? this.addedCardIds,
   );
 }
 
@@ -583,16 +588,31 @@ class VisitController extends AsyncNotifier<VisitState> {
     state = AsyncData(change(now));
   }
 
-  /// 다음 카드로 넘어간다. 마지막 카드면 아무것도 하지 않는다.
+  /// 다음 카드로 넘어간다. 마지막 카드면 첫 카드로 돌아간다.
   void nextCard() {
     final current = state.value;
-    if (current == null || current.isLastCard) return;
-    state = AsyncData(
-      current.copyWith(
-        currentIndex: current.currentIndex + 1,
-        followUpIndex: 0,
-      ),
-    );
+    if (current == null || current.cards.isEmpty) return;
+    goToCard((current.currentIndex + 1) % current.cards.length);
+  }
+
+  /// 앞 카드로 돌아간다. 첫 카드면 마지막 카드로 간다.
+  void previousCard() {
+    final current = state.value;
+    if (current == null || current.cards.isEmpty) return;
+    final count = current.cards.length;
+    goToCard((current.currentIndex - 1 + count) % count);
+  }
+
+  /// [index] 번째 카드로 옮긴다. 범위 밖이거나 지금 카드면 그대로 둔다.
+  ///
+  /// 화면에 보이는 카드만 바꾼다. 서버에 알리는 것은 없다. 꼬리 질문은 그
+  /// 카드의 첫 질문부터 다시 보여준다.
+  void goToCard(int index) {
+    final current = state.value;
+    if (current == null) return;
+    if (index < 0 || index >= current.cards.length) return;
+    if (index == current.currentIndex) return;
+    state = AsyncData(current.copyWith(currentIndex: index, followUpIndex: 0));
   }
 
   /// 꼬리 질문을 다음 것으로 넘긴다. 마지막이면 처음으로 돌아간다.
@@ -630,8 +650,10 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _update((now) {
       final have = now.cards.map((c) => c.cardId).toSet();
+      final fresh = added.where((c) => !have.contains(c.cardId)).toList();
       return now.copyWith(
-        cards: [...now.cards, ...added.where((c) => !have.contains(c.cardId))],
+        cards: [...now.cards, ...fresh],
+        addedCardIds: {...now.addedCardIds, for (final c in fresh) c.cardId},
       );
     });
     return true;

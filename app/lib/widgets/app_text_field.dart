@@ -13,6 +13,7 @@ import '../design/tokens.dart';
 class AppTextField extends StatelessWidget {
   const AppTextField({
     required this.label,
+    this.description,
     this.controller,
     this.hintText,
     this.required = false,
@@ -24,10 +25,17 @@ class AppTextField extends StatelessWidget {
     this.maxLength,
     this.minLines,
     this.maxLines = 1,
+    this.borderColor = AppColors.line,
+    this.focusColor = AppColors.ink,
     super.key,
   });
 
   final String label;
+
+  /// 이름표와 입력 상자 사이에 두는 짧은 안내. 무엇을 확인하고 적을지 입력 전에
+  /// 읽게 한다. 화면 낭독기도 이름표 다음에 읽는다.
+  final String? description;
+
   final TextEditingController? controller;
   final String? hintText;
   final bool required;
@@ -47,12 +55,22 @@ class AppTextField extends StatelessWidget {
   /// `null` 이면 내용만큼 늘어난다. 기본은 한 줄이다.
   final int? maxLines;
 
+  /// 입력 상자 테두리 색. 오프화이트 바탕에서는 진하게 준다.
+  final Color borderColor;
+
+  /// 쓰는 동안의 테두리 색.
+  final Color focusColor;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ExcludeSemantics(child: FieldLabel(label, required: required)),
+        if (description case final description?) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(description, style: AppTypography.caption),
+        ],
         const SizedBox(height: AppSpacing.md),
         Semantics(
           label: fieldSemanticsLabel(label, required: required),
@@ -82,9 +100,9 @@ class AppTextField extends StatelessWidget {
                 horizontal: AppSpacing.lg,
                 vertical: AppSpacing.lg,
               ),
-              border: _border(AppColors.line),
-              enabledBorder: _border(AppColors.line),
-              focusedBorder: _border(AppColors.ink, width: 2),
+              border: _border(borderColor),
+              enabledBorder: _border(borderColor),
+              focusedBorder: _border(focusColor, width: 2),
               errorBorder: _border(AppColors.danger),
               focusedErrorBorder: _border(AppColors.danger, width: 2),
             ),

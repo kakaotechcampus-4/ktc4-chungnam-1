@@ -78,6 +78,8 @@ void main() {
 
       expect(find.text('알림'), findsOneWidget);
       expect(find.text('아직 새 알림이 없어요.'), findsOneWidget);
+      // 쓰임새가 없던 오른쪽 위 메뉴 아이콘은 두지 않는다.
+      expect(find.byTooltip('메뉴'), findsNothing);
     });
 
     testWidgets('만드는 중이면 홈과 같은 문구를 보여준다', (tester) async {
@@ -103,6 +105,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('리포트가 도착했어요'), findsOneWidget);
+      expect(find.byIcon(Icons.mail_outline_rounded), findsOneWidget);
 
       await tester.tap(find.text('리포트가 도착했어요'));
       await tester.pump();

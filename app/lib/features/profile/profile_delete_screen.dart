@@ -34,7 +34,11 @@ class ProfileDeleteScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(appBar: AppTopBar(), body: _Body());
+    return const Scaffold(
+      backgroundColor: HomeColors.background,
+      appBar: AppTopBar(backgroundColor: HomeColors.background),
+      body: _Body(),
+    );
   }
 }
 
@@ -177,9 +181,16 @@ class _BodyState extends ConsumerState<_Body> {
             const SizedBox(height: AppSpacing.lg),
           ],
           if (restart)
-            PrimaryButton(label: '로그인으로 돌아가기', onPressed: _backToLogin)
+            PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: '로그인으로 돌아가기',
+              onPressed: _backToLogin,
+            )
           else
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: _deleting ? '탈퇴하는 중이에요' : '탈퇴하기',
               onPressed: _deleting ? null : _delete,
             ),
@@ -218,19 +229,22 @@ class _BodyState extends ConsumerState<_Body> {
                   hintStyle: AppTypography.body.copyWith(
                     color: AppColors.textDisabled,
                   ),
+                  // 흰 칸이라 안내 글자의 비활성 회색이 4.5:1 을 지킨다.
+                  filled: true,
+                  fillColor: AppColors.background,
                   contentPadding: const EdgeInsets.all(AppSpacing.lg),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.line),
+                    borderSide: const BorderSide(color: HomeColors.outline),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.line),
+                    borderSide: const BorderSide(color: HomeColors.outline),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
                     borderSide: const BorderSide(
-                      color: AppColors.ink,
+                      color: HomeColors.accent,
                       width: 2,
                     ),
                   ),
@@ -267,7 +281,11 @@ class _ReasonRow extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: SelectionMark(selected: selected, size: 24),
+            child: SelectionMark(
+              accent: HomeColors.accent,
+              selected: selected,
+              size: 24,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(child: Text(label, style: AppTypography.body)),

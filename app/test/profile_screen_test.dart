@@ -240,7 +240,6 @@ void main() {
       await openEdit(tester);
 
       expect(find.text('세부 정보 수정'), findsOneWidget);
-      expect(find.text('비워 두면 그 항목을 지워요.'), findsOneWidget);
       String textOf(String label) =>
           tester.widget<TextField>(field(label)).controller!.text;
       expect(textOf('하시던 일'), '재봉 일을 오래 하셨어요.');

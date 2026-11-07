@@ -96,7 +96,11 @@ class ProfilePhotoAddScreen extends ConsumerWidget {
       // 올리는 중에 떠나면 몇 장이 올라갔는지 알 수 없게 된다.
       canPop: !uploading,
       child: Scaffold(
-        appBar: AppTopBar(showBack: !uploading),
+        backgroundColor: HomeColors.background,
+        appBar: AppTopBar(
+          backgroundColor: HomeColors.background,
+          showBack: !uploading,
+        ),
         body: ScreenBody(
           scrollable: true,
           bottom: _Actions(controller: controller, photos: photos),
@@ -127,13 +131,28 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (photos.isEmpty) {
-      return const PrimaryButton(label: '올릴 사진을 골라주세요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '올릴 사진을 골라주세요',
+        onPressed: null,
+      );
     }
     if (controller.isUploading) {
-      return const PrimaryButton(label: '올리는 중이에요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '올리는 중이에요',
+        onPressed: null,
+      );
     }
     if (controller.allUploaded) {
-      return PrimaryButton(label: '갤러리로 돌아가기', onPressed: context.pop);
+      return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '갤러리로 돌아가기',
+        onPressed: context.pop,
+      );
     }
     if (controller.hasFailed) {
       final retryable = photos.any(
@@ -145,10 +164,16 @@ class _Actions extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (retryable) ...[
-            PrimaryButton(label: '다시 올리기', onPressed: controller.upload),
+            PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: '다시 올리기',
+              onPressed: controller.upload,
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
           SecondaryButton(
+            borderColor: HomeColors.outline,
             label: '올리지 못한 사진은 빼고 마치기',
             onPressed: () {
               controller.dropFailed();
@@ -158,6 +183,11 @@ class _Actions extends StatelessWidget {
         ],
       );
     }
-    return PrimaryButton(label: '마치기', onPressed: controller.upload);
+    return PrimaryButton(
+      color: HomeColors.accent,
+      loadingColor: HomeColors.accentLoading,
+      label: '마치기',
+      onPressed: controller.upload,
+    );
   }
 }

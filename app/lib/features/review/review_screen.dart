@@ -103,7 +103,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     // 받아 놓고 버리게 된다.
     if (widget.sessionId != null && !target.hasValue && !target.hasError) {
       return const Scaffold(
-        appBar: AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           loading: true,
           title: '면회 기록을 불러오고 있어요',
@@ -116,7 +117,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     // 회차로 넘어간 경우라 소감을 받지 않는다.
     if (target case AsyncData(value: null) when widget.sessionId != null) {
       return Scaffold(
-        appBar: const AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           icon: Icons.event_busy_outlined,
           title: '이어서 할 면회를 찾을 수 없어요.',
@@ -131,7 +133,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (failure == SubmissionFailure.noRecording &&
         submission.evaluationSaved) {
       return Scaffold(
-        appBar: const AppTopBar(),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
         body: StatusNotice(
           icon: Icons.mic_off_outlined,
           title: noRecordingTitle,
@@ -141,8 +144,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       );
     }
 
+    // 홈과 같은 세이지 색감이다(`HomeColors`). 고른 답은 초록 면이다.
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: ScreenBody(
         scrollable: true,
         bottom: Column(
@@ -161,6 +166,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               const SizedBox(height: AppSpacing.md),
             ],
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: !submission.sending
                   ? '리포트 만들기'
                   : submission.evaluationSaved
@@ -262,16 +269,25 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                       color: AppColors.textDisabled,
                     ),
                     filled: true,
-                    fillColor: AppColors.surface,
+                    // 흰 칸에 연한 세이지 테두리다. 흰 칸 위 안내 글자는 4.5:1.
+                    fillColor: AppColors.background,
                     contentPadding: const EdgeInsets.all(AppSpacing.lg),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.card),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(
+                        color: HomeColors.bubbleLine,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      borderSide: const BorderSide(
+                        color: HomeColors.bubbleLine,
+                      ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.card),
                       borderSide: const BorderSide(
-                        color: AppColors.ink,
+                        color: HomeColors.accent,
                         width: 2,
                       ),
                     ),
@@ -316,10 +332,11 @@ class _Question extends StatelessWidget {
           excludeSemantics: true,
           child: Row(
             children: [
+              // 오프화이트 바탕에서 비활성 회색은 4.5:1 에 못 미쳐 초록으로 쓴다.
               Text(
                 number,
                 style: AppTypography.bodyStrong.copyWith(
-                  color: AppColors.textDisabled,
+                  color: HomeColors.accent,
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -379,13 +396,15 @@ class _SatisfactionPicker extends StatelessWidget {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: value == score
-                            ? AppColors.ink
+                            ? HomeColors.accent
                             : AppColors.background,
                         borderRadius: BorderRadius.circular(AppRadius.card),
+                        // 고르지 않은 칸은 연한 세이지 테두리다. 실기기에서 흰 칸이
+                        // 바탕과 충분히 구분되어 진한 테두리에서 낮췄다(2026-11-07).
                         border: Border.all(
                           color: value == score
-                              ? AppColors.ink
-                              : AppColors.line,
+                              ? HomeColors.accent
+                              : HomeColors.bubbleLine,
                           width: value == score ? 2 : 1,
                         ),
                       ),
@@ -443,11 +462,13 @@ class _ReactionPicker extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: value == reaction
-                      ? AppColors.ink
+                      ? HomeColors.accent
                       : AppColors.background,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                   border: Border.all(
-                    color: value == reaction ? AppColors.ink : AppColors.line,
+                    color: value == reaction
+                        ? HomeColors.accent
+                        : HomeColors.bubbleLine,
                     width: value == reaction ? 2 : 1,
                   ),
                 ),
@@ -500,6 +521,7 @@ class _CardReactionRow extends StatelessWidget {
     final notUsed = answered && value == null;
 
     return AppSurfaceBox(
+      color: HomeColors.bubble,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -555,10 +577,10 @@ class _Choice extends StatelessWidget {
           height: AppSizes.minTouch,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? AppColors.ink : AppColors.background,
+            color: selected ? HomeColors.accent : AppColors.background,
             borderRadius: BorderRadius.circular(AppRadius.pill),
             border: Border.all(
-              color: selected ? AppColors.ink : AppColors.line,
+              color: selected ? HomeColors.accent : HomeColors.bubbleLine,
             ),
           ),
           child: Text(

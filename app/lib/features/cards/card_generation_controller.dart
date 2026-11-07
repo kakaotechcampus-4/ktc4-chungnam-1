@@ -202,6 +202,16 @@ class CardMakingStage extends Notifier<CardMaking> {
   void set(CardMaking stage) => state = stage;
 }
 
+/// 이 어르신의 카드를 지금 실제로 만들고 있는지(4-1 을 보냈거나 `running`).
+/// 상태만 묻는 짧은 동안(`checking`)은 아니다. 서버가 이때 카드에 쓰는 정보를
+/// 고치거나 지우는 요청을 거절하므로(`CARD_GENERATION_IN_PROGRESS`) 화면이
+/// 미리 막는 데 쓴다.
+final cardsBeingMadeProvider = Provider.family<bool, String>((ref, profileId) {
+  final loading = ref.watch(cardGenerationProvider(profileId)).isLoading;
+  return loading &&
+      ref.watch(cardMakingProvider(profileId)) != CardMaking.checking;
+});
+
 /// 홈 버튼 아래에 남기는 실패 안내다. 알림창은 버튼을 가려서 글로 둔다. 다 만든
 /// 것은 다른 화면에서도 보이게 알림창으로 알리므로 여기 두지 않는다.
 enum CardNotice {

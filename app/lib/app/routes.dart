@@ -121,6 +121,9 @@ abstract final class AppRoutes {
   /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
   static const notifications = '/notifications';
 
+  /// 설정. 하단 탭 맨 오른쪽. 넣을 항목은 아직 정하지 않았다.
+  static const settings = '/settings';
+
   /// H 일대기의 표지. 하단 탭의 일대기에서 들어온다.
   static const album = '/album';
 

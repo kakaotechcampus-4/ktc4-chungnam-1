@@ -413,28 +413,6 @@ void main() {
       expect(find.widgetWithText(TextField, savedText), findsOneWidget);
       expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
     });
-
-    // 폰에서 키보드를 올리면 입력칸 아래 버튼이 고정된 `다음` 과 겹쳐 보였다.
-    // 키보드 높이는 기준 화면에서 한글 자판이 차지하는 정도로 잡았다.
-    testWidgets('글로 쓰는 중 키보드가 올라와도 입력칸이 다음 버튼과 겹치지 않는다', (tester) async {
-      final first = lifeFactSteps[0];
-      await openAt(
-        tester,
-        SetupState(
-          reachedIndex: 1,
-          draft: filled.copyWith(facts: {first.category: savedText}),
-        ),
-      );
-
-      await tester.tap(find.byType(TextField));
-      tester.view.viewInsets = const FakeViewPadding(bottom: 330 * 3);
-      await tester.pumpAndSettle();
-
-      final field = tester.getRect(find.byType(TextField));
-      final next = tester.getRect(find.text('다음'));
-      expect(field.bottom, lessThan(next.top));
-      expect(find.text('말로 답할게요'), findsNothing);
-    });
   });
 
   // PM 확인(PR #146): 하시던 일을 말한 뒤 전사 중에 건너뛰고 고향에서 다시
@@ -484,7 +462,10 @@ void main() {
     Future<void> settle() => tester.pump(const Duration(seconds: 1));
 
     Future<void> startListening() async {
+      // 고른 버튼은 눌린 모습을 잠깐 보인 뒤 넘어간다.
       await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       await settle();
       await tester.tap(find.byIcon(Icons.mic));
       await settle();

@@ -21,7 +21,6 @@ import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/cards/cards_screen.dart';
-import 'package:saerok/features/home/my_page_menu.dart';
 import 'package:saerok/features/profile_setup/basic_info_step.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/report/report_screen.dart';
@@ -172,6 +171,7 @@ void main() {
       handle.dispose();
     });
 
+    // 자리와 폭은 디자인에 따라 바뀔 수 있어 재지 않는다. 48 하한만 본다.
     testWidgets('카드 본문은 두 번 탭하면 질문을 펼치거나 접는다고 읽는다', (tester) async {
       final handle = tester.ensureSemantics();
       await openCards(tester);
@@ -220,8 +220,6 @@ void main() {
         _contrast(border.top.color, AppColors.background),
         greaterThanOrEqualTo(3.0),
       );
-      // 카드 테두리 같은 다른 선은 바꾸지 않는다.
-      expect(AppColors.line, const Color(0xFFE0E0E0));
     });
 
     testWidgets('현재 상태의 빈 동그라미도 3:1 이상이고 선택 여부를 읽는다', (tester) async {
@@ -390,6 +388,7 @@ void main() {
         findsOne,
         reason: '시트 바깥 영역을 영어 Scrim 대신 한국어로 읽는다',
       );
+      expect(find.semantics.byLabel('Scrim'), findsNothing);
       handle.dispose();
     });
 
@@ -681,7 +680,11 @@ void main() {
               builder: (context) => Scaffold(
                 body: Center(
                   child: TextButton(
-                    onPressed: () => showMyPageMenu(context),
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      builder: (_) => const Text('합성 시트'),
+                    ),
                     child: const Text('메뉴 열기'),
                   ),
                 ),
@@ -703,41 +706,6 @@ void main() {
         ),
         findsWidgets,
       );
-      handle.dispose();
-    });
-  });
-
-  group('마이페이지 메뉴 (보고서 8쪽, 일부)', () {
-    testWidgets('메뉴 바깥 영역은 영어 Scrim 대신 한국어로 읽는다', (tester) async {
-      final handle = tester.ensureSemantics();
-      _useReferenceScreen(tester);
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            theme: buildAppTheme(),
-            home: Builder(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: TextButton(
-                    onPressed: () => showMyPageMenu(context),
-                    child: const Text('메뉴 열기'),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('메뉴 열기'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('프로필 설정'), findsOneWidget);
-      expect(find.semantics.byLabel('메뉴 닫기'), findsOne);
-      expect(find.semantics.byLabel('Scrim'), findsNothing);
-
-      tester.semantics.tap(find.semantics.byLabel('메뉴 닫기'));
-      await tester.pumpAndSettle();
-      expect(find.text('프로필 설정'), findsNothing);
       handle.dispose();
     });
   });

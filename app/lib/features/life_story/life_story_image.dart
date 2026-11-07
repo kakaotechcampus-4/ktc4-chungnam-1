@@ -44,21 +44,20 @@ class _Placeholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 연초록 면이다. 그 위 비활성 회색은 3.9:1 이라 글자는 초록(5.7:1)으로 쓴다.
     return ColoredBox(
-      color: AppColors.surface,
+      color: HomeColors.bubble,
       // 입력 화면의 작은 그림 고르기 칸에서도 넘치지 않게 줄인다.
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(category.icon, size: 40, color: AppColors.textDisabled),
+            Icon(category.icon, size: 40, color: HomeColors.accentLoading),
             const SizedBox(height: AppSpacing.sm),
             Text(
               '${category.label} $number',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
+              style: AppTypography.caption.copyWith(color: HomeColors.accent),
             ),
           ],
         ),

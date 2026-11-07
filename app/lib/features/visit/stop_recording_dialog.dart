@@ -114,11 +114,14 @@ class _StopRecordingDialogState extends State<_StopRecordingDialog> {
               const SizedBox(height: AppSpacing.xxl),
 
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: widget.recovering ? '확인하고 보내기' : '끝내기',
                 onPressed: () => Navigator.of(context).pop(_count),
               ),
               const SizedBox(height: AppSpacing.md),
               SecondaryButton(
+                borderColor: HomeColors.outline,
                 label: widget.recovering ? '나중에 보내기' : '이어서 녹음',
                 onPressed: () => Navigator.of(context).pop(),
               ),
@@ -216,14 +219,14 @@ class _StepButton extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: enabled ? AppColors.ink : AppColors.line,
+              color: enabled ? HomeColors.accent : AppColors.line,
               width: 2,
             ),
           ),
           child: Icon(
             icon,
             size: 28,
-            color: enabled ? AppColors.ink : AppColors.textDisabled,
+            color: enabled ? HomeColors.accent : AppColors.textDisabled,
           ),
         ),
       ),

@@ -20,8 +20,9 @@ class BasicInfoStep extends StatefulWidget {
   final SetupDraft draft;
   final ValueChanged<SetupDraft> onChanged;
 
-  /// 처음 입력할 때와 프로필 설정에서 고칠 때 제목이 다르다.
-  final String title;
+  /// 처음 입력할 때의 큰 제목. 프로필 설정에서 고칠 때는 상단바에 화면 이름을
+  /// 두므로 `null` 로 넘겨 그리지 않는다.
+  final String? title;
 
   @override
   State<BasicInfoStep> createState() => _BasicInfoStepState();
@@ -43,10 +44,14 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.title, style: AppTypography.screenTitle),
-        const SizedBox(height: AppSpacing.section),
+        if (widget.title case final title?) ...[
+          Text(title, style: AppTypography.screenTitle),
+          const SizedBox(height: AppSpacing.section),
+        ],
 
         AppTextField(
+          borderColor: HomeColors.outline,
+          focusColor: HomeColors.accent,
           label: '이름',
           controller: _name,
           required: true,
@@ -74,7 +79,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
               child: _ChoiceBox(
                 label: '여성',
                 selected: _draft.gender == 'female',
-                onTap: () => widget.onChanged(_draft.copyWith(gender: 'female')),
+                onTap: () =>
+                    widget.onChanged(_draft.copyWith(gender: 'female')),
               ),
             ),
           ],
@@ -113,7 +119,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 value: _draft.birthDay,
                 values: [for (var d = 1; d <= 31; d++) d],
                 suffix: '일',
-                onChanged: (v) => widget.onChanged(_draft.copyWith(birthDay: v)),
+                onChanged: (v) =>
+                    widget.onChanged(_draft.copyWith(birthDay: v)),
               ),
             ),
           ],
@@ -157,10 +164,10 @@ class _ChoiceBox extends StatelessWidget {
         height: AppSizes.control,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? AppColors.surface : AppColors.background,
+          color: selected ? HomeColors.bubble : AppColors.background,
           borderRadius: BorderRadius.circular(AppRadius.card),
           border: Border.all(
-            color: selected ? AppColors.ink : AppColors.line,
+            color: selected ? HomeColors.accent : HomeColors.outline,
             width: selected ? 2 : 1,
           ),
         ),
@@ -197,10 +204,10 @@ class _RadioRow extends StatelessWidget {
           height: AppSizes.control,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           decoration: BoxDecoration(
-            color: selected ? AppColors.surface : AppColors.background,
+            color: selected ? HomeColors.bubble : AppColors.background,
             borderRadius: BorderRadius.circular(AppRadius.card),
             border: Border.all(
-              color: selected ? AppColors.ink : AppColors.line,
+              color: selected ? HomeColors.accent : HomeColors.outline,
               width: selected ? 2 : 1,
             ),
           ),
@@ -210,12 +217,14 @@ class _RadioRow extends StatelessWidget {
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
-                  color: selected ? AppColors.ink : AppColors.background,
+                  color: selected ? HomeColors.accent : AppColors.background,
                   shape: BoxShape.circle,
                   // 빈 동그라미도 흰 배경과 3:1 이상 대비가 나도록 공용 선택
                   // 표시(`SelectionMark`)와 같은 색을 쓴다(접근성 보고서 14쪽).
                   border: Border.all(
-                    color: selected ? AppColors.ink : AppColors.textDisabled,
+                    color: selected
+                        ? HomeColors.accent
+                        : AppColors.selectionRing,
                     width: 2,
                   ),
                 ),
@@ -260,8 +269,10 @@ class _NumberPicker extends StatelessWidget {
     return Container(
       height: AppSizes.control,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      // 흰 칸이라 안내 글자의 비활성 회색이 4.5:1 을 지킨다.
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.line),
+        color: AppColors.background,
+        border: Border.all(color: HomeColors.outline),
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: DropdownButtonHideUnderline(
