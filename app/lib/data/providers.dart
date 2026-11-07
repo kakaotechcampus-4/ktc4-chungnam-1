@@ -553,6 +553,18 @@ final photoAnalysisPollIntervalProvider = Provider<Duration>(
   (ref) => const Duration(seconds: 5),
 );
 
+/// 지금 계정이 AI 사진 분석(선택 동의 `photoAnalysis`)에 동의했는지. 계정을 읽는
+/// 중이거나 읽지 못했으면 `null` 이다.
+///
+/// 동의하지 않은 계정의 사진은 사진 분석 worker 가 가져가지 않아 `pending` 으로
+/// 남는다. 갤러리는 이때 "분석 중"을 보이지 않고 보호자가 바로 설명을 적게 하며,
+/// 사진 상태도 다시 묻지 않는다.
+final photoAnalysisWantedProvider = Provider<bool?>((ref) {
+  final account = ref.watch(accountProvider).value;
+  if (account == null) return null;
+  return account.consent['photoAnalysis']?.granted ?? false;
+});
+
 /// 서버에 저장한 지금 어르신의 프로필 사진(2-3). 올린 순서대로다.
 ///
 /// 로그인하지 않았거나 서버에 저장하지 않은 분이면 `null` 이고, 갤러리는
@@ -577,7 +589,10 @@ class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
 
     final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
     // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
-    if (!_stale(round) && photos.any(_analyzing)) {
+    // 분석에 동의하지 않은 계정의 사진은 끝나지 않으므로 묻지 않는다.
+    if (!_stale(round) &&
+        photos.any(_analyzing) &&
+        ref.read(photoAnalysisWantedProvider) != false) {
       // 상태를 돌려준 뒤에 묻기 시작한다.
       Future<void>(() => _poll(round));
     }
@@ -600,6 +615,8 @@ class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
       if (_stale(round)) return;
       final photos = state.value;
       if (photos == null || !photos.any(_analyzing)) return;
+      // 묻는 사이 동의를 거뒀으면 그만 묻는다.
+      if (ref.read(photoAnalysisWantedProvider) == false) return;
 
       final next = [...photos];
       for (var i = 0; i < next.length; i++) {

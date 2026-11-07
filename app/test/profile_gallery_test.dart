@@ -87,6 +87,8 @@ Future<ProviderContainer> _open(
   List<ProfilePhoto>? photos,
   _FakeStore? store,
   ProviderContainer? container,
+  // 기본은 AI 사진 분석에 동의한 계정이다. 동의하지 않은 계정은 false 를 넘긴다.
+  bool? analysisWanted = true,
 }) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
@@ -100,6 +102,7 @@ Future<ProviderContainer> _open(
           photoDescriptionStoreProvider.overrideWithValue(
             store ?? _FakeStore(),
           ),
+          photoAnalysisWantedProvider.overrideWithValue(analysisWanted),
         ],
       );
   if (container == null) addTearDown(scope.dispose);
@@ -360,6 +363,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           photoDescriptionStoreProvider.overrideWithValue(_FakeStore()),
+          photoAnalysisWantedProvider.overrideWithValue(true),
         ],
       );
       addTearDown(container.dispose);
@@ -469,6 +473,7 @@ void main() {
         ProviderScope(
           overrides: [
             photoDescriptionStoreProvider.overrideWithValue(_FakeStore()),
+            photoAnalysisWantedProvider.overrideWithValue(true),
           ],
           child: MaterialApp(
             theme: buildAppTheme(),
@@ -523,6 +528,47 @@ void main() {
       ]);
 
       expect(find.widgetWithText(TextField, '보호자가 쓰던 설명'), findsOneWidget);
+    });
+  });
+
+  group('AI 사진 분석에 동의하지 않은 계정', () {
+    testWidgets('분석하지 않는 사진에 "분석 중"을 붙이지 않는다', (tester) async {
+      await _open(tester, analysisWanted: false);
+
+      expect(find.bySemanticsLabel('사진 2'), findsOneWidget);
+      expect(find.text('분석 중'), findsNothing);
+      // 실패한 사진은 동의와 관계없이 실패를 알린다.
+      expect(find.bySemanticsLabel('사진 3, 분석 실패'), findsOneWidget);
+    });
+
+    testWidgets('기다리게 하지 않고 바로 직접 적어 저장하게 한다', (tester) async {
+      final store = _FakeStore();
+      await _open(tester, store: store, analysisWanted: false);
+
+      await tester.tap(find.bySemanticsLabel('사진 2'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('만들고 있어요'), findsNothing);
+      expect(find.textContaining('AI 사진 분석에 동의하지 않아'), findsOneWidget);
+      expect(find.text('사진에 대한 설명'), findsOneWidget);
+      expect(find.text('AI가 만든 설명'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '마당에서 찍은 사진이에요.');
+      await tester.pump();
+      await tester.tap(_saveButton());
+      await tester.pumpAndSettle();
+
+      expect(store.saved, [('photo_2', '마당에서 찍은 사진이에요.')]);
+      expect(find.text('설명을 저장했어요.'), findsOneWidget);
+    });
+
+    testWidgets('계정을 아직 읽지 못했으면 지금처럼 기다리라고 알린다', (tester) async {
+      await _open(tester, analysisWanted: null);
+
+      await tester.tap(find.bySemanticsLabel('사진 2, 분석 중'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('만들고 있어요'), findsOneWidget);
     });
   });
 }
