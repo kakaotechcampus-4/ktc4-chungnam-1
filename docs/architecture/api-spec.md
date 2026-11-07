@@ -160,7 +160,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
   "requiredConsents": ["serviceData", "sensitiveData"],
-  "optionalConsents": ["serviceImprovement", "pushNotification"]
+  "optionalConsents": ["serviceImprovement", "pushNotification", "photoAnalysis"]
 }
 ```
 
@@ -250,6 +250,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 - 직전 이력을 복사해 보낸 항목만 바꾼 새 이력 행을 추가한다. 약관 버전은 직전 이력의 값을 쓴다.
 - `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 푸시 기기 등록(1-7)을 모두 지운다.
+- `photoAnalysis`(AI 사진 분석)도 같은 방식으로 바꾼다. 거두면 사진 분석 worker가 그 계정의 사진을 더 가져가지 않고, 분석 중이던 결과도 저장하지 않는다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
@@ -1410,6 +1411,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `proposalId`는 백엔드가 부여한다.
 
 ### 8-4. `POST /internal/v1/image-analyses` — 신규
+
+아래는 내부 계약이다. 로컬 worker는 리포트와 같은 방식으로 `ai/photo_analysis` 함수를 직접 호출하며 이 HTTP 경로를 공개하지 않는다. 합성 사진용 연결과 운영 적용 조건은 [사진 분석 실행 문서](../../backend/docs/photo-analysis.md)를 따른다.
 
 프로필 사진만 요청한다. 면회 사진은 요청하지 않는다.
 

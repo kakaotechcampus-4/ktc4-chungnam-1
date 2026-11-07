@@ -141,6 +141,7 @@ def test_google_login_asks_for_consent_without_creating_account() -> None:
     assert body["consentVersion"] == CONSENT_VERSION
     assert sorted(body["requiredConsents"]) == ["sensitiveData", "serviceData"]
     assert sorted(body["optionalConsents"]) == [
+        "photoAnalysis",
         "pushNotification",
         "serviceImprovement",
     ]

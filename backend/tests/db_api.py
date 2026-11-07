@@ -52,6 +52,7 @@ class DbApi:
                 "pushNotification": ConsentRecord(
                     granted=True, granted_at=SIGNED_UP_AT
                 ),
+                "photoAnalysis": ConsentRecord(granted=False, granted_at=None),
             },
             created_at=SIGNED_UP_AT,
         )

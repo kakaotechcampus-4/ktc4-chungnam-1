@@ -177,7 +177,7 @@ jobs:
       DEPLOY_HOST_PYTHON: ${{ vars.DEPLOY_HOST_PYTHON || 'python3' }}
       DEPLOY_COMPOSE_FILES: ${{ vars.DEPLOY_COMPOSE_FILES || 'compose.yml' }}
       DEPLOY_COMPOSE_PROFILES: ${{ vars.DEPLOY_COMPOSE_PROFILES }}
-      DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'api card-worker speech-worker' }}
+      DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'api card-worker speech-worker photo-worker' }}
       DEPLOY_DB_CONTAINER: ${{ vars.DEPLOY_DB_CONTAINER || 'saerok-db-1' }}
       DEPLOY_DB_NAME: ${{ vars.DEPLOY_DB_NAME || 'saerok' }}
       DEPLOY_DB_USER: ${{ vars.DEPLOY_DB_USER || 'saerok' }}
@@ -388,7 +388,9 @@ jobs:
           [ -n "$api_id" ] || { echo "API_NOT_RUNNING: 실행 중인 api가 없어 자동 배포 대상이 아닙니다"; exit 1; }
           previous_image=$(docker inspect --format '{{.Image}}' "$api_id")
           previous_revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$api_id")
+          # 이번 배포로 처음 들어오는 worker(컨테이너가 아직 없음)는 막지 않는다. 있는데 멈춘 worker만 막는다.
           for s in $(workers); do
+            if [ -z "$(dc ps -a -q "$s")" ]; then echo "WORKER_NEW $s"; continue; fi
             [ -n "$(dc ps -q "$s")" ] || { echo "WORKER_NOT_RUNNING $s"; exit 1; }
           done
 

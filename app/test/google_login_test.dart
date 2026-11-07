@@ -530,6 +530,7 @@ void main() {
         'sensitiveData': true,
         'pushNotification': false,
         'serviceImprovement': false,
+        'photoAnalysis': false,
       }, reason: '고르지 않은 항목은 거부로 보낸다. 임의로 true 를 넣지 않는다');
       expect(
         sent!.containsKey('displayName'),
@@ -642,7 +643,8 @@ void main() {
         'sensitiveData': false,
         'pushNotification': false,
         'serviceImprovement': false,
-      }, reason: '계약의 네 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
+        'photoAnalysis': false,
+      }, reason: '계약의 다섯 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
       expect(find.text('처음 오셨네요'), findsOneWidget);
     });
 

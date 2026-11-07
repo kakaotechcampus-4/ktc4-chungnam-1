@@ -25,6 +25,13 @@ async def _profile(connection):
         "INSERT INTO users (google_sub) VALUES (%s) RETURNING user_id",
         (f"synthetic-sub-{uuid4().hex[:8]}",),
     )
+    # 사진 분석 대기열은 AI 이미지 분석에 동의한 계정의 사진만 가져간다.
+    await connection.execute(
+        "INSERT INTO consent_records (user_id, terms_version, service_data, sensitive_data, "
+        " service_improvement, push_notification, photo_analysis) "
+        "VALUES (%s, 'synthetic', true, true, false, false, true)",
+        (user_id,),
+    )
     return await _value(
         connection,
         "INSERT INTO profiles (user_id, name, gender, birth_date, condition_stage) "

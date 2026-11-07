@@ -49,7 +49,9 @@ CREATE TABLE consent_records (
     sensitive_data      BOOLEAN     NOT NULL CHECK (sensitive_data),
     service_improvement BOOLEAN     NOT NULL,
     push_notification   BOOLEAN     NOT NULL,
-    recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- AI 이미지 분석 선택 동의(docs/legal/consent-draft.md). 11/7 migration이 표 끝에 더했다.
+    photo_analysis      BOOLEAN     NOT NULL DEFAULT false
 );
 CREATE INDEX idx_consent_records_latest
     ON consent_records(user_id, recorded_at DESC, record_id DESC);

@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     image_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
     image_presigned_ttl_seconds: int = Field(default=900, ge=60)
     max_image_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
+    # 합성 사진 분석. 운영 동의 연결 전에는 진입점이 production 실행을 거절한다.
+    photo_analysis_model: str = ""  # 비어 있으면 report_generation_model을 사용
+    photo_analysis_timeout_seconds: int = Field(default=120, ge=10)
+    photo_analysis_lease_seconds: int = Field(default=180, ge=60)
+    photo_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 구글 ID 토큰의 `aud` 로 허용할 클라이언트 ID 목록. 쉼표로 구분한다.
     # `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 그 웹 클라이언트 ID가

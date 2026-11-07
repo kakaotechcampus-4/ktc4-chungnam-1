@@ -23,6 +23,7 @@ COPY --from=ai common /ai/common
 COPY --from=ai card_generation /ai/card_generation
 COPY --from=ai report_generation /ai/report_generation
 COPY --from=ai proposal_generation /ai/proposal_generation
+COPY --from=ai photo_analysis /ai/photo_analysis
 RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./

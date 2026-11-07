@@ -620,6 +620,7 @@ class JourneyServer {
       },
       'serviceImprovement': {'granted': false, 'grantedAt': null},
       'pushNotification': {'granted': false, 'grantedAt': null},
+      'photoAnalysis': {'granted': false, 'grantedAt': null},
     },
     'createdAt': '2026-10-13T09:00:00+09:00',
   };

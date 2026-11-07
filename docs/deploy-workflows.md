@@ -75,7 +75,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 모드, SHA, 대상 브
 - `docker compose`, `git`, `curl`, `sudo`, `jq`와 Python 3.11 이상이 있다(운영 서버는 3.12). `scripts/`의 도구가 3.11 기능을 쓴다.
 - DB는 compose의 `db` 컨테이너다(`saerok-db-1`, DB와 사용자 이름 `saerok`).
 - 서버 저장소의 `origin`이 이 GitHub 저장소다. 저장소 소유자는 `ubuntu`다.
-- 운영 서버는 `workers`, `local-db`, `https` 프로필을 모두 쓴다. `DEPLOY_COMPOSE_PROFILES=workers local-db https`로 두고, `DEPLOY_SERVICES`는 기본값(`api card-worker speech-worker`)을 쓴다. db와 caddy는 교체하지 않는다.
+- 운영 서버는 `workers`, `local-db`, `https` 프로필을 모두 쓴다. `DEPLOY_COMPOSE_PROFILES=workers local-db https`로 두고, `DEPLOY_SERVICES`는 기본값(`api card-worker speech-worker photo-worker`)을 쓴다. 처음 들어오는 worker는 컨테이너가 아직 없어도 사전 점검을 통과하고 교체 단계에서 만들어진다. db와 caddy는 교체하지 않는다.
 - 서버 저장소에 추적하지 않는 메모 파일이 있어도 된다. Dockerfile이 필요한 폴더만 복사하므로 이미지에 들어가지 않는다. 추적 파일이 바뀌어 있으면 멈춘다.
 
 ## 팀이 설정할 항목
@@ -89,7 +89,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 모드, SHA, 대상 브
 | Environment 시크릿 | `AWS_DEPLOY_ROLE_ARN` | Deploy | 운영진이 만든 역할 `ktc-github-deploy`의 ARN |
 | Environment 시크릿 | `DEPLOY_INSTANCE_ID` | Deploy | 대상 EC2 인스턴스 ID. 로그에서 가리도록 시크릿으로 둔다 |
 | Environment 변수 | `AWS_REGION`, `DEPLOY_REPO_DIR`, `DEPLOY_BACKUP_DIR`, `DEPLOY_RELEASE_DIR`, `DEPLOY_COMPOSE_PROFILES` | Deploy | 리전, 서버 저장소 절대 경로, 저장소 밖의 백업 경로, 저장소 밖의 배포 기록 경로, compose 프로필. 두 경로가 저장소 안이면 시작 전에 거절한다 |
-| Environment 변수 | `DEPLOY_HOST_USER`(`ubuntu`), `DEPLOY_HOST_PYTHON`(`python3`), `DEPLOY_COMPOSE_FILES`(`compose.yml`), `DEPLOY_SERVICES`(`api card-worker speech-worker`), `DEPLOY_DB_CONTAINER`(`saerok-db-1`), `DEPLOY_DB_NAME`(`saerok`), `DEPLOY_DB_USER`(`saerok`) | 선택 | 괄호 안이 기본값 |
+| Environment 변수 | `DEPLOY_HOST_USER`(`ubuntu`), `DEPLOY_HOST_PYTHON`(`python3`), `DEPLOY_COMPOSE_FILES`(`compose.yml`), `DEPLOY_SERVICES`(`api card-worker speech-worker photo-worker`), `DEPLOY_DB_CONTAINER`(`saerok-db-1`), `DEPLOY_DB_NAME`(`saerok`), `DEPLOY_DB_USER`(`saerok`) | 선택 | 괄호 안이 기본값 |
 
 AWS 쪽은 새로 만들 것이 없다. 운영진이 팀 계정에 GitHub OIDC 공급자와 `ktc-github-deploy` 역할을 만들어 두었다(9/3, 태그 `managed-by: ktc-github-oidc-stackset`). 이 역할은 학생 SSO 세션과 같은 권한(PowerUserAccess와 운영진 제한)이고, 팀이 역할과 신뢰 정책을 고치는 것은 막혀 있다. 신뢰 정책은 이 저장소의 모든 workflow 실행(`repo:kakaotechcampus-4/ktc4-chungnam-1:*`)을 허용하므로 `production` 환경으로 좁혀져 있지 않다. 그래서 GitHub 쪽 보호가 중요하다.
 
