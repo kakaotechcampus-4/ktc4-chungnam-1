@@ -46,11 +46,15 @@ Future<PickedPhoto> _syntheticPhoto() async {
 Future<ProviderContainer> _signedIn(
   FakeProfileServer server, {
   Duration poll = const Duration(milliseconds: 1),
+  // 넘기지 않으면 계정 동의를 덮어쓰지 않는다(계정을 읽지 못하면 지금처럼 묻는다).
+  bool? analysisWanted,
 }) async {
   final container = ProviderContainer(
     overrides: [
       server.override,
       photoAnalysisPollIntervalProvider.overrideWithValue(poll),
+      if (analysisWanted != null)
+        photoAnalysisWantedProvider.overrideWithValue(analysisWanted),
     ],
   );
   addTearDown(container.dispose);
@@ -282,6 +286,41 @@ void main() {
         ),
         isEmpty,
         reason: '분석을 마친 사진은 묻지 않는다',
+      );
+    });
+
+    test('AI 사진 분석에 동의하지 않은 계정의 사진은 묻지 않는다', () async {
+      final server = FakeProfileServer(
+        profiles: [
+          FakeProfileServer.profile(
+            id: 'p1',
+            setupStatus: 'completed',
+            photos: [
+              FakeProfileServer.photo(id: 'photo-a', analysisStatus: 'pending'),
+            ],
+          ),
+        ],
+      );
+      server.analysisResults['photo-a'] = ['completed'];
+      final container = await _signedIn(server, analysisWanted: false);
+      container.listen(serverProfilePhotosProvider, (_, _) {});
+
+      await _until(
+        () => container.read(serverProfilePhotosProvider).value != null,
+      );
+      // 묻는 간격(1ms)의 몇십 배를 기다려도 3-2 를 부르지 않는다.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        container.read(serverProfilePhotosProvider).value!.first.analysisStatus,
+        PhotoAnalysisStatus.pending,
+      );
+      expect(
+        server.requests.where(
+          (r) => r.path == '/api/v1/profile-photos/photo-a',
+        ),
+        isEmpty,
+        reason: '동의하지 않았으면 worker 가 분석하지 않으므로 끝나지 않는다',
       );
     });
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_text_field.dart';
@@ -14,6 +15,8 @@ import 'photo_description_store.dart';
 /// 펼쳐지고, 보호자가 직접 고쳐 저장할 수 있다. 설명은 AI 가 만든 후보라서 확인된
 /// 사실처럼 보이지 않게 출처를 함께 적는다. 분석이 끝나지 않은 사진은 설명 대신
 /// 그 상태를 알린다. 분석에 실패한 사진은 실패를 알리고 보호자가 직접 적게 한다.
+/// AI 사진 분석에 동의하지 않은 계정의 사진은 분석하지 않으므로 "분석 중"을
+/// 보이지 않고, 처음부터 보호자가 직접 적게 한다.
 ///
 /// 설명 칸은 높이가 늘어나며 아래에서 살짝 떠오르듯 펼쳐진다. 다 펼쳐지면
 /// 끝까지 내려 칸을 화면 맨 아래에 붙이고, 이미 끝이면 그대로 둔다. 접으면
@@ -192,6 +195,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
     // 고친 설명이 저장되거나 계정이 바뀌면 표시를 다시 그린다.
     final edited = ref.watch(editedPhotoDescriptionsProvider);
     ref.watch(sessionProvider.select((s) => s?.account.accountId));
+    final analysisWanted = ref.watch(photoAnalysisWantedProvider);
 
     if (photos.isEmpty) {
       return Text('아직 올린 사진이 없어요.', style: AppTypography.sub);
@@ -216,6 +220,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                               edited.containsKey(_keyOf(photos[start + col])) ||
                               photos[start + col].descriptionSource ==
                                   'caregiver',
+                          analysisWanted: analysisWanted,
                           selected: photos[start + col].photoId == _selectedId,
                           onTap: () => _toggle(photos[start + col]),
                         )
@@ -280,6 +285,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                         edited:
                             edited.containsKey(_keyOf(selected)) ||
                             selected.descriptionSource == 'caregiver',
+                        analysisWanted: analysisWanted,
                         controller: _text,
                         current: _currentDescription(selected) ?? '',
                         saving: _savingIds.contains(selected.photoId),
@@ -305,6 +311,7 @@ class _GalleryTile extends StatelessWidget {
     required this.photo,
     required this.number,
     required this.edited,
+    required this.analysisWanted,
     required this.selected,
     required this.onTap,
   });
@@ -314,6 +321,9 @@ class _GalleryTile extends StatelessWidget {
 
   /// 보호자가 설명을 저장했는지. 저장했으면 분석 결과와 관계없이 표시를 떼어낸다.
   final bool edited;
+
+  /// 계정이 AI 사진 분석에 동의했는지([photoAnalysisWantedProvider]).
+  final bool? analysisWanted;
 
   final bool selected;
   final VoidCallback onTap;
@@ -325,6 +335,8 @@ class _GalleryTile extends StatelessWidget {
       _ when edited => null,
       PhotoAnalysisStatus.completed => null,
       PhotoAnalysisStatus.failed => '분석 실패',
+      // 동의하지 않았으면 분석하지 않으므로 기다릴 것이 없다.
+      _ when analysisWanted == false => null,
       // 모르는 값도 끝나지 않은 것으로 다룬다.
       _ => '분석 중',
     };
@@ -386,6 +398,7 @@ class _DescriptionPanel extends StatelessWidget {
   const _DescriptionPanel({
     required this.photo,
     required this.edited,
+    required this.analysisWanted,
     required this.controller,
     required this.current,
     required this.saving,
@@ -399,6 +412,9 @@ class _DescriptionPanel extends StatelessWidget {
 
   /// 보호자가 고쳐 저장한 적이 있는지.
   final bool edited;
+
+  /// 계정이 AI 사진 분석에 동의했는지([photoAnalysisWantedProvider]).
+  final bool? analysisWanted;
 
   final TextEditingController controller;
 
@@ -415,13 +431,16 @@ class _DescriptionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = photo.analysisStatus;
     final failed = status == PhotoAnalysisStatus.failed;
-    if (status != PhotoAnalysisStatus.completed && !failed && !edited) {
+    final waiting = status != PhotoAnalysisStatus.completed && !failed && !edited;
+    // 동의하지 않은 계정의 사진은 분석하지 않는다. 기다리게 하지 않고 바로 적게 한다.
+    final notAnalyzed = waiting && analysisWanted == false;
+    if (waiting && !notAnalyzed) {
       return const _PanelNotice('사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.');
     }
 
-    // 보호자가 적은 설명이 있으면 AI 설명이 아니다. 실패한 사진은 처음부터
-    // 보호자가 적는다.
-    final fromAi = !edited && !failed;
+    // 보호자가 적은 설명이 있으면 AI 설명이 아니다. 실패했거나 분석하지 않는
+    // 사진은 처음부터 보호자가 적는다.
+    final fromAi = !edited && !failed && !notAnalyzed;
     final text = controller.text.trim();
     final canSave = !saving && text.isNotEmpty && text != current;
 
@@ -430,6 +449,13 @@ class _DescriptionPanel extends StatelessWidget {
       children: [
         if (failed && !edited) ...[
           const _PanelNotice('AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.', danger: true),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        if (notAnalyzed) ...[
+          const _PanelNotice(
+            'AI 사진 분석에 동의하지 않아 설명을 자동으로 만들지 않아요. '
+            '직접 적어주시면 대화 카드에 쓰여요. 설정에서 동의하면 AI가 만들어 드려요.',
+          ),
           const SizedBox(height: AppSpacing.lg),
         ],
         // 안내는 이름표 바로 아래, 입력칸 위에 둔다. 무엇을 확인할지 먼저 읽고
