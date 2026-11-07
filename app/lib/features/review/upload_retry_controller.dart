@@ -7,6 +7,7 @@ import '../../data/providers.dart';
 import '../../data/report_api.dart';
 import '../../data/visit_api.dart';
 import '../visit/pending_uploads.dart';
+import '../visit/visit_recorder.dart' show repairUnfinishedRecording;
 
 /// `음성 다시 보내기` 의 결과. 연결 실패와 서버 거절은 오류로 남는다.
 enum UploadRetryOutcome {
@@ -85,6 +86,8 @@ class UploadRetryController extends AsyncNotifier<UploadRetryOutcome> {
 
     final String submittedAnalysisId;
     try {
+      // 녹음 중에 앱이 죽어 머리글이 비었으면 소리만으로 다시 채운다.
+      repairUnfinishedRecording(pending.audioPath);
       submittedAnalysisId = await ref
           .read(visitApiProvider)
           .submitAudio(

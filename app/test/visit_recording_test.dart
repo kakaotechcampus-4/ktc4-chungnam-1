@@ -121,6 +121,33 @@ void main() {
     });
   });
 
+  test('녹음을 시작하자마자 회차와 파일을 기기에 적어 둔다', () async {
+    // 녹음 중에 앱이 죽으면 끝내기와 화면 떠나기가 불리지 않는다. 시작할 때 적어
+    // 두어야 다시 켰을 때 이 회차의 파일을 찾아 보낼 수 있다.
+    final recorder = FakeVisitRecorder();
+    final uploads = FakePendingUploads();
+    final container = ProviderContainer(
+      overrides: [
+        visitRecorderProvider.overrideWithValue(recorder),
+        ...mockCardsWith(pendingUploads: uploads),
+      ],
+    );
+    addTearDown(container.dispose);
+    final cards = await container.read(cardsControllerProvider.future);
+    container
+        .read(cardsControllerProvider.notifier)
+        .toggleSelected(cards.cards.first.cardId);
+    await container.read(visitControllerProvider.future);
+
+    await container.read(visitControllerProvider.notifier).startRecording();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(recorder.calls, isNot(contains('stop')));
+    final pending = uploads.saved[FakeVisitApi.sessionId];
+    expect(pending?.audioPath, read(container).recordingPath);
+    expect(pending?.participantCount, isNull);
+  });
+
   group('화면을 떠날 때', () {
     testWidgets('끝내기를 누르지 않고 나가도 파일을 닫는다', (tester) async {
       // 닫지 않으면 WAV 헤더가 쓰이지 않아 재생할 수 없는 파일이 남는다.
