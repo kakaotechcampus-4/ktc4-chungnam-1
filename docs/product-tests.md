@@ -4,6 +4,8 @@
 Flutter 정적 검사와 테스트, Python 정적 검사, BE 테스트, AI 단위 테스트, STT 계약과 파이프라인 테스트를 각각 실행한다.
 기존 운영진의 멘토 배정, PR 형식 확인과 디스코드 알림 workflow는 수정하지 않는다.
 
+[배포 후보 빌드](deploy-workflows.md)(`release-build.yml`)는 `workflow_call`로 이 workflow를 불러 배포 후보 커밋에서 같은 검사를 다시 실행한다.
+
 ## 범위와 실행
 
 | 작업 위치 | 명령 | 검사 범위 |
