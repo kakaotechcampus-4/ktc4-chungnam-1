@@ -387,8 +387,8 @@ class _Summary extends StatelessWidget {
 
 /// 날짜와 기분을 적는 줄이다.
 ///
-/// 기본 모드는 예전처럼 한 줄에 나란히 둔다. 쉬운 모드는 글자가 커져 한 줄로는
-/// 가로가 넘치므로 칩을 아래로 내린다.
+/// 기본 모드는 예전처럼 한 줄에 나란히 두고, 넘치면 칩을 다음 줄로 내린다. 쉬운
+/// 모드는 글자가 커져 한 줄로는 가로가 넘치므로 칩을 아래로 내린다.
 class _MetaLine extends StatelessWidget {
   const _MetaLine({
     required this.date,
@@ -428,12 +428,13 @@ class _MetaLine extends StatelessWidget {
       );
     }
 
-    return Row(
-      children: [
-        label,
-        const SizedBox(width: AppSpacing.md),
-        chip,
-      ],
+    // 한 줄에 들어가면 나란히, 시스템 글자를 키워 넘치면 칩을 다음 줄로 내린다.
+    // Row 는 1.3배에서 오른쪽으로 넘쳤다(412dp, 2026-11-08 위젯 테스트).
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.md,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [label, chip],
     );
   }
 }
