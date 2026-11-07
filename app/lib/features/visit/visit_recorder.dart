@@ -7,6 +7,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -126,6 +127,67 @@ class DeviceVisitRecorder implements VisitRecorder {
         .toIso8601String()
         .replaceAll(RegExp(r'[:.]'), '-');
     return '${directory.path}/visit-$stamp.${VisitRecording.fileExtension}';
+  }
+}
+
+/// 녹음을 끝내지 못한 WAV 파일의 머리글을 다시 쓴다.
+///
+/// `record` 는 WAV 머리글 자리(앞 44바이트)를 비워 둔 채 소리를 버퍼 없이 바로
+/// 파일에 쓰고, 녹음을 끝낼 때 머리글을 채운다(`record_android` 의
+/// `WaveContainer`). 녹음 중에 앱이 죽으면 소리는 남지만 머리글이 0으로 남아
+/// 열 수 없는 파일이 된다. 형식은 [visitRecordConfig] 로 정해져 있으므로 파일
+/// 길이로 머리글을 다시 만들어 보낼 수 있게 한다.
+///
+/// 고쳤으면 `true` 다. 이미 머리글이 있거나, 소리가 없거나, 파일이 없거나, WAV
+/// 녹음이 아니면 손대지 않고 `false` 다.
+bool repairUnfinishedRecording(String path) {
+  if (visitRecordConfig.encoder != AudioEncoder.wav) return false;
+  // 44바이트만 읽고 쓰므로 동기로 처리한다. 화면 테스트의 가짜 시간에서도 끝난다.
+  final file = File(path);
+  if (!file.existsSync()) return false;
+  final length = file.lengthSync();
+  const header = DeviceVisitRecorder._wavHeaderSize;
+  if (length <= header) return false;
+
+  final raf = file.openSync(mode: FileMode.append);
+  try {
+    raf.setPositionSync(0);
+    if (String.fromCharCodes(raf.readSync(4)) == 'RIFF') return false;
+
+    const bits = 16;
+    final channels = visitRecordConfig.numChannels;
+    final sampleRate = visitRecordConfig.sampleRate;
+    final frame = channels * bits ~/ 8;
+    // 마지막 표본이 반쯤 쓰였으면 그 앞까지만 소리로 친다.
+    final dataSize = (length - header) ~/ frame * frame;
+
+    final bytes = ByteData(header);
+    void tag(int offset, String text) {
+      for (var i = 0; i < 4; i++) {
+        bytes.setUint8(offset + i, text.codeUnitAt(i));
+      }
+    }
+
+    tag(0, 'RIFF');
+    bytes.setUint32(4, 36 + dataSize, Endian.little);
+    tag(8, 'WAVE');
+    tag(12, 'fmt ');
+    bytes.setUint32(16, 16, Endian.little);
+    bytes.setUint16(20, 1, Endian.little); // PCM
+    bytes.setUint16(22, channels, Endian.little);
+    bytes.setUint32(24, sampleRate, Endian.little);
+    bytes.setUint32(28, sampleRate * frame, Endian.little);
+    bytes.setUint16(32, frame, Endian.little);
+    bytes.setUint16(34, bits, Endian.little);
+    tag(36, 'data');
+    bytes.setUint32(40, dataSize, Endian.little);
+
+    // append 는 읽고 쓰기로 열고 끝에 놓을 뿐이라 위치를 옮겨 앞을 덮어쓸 수 있다.
+    raf.setPositionSync(0);
+    raf.writeFromSync(bytes.buffer.asUint8List());
+    return true;
+  } finally {
+    raf.closeSync();
   }
 }
 

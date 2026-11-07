@@ -271,6 +271,9 @@ class VisitController extends AsyncNotifier<VisitState> {
       ),
     );
     _startTicker();
+    // 녹음 중에 앱이 죽어도 다시 켰을 때 이 회차의 파일을 찾도록 바로 적어 둔다.
+    // 끝내지 못한 파일의 머리글은 보내기 전에 고친다(repairUnfinishedRecording).
+    unawaited(_rememberUpload());
   }
 
   /// 고른 카드로 회차를 만든다. 성공하면 `true` 다.
@@ -514,6 +517,18 @@ class VisitController extends AsyncNotifier<VisitState> {
     } on Exception {
       problem = VisitRecordingProblem.saveFailed;
     }
+    // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다.
+    final startedPath = current.recordingPath;
+    if (saved == null && startedPath != null) {
+      try {
+        if (repairUnfinishedRecording(startedPath)) {
+          saved = VisitRecording(path: startedPath);
+          problem = current.problem;
+        }
+      } on FileSystemException {
+        // 고치지 못했다. 저장 실패로 둔다.
+      }
+    }
     // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
     // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
     if (!ref.mounted) return;
@@ -527,7 +542,32 @@ class VisitController extends AsyncNotifier<VisitState> {
         clearProblem: problem == null,
       ),
     );
+    if (saved == null && startedPath != null) {
+      // 시작할 때 적어 둔 기록을 다시 보낼 목록에서 뺀다. 살리지 못한 파일을
+      // 앱을 다시 켰을 때 보내려 들지 않게 한다.
+      await _dropUpload(startedPath);
+      return;
+    }
     await _rememberUpload();
+  }
+
+  /// 살리지 못한 녹음을 다시 보낼 목록에서 뺀다. 파일과 회차 연결은 남긴다.
+  Future<void> _dropUpload(String path) async {
+    final sessionId = state.value?.sessionId;
+    if (sessionId == null) return;
+    try {
+      await ref
+          .read(pendingUploadsProvider)
+          .markUploaded(
+            PendingUpload(
+              sessionId: sessionId,
+              audioPath: path,
+              participantCount: state.value?.participantCount,
+            ),
+          );
+    } on Exception {
+      // 적지 못하면 다시 보내기에서 서버가 거절할 때 정리된다.
+    }
   }
 
   /// 보낼 녹음을 회차 ID 로 기기에 적어 둔다. 앱을 다시 켜도 다시 보낼 수

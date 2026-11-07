@@ -6,6 +6,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/visit_api.dart';
 import '../visit/pending_uploads.dart';
+import '../visit/visit_recorder.dart' show repairUnfinishedRecording;
 import '../visit/visit_controller.dart';
 import 'review_controller.dart';
 
@@ -217,6 +218,8 @@ class SubmissionController extends Notifier<SubmissionState> {
     required int participantCount,
   }) async {
     try {
+      // 녹음 중에 앱이 죽어 머리글이 비었으면 소리만으로 다시 채운다.
+      repairUnfinishedRecording(audioPath);
       return await ref
           .read(visitApiProvider)
           .submitAudio(
