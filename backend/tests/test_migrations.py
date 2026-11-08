@@ -5,12 +5,15 @@
 실제 사용자 데이터는 쓰지 않는다. 아래 값은 모두 synthetic이다.
 """
 
+import json
 import uuid
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
 from sqlalchemy.exc import IntegrityError
+
+from tests.card_fixtures import FULL_TEXT_GENERATION_LOG, REFERENCE_GENERATION_LOG
 
 
 @pytest.fixture
@@ -445,5 +448,112 @@ def test_card_set_stale_at_is_only_for_unused_completed_sets(
         with engine.begin() as conn:
             columns = {c["name"] for c in sa.inspect(conn).get_columns("card_sets")}
         assert "stale_at" not in columns
+    finally:
+        engine.dispose()
+
+
+def test_card_generation_log_is_rewritten_to_ids(alembic_config, test_database_url):
+    """카드 생성 기록(685f243e9f1f). 글이 든 기존 기록은 ID만 남긴 형태로 고치고, 이미 고친 기록,
+    `{"input": null}`과 진행 중인 작업(NULL)은 건드리지 않음. 다시 적용해도 결과가 같음."""
+    command.upgrade(alembic_config, "e7c3a1f94d20")
+    engine = sa.create_engine(test_database_url)
+    insert_set = sa.text(
+        "INSERT INTO card_sets"
+        " (profile_id, status, model, prompt_version, error_code, generation_log)"
+        " VALUES (:profile_id, :status, 'gpt-5.6-luna', '1', :error_code, CAST(:log AS jsonb))"
+        " RETURNING set_id"
+    )
+    rows = {
+        "full-text": ("completed", None, FULL_TEXT_GENERATION_LOG),
+        "failed-full-text": (
+            "failed",
+            "NOT_ENOUGH_TOPICS",
+            {"input": FULL_TEXT_GENERATION_LOG["input"]},
+        ),
+        "converted": ("completed", None, REFERENCE_GENERATION_LOG),
+        "no-input": ("failed", "WORKER_LEASE_EXPIRED", {"input": None}),
+        "running": ("running", None, None),
+    }
+    untouched = ("converted", "no-input", "running")
+    # docs/deployment.md의 카드 생성 기록 정리에서 글이 남은 행을 세는 쿼리
+    text_rows = sa.text(
+        "SELECT count(*) FROM card_sets WHERE generation_log->'input'"
+        " ?| array['profileFacts','lifeFacts','photos','topics','visits','pastCards']"
+    )
+
+    def count_text_rows():
+        with engine.begin() as conn:
+            return conn.execute(text_rows).scalar_one()
+
+    def stored():
+        with engine.begin() as conn:
+            return {
+                name: conn.execute(
+                    sa.text(
+                        "SELECT generation_log, xmin::text AS version FROM card_sets"
+                        " WHERE set_id = :set_id"
+                    ),
+                    {"set_id": set_id},
+                ).one()
+                for name, set_id in ids.items()
+            }
+
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            ids = {
+                name: conn.execute(
+                    insert_set,
+                    {
+                        "profile_id": profile_id,
+                        "status": status,
+                        "error_code": error_code,
+                        "log": None if log is None else json.dumps(log, ensure_ascii=False),
+                    },
+                ).scalar_one()
+                for name, (status, error_code, log) in rows.items()
+            }
+        before = stored()
+        assert count_text_rows() == 2
+
+        command.upgrade(alembic_config, "head")
+
+        assert count_text_rows() == 0
+        after = stored()
+        assert {name: row.generation_log for name, row in after.items()} == {
+            "full-text": REFERENCE_GENERATION_LOG,
+            "failed-full-text": {"input": REFERENCE_GENERATION_LOG["input"]},
+            "converted": REFERENCE_GENERATION_LOG,
+            "no-input": {"input": None},
+            "running": None,
+        }
+        # 이미 글이 없는 행은 UPDATE하지 않음(행 버전이 그대로)
+        assert [after[name].version for name in untouched] == [
+            before[name].version for name in untouched
+        ]
+
+        # downgrade는 지운 글을 되살리지 않고, 다시 적용해도 고친 행은 바꾸지 않음.
+        # docs/deployment.md와 같은 상대 revision으로 바로 앞까지만 되돌림
+        command.downgrade(alembic_config, "685f243e9f1f-1")
+        assert stored() == after
+
+        # migration 뒤 이전 card-worker가 글이 든 기록을 쓴 경우. 다시 적용하면 그 행만 고침
+        # (docs/deployment.md의 카드 생성 기록 정리)
+        with engine.begin() as conn:
+            ids["late"] = conn.execute(
+                insert_set,
+                {
+                    "profile_id": profile_id,
+                    "status": "completed",
+                    "error_code": None,
+                    "log": json.dumps(FULL_TEXT_GENERATION_LOG, ensure_ascii=False),
+                },
+            ).scalar_one()
+        assert count_text_rows() == 1
+        command.upgrade(alembic_config, "head")
+        assert count_text_rows() == 0
+        again = stored()
+        assert again.pop("late").generation_log == REFERENCE_GENERATION_LOG
+        assert again == after
     finally:
         engine.dispose()

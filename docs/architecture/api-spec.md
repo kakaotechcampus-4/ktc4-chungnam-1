@@ -723,11 +723,11 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 - `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다.
 - `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
 - `photos`: 분석이 끝난 프로필 사진(`session_id`가 없음)의 설명. 별도 내용 승인 없이 사용하고, 사용자가 원하면 앨범에서 수정한다(3-3). 사진 분석 동의 확인은 별도로 유지한다.
-- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다.
+- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다. 근거(`evidence`)에서는 입력에 없는 이야기와 사진(지운 것, 제외한 주제의 근거)을 뺀다. 빼고 나서 근거가 하나도 남지 않은 주제는 넣지 않는다(PM 결정 2026-11-08). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 `exclude`를 고른 주제는 근거가 빠져도 넣는다. 저장된 주제와 근거는 지우지 않는다.
 - `visits`: 평가까지 끝난 회차(`evaluated_at` 있음)만, 시간순. 녹음을 시작했다가 그만둔 회차는 넣지 않는다.
-- `pastCards`: 그 회차에 쓰인 카드 묶음의 카드. 직전에 보여 준 주제를 미루고, 지난번과 다른 장면을 고르는 데 쓴다. 회차에 쓰이지 않은 묶음은 넣지 않는다.
+- `pastCards`: 그 회차에 쓰인 카드 묶음의 카드. 직전에 보여 준 주제를 미루고, 지난번과 다른 장면을 고르는 데 쓴다. 회차에 쓰이지 않은 묶음은 넣지 않는다. 위에서 뺀 주제를 가리키는 카드도 그대로 넣는다. 받는 쪽은 `pastCards[].topicId`가 `topics`에 있다고 가정하지 않는다.
 - 면회 평가 메모, 리포트 본문, 전사문은 넣지 않는다.
-- BE는 요청의 `context`를 `card_sets.generation_log`의 `input`에 저장한다.
+- BE는 보낸 `context`를 `card_sets.generation_log.input`에 ID로만 남긴다. 형태는 아래 '카드 생성 기록'에 있다.
 
 결과 (`CardGenerationResult`)
 
@@ -779,13 +779,39 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 - 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
 - `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나이며, 카드의 근거 항목은 모두 `evidenceSource`와 같은 종류다(`lifeFact`는 `factId`, `photo`는 `photoId`, `profile`은 `profileField`). `profileField`는 context의 `profileFacts`에서 값이 있는 항목만 가리킨다.
-- `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 내용을 보지 않고 `generation_log`에만 남긴다.
+- `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 화면과 결과 검증에 쓰지 않고, `generation_log`에는 정해진 값과 숫자만 남긴다(아래 '카드 생성 기록').
 - `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
 
 검증과 저장
 
 - BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목·설명·첫 질문·꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
-- 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, 카드별 `extra`).
+- 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, `cards`).
+
+카드 생성 기록 (`generation_log`)
+
+PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 않고 ID만 남긴다. 보호자가 지운 이야기나 사진 설명이 기록에 계속 남지 않게 한다. 기록은 다음 생성 입력에 쓰지 않고 실패를 살펴볼 때만 본다. 규칙은 `backend/app/services/card_generation_log.py`에 있다.
+
+```json
+{
+  "input": {
+    "ageRange": "80s",
+    "profileFields": ["hobby"],
+    "lifeFactIds": ["00000000-0000-4000-8000-000000000111"],
+    "photoIds": [],
+    "topicIds": ["00000000-0000-4000-8000-000000000451"],
+    "visitSessionIds": ["00000000-0000-4000-8000-000000000300"],
+    "pastCardIds": ["00000000-0000-4000-8000-000000000501"]
+  },
+  "log": { "candidates": 18, "refills": 1, "selectionSeed": 7 },
+  "cards": [ { "position": 1, "kind": "personal", "bucket": "new" } ]
+}
+```
+
+- `input`: 보낸 이야기, 사진, 주제, 회차, 지난 카드의 ID와 `ageRange`, 값이 있던 세부 정보 칸의 이름(`profileFields`). 세부 정보 값, 이야기 제목과 내용, 사진 설명, 주제 제목과 설명, 지난 카드 문구는 남기지 않는다.
+- `log`: 결과 `log`에서 숫자와 참거짓은 그대로, 목록은 개수로 남기고 글과 객체는 버린다. 다시 찾기 요청 글, 빠진 후보의 카드 제목과 이유, 문안 검사에 걸린 질문에 이야기 내용이 들어갈 수 있어서다.
+- `cards`: 카드별 `extra`에서 `kind`, `bucket`만 남긴다. `angle`, `pickReason`, `agentReason`, `matchReason`은 남기지 않는다.
+- 생성 함수가 실패 코드를 돌려줬거나 결과 검증에서 실패한 작업은 `input`만 남긴다. 그 밖의 예상하지 못한 오류, 임대 만료, worker가 가져가지 않은 작업은 `{"input": null}`이다. 진행 중(`running`)인 작업은 `NULL`이다.
+- 이 형태 전에 저장된 기록은 migration `685f243e9f1f`가 같은 형태로 고친다.
 
 실패
 
@@ -1758,5 +1784,5 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |
 | 11 | 일대기 분류와 그림 번호의 필드 이름(`storyCategory`, `imageNumber`는 임시) | 2-3, 2-6, 2-7 | FE, BE. [작업 D 문서](../../backend/docs/work-split/D-life-story.md) D1, D2 |
-| 12 | 지운 이야기를 근거로 만든 카드와 주제의 처리, 카드 생성 기록(`generation_log`)에 남는 이야기 내용, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제 | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
+| 12 | 지운 이야기를 근거로 만든 저장된 카드와 주제의 처리, 지운 이야기의 내용이 담긴 지난 카드 문구를 다음 생성 입력(`pastCards`)에 넣을지, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제. 카드 생성 기록은 ID만 남기고, 이야기나 사진 근거가 모두 사라진 주제는 다음 생성 입력에서 빼기로 정했다(PM 결정 2026-11-08) | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
 | 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |

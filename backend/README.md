@@ -384,6 +384,8 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 - 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름, 7-4의 분류와 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
 - 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_missing_evidence`).
 - 보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진도 4-1 입력에서 뺀다(`card_sets._excluded_evidence`). 제외는 주제 하나에 걸리므로, 근거가 입력에 남으면 같은 이야기로 이름만 다른 새 주제가 다시 만들어진다. 세부 정보 네 칸은 칸 전체가 빠지면 다른 주제까지 사라지므로 남긴다. 저장된 이야기와 사진은 그대로이며 일대기에도 그대로 보인다.
+- 위 두 규칙으로 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 입력의 `topics`에 넣지 않는다(PM 결정 2026-11-08, `card_sets._material_gone`). 원래 근거가 없던 주제, 세부 정보 칸 근거가 남은 주제와 보호자가 제외한 주제는 넣는다. 그 주제를 가리키는 지난 카드는 `pastCards`에 그대로 넣는다.
+- 카드 생성 기록(`card_sets.generation_log`)에는 보낸 글을 복사하지 않고 ID와 숫자만 남긴다(PM 결정 2026-11-08, [card_generation_log.py](app/services/card_generation_log.py)). 형태는 [API 명세 4-1 카드 생성 처리](../docs/architecture/api-spec.md#4-1-카드-생성-처리)의 카드 생성 기록에 있다. 이전에 저장된 기록은 migration `685f243e9f1f`가 고치며, 배포 순서는 [배포 문서](docs/deployment.md#카드-생성-기록-정리)를 따른다.
 
 ## AI 음성 분석 연동
 

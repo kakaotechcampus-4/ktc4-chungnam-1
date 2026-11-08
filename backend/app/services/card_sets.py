@@ -34,6 +34,7 @@ from app.schemas.card_generation import (
     Visit,
 )
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
+from app.services.card_generation_log import PROFILE_FIELDS, reference_log
 
 logger = logging.getLogger("saerok.card_generation")
 
@@ -264,7 +265,6 @@ async def mark_stale(
 
 
 # ── 4-1 처리 ──────────────────────────────────────────
-PROFILE_FIELDS = ("occupation", "hometown", "hobby", "family")
 EVIDENCE_KEYS = ("factId", "photoId", "profileField")
 # 근거 종류별 근거 항목의 키
 EVIDENCE_KEY = {"lifeFact": "factId", "photo": "photoId", "profile": "profileField"}
@@ -302,8 +302,8 @@ def _without_missing_evidence(
 
     보호자가 일대기에서 지운 이야기(API 2-9)와 제외한 주제의 근거 이야기, 사진([`_excluded_evidence`])도
     주제와 지난 카드의 근거에는 남아 있음(FK 없는 JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시
-    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는
-    미정(작업 D 문서 미정 D3).
+    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 이렇게 빼서 근거가 모두
+    사라진 주제는 `build_context`가 넣지 않음. 저장된 카드와 주제는 지우지 않음(작업 D 문서 D3).
     """
     return [
         item
@@ -313,8 +313,17 @@ def _without_missing_evidence(
     ]
 
 
+def _excluded_topics(feedback_by_topic: dict[UUID, list[TopicFeedback]]) -> set[UUID]:
+    """보호자가 제외(`exclude`)를 고른 주제."""
+    return {
+        topic_id
+        for topic_id, items in feedback_by_topic.items()
+        if any(item.action == "exclude" for item in items)
+    }
+
+
 def _excluded_evidence(
-    topics: list[dict[str, Any]], feedback_by_topic: dict[UUID, list[TopicFeedback]]
+    topics: list[dict[str, Any]], excluded_topics: set[UUID]
 ) -> set[tuple[str, str]]:
     """보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진. 다음 카드 생성 입력에서 뺌.
 
@@ -325,11 +334,20 @@ def _excluded_evidence(
     return {
         (key, item[key])
         for row in topics
-        if any(f.action == "exclude" for f in feedback_by_topic.get(row["topic_id"], []))
+        if row["topic_id"] in excluded_topics
         for item in row["evidence"]
         for key in ("factId", "photoId")
         if key in item
     }
+
+
+def _material_gone(stored: list[dict[str, str]], sent: list[dict[str, str]]) -> bool:
+    """이야기나 사진 근거가 있었는데 context에 남은 근거가 하나도 없는 주제인지.
+
+    세부 정보 칸(`profileField`) 근거는 빼지 않으므로 남은 근거가 없으면 근거가 모두 이야기나
+    사진이었고 그 이야기와 사진이 지워졌거나 입력에서 빠진 것임. 근거가 없던 주제는 해당하지 않음.
+    """
+    return bool(stored) and not sent
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -394,11 +412,24 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         feedback_by_topic.setdefault(row["topic_id"], []).append(
             TopicFeedback(action=row["action"], decided_at=row["decided_at"])
         )
-    excluded = _excluded_evidence(topics, feedback_by_topic)
+    excluded_topics = _excluded_topics(feedback_by_topic)
+    excluded = _excluded_evidence(topics, excluded_topics)
     facts = [row for row in facts if ("factId", str(row["fact_id"])) not in excluded]
     photos = [row for row in photos if ("photoId", str(row["photo_id"])) not in excluded]
     fact_ids = {str(row["fact_id"]) for row in facts}
     photo_ids = {str(row["photo_id"]) for row in photos}
+    topic_evidence = {
+        row["topic_id"]: _without_missing_evidence(row["evidence"], fact_ids, photo_ids)
+        for row in topics
+    }
+    # 이야기나 사진 근거가 모두 지워졌거나 입력에서 빠진 주제는 넣지 않음(PM 결정 2026-11-08).
+    # 제외한 주제는 근거가 빠져도 넣음. 생성 함수가 같은 이야기의 후보를 거르는 데 씀
+    topics = [
+        row
+        for row in topics
+        if row["topic_id"] in excluded_topics
+        or not _material_gone(row["evidence"], topic_evidence[row["topic_id"]])
+    ]
     return CardContext(
         age_range=f"{profile['decade']}s",
         profile_facts=ProfileFacts(**{field: profile[field] for field in PROFILE_FIELDS}),
@@ -418,7 +449,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=_without_missing_evidence(row["evidence"], fact_ids, photo_ids),
+                evidence=topic_evidence[row["topic_id"]],
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -552,11 +583,14 @@ async def save_result(
                     Jsonb(card.evidence),
                 ),
             )
-        log = {
-            "input": context.model_dump(mode="json", by_alias=True),
-            "log": result.log,
-            "cards": [{"position": card.position, **card.extra} for card in result.cards],
-        }
+        # 기록에는 보낸 글을 복사하지 않고 ID와 숫자만 남김(`card_generation_log`)
+        log = reference_log(
+            {
+                "input": context.model_dump(mode="json", by_alias=True),
+                "log": result.log,
+                "cards": [{"position": card.position, **card.extra} for card in result.cards],
+            }
+        )
         # 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀌면 생성 결과를 정정 전
         # 카드처럼 사용하지 않고 다음 준비 때 갱신한다. 생성 중에 분석이 끝나 새로
         # 생긴 사진은 입력에 없던 새 재료라서 다음 카드부터 쓴다.
@@ -580,7 +614,7 @@ async def save_result(
 
 
 class CardGenerationProcessor:
-    """worker 처리 함수. 실패하면 보낸 context를 `generation_log.input`에 남기고 실패 처리."""
+    """worker 처리 함수. 실패하면 보낸 context의 ID를 `generation_log.input`에 남기고 실패 처리."""
 
     def __init__(self, *, queue: CardGenerationQueue, generate: Generate) -> None:
         self._queue = queue
