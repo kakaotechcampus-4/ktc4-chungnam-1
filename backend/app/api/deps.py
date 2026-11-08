@@ -210,6 +210,19 @@ def _unauthenticated() -> AppError:
     )
 
 
+def read_signed_session(
+    credentials: HTTPAuthorizationCredentials | None, issuer: TokenIssuer
+) -> SessionClaims:
+    """Bearer 형식과 세션 토큰의 서명, 만료만 확인한다.
+
+    폐기 여부는 DB를 봐야 하므로 여기서 확인하지 않는다. `get_current_session` 과
+    업로드 경로에서 본문을 읽기 전에 확인하는 미들웨어(body_limits.py)가 같이 쓴다.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthenticated()
+    return issuer.read_session(credentials.credentials)
+
+
 async def get_current_session(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
@@ -219,9 +232,7 @@ async def get_current_session(
         SessionRevocationStore, Depends(get_session_revocations)
     ],
 ) -> SessionClaims:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise _unauthenticated()
-    session = issuer.read_session(credentials.credentials)
+    session = read_signed_session(credentials, issuer)
     # 로그아웃하거나 탈퇴한 세션이다. 만료 전이라도 받지 않는다.
     if await revocations.is_revoked(session.token_id):
         raise _unauthenticated()

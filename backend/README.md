@@ -57,6 +57,7 @@ uv run pytest
 | API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
 | API 명세 대조 | [test_api_spec_routes.py](tests/test_api_spec_routes.py)가 서버의 실제 경로와 `docs/architecture/api-spec.md`의 `METHOD /경로` 제목이 서로 빠짐없는지 확인. 상태 확인과 AI 서버의 `/internal` 경로는 제외. 필드와 설명은 비교하지 않음 |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
+| 본문 크기 상한 | 경로별 본문 상한과 업로드 경로의 본문 읽기 전 세션 확인. [요청 본문 크기 상한](#요청-본문-크기-상한), [test_request_body_limit.py](tests/test_request_body_limit.py) |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
 ## 데이터베이스 마이그레이션 (Alembic)
@@ -258,7 +259,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -314,7 +315,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ## 최소 지원 앱 버전
 
-구버전 앱이 바뀐 API를 부르다 이상하게 실패하는 대신, 업데이트가 필요하다는 응답을 받게 한다. 앱은 모든 요청에 안드로이드 versionCode를 `X-App-Version-Code` 헤더로 싣는다(`app/README.md`의 "서버에 앱 버전 알리기"). 서버는 [deps.py](app/api/deps.py)의 `require_supported_app_version`에서 이 값을 설정과 비교한다. [router.py](app/api/router.py)가 `/health/*`를 뺀 모든 경로에 이 의존성을 건다.
+구버전 앱이 바뀐 API를 부르다 이상하게 실패하는 대신, 업데이트가 필요하다는 응답을 받게 한다. 앱은 모든 요청에 안드로이드 versionCode를 `X-App-Version-Code` 헤더로 싣는다(`app/README.md`의 "서버에 앱 버전 알리기"). 서버는 [deps.py](app/api/deps.py)의 `require_supported_app_version`에서 이 값을 설정과 비교한다. [router.py](app/api/router.py)가 `/health/*`를 뺀 모든 경로에 이 의존성을 건다. 업로드 네 경로는 본문을 읽기 전에 [body_limits.py](app/api/body_limits.py)가 같은 함수로 한 번 더 확인해, 큰 본문을 받기 전에 426을 돌려준다.
 
 | 요청 | 결과 |
 | --- | --- |
@@ -333,6 +334,28 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 **올리는 순서.** 구버전 앱과 맞지 않는 서버 변경을 배포할 때는, 맞는 앱 빌드를 Play에 먼저 낸 뒤 이 값을 그 빌드의 versionCode로 올린다. 앱 쪽 헤더를 처음 싣는 빌드보다 앞선 빌드는 헤더가 없어 이 검사로 막을 수 없다.
 
 헤더 값은 사용자를 식별하지 않는 앱 빌드 번호다. 요청 로그([logging.py](app/core/logging.py))는 헤더를 기록하지 않는다.
+
+## 요청 본문 크기 상한
+
+FastAPI는 앱 버전, 인증, 소유권과 파일 크기를 확인하는 의존성보다 multipart와 JSON 본문을 먼저 끝까지 읽는다. 상한이 없으면 로그인하지 않은 요청의 큰 본문도 API의 메모리와 임시 파일에 다 쓴 뒤에야 거절된다. [body_limits.py](app/api/body_limits.py)의 `RequestBodyLimit`은 FastAPI가 본문을 읽기 전에 도는 ASGI 미들웨어로, 경로별 본문 상한과 업로드 경로의 세션 확인을 맡는다. [main.py](app/main.py)에서 요청 로그보다 먼저 등록해 요청 로그 안쪽에 놓인다.
+
+| 경로 | 본문 상한 | 넘으면 |
+| --- | --- | --- |
+| `POST /api/v1/profiles/{profileId}/photos`, `POST /api/v1/visit-sessions/{sessionId}/photo` | `SAEROK_MAX_IMAGE_BYTES` + 1 MiB | `413 IMAGE_TOO_LARGE` |
+| `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` | `SAEROK_MAX_AUDIO_BYTES` + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| `POST /api/v1/speech-transcriptions` | `min(SAEROK_MAX_AUDIO_BYTES, speech_transcription.MAX_BYTES)` + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| 그 밖의 모든 요청 | 1 MiB | `413 REQUEST_TOO_LARGE` |
+
+- 상한은 라우트가 쓰는 설정값과 상수에서 계산한다. 더한 1 MiB는 multipart 경계와 파일이 아닌 필드의 여유다. 파일 자체의 크기 검사(`validate_image`, `validate_visit_audio`)는 그대로 라우트가 한다.
+- `Content-Length`가 상한을 넘으면 본문을 읽지 않고 거절한다. 길이가 없거나(chunked) 실제로 더 보내면 받은 양을 세다가 상한을 넘는 조각에서 끊는다. 이때 만들던 multipart 임시 파일은 Starlette가 닫는다.
+- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
+- 상한을 넘거나 본문 전 확인에서 거절한 업로드는 본문을 끝까지 받지 않고 응답한다. 앞단(Caddy)은 읽지 않은 본문이 많으면 응답 뒤 연결을 닫을 수 있어, 아직 본문을 보내던 클라이언트는 413이나 401 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
+- 업로드 경로의 413은 라우트의 파일 검사와 같은 오류 코드와 문구를 쓴다. JSON 요청이 상한을 넘으면 `413 REQUEST_TOO_LARGE`다([API 명세의 본문 크기와 확인 순서](../docs/architecture/api-spec.md#본문-크기와-확인-순서)).
+- 본문을 읽기 전에 거절한 요청은 경로를 찾기 전이라 요청 로그의 `route`가 `unmatched`로 남는다. 요청 ID와 상태 코드는 그대로 남는다.
+- 테스트가 `dependency_overrides`로 `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
+- 기본 설정에서 면회 음성 경로는 로그인한 계정이 요청마다 513 MiB까지 보낼 수 있다. 음성 상한을 낮추거나 받는 동안 검증하는 것은 별도 결정이다.
+
+HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 가장 큰 경로별 상한보다 조금 큰 바깥 상한을 둔다. 정상 설정에서는 경로별 상한(최대 513 MiB)이 더 작아 API가 먼저 공통 형식의 `413`이나 `401`을 돌려준다. Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이며, 그때 Caddy가 돌려주는 `413`에는 공통 오류 본문이 없다. `SAEROK_MAX_AUDIO_BYTES`를 513 MiB보다 크게 올리면 Caddyfile도 함께 올린다. Caddyfile 변경을 서버에 적용하는 절차는 [배포 문서](docs/deployment.md#갱신)에 있다.
 
 ## 프로필과 생애 정보 API
 
@@ -457,7 +480,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_SPEECH_AUDIO_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 기본 86100초. STT가 24시간을 넘는 기한을 거절하므로 서버 시계 차이를 감안해 86100초보다 길게 줘도 86100초로 쓴다(86400초까지 받음) |
-| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
+| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한. 면회 음성 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
 | `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계와 리포트 생성 단계에서 각각 새로 잡음 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
 | `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
@@ -523,7 +546,9 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
 [image_validation.py](app/services/image_validation.py)의 `validate_image`로 검사한다.
 
-    validate_image(파일, max_size_bytes=설정값)       # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
+    본문을 읽기 전 앱 버전, 세션 서명과 본문 상한     # body_limits.py. 426, 401, 413 IMAGE_TOO_LARGE
+    → 본문을 받은 뒤 세션 폐기, 계정과 소유권 확인
+    → validate_image(파일, max_size_bytes=설정값)     # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
     → storage.object_key(photo_id=..., image=...)     # photos/{photoId}.jpg, 개인정보 없음
     → storage.upload(object_key=..., file=..., image=...)
     → photos 행 저장 (실패하면 storage.delete로 올린 객체를 지운다)
@@ -559,7 +584,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `SAEROK_IMAGE_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사, 기본 `photos` |
 | `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
 | `SAEROK_IMAGE_PRESIGNED_TTL_SECONDS` | 조회와 AI 다운로드 URL 수명, 기본 900초 |
-| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB |
+| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB. 사진 업로드 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
 
 ## 평가와 리포트 API
 
