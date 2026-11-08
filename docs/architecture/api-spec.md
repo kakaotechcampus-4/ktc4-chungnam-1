@@ -617,7 +617,12 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 `ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
 
-4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
+4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
+
+- `CARD_GENERATION_NOT_STARTED`: worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지났고, 같은 시간 동안 worker가 다른 작업도 가져가지 않았으며 처리 중인 작업도 없다. worker가 없거나 멈춘 경우다.
+- `WORKER_LEASE_EXPIRED`: worker가 가져간 작업의 임대가 만료됐다.
+
+worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 기다린 작업도 실패시키지 않는다. 앞에 기다리는 작업이 많으면 `running`이 360초보다 길게 이어질 수 있다. 판단에는 worker가 작업을 가져간 시각(`card_sets.claimed_at`)을 쓰며 응답 형식은 바뀌지 않는다.
 
 ### 4-1. `POST /api/v1/profiles/{profileId}/card-generations` — 신규
 
@@ -797,7 +802,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | `LLM_UNAVAILABLE` | 엘리스 API 연결 실패, 시간 초과, 호출 한도 |
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
-| `CARD_GENERATION_NOT_STARTED` | 정해진 시간 안에 worker가 작업을 가져가지 않음(4절) |
+| `CARD_GENERATION_NOT_STARTED` | 정해진 시간이 지나도 worker가 작업을 가져가지 않았고, 그동안 다른 작업도 가져가지 않음. worker가 없거나 멈춤(4절) |
 | `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함 |
 
 

@@ -83,6 +83,7 @@ def test_card_generation_job_is_leased_once_and_failed_with_its_input(
     assert (job.set_id, job.attempt_count) == (set_id, 1)
     assert again is None, "임대 중인 작업은 다른 worker가 가져가지 않는다"
     assert leased["lease_expires_at"] is not None
+    assert leased["claimed_at"] is not None, "가져간 시각을 남긴다"
     assert (failed["status"], failed["error_code"]) == ("failed", "INVALID_AI_RESPONSE")
     assert failed["generation_log"] == {"input": {"ageRange": "80s"}}
     assert failed["lease_expires_at"] is None
@@ -112,6 +113,7 @@ def test_card_generation_job_whose_lease_expired_fails(migrated_database_url):
 
 
 def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
+    """시작 대기 시간 동안 worker가 아무 작업도 가져가지 않았으면 worker가 없거나 멈췄다."""
     queue = CardGenerationQueue()
 
     async def scenario():
@@ -120,25 +122,28 @@ def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
             waiting_long = await _running_card_set(connection)
             waiting_now = await _running_card_set(connection)
             leased_expired = await _running_card_set(connection)
-            leased_alive = await _running_card_set(connection)
+            finished_long_ago = await _running_card_set(connection)
             await connection.execute(
                 "UPDATE card_sets SET created_at = now() - interval '10 minutes'"
                 " WHERE set_id = %s",
                 (waiting_long,),
             )
+            # worker가 10분 전에 가져간 뒤 멈췄다
             await connection.execute(
-                "UPDATE card_sets SET lease_expires_at = now() - interval '1 second',"
-                " attempt_count = 1 WHERE set_id = %s",
+                "UPDATE card_sets SET lease_expires_at = now() - interval '5 minutes',"
+                " claimed_at = now() - interval '10 minutes', attempt_count = 1"
+                " WHERE set_id = %s",
                 (leased_expired,),
             )
+            # worker가 마지막으로 끝낸 작업도 10분 전에 가져간 것이다
             await connection.execute(
-                "UPDATE card_sets SET lease_expires_at = now() + interval '5 minutes',"
-                " attempt_count = 1, created_at = now() - interval '10 minutes'"
+                "UPDATE card_sets SET status = 'completed', generation_log = '{\"input\": {}}',"
+                " claimed_at = now() - interval '10 minutes', attempt_count = 1"
                 " WHERE set_id = %s",
-                (leased_alive,),
+                (finished_long_ago,),
             )
             expired = {}
-            for set_id in (waiting_long, waiting_now, leased_expired, leased_alive):
+            for set_id in (waiting_long, waiting_now, leased_expired):
                 profile_id = await _value(
                     connection, "SELECT profile_id FROM card_sets WHERE set_id = %s", (set_id,)
                 )
@@ -151,11 +156,11 @@ def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
                 )
                 for set_id in expired
             }
-            return (waiting_long, waiting_now, leased_expired, leased_alive), expired, rows
+            return (waiting_long, waiting_now, leased_expired), expired, rows
 
-    (waiting_long, waiting_now, leased_expired, leased_alive), expired, rows = run(scenario())
+    (waiting_long, waiting_now, leased_expired), expired, rows = run(scenario())
 
-    assert expired == {waiting_long: 1, waiting_now: 0, leased_expired: 1, leased_alive: 0}
+    assert expired == {waiting_long: 1, waiting_now: 0, leased_expired: 1}
     assert (rows[waiting_long]["status"], rows[waiting_long]["error_code"]) == (
         "failed",
         "CARD_GENERATION_NOT_STARTED",
@@ -168,7 +173,78 @@ def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
         assert rows[set_id]["lease_expires_at"] is None
         assert rows[set_id]["generation_log"] == {"input": None}
     assert rows[waiting_now]["status"] == "running", "막 들어온 작업은 worker를 기다린다"
-    assert rows[leased_alive]["status"] == "running", "임대가 남은 작업은 worker가 처리 중이다"
+
+
+@pytest.mark.parametrize(
+    ("worker", "waiting_expected", "ahead_expected"),
+    [
+        # 앞 작업을 처리하는 중이다
+        ("processing", ("running", None), ("running", None)),
+        # 5분 걸린 앞 작업을 막 끝내고 다음 작업을 가져가기 직전이다
+        ("between_jobs", ("running", None), ("completed", None)),
+        # 10분 전에 앞 작업을 가져간 뒤 멈춰 임대도 끝났다
+        (
+            "stopped",
+            ("failed", "CARD_GENERATION_NOT_STARTED"),
+            ("failed", "WORKER_LEASE_EXPIRED"),
+        ),
+    ],
+)
+def test_job_waiting_behind_another_accounts_job_fails_only_when_worker_stopped(
+    migrated_database_url, worker, waiting_expected, ahead_expected
+):
+    """다른 계정의 작업 뒤에서 시작 대기 시간보다 오래 기다린 작업.
+
+    worker가 일하고 있으면 계속 기다리고, worker가 멈췄을 때만 실패한다.
+    """
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            ahead = await _running_card_set(connection)
+            waiting = await _running_card_set(connection)
+            await connection.execute(
+                "UPDATE card_sets SET created_at = now() - interval '11 minutes'"
+                " WHERE set_id = %s",
+                (ahead,),
+            )
+            await connection.execute(
+                "UPDATE card_sets SET created_at = now() - interval '10 minutes'"
+                " WHERE set_id = %s",
+                (waiting,),
+            )
+            job = await queue.claim(connection, lease_seconds=300)
+            assert job.set_id == ahead, "먼저 들어온 작업을 먼저 가져간다"
+            if worker == "between_jobs":
+                await connection.execute(
+                    "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
+                    " generation_log = '{\"input\": {}}',"
+                    " claimed_at = now() - interval '5 minutes' WHERE set_id = %s",
+                    (ahead,),
+                )
+            elif worker == "stopped":
+                await connection.execute(
+                    "UPDATE card_sets SET lease_expires_at = now() - interval '5 minutes',"
+                    " claimed_at = now() - interval '10 minutes' WHERE set_id = %s",
+                    (ahead,),
+                )
+            rows = {}
+            for set_id in (waiting, ahead):
+                profile_id = await _value(
+                    connection, "SELECT profile_id FROM card_sets WHERE set_id = %s", (set_id,)
+                )
+                await queue.expire_stuck(connection, profile_id, start_timeout_seconds=360)
+                rows[set_id] = await _row(
+                    connection,
+                    "SELECT status, error_code FROM card_sets WHERE set_id = %s",
+                    (set_id,),
+                )
+            return rows[waiting], rows[ahead]
+
+    waiting_row, ahead_row = run(scenario())
+
+    assert (waiting_row["status"], waiting_row["error_code"]) == waiting_expected
+    assert (ahead_row["status"], ahead_row["error_code"]) == ahead_expected
 
 
 def test_stuck_jobs_of_other_profiles_are_left_alone(migrated_database_url):

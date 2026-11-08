@@ -133,6 +133,8 @@ CREATE TABLE card_sets (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
     lease_expires_at TIMESTAMPTZ,
     attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    -- worker가 작업을 가져간 시각. 작업이 끝나도 남겨 worker가 일하고 있는지 판단하는 데 쓴다.
+    claimed_at       TIMESTAMPTZ,
     -- 카드 묶음을 받은 뒤 프로필이나 일대기를 고친 시각. 값이 있으면 이 묶음으로 면회를 시작할 수 없다.
     stale_at         TIMESTAMPTZ,
     FOREIGN KEY (session_id, profile_id)
