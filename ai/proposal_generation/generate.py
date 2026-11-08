@@ -23,7 +23,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/proposals.md"
-PROMPT_VERSION = "proposals-5"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "proposals-6"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _FACT_TITLE_MAX = 100            # #106 응답 검증과 같은 길이
 
 

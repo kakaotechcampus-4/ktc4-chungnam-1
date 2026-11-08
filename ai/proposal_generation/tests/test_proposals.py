@@ -91,3 +91,16 @@ def test_uncertain_candidates_are_kept_for_review(monkeypatch, labels, participa
     assert result.life_fact_proposals[0].reason == reason
     assert len(result.topic_proposals) == 1
     assert "life_fact_proposals_allowed" not in payloads[0]["transcript_context"]
+
+
+def test_prompt_writes_family_words_from_the_elder_and_hides_processing_words():
+    """11/8 운영 시험: 보호자가 '아버지'라 부른 어르신의 남편이 이야기 후보에 '아버지 정수 씨'로 적힘.
+    이유 칸에는 '화자 역할이 확인되지 않아'가 나옴. 실제 모델 동작이 아니라 프롬프트 문구만 확인함."""
+    from proposal_generation.generate import PROMPT
+
+    text = PROMPT.read_text(encoding="utf-8")
+    assert "보호자는 기본적으로 어르신의 자녀" in text
+    assert "가족 호칭은 어르신 입장에서 쓴다" in text
+    assert "어르신의 배우자다" in text
+    assert "화자가 명확하지 않아" not in text.replace("'화자가 명확하지 않아' 대신", "")
+    assert "처리 과정을 가리키는 말을 쓰지 않는다" in text
