@@ -54,7 +54,7 @@ class PhotoAnalysisProcessor:
                 "AND analysis_status='processing' AND attempt_count=%s "
                 "AND lease_expires_at > clock_timestamp() "
                 "AND EXISTS (SELECT 1 FROM profiles pr JOIN current_consents c ON c.user_id = pr.user_id WHERE pr.profile_id = photos.profile_id AND c.photo_analysis) "
-                "RETURNING user_description",
+                "RETURNING photo_id",
                 (result.description, self.model, PROMPT_VERSION, job.photo_id,
                  job.profile_id, job.attempt_count),
             )
@@ -69,9 +69,6 @@ class PhotoAnalysisProcessor:
                     (job.photo_id, job.attempt_count),
                 )
                 return
-            if row["user_description"] is None:
-                await connection.execute(
-                    "UPDATE card_sets SET stale_at=now() WHERE profile_id=%s "
-                    "AND status='completed' AND session_id IS NULL AND stale_at IS NULL",
-                    (job.profile_id,),
-                )
+            # 분석이 끝난 사진은 새 카드 재료다. 사진을 새로 올릴 때처럼 이미 만든 카드
+            # 묶음을 다시 만들 대상으로 바꾸지 않고 다음 카드부터 쓴다. 온보딩 마치기에서
+            # 만든 첫 묶음이 분석 완료 때문에 늘 `needsRefresh`가 되던 문제를 막는다.

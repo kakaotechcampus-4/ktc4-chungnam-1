@@ -557,8 +557,9 @@ async def save_result(
             "log": result.log,
             "cards": [{"position": card.position, **card.extra} for card in result.cards],
         }
-        # 사진 분석은 카드 생성과 병렬로 끝날 수 있다. 입력 뒤 사진 설명이 바뀌면
-        # 생성 결과를 정정 전 카드처럼 사용하지 않고 다음 준비 때 갱신한다.
+        # 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀌면 생성 결과를 정정 전
+        # 카드처럼 사용하지 않고 다음 준비 때 갱신한다. 생성 중에 분석이 끝나 새로
+        # 생긴 사진은 입력에 없던 새 재료라서 다음 카드부터 쓴다.
         current_photos = await _rows(
             connection,
             "SELECT photo_id, COALESCE(user_description, description) AS description FROM photos"
@@ -566,9 +567,10 @@ async def save_result(
             " AND (user_description IS NOT NULL OR analysis_status='completed')",
             job.profile_id,
         )
-        photos_changed = {str(p.photo_id): p.description for p in context.photos} != {
-            str(p["photo_id"]): p["description"] for p in current_photos
-        }
+        current = {str(p["photo_id"]): p["description"] for p in current_photos}
+        photos_changed = any(
+            current.get(str(p.photo_id)) != p.description for p in context.photos
+        )
         await connection.execute(
             "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
             " generation_log = %s, stale_at = CASE WHEN %s THEN now() ELSE NULL END WHERE set_id = %s",
