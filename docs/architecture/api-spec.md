@@ -569,10 +569,11 @@ AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`
 BE 구현(#158)은 묶음 단위로 처리한다.
 
 - 2-4, 2-7, 2-9로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9는 항상 남긴다.
+- 7-4(변경 사항 확인)는 주제 제안을 하나라도 승인하면 남긴다. 승인한 주제 피드백(`more`, `less`, `exclude`)이 다음 카드 생성에서 주제를 고르는 기준을 바꾸기 때문이다. 생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 남기지 않고 다음 생성부터 반영한다. 모두 거절한 확인도 남기지 않는다.
 - 면회에 쓴 묶음은 지난 기록이라 남기지 않는다.
 - `stale_at`이 있는 묶음은 4-2, 4-3에서 `status`가 그대로 `ready`이고 `needsRefresh`가 `true`다. 4-1은 이 묶음을 거절하지 않고 새로 만들며, 5-1은 `CARD_SET_NEEDS_REFRESH`로 거절한다.
-- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다.
-- 카드 한 장 단위의 사용 중지 표시와 7-4(제안 승인으로 이야기 추가)는 다루지 않는다.
+- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. 주제 제안 승인이 있는 7-4도 같다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다. 예를 들어 방금 제외한 주제가 그 묶음에 다시 들어갈 수 있다.
+- 카드 한 장 단위의 사용 중지 표시는 다루지 않는다.
 
 카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
 
@@ -588,7 +589,7 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
-`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤다는 뜻이다. 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
+`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
 
 4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
 
@@ -785,7 +786,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 ```
 
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
-- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 다른 상태에서는 늘 `false`다.
+- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 다른 상태에서는 늘 `false`다.
 - 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
@@ -1234,11 +1235,14 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 - `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(4-1)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
+- `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
+- 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
+| 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중(4-2 `running`). 404, `PROPOSAL_ALREADY_REVIEWED`, 422 검사가 먼저다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
 | 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
 
@@ -1575,7 +1579,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
 - `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
-- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
+- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
