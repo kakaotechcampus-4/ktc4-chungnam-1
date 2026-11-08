@@ -16,7 +16,7 @@
 | `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 연결 설정이 필요하며, 설정이 없으면 시작하지 않는다. 카드 생성 요청의 실제 처리는 이 worker가 맡는다 |
 | `speech-worker` | `--profile workers` | 음성 STT worker. Tailscale STT 주소·접근 범위·AWS 인증을 확인한 뒤 켠다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
-| `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다 |
+| `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다. 본문 상한 514MiB를 둔다. 정상 설정에서는 API의 경로별 상한이 먼저 걸린다([요청 본문 크기 상한](../README.md#요청-본문-크기-상한)) |
 
 이미지에는 `.env`를 넣지 않는다([.dockerignore](../.dockerignore)). 컨테이너는 `backend/.env`의 값을 환경 변수로 받는다.
 
@@ -114,6 +114,12 @@ git pull
 docker compose build
 docker compose run --rm api alembic upgrade head
 docker compose up -d api card-worker
+```
+
+[Caddyfile](../Caddyfile)이 바뀐 갱신은 caddy도 다시 만든다. 실행 중인 caddy는 시작할 때 읽은 설정을 계속 쓰고, 배포 workflow도 caddy를 교체하지 않는다. 인증서는 `caddy-data` 볼륨에 남아 다시 발급받지 않는다.
+
+```bash
+docker compose --profile https up -d --no-deps --force-recreate caddy
 ```
 
 상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.

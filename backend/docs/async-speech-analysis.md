@@ -31,7 +31,8 @@ Flutter
   └─ WAV + participantCount + sessionId
         ↓ multipart/form-data
 BE API
-  ├─ 세션 인증
+  ├─ 본문을 읽기 전: 앱 버전, 세션 서명과 만료, 본문 상한(음성 상한 + 1 MiB)
+  ├─ 세션 폐기 여부와 계정 확인
   ├─ 계정 필수 동의 확인
   ├─ 면회 소유권·보호자 평가 제출 확인
   ├─ WAV/PCM 16-bit/16kHz/mono 검증
@@ -552,8 +553,8 @@ error_code = null
 | WAV가 아닌 파일 | 422 `INVALID_AUDIO_FORMAT`, S3 업로드 없음 |
 | 빈 파일 | 422 `INVALID_AUDIO`, S3 업로드 없음 |
 | 헤더만 있거나 음성 데이터가 잘린 WAV | 422 `INVALID_AUDIO`, S3 업로드 없음 |
-| 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨 |
-| 인증 없음 | 401 `UNAUTHENTICATED` |
+| 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨. 본문이 음성 상한 + 1 MiB를 넘으면 끝까지 받지 않음 |
+| 인증 없음 | 401 `UNAUTHENTICATED`, 본문을 읽기 전에 거절 |
 | 다른 계정의 면회 | 404 `VISIT_SESSION_NOT_FOUND` |
 | 보호자 평가 전 | 409 `EVALUATION_REQUIRED`, 업로드 없음 |
 | 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
