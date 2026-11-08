@@ -303,7 +303,8 @@ def _without_missing_evidence(
     보호자가 일대기에서 지운 이야기(API 2-9)와 제외한 주제의 근거 이야기, 사진([`_excluded_evidence`])도
     주제와 지난 카드의 근거에는 남아 있음(FK 없는 JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시
     써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 이렇게 빼서 근거가 모두
-    사라진 주제는 `build_context`가 넣지 않음. 저장된 카드와 주제는 지우지 않음(작업 D 문서 D3).
+    사라진 주제는 `build_context`가 넣지 않음(제외한 주제는 DB에 남은 이야기와 사진으로 판정).
+    저장된 카드와 주제는 지우지 않음(작업 D 문서 D3).
     """
     return [
         item
@@ -341,13 +342,14 @@ def _excluded_evidence(
     }
 
 
-def _material_gone(stored: list[dict[str, str]], sent: list[dict[str, str]]) -> bool:
-    """이야기나 사진 근거가 있었는데 context에 남은 근거가 하나도 없는 주제인지.
+def _material_gone(stored: list[dict[str, str]], remaining: list[dict[str, str]]) -> bool:
+    """이야기나 사진 근거가 있었는데 남은 근거(`remaining`)가 하나도 없는 주제인지.
 
+    `remaining`은 저장된 근거에서 없는 이야기와 사진을 뺀 것([`_without_missing_evidence`]).
     세부 정보 칸(`profileField`) 근거는 빼지 않으므로 남은 근거가 없으면 근거가 모두 이야기나
-    사진이었고 그 이야기와 사진이 지워졌거나 입력에서 빠진 것임. 근거가 없던 주제는 해당하지 않음.
+    사진이었고 그 이야기와 사진이 모두 빠진 것임. 근거가 없던 주제는 해당하지 않음.
     """
-    return bool(stored) and not sent
+    return bool(stored) and not remaining
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -412,6 +414,9 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         feedback_by_topic.setdefault(row["topic_id"], []).append(
             TopicFeedback(action=row["action"], decided_at=row["decided_at"])
         )
+    # 제외 규칙으로 빼기 전, 지금 DB에 남아 있는 이야기와 사진
+    stored_fact_ids = {str(row["fact_id"]) for row in facts}
+    stored_photo_ids = {str(row["photo_id"]) for row in photos}
     excluded_topics = _excluded_topics(feedback_by_topic)
     excluded = _excluded_evidence(topics, excluded_topics)
     facts = [row for row in facts if ("factId", str(row["fact_id"])) not in excluded]
@@ -422,14 +427,22 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         row["topic_id"]: _without_missing_evidence(row["evidence"], fact_ids, photo_ids)
         for row in topics
     }
-    # 이야기나 사진 근거가 모두 지워졌거나 입력에서 빠진 주제는 넣지 않음(PM 결정 2026-11-08).
-    # 제외한 주제는 근거가 빠져도 넣음. 생성 함수가 같은 이야기의 후보를 거르는 데 씀
-    topics = [
-        row
-        for row in topics
-        if row["topic_id"] in excluded_topics
-        or not _material_gone(row["evidence"], topic_evidence[row["topic_id"]])
-    ]
+
+    def remaining_evidence(row: dict[str, Any]) -> list[dict[str, str]]:
+        """주제를 넣을지 정할 때 쓰는 남은 근거.
+
+        제외한 주제의 근거 이야기와 사진은 제외 규칙 때문에 늘 입력에서 빠지므로, 보낸 입력이
+        아니라 제외 전 DB에 남은 이야기와 사진으로 판정함. 하나라도 남아 있으면 '이 이야기로
+        만들지 말 것'이라는 표시로 넣고, 보호자가 모두 지웠으면 넣지 않음(PM 결정 2026-11-09).
+        제외한 주제는 근거에 종속되며, 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있음.
+        """
+        if row["topic_id"] in excluded_topics:
+            return _without_missing_evidence(row["evidence"], stored_fact_ids, stored_photo_ids)
+        return topic_evidence[row["topic_id"]]
+
+    # 이야기나 사진 근거가 모두 사라진 주제는 넣지 않음(PM 결정 2026-11-08, 제외한 주제는 2026-11-09).
+    # 원래 근거가 없던 주제와 세부 정보 칸 근거가 있는 주제는 넣음. 저장된 주제와 카드는 지우지 않음
+    topics = [row for row in topics if not _material_gone(row["evidence"], remaining_evidence(row))]
     return CardContext(
         age_range=f"{profile['decade']}s",
         profile_facts=ProfileFacts(**{field: profile[field] for field in PROFILE_FIELDS}),
