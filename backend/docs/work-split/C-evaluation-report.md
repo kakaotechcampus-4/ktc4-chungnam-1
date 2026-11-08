@@ -398,13 +398,13 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
-- `accepted` 항목이 하나라도 있으면 카드를 만드는 중일 때 `CARD_GENERATION_IN_PROGRESS`로 거절하고, 아니면 아직 면회에 안 쓴 완료 묶음이 `needsRefresh`가 된다. 모두 `rejected`이면 둘 다 하지 않는다([API 명세 4절](../../../docs/architecture/api-spec.md#사실-정정-후-카드-갱신-기준)).
+- `accepted` 주제 항목이 하나라도 있으면 카드를 만드는 중일 때 `CARD_GENERATION_IN_PROGRESS`로 거절하고, 아니면 아직 면회에 안 쓴 완료 묶음이 `needsRefresh`가 된다. 생애 정보만 승인했거나 모두 `rejected`이면 둘 다 하지 않는다([API 명세 4절](../../../docs/architecture/api-spec.md#사실-정정-후-카드-갱신-기준)).
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
-| 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 항목이 있는데 카드를 만드는 중 |
+| 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
 | 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
 
@@ -413,7 +413,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 한 트랜잭션에서 모든 제안을 `settled`로 바꾼 뒤, `accepted`인 생애 정보 제안은 `create_life_fact(..., title=요청 title, content=요청 content, source_proposal_id=제안 ID)`로, `accepted`인 주제 제안은 `topic_feedback(profile_id, topic_id, proposal_id, action = 요청 action)`으로 넣는다. `life_fact_proposals`와 `topic_proposals.suggested_action`은 고치지 않는다.
 - `reviewStatus`와 최종 값의 짝은 요청 검증에서 확인해 422 `INVALID_REQUEST`로 막는다. `title`, `content` 검증은 2-6과 같다.
 - 다음 카드 생성(4-1)은 앱이 호출한다.
-- 프로필 행을 먼저 잠그고(`card_sets.lock_profile`) 회차 행을 잠근다. `accepted` 항목이 있으면 제안을 고치기 전에 `card_sets.mark_stale`을 부른다.
+- 프로필 행을 먼저 잠그고(`card_sets.lock_profile`) 회차 행을 잠근다. `accepted` 주제 항목이 있으면 제안을 고치기 전에 `card_sets.mark_stale`을 부른다.
 
 <br>
 
