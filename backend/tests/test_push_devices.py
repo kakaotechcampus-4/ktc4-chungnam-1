@@ -3,8 +3,12 @@
 임시 DB에 최신 migration을 적용해 실행한다(`conftest.py`). FID 와 계정은 모두 합성이다.
 """
 
+import asyncio
+
+from httpx import ASGITransport, AsyncClient
+
 from tests.db_api import DbApi
-from tests.support import request
+from tests.support import request, run
 
 FID_A = "cSyntheticFidAAAAAAAAA"
 FID_B = "dSyntheticFidBBBBBBBBB"
@@ -165,3 +169,98 @@ def test_device_requests_need_a_session(migrated_database_url):
 
     assert [r.status_code for r in responses] == [401, 401]
     assert _devices(api) == []
+
+
+# ── 계정당 기기 수(2026-11-09 PM 결정, 기본 5대) ───────────────────────────────
+
+
+def _fid(number: int) -> str:
+    return f"synthFid{number:02d}AAAAAAAAAAAA"
+
+
+def _age_devices(api: DbApi, hours_ago: dict[str, int]) -> None:
+    """등록 시각을 정해 둔다. 순서를 요청 사이의 시계 차이에 맡기지 않는다."""
+    for fid, hours in hours_ago.items():
+        api.query(
+            "UPDATE push_devices SET registered_at = now() - %s * interval '1 hour' "
+            "WHERE fid = %s",
+            (hours, fid),
+        )
+
+
+def test_a_sixth_device_replaces_the_least_recently_registered_one(
+    migrated_database_url,
+):
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    other = api.create_account()
+    for number in range(5):
+        assert caregiver.call("PUT", f"/auth/me/push-devices/{_fid(number)}").status_code == 204
+    other.call("PUT", f"/auth/me/push-devices/{FID_B}")
+    # 2번이 가장 오래전에 등록한 기기다. 다른 계정의 기기는 더 오래됐어도 세지 않는다.
+    _age_devices(api, {_fid(0): 3, _fid(1): 2, _fid(2): 5, _fid(3): 1, _fid(4): 4, FID_B: 9})
+
+    response = caregiver.call("PUT", f"/auth/me/push-devices/{_fid(5)}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    mine = {d["fid"] for d in _devices(api) if d["user_id"] == caregiver.account_id}
+    assert mine == {_fid(0), _fid(1), _fid(3), _fid(4), _fid(5)}
+    assert [d["user_id"] for d in _devices(api) if d["fid"] == FID_B] == [other.account_id]
+
+
+def test_registering_a_known_device_again_keeps_every_device(migrated_database_url):
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    for number in range(5):
+        caregiver.call("PUT", f"/auth/me/push-devices/{_fid(number)}")
+    _age_devices(api, {_fid(number): 5 - number for number in range(5)})
+
+    # 앱을 다시 켠 기기는 등록 시각만 새로 하고 아무것도 지우지 않는다.
+    refreshed = caregiver.call("PUT", f"/auth/me/push-devices/{_fid(0)}")
+    assert refreshed.status_code == 204
+    assert {d["fid"] for d in _devices(api)} == {_fid(n) for n in range(5)}
+
+    # 그래서 다음 새 기기는 0번이 아니라 그다음으로 오래된 1번을 밀어낸다.
+    caregiver.call("PUT", f"/auth/me/push-devices/{_fid(5)}")
+    assert {d["fid"] for d in _devices(api)} == {_fid(0), _fid(2), _fid(3), _fid(4), _fid(5)}
+
+
+def test_device_limit_follows_the_setting_and_counts_moved_devices(
+    migrated_database_url,
+):
+    api = DbApi(migrated_database_url)
+    api.settings = api.settings.model_copy(update={"push_devices_per_account": 2})
+    caregiver = api.create_account()
+    previous_owner = api.create_account()
+    caregiver.call("PUT", f"/auth/me/push-devices/{_fid(0)}")
+    caregiver.call("PUT", f"/auth/me/push-devices/{_fid(1)}")
+    previous_owner.call("PUT", f"/auth/me/push-devices/{FID_A}")
+    _age_devices(api, {_fid(0): 2, _fid(1): 1})
+
+    # 다른 계정에서 옮겨 온 기기도 이 계정의 기기로 센다.
+    moved = caregiver.call("PUT", f"/auth/me/push-devices/{FID_A}")
+
+    assert moved.status_code == 204
+    assert [(d["fid"], d["user_id"]) for d in _devices(api)] == sorted([
+        (FID_A, caregiver.account_id), (_fid(1), caregiver.account_id),
+    ])
+
+
+def test_concurrent_registrations_do_not_exceed_the_limit(migrated_database_url):
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    headers = {"Authorization": f"Bearer {caregiver.token}"}
+
+    async def register_all():
+        transport = ASGITransport(app=api.app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await asyncio.gather(*[
+                client.put(f"/auth/me/push-devices/{_fid(number)}", headers=headers)
+                for number in range(8)
+            ])
+
+    responses = run(register_all())
+
+    assert [r.status_code for r in responses] == [204] * 8
+    assert len(_devices(api)) == 5

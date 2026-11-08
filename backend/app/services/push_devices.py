@@ -3,6 +3,8 @@
 앱은 알림 수신(선택 동의)에 동의한 계정에서 FCM 에 등록하고 받은 등록 ID(Firebase
 Installation ID, FID)를 1-7 로 보낸다. 로그아웃이나 동의 철회 때 1-8 로 지운다. 동의를
 거두는 1-6 은 그 계정의 등록을 모두 지우고, 탈퇴(1-5)는 계정과 함께 지운다(FK CASCADE).
+계정당 기기 수는 설정(`SAEROK_PUSH_DEVICES_PER_ACCOUNT`, 기본 5)까지이며, 넘으면 등록
+시각이 가장 오래된 기기를 지운다(2026-11-09 PM 결정).
 
 FID 는 기기를 가리키는 값이라 로그와 오류 메시지에 남기지 않는다.
 """
@@ -18,19 +20,22 @@ FID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 
 
 async def register_push_device(
-    connection: DbConnection, account_id: str, fid: str
+    connection: DbConnection, account_id: str, fid: str, *, max_devices: int
 ) -> None:
     """1-7. 이 계정에 FID 를 등록한다. 같은 요청을 다시 보내면 등록 시각만 새로 한다.
 
     다른 계정에 등록된 FID 면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한
-    경우다. 알림 수신에 동의하지 않은 계정이면 403 이다.
+    경우다. 알림 수신에 동의하지 않은 계정이면 403 이다. 등록 뒤 이 계정의 기기가
+    `max_devices` 를 넘으면 방금 등록한 기기를 빼고 등록 시각이 오래된 것부터 지운다.
+    사용자에게는 오류로 알리지 않는다.
     """
     user_id = UUID(account_id)
     async with connection.transaction():
         # 동의를 바꾸는 1-6 은 계정 행을 `FOR UPDATE` 로 잠근다. 여기서 먼저 잠가, 동의를
-        # 거두는 중에 등록이 끼어들어 철회 뒤에도 등록이 남는 일을 막는다.
+        # 거두는 중에 등록이 끼어들어 철회 뒤에도 등록이 남는 일을 막는다. 같은 계정의
+        # 등록끼리도 차례로 세도록 `FOR SHARE` 가 아니라 `FOR UPDATE` 로 잠근다.
         cursor = await connection.execute(
-            "SELECT 1 FROM users WHERE user_id = %s FOR SHARE", (user_id,)
+            "SELECT 1 FROM users WHERE user_id = %s FOR UPDATE", (user_id,)
         )
         if await cursor.fetchone() is None:
             raise AppError(
@@ -54,6 +59,15 @@ async def register_push_device(
             "ON CONFLICT (fid) DO UPDATE "
             "SET user_id = EXCLUDED.user_id, registered_at = now()",
             (fid, user_id),
+        )
+        # 앱은 켤 때마다 다시 등록하므로 등록 시각이 가장 오래된 기기가 가장 오래 쓰지 않은
+        # 기기다. 방금 등록한 기기는 시각이 같더라도 남긴다.
+        await connection.execute(
+            "DELETE FROM push_devices WHERE fid IN ("
+            " SELECT fid FROM push_devices WHERE user_id = %s"
+            " ORDER BY fid = %s DESC, registered_at DESC, fid"
+            " OFFSET %s)",
+            (user_id, fid, max_devices),
         )
 
 

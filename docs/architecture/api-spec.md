@@ -290,6 +290,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 - 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
 - 다른 계정에 등록된 FID면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한 경우이며, 앞 계정의 알림이 이 기기로 가지 않게 된다.
 - 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
+- 계정당 5대(서버 설정 `SAEROK_PUSH_DEVICES_PER_ACCOUNT`)까지 둔다. 새 기기로 한도를 넘으면 등록 시각이 가장 오래된 기기, 곧 가장 오래 앱을 켜지 않은 기기의 등록을 지우고 `204`로 답한다. 오류로 알리지 않으며 방금 등록한 기기는 지우지 않는다. 지워진 기기는 앱을 다시 켜서 1-7을 보내면 다시 등록된다(2026-11-09 PM 결정).
 - 탈퇴(1-5)하면 계정과 함께 지운다.
 - 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. `data` 항목은 FE와 합의 전인 테스트 가정이다. 리포트 생성 실패는 알리지 않는다.
 
@@ -1131,10 +1132,20 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 `{"schemaVersion": 1, "text": "..."}`이며 인식 결과가 비었으면 `text`도 빈 문자열이다.
 
-동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
-`AUDIO_TOO_LARGE` 413, 형식과 손상은 `INVALID_AUDIO_FORMAT` 또는 `INVALID_AUDIO` 422다.
-STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
+입력 오류와 동시 요청 거절은 아래 표와 같다. STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
+
+같은 계정의 6-6은 동시에 1건(서버 설정 `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT`)만
+처리한다. 앞 요청이 끝나기 전에 온 요청은 S3 저장과 STT 호출 없이
+`SPEECH_TRANSCRIPTION_IN_PROGRESS` 429(`retryable: true`)로 거절한다. 앞 요청이 끝나면 다시 보낼
+수 있다. 다른 계정의 요청은 기다리지 않는다(2026-11-09 PM 결정).
+
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 필수 동의 누락 |
+| 413 | `AUDIO_TOO_LARGE` | 크기 또는 5분 초과 |
+| 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` | 형식이 다르거나 손상됨 |
+| 429 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 같은 계정의 6-6이 아직 처리 중 |
 
 원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
 먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
@@ -1151,6 +1162,9 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
 기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
 동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
+재요청은 면회 회차당 3회(서버 설정 `SAEROK_REPORT_RETRIES_PER_SESSION`)까지 접수하며, 그다음
+요청은 전사가 남아 있어도 새 작업을 만들지 않고 `REPORT_RETRY_LIMIT_EXCEEDED`로 거절한다.
+처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 세지 않는다(2026-11-09 PM 결정).
 
 응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
 이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
@@ -1166,6 +1180,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 | 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
 | 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
 | 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
+| 409 | `REPORT_RETRY_LIMIT_EXCEEDED` | 이 회차의 재요청 횟수를 모두 씀. 다시 요청하지 않고 안내만 표시 |
 
 전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 

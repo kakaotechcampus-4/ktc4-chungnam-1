@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from app.api.deps import (
     CurrentAccountDep, DbConnectionDep, SettingsDep, get_speech_audio_storage,
 )
+from app.core.errors import AppError
+from app.services.account_slots import account_slot
 from app.services.audio_storage import AudioStorage
 from app.services.speech_transcription import transcribe_short_audio
 
@@ -17,12 +19,25 @@ async def transcribe(
     request: Request, audio: Annotated[UploadFile, File()],
     storage: Annotated[AudioStorage, Depends(get_speech_audio_storage)],
 ) -> dict:
-    text = await transcribe_short_audio(
-        connection, account=account, audio=audio, storage=storage,
-        ai_server=request.app.state.ai_server_client,
-        object_prefix=settings.speech_audio_s3_prefix,
-        retention_seconds=settings.speech_audio_retention_seconds,
-        timeout_seconds=settings.ai_server_timeout_seconds,
-        max_audio_bytes=settings.max_audio_bytes,
-    )
+    # 한 요청이 STT 응답을 기다리는 동안 DB 연결과 STT 서버를 붙잡으므로, 같은 계정의
+    # 동시 요청 수를 설정(기본 1)까지만 받는다(2026-11-09 PM 결정). 넘으면 S3와 STT를
+    # 부르지 않고 거절한다.
+    async with account_slot(
+        connection, scope="short-transcription", account_id=account.account_id,
+        limit=settings.short_transcription_concurrency_per_account,
+    ) as acquired:
+        if not acquired:
+            raise AppError(
+                status_code=429, error_code="SPEECH_TRANSCRIPTION_IN_PROGRESS",
+                message="앞서 보낸 음성을 아직 글로 옮기고 있습니다. 끝난 뒤 다시 보내 주세요.",
+                retryable=True,
+            )
+        text = await transcribe_short_audio(
+            connection, account=account, audio=audio, storage=storage,
+            ai_server=request.app.state.ai_server_client,
+            object_prefix=settings.speech_audio_s3_prefix,
+            retention_seconds=settings.speech_audio_retention_seconds,
+            timeout_seconds=settings.ai_server_timeout_seconds,
+            max_audio_bytes=settings.max_audio_bytes,
+        )
     return {"schemaVersion": 1, "text": text}

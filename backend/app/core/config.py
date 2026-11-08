@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     # FCM 인증과 발송 요청 하나의 제한 시간.
     fcm_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
 
+    # 계정별 사용 한도(2026-11-09 PM 결정). 한 계정이 DB 연결, STT와 ML 호출을 독차지하지
+    # 않게 한다. 짧은 음성 전사(6-6)를 한 계정이 동시에 보낼 수 있는 수. 넘으면 429.
+    short_transcription_concurrency_per_account: int = Field(default=1, ge=1)
+    # 계정당 푸시 받을 기기 수(1-7). 넘으면 등록 시각이 가장 오래된 기기를 지운다.
+    push_devices_per_account: int = Field(default=5, ge=1)
+    # 면회 회차당 리포트 재요청(6-5) 수. 넘으면 409.
+    report_retries_per_session: int = Field(default=3, ge=1)
+
     @field_validator("session_secret")
     @classmethod
     def _reject_short_secret(cls, value: str) -> str:

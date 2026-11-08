@@ -58,6 +58,7 @@ uv run pytest
 | API 명세 대조 | [test_api_spec_routes.py](tests/test_api_spec_routes.py)가 서버의 실제 경로와 `docs/architecture/api-spec.md`의 `METHOD /경로` 제목이 서로 빠짐없는지 확인. 상태 확인과 AI 서버의 `/internal` 경로는 제외. 필드와 설명은 비교하지 않음 |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 본문 크기 상한 | 경로별 본문 상한과 업로드 경로의 본문 읽기 전 세션 확인. [요청 본문 크기 상한](#요청-본문-크기-상한), [test_request_body_limit.py](tests/test_request_body_limit.py) |
+| 계정별 사용 한도 | 짧은 음성 전사 동시 1건, 푸시 기기 5대, 리포트 재요청 회차당 3회. [계정별 사용 한도](#계정별-사용-한도) |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
 ## 데이터베이스 마이그레이션 (Alembic)
@@ -236,10 +237,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 발송은 아래 "리포트 완료 푸시"에 있다.
 
 - `fid`는 앱이 FCM에 등록하고 받은 Firebase Installation ID다. FCM HTTP v1은 기기 토큰(`token`) 대신 `fid`로 보내도록 바꿨다. 경로로 받으며 영문 대소문자, 숫자, `-`, `_`로 된 1~64자만 받는다(DB CHECK도 같다). 기기를 가리키는 값이라 로그에 남기지 않는다.
-- 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6과 겹치지 않도록 계정 행을 `FOR SHARE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
+- 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6, 같은 계정의 다른 등록과 겹치지 않도록 계정 행을 `FOR UPDATE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
+- 계정당 기기는 `SAEROK_PUSH_DEVICES_PER_ACCOUNT`(기본 5)대까지다. 저장한 뒤 같은 트랜잭션에서 이 계정의 기기를 세어, 넘으면 방금 등록한 기기를 빼고 `registered_at`이 오래된 것부터 지운다. 응답은 그대로 `204`다. 계정 행을 잠근 뒤 세므로 동시 등록에도 넘지 않는다([계정별 사용 한도](#계정별-사용-한도)).
 - 해제(1-8)는 이 계정의 등록만 지우며 없거나 다른 계정의 FID여도 `204`다. 알림 동의가 없어도 지울 수 있다.
 - 1-6에서 `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 등록을 모두 지운다. 탈퇴(1-5)는 `ON DELETE CASCADE`로 지운다. 로그아웃(1-4)은 서버가 어느 기기인지 모르므로 앱이 로그아웃 전에 1-8을 보낸다.
-- 오래된 등록을 주기적으로 지우는 작업은 아직 없다. 발송이 `UNREGISTERED`로 실패한 등록만 지운다. FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 보며, `registered_at`으로 고를 수 있다.
+- 오래된 등록을 기간 기준으로 주기적으로 지우는 작업은 없다. 발송이 `UNREGISTERED`로 실패한 등록과, 기기 수 한도를 넘겨 밀려난 등록만 지운다. FCM은 한 달 넘게 연결이 없으면 오래된 등록으로 보며, `registered_at`으로 고를 수 있다.
 
 #### 리포트 완료 푸시
 
@@ -356,6 +358,30 @@ FastAPI는 앱 버전, 인증, 소유권과 파일 크기를 확인하는 의존
 - 기본 설정에서 면회 음성 경로는 로그인한 계정이 요청마다 513 MiB까지 보낼 수 있다. 음성 상한을 낮추거나 받는 동안 검증하는 것은 별도 결정이다.
 
 HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 가장 큰 경로별 상한보다 조금 큰 바깥 상한을 둔다. 정상 설정에서는 경로별 상한(최대 513 MiB)이 더 작아 API가 먼저 공통 형식의 `413`이나 `401`을 돌려준다. Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이며, 그때 Caddy가 돌려주는 `413`에는 공통 오류 본문이 없다. `SAEROK_MAX_AUDIO_BYTES`를 513 MiB보다 크게 올리면 Caddyfile도 함께 올린다. Caddyfile 변경을 서버에 적용하는 절차는 [배포 문서](docs/deployment.md#갱신)에 있다.
+
+## 계정별 사용 한도
+
+한 계정이 DB 연결, STT 서버와 외부 ML 호출을 독차지하지 않도록 세 가지 한도를 둔다. 2026-11-09 PM이 제안 수준의 기본값으로 진행하고 값은 설정으로 바꾸도록 정했다. 프로필 3개, 프로필 사진 5장처럼 이미 있던 개수 제한은 각 절에 있다.
+
+| 대상 | 기본 한도 | 넘으면 | 구현 |
+| --- | --- | --- | --- |
+| 짧은 음성 전사(6-6) | 계정당 동시 1건 | `429 SPEECH_TRANSCRIPTION_IN_PROGRESS`, `retryable: true`. S3 저장과 STT 호출 전에 거절 | 라우트가 요청의 DB 연결에 세션 수준 advisory lock을 잡는다([account_slots.py](app/services/account_slots.py)). 트랜잭션을 열지 않고 계정 행도 잠그지 않는다. 요청이 끝나면 풀고, 연결이 끊기면 PostgreSQL이 푼다 |
+| 푸시 받을 기기(1-7) | 계정당 5대 | 오류 없이 `204`. `registered_at`이 가장 오래된 기기의 등록을 지움 | 계정 행 `FOR UPDATE` 뒤 같은 트랜잭션에서 정리([푸시 받을 기기](#푸시-받을-기기)) |
+| 리포트 재요청(6-5) | 면회 회차당 3회 | `409 REPORT_RETRY_LIMIT_EXCEEDED`, `retryable: false`. 새 작업을 만들지 않고 전사도 옮기지 않음 | 회차 행 `FOR UPDATE` 뒤 그 회차의 재요청 작업(`retry_of_analysis_id`가 있는 행)을 센다. 처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 세지 않는다 |
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT` | 한 계정이 동시에 보낼 수 있는 6-6 수, 기본 1. 1 이상 |
+| `SAEROK_PUSH_DEVICES_PER_ACCOUNT` | 계정당 푸시 받을 기기 수, 기본 5. 1 이상 |
+| `SAEROK_REPORT_RETRIES_PER_SESSION` | 면회 회차당 6-5 수, 기본 3. 1 이상. 자동 재시도는 여전히 없다 |
+
+| `errorCode` | HTTP | 언제 |
+| --- | --- | --- |
+| `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 429 | 6-6. 같은 계정의 앞 요청이 아직 처리 중. 앞 요청이 끝난 뒤 다시 보낸다 |
+| `REPORT_RETRY_LIMIT_EXCEEDED` | 409 | 6-5. 이 회차의 재요청 횟수를 모두 씀 |
+
+- 한도에 닿은 회차에 전사가 남아 있는 동안은 6-2도 `REPORT_RETRY_AVAILABLE`로 녹음 재제출을 받지 않는다. 전사 기한이 지나면 6-2는 기존 규칙대로 새 작업을 받는다. 기기 녹음 재제출을 횟수에 넣을지는 정하지 않았다.
+- 6-6의 동시 요청 수는 계정마다 따로 센다. 서버 전체의 STT 동시 처리 수를 제한하지는 않는다.
 
 ## 프로필과 생애 정보 API
 
@@ -683,7 +709,8 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   잠금을 잡은 동안 임대 만료 정리는 기다렸다가 끝난 작업을 건너뛴다.
 - 작업 상태는 끝나면(`completed`, `failed`) 다시 바꾸지 않는다. `completed`는
   `generatingReport`에서만 바뀌고, 먼저 남은 실패 코드는 늦게 끝난 처리가 덮지 않는다.
-  자동 재시도는 없다. 실패한 리포트는 남은 전사의 보관 기한 안에서 6-5로 수동 재요청한다.
+  자동 재시도는 없다. 실패한 리포트는 남은 전사의 보관 기한 안에서 6-5로 수동 재요청하며, 면회
+  회차당 3회까지다([계정별 사용 한도](#계정별-사용-한도)).
   전사가 없거나 만료됐으면 기기 녹음을 6-2로 다시 제출한다. 이전 실패 작업은 그대로 두고
   새 작업 ID를 만든다. 상세 검사와 제한은 [분석 복구](docs/speech-recovery.md)를 따른다.
 - 8-3 응답 검증의 보수적인 임시 정책(AI 담당자와 합의 필요): `reaction`이 `notUsed`이거나

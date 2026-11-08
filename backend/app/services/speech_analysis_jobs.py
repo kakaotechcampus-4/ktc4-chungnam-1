@@ -22,6 +22,9 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 # 리포트 생성(외부 ML 전송)은 남은 기한이 생성 단계 임대 시간 이상일 때만 시작한다. 임대는
 # 생성 제한 시간보다 60초 이상 길어야 worker가 시작하므로 생성이 기한을 넘겨 이어지지 않는다.
 TRANSCRIPT_RETENTION_SECONDS = 24 * 60 * 60
+# 면회 회차당 리포트 재요청(6-5) 수의 기본값. API는 설정 `SAEROK_REPORT_RETRIES_PER_SESSION`을
+# 넘긴다(2026-11-09 PM 결정). 재요청마다 전사를 외부 ML로 다시 보내므로 횟수를 둔다.
+REPORT_RETRIES_PER_SESSION = 3
 
 
 class SpeechAnalysisStatus(StrEnum):
@@ -68,7 +71,10 @@ class SpeechAnalysisJobRepository(Protocol):
         job: SpeechAnalysisJob,
     ) -> tuple[SpeechAnalysisJob, bool]: ...
 
-    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob: ...
+    async def retry_report(
+        self, *, analysis_id: str, account_id: str,
+        max_retries: int = REPORT_RETRIES_PER_SESSION,
+    ) -> SpeechAnalysisJob: ...
 
     async def mark_queued(
         self,
@@ -172,7 +178,10 @@ class InMemorySpeechAnalysisJobRepository:
             self._by_session[job.session_id] = job.analysis_id
             return job, True
 
-    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob:
+    async def retry_report(
+        self, *, analysis_id: str, account_id: str,
+        max_retries: int = REPORT_RETRIES_PER_SESSION,
+    ) -> SpeechAnalysisJob:
         old = await self.get_for_account(analysis_id=analysis_id, account_id=account_id)
         if old is None:
             raise AppError(status_code=404, error_code="SPEECH_ANALYSIS_NOT_FOUND",
@@ -187,6 +196,10 @@ class InMemorySpeechAnalysisJobRepository:
                                message="녹음을 전송하고 있습니다.", retryable=True)
             if current.status != SpeechAnalysisStatus.FAILED:
                 return current
+            retries = sum(1 for retry_id in self._report_retries
+                          if self._jobs[retry_id].session_id == old.session_id)
+            if retries >= max_retries:
+                raise _retry_limit_exceeded()
             if (not old.transcript or old.transcript_expires_at is None
                     or old.transcript_expires_at <= datetime.now(UTC)):
                 raise AppError(status_code=409, error_code="RECORDING_REQUIRED",
@@ -428,7 +441,10 @@ class PostgresSpeechAnalysisJobRepository:
             raise RuntimeError("충돌한 음성 분석 작업을 다시 읽지 못했습니다.")
         return self._from_row(existing), False
 
-    async def retry_report(self, *, analysis_id: str, account_id: str) -> SpeechAnalysisJob:
+    async def retry_report(
+        self, *, analysis_id: str, account_id: str,
+        max_retries: int = REPORT_RETRIES_PER_SESSION,
+    ) -> SpeechAnalysisJob:
         old = await self.get_for_account(analysis_id=analysis_id, account_id=account_id)
         if old is None:
             raise AppError(status_code=404, error_code="SPEECH_ANALYSIS_NOT_FOUND",
@@ -457,6 +473,15 @@ class PostgresSpeechAnalysisJobRepository:
             if previous_retry:
                 raise AppError(status_code=409, error_code="ANALYSIS_ALREADY_FAILED",
                                message="재요청한 작업도 종료됐습니다. 최신 처리 상태를 확인해 주세요.")
+            # 회차 행을 잠근 뒤 세므로 동시 재요청에도 횟수를 넘지 않는다. 처리 중인 재요청을
+            # 다시 보낸 경우는 위에서 그 작업을 돌려주므로 세지 않는다.
+            retries = await (await self._connection.execute(
+                "SELECT count(*) AS n FROM speech_analysis_jobs "
+                "WHERE session_id=%s AND retry_of_analysis_id IS NOT NULL",
+                (UUID(old.session_id),),
+            )).fetchone()
+            if retries["n"] >= max_retries:
+                raise _retry_limit_exceeded()
             # 보관 기한은 연장하지 않는다. 새 ID로 분리해 이전 작업의 늦은 결과를 막는다.
             new_id = uuid4()
             row = await (await self._connection.execute(
@@ -799,6 +824,11 @@ async def _update_status(
         },
     )
     return cursor.rowcount > 0
+
+
+def _retry_limit_exceeded() -> AppError:
+    return AppError(status_code=409, error_code="REPORT_RETRY_LIMIT_EXCEEDED",
+                    message="이 면회의 리포트 재요청 횟수를 모두 사용했습니다.")
 
 
 def _session_not_found() -> AppError:
