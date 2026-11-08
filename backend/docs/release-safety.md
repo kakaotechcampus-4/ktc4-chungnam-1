@@ -57,8 +57,9 @@ speech-worker가 어느 주소를 쓰는지, 이전 터널을 쓰는 서비스�
 
 2026-11-09 PM 결정: 배포 DB 백업은 14일 보관한다. Deploy는 `check`와 `deploy` 모두 실행할 때마다 운영 DB 전체 덤프를 `DEPLOY_BACKUP_DIR`에 하나씩 남기고 지우지 않는다([배포 workflow](../../docs/deploy-workflows.md)의 2단계). 정리는 서버의 systemd timer가 한다. timer는 새 백업을 만들지 않는다.
 
-`scripts/prune_database_backups.py`는 같은 폴더의 백업(`saelog-*.dump`)과 기록(`saelog-*.json`)을 한 쌍으로 읽는다. 기록에 `restoreVerified: true`가 있는 가장 최근 백업 `--keep`개(기본 1)는 날짜와 상관없이 남기고, 그 밖의 백업 중 만든 지 `--older-than-days`일(기본 14)이 지난 것을 지운다. 복원 검사에 실패한 백업도 14일이 지나면 지운다. 기본은 지울 목록만 출력하며 `--apply`를 줘야 지운다. 백업 폴더가 없으면 "지울 것 없음"으로 끝내지 않고 `BACKUP_DIR_NOT_FOUND`와 종료 코드 2로 실패한다.
+`scripts/prune_database_backups.py`는 같은 폴더의 백업(`saelog-*.dump`)과 기록(`saelog-*.json`)을 한 쌍으로 읽는다. 기록에 `restoreVerified: true`가 있는 가장 최근 백업 `--keep`개(기본 1)는 날짜와 상관없이 남기고, 그 밖의 백업 중 만든 지 `--older-than-days`일(기본 14)이 지난 것을 지운다. 복원 검사에 실패한 백업도 14일이 지나면 지운다. 기본은 지울 목록만 출력하며 `--apply`를 줘야 지운다. 백업 폴더가 없으면 "지울 것 없음"으로 끝내지 않고 `BACKUP_DIR_NOT_FOUND`와 종료 코드 2로 실패한다. 폴더 목록이나 기록을 읽을 권한이 없을 때도 빈 폴더나 복원 확인 안 된 백업으로 추측하지 않고 `BACKUP_UNREADABLE`과 종료 코드 2로 실패한다.
 
+- 이름이 `saelog-`로 시작하는 `.dump`와 같은 이름의 `.json`만 다룬다. 같은 폴더에 손으로 만든 다른 이름의 덤프나 설정 파일 사본이 있으면 14일이 지나도 남는다. 설치 때 폴더 목록을 보고 서버 담당이 따로 처리한다.
 - 하루 한 번 돌기 때문에 14일이 지난 백업은 그다음 정리 때 지워진다. 그 사이 하루쯤 더 남을 수 있다.
 - 최근 백업의 복원 검사가 실패해도 정리는 돈다. 복원 확인된 백업이 하나라도 있으면 가장 최근 것 1개는 항상 남으므로, 되돌릴 백업이 모두 사라지지는 않는다.
 - 배포가 14일 넘게 없으면 그 1개가 14일보다 오래 남는다. 다음 배포의 백업이 복원 확인되면 그다음 정리에서 지운다.
@@ -76,7 +77,9 @@ speech-worker가 어느 주소를 쓰는지, 이전 터널을 쓰는 서비스�
 
 스크립트를 저장소 체크아웃에서 바로 실행하지 않고 root 소유 위치에 복사한다. 서버 저장소는 `ubuntu` 소유라서, 체크아웃의 파일을 root timer가 실행하면 그 계정이 바꾼 코드가 root로 돈다. 배포 workflow가 체크아웃을 바꿔도 timer가 쓰는 사본은 그대로이므로, 이 스크립트가 바뀐 커밋을 배포했으면 아래 1번의 복사를 다시 한다.
 
-`--backup-dir`와 `ReadWritePaths`는 운영의 `DEPLOY_BACKUP_DIR`(`/opt/saerok-backups`)와 같아야 한다. 경로가 다르면 service 파일의 두 곳을 함께 바꾼다. 백업 폴더는 Deploy가 root 소유 0700으로 만든다. service는 root의 추가 권한(capability)을 모두 빼고 실행하므로, 폴더나 파일이 root 소유가 아니면 읽지 못하고 실패한다.
+`--backup-dir`와 `ReadWritePaths`는 운영의 `DEPLOY_BACKUP_DIR`(`/opt/saerok-backups`)와 같아야 한다. 경로가 다르면 service 파일의 두 곳을 함께 바꾼다. 백업 폴더는 Deploy가 root 소유 0700으로 만든다. service는 root의 추가 권한(capability)을 모두 빼고 실행하므로, 폴더나 기록(`.json`)이 root 소유가 아니면 읽지 못하고 `BACKUP_UNREADABLE`로 실패한다. 아래 2번의 dry run은 `sudo`의 모든 권한으로 돌기 때문에 이 권한 문제는 3번에서 service를 직접 시작해야 드러난다.
+
+ExecStart의 `/usr/bin/python3`는 3.11 이상이어야 한다. Deploy의 사전 점검과 같은 조건이며 운영 서버는 3.12다. 2번이 같은 해석기로 돌므로 버전이 맞지 않으면 2번에서 멈춘다.
 
 서버 저장소의 `backend/`에서, 검토한 커밋이 체크아웃된 상태로 실행한다.
 
@@ -88,7 +91,9 @@ sudo install -o root -g root -m 0644 ops/backup-prune/saerok-backup-prune.servic
 sudo systemctl daemon-reload
 
 # 2. 지울 목록만 본다(--apply 없음, 아무것도 지우지 않는다). 폴더는 root 700이어야 한다.
+#    목록에서 saelog-*.dump와 saelog-*.json 밖의 파일은 timer가 지우지 않으므로 따로 확인한다.
 sudo stat -c '%U %a' /opt/saerok-backups
+sudo ls -l /opt/saerok-backups
 sudo /usr/bin/python3 -I /opt/saerok-backup-prune/prune_database_backups.py --backup-dir /opt/saerok-backups --keep 1 --older-than-days 14
 
 # 3. timer를 켠다. 바로 한 번 돌려 보려면 service를 직접 시작한다.
@@ -106,7 +111,8 @@ sudo journalctl -u saerok-backup-prune.service -n 40 --no-pager
 
 - `list-timers`에 다음 실행 시각이 보이고, 마지막 실행 뒤 `Result=success`, `ExecMainStatus=0`이면 정상이다.
 - journal에는 실행마다 JSON 한 개가 남는다. `keep`이 1, `olderThanDays`가 14인지, `removed`에 지운 백업의 파일 이름과 만든 시각만 있는지 본다. DB 내용과 경로 밖 정보는 남기지 않는다.
-- `BACKUP_DIR_NOT_FOUND`(종료 코드 2)는 service의 경로가 실제 백업 폴더와 다르다는 뜻이다. 권한 오류도 실패로 남는다. 실패는 자동으로 알리지 않으므로(운영 점검 알림이 이 service를 보지 않는다) 배포 뒤 `systemctl --failed`로 함께 확인한다.
+- service에 적은 백업 폴더가 없으면 스크립트가 시작되기 전에 systemd가 멈춘다. `ExecMainStatus=226`(NAMESPACE)이고 journal에 `Failed to set up mount namespacing`과 그 경로가 남는다. `BACKUP_DIR_NOT_FOUND`(종료 코드 2)는 2번처럼 스크립트를 직접 실행할 때 나온다. 둘 다 경로가 실제 백업 폴더와 다르다는 뜻이다.
+- `BACKUP_UNREADABLE`(종료 코드 2)은 폴더나 기록이 root 소유가 아니라서 읽지 못했다는 뜻이다. 아무것도 지우지 않고 멈춘다. 실패는 자동으로 알리지 않으므로(운영 점검 알림이 이 service를 보지 않는다) 배포 뒤 `systemctl --failed`로 함께 확인한다.
 
 되돌리기:
 
@@ -120,7 +126,9 @@ sudo systemctl daemon-reload
 - 되돌려도 이미 지운 백업은 돌아오지 않는다. 남은 백업 파일은 건드리지 않는다.
 - 되돌린 뒤에는 Deploy를 실행할 때마다 백업이 다시 쌓인다. 다른 정리 방법을 정하기 전까지 손으로 지울 목록(2번)을 확인한다.
 
-로컬 확인(2026-11-09): WSL Ubuntu 22.04의 systemd 249에서 `systemd-analyze verify`로 두 unit 파일을 검사했고, 두 파일에 대한 경고 없이 종료 코드 0으로 끝났다. `tests/test_prune_database_backups.py`는 service의 실행 인수를 그대로 꺼내 합성 폴더에 실행하고 14일 기준과 가장 최근 복원 확인 백업 1개를 남기는지 확인한다. 운영 서버에서의 설치, sandbox 설정을 건 실제 실행과 timer 동작은 확인하지 않았다.
+로컬 확인(2026-11-09): WSL Ubuntu 22.04의 systemd 249에서 `systemd-analyze verify`로 두 unit 파일을 검사했고, 두 파일에 대한 경고 없이 종료 코드 0으로 끝났다. `tests/test_prune_database_backups.py`는 service의 실행 인수를 그대로 꺼내 합성 폴더에 실행하고 14일 기준과 가장 최근 복원 확인 백업 1개를 남기는지 확인한다.
+
+같은 WSL에서 service 파일의 두 경로만 임시 위치로 바꿔 설치하고 합성 백업 폴더로 실행했다. 이 환경의 Python이 3.10이라 스크립트는 `datetime.UTC` 가져오기만 바꾼 사본을 썼다. root 소유 0700 폴더에서는 14일이 지난 백업 3개(복원 실패 1개 포함)를 지우고 13일 된 백업은 남겼다(`Result=success`). 폴더가 없으면 226/NAMESPACE로, 폴더나 가장 최근 복원 확인 백업의 기록이 다른 사용자 소유면 `BACKUP_UNREADABLE`과 종료 코드 2로 실패했고 아무것도 지우지 않았다. 운영 서버에서의 설치와 실행, 매일 도는 timer 동작은 확인하지 않았다.
 
 ## 승인 후 적용 순서
 

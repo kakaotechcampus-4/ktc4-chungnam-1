@@ -102,6 +102,46 @@ def test_missing_backup_dir_fails_instead_of_reporting_nothing(tmp_path, capsys)
     assert "BACKUP_DIR_NOT_FOUND" in capsys.readouterr().out
 
 
+def test_unreadable_backup_dir_fails_instead_of_reporting_nothing(tmp_path, monkeypatch, capsys):
+    # service는 capability를 모두 빼고 돌므로 root 소유가 아닌 폴더는 읽지 못한다.
+    # Path.glob은 이 권한 오류를 빈 폴더로 넘기므로, 그대로면 매일 "지울 것 없음"으로 성공한다.
+    # 시험 컨테이너는 root라 실제 권한으로는 재현되지 않아 폴더 열기만 거절한다.
+    _backup(tmp_path, "old", 30, now=datetime.now(UTC))
+    real_scandir = prune.os.scandir
+
+    def deny(path="."):
+        if Path(path) == tmp_path:
+            raise PermissionError(13, "Permission denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr(prune.os, "scandir", deny)
+    assert prune.main(["--backup-dir", str(tmp_path), "--apply"]) == 2
+    assert json.loads(capsys.readouterr().out) == {"error": "BACKUP_UNREADABLE"}
+    assert (tmp_path / "saelog-old.dump").exists()
+
+
+def test_unreadable_record_fails_instead_of_counting_backup_as_unverified(tmp_path, monkeypatch, capsys):
+    # 가장 최근 복원 확인 백업의 기록을 못 읽을 때 "복원 확인 안 됨"으로 추측하면,
+    # 그 백업 대신 더 오래된 백업을 지키고 이 백업을 지울 수 있다.
+    now = datetime.now(UTC)
+    _backup(tmp_path, "new-ok", 20, now=now)
+    _backup(tmp_path, "old-ok", 25, now=now)
+    locked = tmp_path / "saelog-new-ok.json"
+    real_read_text = Path.read_text
+
+    def deny(self, *args, **kwargs):
+        if self == locked:
+            raise PermissionError(13, "Permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    assert prune.main(["--backup-dir", str(tmp_path), "--apply"]) == 2
+    assert json.loads(capsys.readouterr().out) == {"error": "BACKUP_UNREADABLE"}
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "saelog-new-ok.dump", "saelog-new-ok.json", "saelog-old-ok.dump", "saelog-old-ok.json",
+    ]
+
+
 def _unit_exec_args() -> list[str]:
     lines = [line for line in UNIT.read_text(encoding="utf-8").splitlines() if line.startswith("ExecStart=")]
     assert len(lines) == 1

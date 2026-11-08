@@ -6,7 +6,7 @@
 - 최근 복원 확인된 백업 `--keep`개(기본 1)는 날짜와 상관없이 남긴다.
 - 그 밖의 백업 중 `--older-than-days`일(기본 14)보다 오래된 것만 지운다.
 - 기본은 지울 목록만 보여 준다(`--apply`를 줘야 실제로 지운다).
-- 백업 폴더가 없으면 "지울 것 없음"으로 끝내지 않고 실패한다.
+- 백업 폴더가 없거나, 폴더나 기록을 읽을 권한이 없으면 "지울 것 없음"으로 끝내지 않고 실패한다.
 - 출력에는 파일 이름과 만든 시각만 남긴다. DB 내용과 경로 밖 정보는 읽지 않는다.
 
 기본값은 2026-11-09 PM 결정(14일 보관)을 따른다. 운영 서버에서는 `ops/backup-prune/`의 systemd
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -36,15 +37,23 @@ class Backup:
 
 
 def scan(directory: Path) -> list[Backup]:
+    """폴더나 기록을 읽을 권한이 없으면 PermissionError를 그대로 올린다."""
     backups = []
-    for dump in sorted(directory.glob("saelog-*.dump")):
+    # Path.glob은 읽을 수 없는 폴더를 빈 폴더처럼 넘긴다. 직접 열어서 권한 오류를 드러낸다.
+    with os.scandir(directory) as entries:
+        names = sorted(e.name for e in entries if e.name.startswith("saelog-") and e.name.endswith(".dump"))
+    for dump in (directory / name for name in names):
         record = dump.with_suffix(".json")
         created, verified = None, False
         try:
             data = json.loads(record.read_text(encoding="utf-8"))
             created = datetime.fromisoformat(data["createdAtUtc"])
             verified = data.get("restoreVerified") is True
+        except PermissionError:
+            # 기록을 못 읽은 백업을 "복원 확인 안 됨"으로 추측하면 지킬 백업을 지울 수 있다.
+            raise
         except (OSError, ValueError, KeyError, TypeError):
+            # 기록이 아직 없거나(백업 진행 중) 깨진 경우. 파일 시각으로 판단하고 복원 확인으로 세지 않는다.
             pass
         if created is None:
             created = datetime.fromtimestamp(dump.stat().st_mtime, tz=UTC)
@@ -71,10 +80,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.keep < 1 or args.older_than_days < 1:
         print(json.dumps({"error": "INVALID_RETENTION"}))
         return 2
-    if not args.backup_dir.is_dir():
-        print(json.dumps({"error": "BACKUP_DIR_NOT_FOUND"}))
+    try:
+        if not args.backup_dir.is_dir():
+            print(json.dumps({"error": "BACKUP_DIR_NOT_FOUND"}))
+            return 2
+        backups = scan(args.backup_dir)
+    except PermissionError:
+        print(json.dumps({"error": "BACKUP_UNREADABLE"}))
         return 2
-    backups = scan(args.backup_dir)
     doomed = plan(backups, keep=args.keep, older_than=timedelta(days=args.older_than_days),
                   now=datetime.now(UTC))
     if args.apply:
