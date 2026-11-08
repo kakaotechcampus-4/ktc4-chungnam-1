@@ -93,7 +93,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 - **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
-- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
+- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 보호자가 제외한 주제가 아니면 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
 ## DB 변경
 
@@ -210,6 +210,7 @@ ALTER TABLE life_facts
 
 - `life_facts`의 행을 지운다. 되돌리는 기능은 없다(앱 확인 창: `지운 이야기는 되돌릴 수 없어요.`).
 - 다음 카드 생성(4-1)의 `context.lifeFacts`에서 빠진다. 4-1이 요청 때 `life_facts`를 다시 읽으므로 따로 할 일은 없다.
+- 근거가 지운 이야기나 사진뿐이던 주제는 보호자가 제외한 주제가 아니면 다음 카드 생성의 `context.topics`에서 빠진다(PM 결정 2026-11-08). 4-1이 입력을 만들 때 거르므로 이 API에서 따로 할 일은 없다.
 - 이미 만든 카드(`conversation_cards`)와 주제(`profile_topics`)는 지우지 않는다. 면회와 리포트 기록이 카드에 묶여 있기 때문이다.
 - 그 이야기를 출처로 한 변경 제안(`life_fact_proposals`)은 지우지 않는다. `life_facts.source_proposal_id`가 사라질 뿐이다(D6).
 - 세부 정보 이야기는 `life_facts`의 행이 아니므로 이 API로 지울 수 없다. 앱도 휴지통을 두지 않는다.

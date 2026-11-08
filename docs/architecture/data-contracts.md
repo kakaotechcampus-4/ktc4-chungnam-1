@@ -208,7 +208,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 일대기에서 내용을 고칠 수 있다([API 2-7](api-spec.md#2-7-patch-apiv1life-factsfactid--신규)).
 - `storyCategory`는 일대기의 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`), `imageNumber`는 분류별 기본 그림 번호(1~5)다. 그림 파일은 앱에 있다. 필드 이름은 임시다([API 미정 사항](api-spec.md#미정-사항) 11).
-- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 되고, 지난 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
+- 일대기에서 지울 수 있다([API 2-9](api-spec.md#2-9-delete-apiv1life-factsfactid--신규)). 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다. 이야기나 사진 근거가 하나도 남지 않은 주제는 보호자가 제외한 주제가 아니면 다음 카드 생성 입력에서 빠진다(PM 결정 2026-11-08, 아래 [카드 생성 요청](#카드-생성-요청-cardgenerationrequest)). 저장된 지난 카드와 주제의 처리는 미정이다([API 미정 사항](api-spec.md#미정-사항) 12).
 
 <br>
 
