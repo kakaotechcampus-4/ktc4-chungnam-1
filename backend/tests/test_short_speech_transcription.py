@@ -61,18 +61,31 @@ def test_bad_audio_does_not_upload(migrated_database_url, audio, status):
     assert _Db(migrated_database_url).execute("SELECT * FROM storage_deletion_request_queue") == []
 
 
-def test_more_than_five_minutes_is_rejected(migrated_database_url):
+def _silent_wav(frames):
     output = BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(16000)
-        wav.writeframes(b"\0\0" * (300*16000+1))
+        wav.writeframes(b"\0\0" * frames)
+    return output.getvalue()
+
+
+def test_more_than_five_minutes_is_rejected(migrated_database_url):
     app, storage, _ = harness(migrated_database_url)
-    response = submit(app, output.getvalue())
+    response = submit(app, _silent_wav(302*16000+1))
     assert response.status_code == 413
     assert response.json()["errorCode"] == "AUDIO_TOO_LARGE"
     assert storage.deleted == []
+
+
+def test_a_full_five_minute_recording_that_stopped_a_little_late_is_accepted(migrated_database_url):
+    # 앱은 녹음을 시작한 뒤 5분 타이머를 켜서, 5분을 채운 파일은 300초를 조금 넘는다.
+    # 11/8 운영 시험에서 300.004초 파일이 413으로 거절됐다.
+    app, _, ai = harness(migrated_database_url)
+    response = submit(app, _silent_wav(300*16000 + 16000 // 2))
+    assert response.status_code == 200, response.text
+    assert len(ai.payloads) == 1
 
 
 def test_missing_consent_does_not_store_audio(migrated_database_url):
