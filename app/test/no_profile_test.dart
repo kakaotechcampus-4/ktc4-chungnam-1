@@ -210,7 +210,7 @@ void main() {
 
       await tapAndSettle(tester, find.text('설정'));
 
-      for (final shown in ['알림 설정', '계정 약관 동의', '저장하기', '로그아웃', '회원탈퇴']) {
+      for (final shown in ['알림 설정', '도움말', '계정 약관 동의', '로그아웃', '회원탈퇴']) {
         expect(find.text(shown), findsOneWidget, reason: '$shown 은 계정 항목이다');
       }
     });

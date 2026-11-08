@@ -31,6 +31,7 @@ import '../features/report/report_screen.dart';
 import '../features/review/comfort_screen.dart';
 import '../features/review/review_screen.dart';
 import '../features/review/upload_retry_screen.dart';
+import '../features/settings/consent_settings_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
@@ -216,6 +217,11 @@ GoRouter buildRouter() {
       GoRoute(
         path: AppRoutes.profileDelete,
         builder: (context, state) => const ProfileDeleteScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settingsConsents,
+        builder: (context, state) =>
+            ConsentSettingsScreen(pointAtPush: state.extra == true),
       ),
       GoRoute(
         path: AppRoutes.albumBook,

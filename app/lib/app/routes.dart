@@ -121,8 +121,12 @@ abstract final class AppRoutes {
   /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
   static const notifications = '/notifications';
 
-  /// 설정. 하단 탭 맨 오른쪽. 넣을 항목은 아직 정하지 않았다.
+  /// 설정. 하단 탭 맨 오른쪽. 알림 설정, 도움말, 계정 약관 동의를 둔다.
   static const settings = '/settings';
+
+  /// 계정 약관 동의. 설정에서 한 단계 들어간다. `extra` 가 `true` 면 알림 수신
+  /// 동의 줄을 강조한다. 피그마 설계 없음.
+  static const settingsConsents = '/settings/consents';
 
   /// H 일대기의 표지. 하단 탭의 일대기에서 들어온다.
   static const album = '/album';

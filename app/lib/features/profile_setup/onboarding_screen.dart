@@ -17,6 +17,8 @@ import 'onboarding_tutorial.dart';
 /// 화면이 뜨면 새록 소개([showOnboardingTutorial])를 바로 띄운다. 마지막 장의
 /// `시작하기` 를 누르면 홈으로 가고, 건너뛰면 이 화면에 남아 다시 볼 수 있다.
 /// 이 화면은 새 계정에서만 지나므로 본 적이 있는지 따로 저장하지 않는다.
+/// 나중에는 설정의 도움말에서 다시 볼 수 있고, 이 화면과 소개 마지막 장에서
+/// 그 자리를 알린다([tutorialHelpHint]).
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -57,6 +59,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             const SizedBox(height: AppSpacing.sm),
             AppTextButton(label: '새록 소개 다시 보기', onPressed: _showTutorial),
+            const SizedBox(height: AppSpacing.xs),
+            // 이 화면은 새 계정에서만 지난다. 나중에 볼 자리를 알린다.
+            const Text(
+              tutorialHelpHint,
+              style: AppTypography.sub,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
         child: Column(

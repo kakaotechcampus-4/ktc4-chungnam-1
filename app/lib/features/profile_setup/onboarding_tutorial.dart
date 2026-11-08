@@ -46,13 +46,22 @@ const tutorialPages = <TutorialPage>[
   ),
 ];
 
+/// 처음 오셨네요에서 띄운 소개의 마지막 장에 붙이는 안내.
+const tutorialHelpHint = '새록 소개는 설정의 도움말에서\n언제든 다시 볼 수 있어요.';
+
 /// 소개를 띄운다. 마지막 장의 `시작하기` 를 누르면 `true`, 건너뛰면 `false` 다.
-Future<bool> showOnboardingTutorial(BuildContext context) async {
+///
+/// [replay] 는 설정의 도움말에서 다시 보는 경우다. 마지막 장의 버튼은 `닫기`
+/// 이고 도움말에서 다시 볼 수 있다는 안내([tutorialHelpHint])는 두지 않는다.
+Future<bool> showOnboardingTutorial(
+  BuildContext context, {
+  bool replay = false,
+}) async {
   final started = await showDialog<bool>(
     context: context,
     // 바깥을 눌러 실수로 닫지 않게 한다. 건너뛰기로 닫는다.
     barrierDismissible: false,
-    builder: (context) => const OnboardingTutorial(),
+    builder: (context) => OnboardingTutorial(replay: replay),
   );
   return started ?? false;
 }
@@ -62,7 +71,10 @@ Future<bool> showOnboardingTutorial(BuildContext context) async {
 /// 글자를 키우면 창이 길어지므로 한 장씩 그리고 창 전체를 스크롤한다. 높이를
 /// 고정하는 `PageView` 는 쓰지 않는다.
 class OnboardingTutorial extends StatefulWidget {
-  const OnboardingTutorial({super.key});
+  const OnboardingTutorial({this.replay = false, super.key});
+
+  /// 설정의 도움말에서 다시 본다.
+  final bool replay;
 
   @override
   State<OnboardingTutorial> createState() => _OnboardingTutorialState();
@@ -129,13 +141,21 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
                   child: _PageContent(key: ValueKey(_index), page: page),
                 ),
               ),
+              if (_last && !widget.replay) ...[
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  tutorialHelpHint,
+                  style: AppTypography.sub,
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: AppSpacing.xl),
               _Dots(index: _index, total: tutorialPages.length),
               const SizedBox(height: AppSpacing.xl),
               PrimaryButton(
                 color: HomeColors.accent,
                 loadingColor: HomeColors.accentLoading,
-                label: _last ? '시작하기' : '다음',
+                label: _last ? (widget.replay ? '닫기' : '시작하기') : '다음',
                 onPressed: _last
                     ? () => Navigator.of(context).pop(true)
                     : () => _go(_index + 1),
