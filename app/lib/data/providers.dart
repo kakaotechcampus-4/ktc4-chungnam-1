@@ -16,6 +16,7 @@ import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
+import 'profile_relationship_store.dart';
 import 'report_api.dart';
 import 'selected_profile_store.dart';
 
@@ -43,12 +44,27 @@ class EnteredBasicInfo {
     required this.gender,
     required this.birthDate,
     required this.stage,
+    this.relationship,
   });
 
   final String name;
 
   /// `male` 또는 `female`.
   final String gender;
+
+  /// 보호자와의 관계. "어머니", "아버지"처럼 보호자가 적는 선택 항목이다.
+  /// 앱에서 부를 때만 쓰는 별명이라 서버에 보내지 않고 단말에만 둔다
+  /// ([ProfileRelationshipStore]). 적지 않았으면 `null` 이다.
+  final String? relationship;
+
+  /// 관계만 바꾼 값이다. 서버 응답에는 관계가 없어 단말의 값을 붙일 때 쓴다.
+  EnteredBasicInfo withRelationship(String? relationship) => EnteredBasicInfo(
+    name: name,
+    gender: gender,
+    birthDate: birthDate,
+    stage: stage,
+    relationship: relationship,
+  );
 
   /// `YYYY-MM-DD`.
   final String birthDate;
@@ -266,14 +282,22 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
       final profiles = await Future.wait([
         for (final summary in summaries) api.get(summary.profileId),
       ]);
+      // 관계는 서버에 없고 단말에만 있다. 저장소는 실패해도 `null` 을 준다.
+      final relationshipStore = ref.read(profileRelationshipStoreProvider);
+      final relationships = accountId == null
+          ? <String?>[for (final _ in profiles) null]
+          : await Future.wait([
+              for (final profile in profiles)
+                relationshipStore.read(accountId, profile.profileId),
+            ]);
       final rememberedId = await remembered;
       if (!ref.mounted || round != _loadRound) return;
       final entries = [
-        for (final profile in profiles)
+        for (final (i, profile) in profiles.indexed)
           CareProfileEntry(
             id: profile.profileId,
             remoteId: profile.profileId,
-            basicInfo: profile.basicInfo,
+            basicInfo: profile.basicInfo.withRelationship(relationships[i]),
             details: profile.details,
             pending: profile.setupStatus != SetupStatus.completed,
           ),
@@ -305,6 +329,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     EnteredDetails details = const EnteredDetails(),
     String? remoteId,
   }) {
+    if (remoteId != null) rememberRelationship(remoteId, info.relationship);
     final existing = remoteId == null ? null : state.byId(remoteId);
     if (existing != null) {
       _replace(
@@ -348,6 +373,8 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   }) {
     final entry = state.byId(id);
     if (entry == null) return;
+    final savedId = remoteId ?? entry.remoteId;
+    if (savedId != null) rememberRelationship(savedId, info.relationship);
     _replace(
       entry.copyWith(
         basicInfo: info,
@@ -363,7 +390,23 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   void updateBasicInfo(String id, EnteredBasicInfo info) {
     final entry = state.byId(id);
     if (entry == null || entry.pending) return;
+    if (entry.remoteId case final remoteId?) {
+      rememberRelationship(remoteId, info.relationship);
+    }
     _replace(entry.copyWith(basicInfo: info));
+  }
+
+  /// 서버에 저장한 분의 관계를 단말에 기억한다. 비었으면 지운다. 로그인하지
+  /// 않았으면 앱이 켜져 있는 동안만 쓴다.
+  ///
+  /// 기본 정보 입력에서 서버에 만든 직후에도 부른다. 마치기 전에 앱을 닫아도
+  /// 이어서 입력할 때 관계가 남는다.
+  void rememberRelationship(String remoteId, String? relationship) {
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    if (accountId == null) return;
+    ref
+        .read(profileRelationshipStoreProvider)
+        .write(accountId, remoteId, relationship);
   }
 
   /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
@@ -402,7 +445,11 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   ///
   /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
   void remove(String id) {
-    if (state.entries.every((e) => e.id != id)) return;
+    final removed = state.byId(id);
+    if (removed == null) return;
+    if (removed.remoteId case final remoteId?) {
+      rememberRelationship(remoteId, null);
+    }
     final entries = state.entries.where((e) => e.id != id).toList();
     final selectedId = state.selectedId == id
         ? entries.where((e) => !e.pending).firstOrNull?.id
@@ -463,6 +510,7 @@ class CareProfileSummary {
     required this.gender,
     required this.selected,
     required this.pending,
+    this.relationship,
   });
 
   final String id;
@@ -470,6 +518,9 @@ class CareProfileSummary {
   /// 입력 중인 분은 비어 있다. 이름은 입력 흐름이 들고 있다.
   final String name;
   final String gender;
+
+  /// 보호자와의 관계. 받기 전에 등록한 분과 입력 중인 분은 `null` 이다.
+  final String? relationship;
 
   /// 지금 보고 있는 어르신인지.
   final bool selected;
@@ -489,6 +540,7 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
         id: entry.id,
         name: entry.basicInfo?.name ?? '',
         gender: entry.basicInfo?.gender ?? '',
+        relationship: entry.basicInfo?.relationship,
         selected: entry.id == profiles.selected?.id,
         pending: entry.pending,
       ),
@@ -528,6 +580,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       profileId: selected.remoteId ?? selected.id,
       name: entered.name,
       gender: entered.gender,
+      relationship: entered.relationship,
       birthDate: entered.birthDate,
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,

@@ -91,6 +91,9 @@ class ProfilePhotoAddScreen extends ConsumerWidget {
     final photos = ref.watch(profilePhotoAddProvider);
     final controller = ref.read(profilePhotoAddProvider.notifier);
     final uploading = controller.isUploading;
+    final name = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.basicInfo?.name ?? ''),
+    );
 
     return PopScope(
       // 올리는 중에 떠나면 몇 장이 올라갔는지 알 수 없게 된다.
@@ -107,6 +110,7 @@ class ProfilePhotoAddScreen extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.only(top: AppSpacing.xl),
             child: PhotoUploadStep(
+              name: name,
               photos: photos,
               existing: existing,
               canEdit: !uploading,

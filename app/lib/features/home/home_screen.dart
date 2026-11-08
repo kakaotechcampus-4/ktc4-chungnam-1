@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../data/card_api.dart';
+import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -550,7 +551,7 @@ class _ProfileSwitcher extends ConsumerWidget {
                     // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
                     constraints: const BoxConstraints(maxWidth: 160),
                     child: Text(
-                      '${profile.name} 어르신',
+                      careDisplayName(profile.name, profile.relationship),
                       style: AppTypography.bodyStrong,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -586,7 +587,7 @@ class _ProfileSwitcher extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('지금부터 ${next.profile.name} 어르신과 함께해요')),
+        SnackBar(content: Text('지금부터 ${next.profile.name}님과 함께해요')),
       );
   }
 }

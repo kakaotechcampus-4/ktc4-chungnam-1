@@ -114,6 +114,7 @@ void main() {
         const SetupDraft(
           name: '김○○',
           gender: 'female',
+          relationship: '어머니',
           birthYear: 1943,
           birthMonth: 3,
           birthDay: 12,
@@ -199,6 +200,7 @@ void main() {
       SetupDraft draftNamed(String name) => SetupDraft(
         name: name,
         gender: 'female',
+        relationship: '어머니',
         birthYear: 1943,
         birthMonth: 3,
         birthDay: 12,
@@ -218,6 +220,7 @@ void main() {
         const SetupDraft(
           name: '김○○',
           gender: 'female',
+          relationship: '어머니',
           birthYear: 1943,
           birthMonth: 3,
           birthDay: 12,
@@ -339,6 +342,7 @@ void main() {
     const filled = SetupDraft(
       name: '김○○',
       gender: 'female',
+      relationship: '어머니',
       birthYear: 1943,
       birthMonth: 3,
       birthDay: 12,
@@ -440,6 +444,7 @@ void main() {
             draft: SetupDraft(
               name: '김○○',
               gender: 'female',
+              relationship: '어머니',
               birthYear: 1943,
               birthMonth: 3,
               birthDay: 12,
@@ -552,11 +557,16 @@ void main() {
     }
 
     testWidgets('기본 정보는 입력란이 많아 버튼이 본문과 함께 흐른다', (tester) async {
-      final (button, viewport) = await openSetup(tester);
+      await openSetup(tester);
 
+      // 관계 칸이 더해져 기준 화면에서는 버튼이 첫 화면 아래로 내려간다. 보이는지
+      // 대신 스크롤 영역 안에 있는지로 확인한다.
       expect(
-        button.top,
-        lessThan(viewport.bottom),
+        find.descendant(
+          of: find.byType(SingleChildScrollView).first,
+          matching: find.widgetWithText(FilledButton, '다음'),
+        ),
+        findsOneWidget,
         reason: '아래에 고정하면 그만큼 입력란이 보이는 높이를 가져간다',
       );
     });

@@ -122,8 +122,8 @@ void main() {
       await tapAndSettle(tester, find.text('어르신 등록'));
 
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
-      expect(find.text('소중한 분 더하기'), findsNWidgets(3));
-      expect(find.text('소중한 분 정보 지우기'), findsNothing, reason: '지울 분이 없다');
+      expect(find.text('프로필 더하기'), findsNWidgets(3));
+      expect(find.text('프로필 정보 지우기'), findsNothing, reason: '지울 분이 없다');
     });
 
     final blocked = <String, Finder Function()>{
@@ -187,21 +187,40 @@ void main() {
     });
   });
 
+  group('부르는 이름', () {
+    testWidgets('홈 알약은 이름 뒤에 님과 관계를 붙인다', (tester) async {
+      await openAt(tester, AppRoutes.home, withProfile: true);
+
+      expect(find.text('김새록님 (어머니)'), findsOneWidget);
+      expect(find.text('김새록 어르신'), findsNothing);
+    });
+
+    testWidgets('전환 화면은 상단바에 프로필 전환을 두고 큰 제목은 그대로다', (tester) async {
+      await openAt(tester, AppRoutes.profileSwitch, withProfile: true);
+
+      expect(find.text('프로필 전환'), findsOneWidget);
+      expect(find.text('함께하는 소중한 분'), findsOneWidget);
+      expect(find.text('김새록님 (어머니)'), findsOneWidget);
+      expect(find.text('프로필 더하기'), findsNWidgets(2));
+      expect(find.text('프로필 정보 지우기'), findsOneWidget);
+    });
+  });
+
   group('마지막 분 지우기', () {
     testWidgets('같은 확인창으로 지우고 빈 슬롯만 남는다', (tester) async {
       await openAt(tester, AppRoutes.profileSwitch, withProfile: true);
 
-      await tapAndSettle(tester, find.text('소중한 분 정보 지우기'));
-      await tapAndSettle(tester, find.text('김새록 어르신'));
+      await tapAndSettle(tester, find.text('프로필 정보 지우기'));
+      await tapAndSettle(tester, find.text('김새록님 (어머니)'));
 
-      expect(find.text('김새록 어르신의 정보를 지울까요?'), findsOneWidget);
+      expect(find.text('김새록님의 정보를 지울까요?'), findsOneWidget);
       expect(find.textContaining('회원 탈퇴'), findsNothing);
 
       await tapAndSettle(tester, find.text('지우기'));
 
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
-      expect(find.text('소중한 분 더하기'), findsNWidgets(3));
-      expect(find.text('김새록 어르신'), findsNothing);
+      expect(find.text('프로필 더하기'), findsNWidgets(3));
+      expect(find.text('김새록님 (어머니)'), findsNothing);
     });
   });
 

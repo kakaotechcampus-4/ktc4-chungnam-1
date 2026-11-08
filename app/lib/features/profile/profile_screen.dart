@@ -161,6 +161,9 @@ class _Body extends StatelessWidget {
                           label: '성별',
                           value: _genderLabel(profile.gender),
                         ),
+                        // 관계는 선택 항목이다. 적지 않았으면 줄을 뺀다.
+                        if (profile.relationship case final relationship?)
+                          _InfoRow(label: '관계', value: relationship),
                         _InfoRow(
                           label: '생년월일',
                           value: _dateLabel(profile.birthDate),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
+import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -15,7 +16,7 @@ import '../../widgets/profile_avatar.dart';
 import '../profile_setup/setup_controller.dart';
 import 'profile_dialogs.dart';
 
-/// 함께하는 소중한 분.
+/// 프로필 전환. 큰 제목은 함께하는 소중한 분이다.
 ///
 /// 홈 상단의 어르신 알약을 누르면 들어온다. 등록할 수 있는 어르신 수만큼
 /// 슬롯을 두고, 채워진 슬롯을 누르면 그 어르신으로 바꿔 홈으로 돌아간다.
@@ -48,11 +49,14 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
 
     return Scaffold(
       backgroundColor: HomeColors.background,
-      appBar: const AppTopBar(backgroundColor: HomeColors.background),
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '프로필 전환',
+      ),
       body: summaries.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
-          message: '소중한 분 목록을 불러오지 못했어요.',
+          message: '프로필 목록을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(careProfileSummariesProvider),
         ),
         data: (profiles) => SafeArea(
@@ -87,7 +91,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
                 else if (profiles.isNotEmpty)
                   Center(
                     child: AppTextButton(
-                      label: '소중한 분 정보 지우기',
+                      label: '프로필 정보 지우기',
                       onPressed: () => setState(() => _removing = true),
                     ),
                   ),
@@ -168,7 +172,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     ref.read(careProfilesProvider.notifier).select(profile.id);
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('지금부터 ${profile.name} 어르신과 함께해요')));
+      ..showSnackBar(SnackBar(content: Text('지금부터 ${profile.name}님과 함께해요')));
   }
 
   /// 한 번 더 묻고 지운다. 마지막 한 분도 지운다. 프로필 삭제는 계정 탈퇴가
@@ -190,6 +194,9 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     if (remoteId != null) {
       try {
         await ref.read(profileApiProvider).delete(remoteId);
+        // 단말에만 둔 관계도 함께 지운다. 입력 중이던 분은 목록에 서버 ID 가
+        // 없을 수 있어 여기서 지운다.
+        profiles.rememberRelationship(remoteId, null);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         ScaffoldMessenger.of(context)
@@ -209,7 +216,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(name.isEmpty ? '입력하던 정보를 지웠어요' : '$name 어르신의 정보를 지웠어요'),
+          content: Text(name.isEmpty ? '입력하던 정보를 지웠어요' : '$name님의 정보를 지웠어요'),
         ),
       );
   }
@@ -310,7 +317,10 @@ class _ProfileSlot extends StatelessWidget {
           ProfileAvatar(gender: profile.gender, size: _photo),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
-            child: Text('${profile.name} 어르신', style: AppTypography.bodyStrong),
+            child: Text(
+              careDisplayName(profile.name, profile.relationship),
+              style: AppTypography.bodyStrong,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           // 테두리 굵기만으로 알리지 않도록 표시를 함께 둔다.
@@ -367,7 +377,7 @@ class _PendingSlot extends StatelessWidget {
           const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Text(
-              name.isEmpty ? '새로운 분' : '$name 어르신',
+              name.isEmpty ? '새로운 분' : '$name님',
               style: AppTypography.bodyStrong,
             ),
           ),
@@ -428,7 +438,7 @@ class _EmptySlot extends StatelessWidget {
             child: const Icon(Icons.add, color: HomeColors.accent),
           ),
           const SizedBox(width: AppSpacing.lg),
-          const Expanded(child: Text('소중한 분 더하기', style: AppTypography.body)),
+          const Expanded(child: Text('프로필 더하기', style: AppTypography.body)),
         ],
       ),
     );

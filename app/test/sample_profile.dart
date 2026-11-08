@@ -11,6 +11,7 @@ const sampleProfileId = 'sample';
 const sampleBasicInfo = EnteredBasicInfo(
   name: '김새록',
   gender: 'female',
+  relationship: '어머니',
   birthDate: '1943-03-12',
   stage: ConditionStage.mildDementia,
 );

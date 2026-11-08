@@ -41,6 +41,7 @@ class _ProfileBasicEditScreenState
     if (now == null || before == null) return true;
     return now.name != before.name ||
         now.gender != before.gender ||
+        now.relationship != before.relationship ||
         now.birthDate != before.birthDate ||
         now.stage != before.stage;
   }
@@ -62,7 +63,8 @@ class _ProfileBasicEditScreenState
         final saved = await ref
             .read(profileApiProvider)
             .updateBasicInfo(remoteId, info);
-        info = saved.basicInfo;
+        // 관계는 서버에 없으므로 고친 값을 그대로 붙인다.
+        info = saved.basicInfo.withRelationship(info.relationship);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         setState(() => _saving = false);

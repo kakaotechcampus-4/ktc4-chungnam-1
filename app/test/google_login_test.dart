@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
@@ -37,6 +38,7 @@ import 'package:saerok/features/visit/visit_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
+import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
 import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
@@ -277,6 +279,9 @@ Widget _app({
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
       selectedProfileStoreProvider.overrideWithValue(
         selectedProfile ?? FakeSelectedProfileStore(),
+      ),
+      profileRelationshipStoreProvider.overrideWithValue(
+        FakeProfileRelationshipStore(),
       ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),

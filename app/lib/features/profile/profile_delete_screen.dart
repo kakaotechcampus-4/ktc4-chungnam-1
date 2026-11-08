@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
+import '../../data/profile_relationship_store.dart';
 import '../../data/providers.dart';
 import '../../data/selected_profile_store.dart';
 import '../../design/tokens.dart';
@@ -86,6 +87,7 @@ class _BodyState extends ConsumerState<_Body> {
     final uploads = ref.read(pendingUploadsProvider);
     final photos = ref.read(visitPhotosProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
+    final relationships = ref.read(profileRelationshipStoreProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -113,6 +115,8 @@ class _BodyState extends ConsumerState<_Body> {
       }
       // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
       await selectedProfile.clear(accountId);
+      // 단말에만 둔 관계도 지운다. 저장소가 실패를 삼킨다.
+      await relationships.clear(accountId);
     }
 
     if (!mounted) return;

@@ -150,6 +150,7 @@ class _StepBody extends StatelessWidget {
     }
 
     return PhotoUploadStep(
+      name: state.draft.name,
       photos: state.draft.photos,
       canEdit: state.draft.canEditPhotos,
       onAdded: controller.addPhotos,
