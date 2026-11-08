@@ -181,8 +181,8 @@ async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 2-4, 2-7, 2-9의 정정이 같은 프로필에서 차례로
-    실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-7, 2-9,
+    3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함.
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """
@@ -239,8 +239,8 @@ async def start_card_generation(
 async def mark_stale(
     connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
 ) -> None:
-    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9가 카드 생성에 쓰는
-    값을 고칠 때 같은 트랜잭션 안에서 부름.
+    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9, 3-3, 3-4가 카드 생성에
+    쓰는 값을 고칠 때와 7-4가 주제 결정을 승인할 때 같은 트랜잭션 안에서 부름.
 
     면회에 쓴 묶음은 지난 기록이라 찍지 않음.
     카드를 만드는 중이면 409로 거절함. 고치기 전 내용으로 새 묶음이 만들어질 수 있음.
