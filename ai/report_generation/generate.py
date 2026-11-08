@@ -21,7 +21,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/report.md"
-PROMPT_VERSION = "report-3"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "report-4"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _TITLE_MAX = 200              # #106 응답 검증과 같은 길이
 
 
