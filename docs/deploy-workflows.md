@@ -127,6 +127,16 @@ Deploy는 배포할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saer
 2. 확인한 태그만 `docker image rm <태그>`로 지운다. 실행 중인 컨테이너가 쓰는 이미지의 마지막 태그는 Docker가 거절하므로 `-f`를 붙이지 않는다. compose가 쓰는 이미지 이름(`docker compose config`의 `image`)은 지우지 않는다.
 3. `docker image prune`으로 태그가 없어진 이미지만 정리한다. `docker image prune -a`는 컨테이너가 쓰지 않는 이미지를 모두 지워 보존 태그가 없는 이전 이미지까지 사라질 수 있고, `docker system prune`은 멈춘 컨테이너와 네트워크까지 지우므로 쓰지 않는다.
 
+## 백업 파일 정리
+
+2단계 백업은 `check`와 `deploy` 모두 실행할 때마다 운영 DB 전체 덤프를 `DEPLOY_BACKUP_DIR`에 하나씩 남긴다. 복원 검사가 실패해도 덤프는 남는다. workflow는 백업을 지우지 않는다.
+
+2026-11-09 PM 결정에 따라 14일 보관한다. 서버의 systemd timer(`backend/ops/backup-prune/`)가 매일 한 번, 만든 지 14일이 지난 백업을 지우고 복원 확인된 가장 최근 백업 1개는 날짜와 상관없이 남긴다. timer의 설치, 확인과 되돌리기는 서버 담당이 [오래된 백업 정리](../backend/docs/release-safety.md#오래된-백업-정리14일-보관)에 따라 한다. 이 문서를 고친 시점에는 설치하지 않았다.
+
+- timer에 적힌 백업 폴더(`/opt/saerok-backups`)는 `DEPLOY_BACKUP_DIR`와 같아야 한다. 이 변수를 바꾸면 timer의 service 파일도 함께 바꾼다.
+- 실패 요약의 되돌리기 안내에 나온 백업 파일도 14일이 지나면 지워질 수 있다. 가장 최근 복원 확인 백업은 남는다.
+- 백업을 운영 DB에 복원하면 백업 뒤의 탈퇴와 동의 철회 등이 되돌아갈 수 있다. 다시 적용하는 절차는 후속 작업이다([이상이 생겼을 때](../backend/docs/release-safety.md#이상이-생겼을-때)).
+
 ## 검증 범위
 
 11/7 로컬에서 확인한 것과 확인하지 않은 것이다. 검사 스크립트와 결과는 PR에 적었다.

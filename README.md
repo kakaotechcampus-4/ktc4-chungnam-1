@@ -143,6 +143,7 @@
 | 삭제 대기열 실행(`app.workers.storage_deletion`) | DB 조회만 하는 dry run. `--apply`에서만 S3 삭제와 확인을 한다 | [storage-deletion](backend/docs/storage-deletion.md) |
 | 배포 후 API 연결 검사(`scripts/verify_api_cycle.py`) | 인수 없이 실행하면 검사 순서만 출력하고 요청을 보내지 않는다 | [api-cycle-runner](backend/docs/api-cycle-runner.md) |
 | 배포 전 기록과 백업 복원 검사(`scripts/capture_release.py`, `scripts/verify_database_backup.py`) | 이미지와 버전 기록, 격리 컨테이너 복원 검사 | [release-safety](backend/docs/release-safety.md) |
+| 오래된 백업 정리(`scripts/prune_database_backups.py`) | 지울 목록만 출력. `--apply`에서만 만든 지 14일이 지난 백업을 지우고, 복원 확인된 가장 최근 백업 1개는 남긴다. 매일 실행할 systemd timer는 `backend/ops/backup-prune/`에 있고 서버 설치는 별도다 | [release-safety](backend/docs/release-safety.md#오래된-백업-정리14일-보관) |
 
 ## 테스트
 
