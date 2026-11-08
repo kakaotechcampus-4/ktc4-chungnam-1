@@ -432,29 +432,39 @@ def test_excluded_topic_is_not_sent_once_its_stories_and_photos_are_deleted(migr
 
     근거 이야기와 사진은 제외 규칙으로 늘 입력에서 빠지므로, 넣을지는 보낸 입력이 아니라 DB에 남은
     이야기와 사진으로 정함. 하나라도 남아 있으면 '이 이야기로 만들지 말 것' 표시로 넣고, 보호자가
-    모두 지웠으면 넣지 않음. 세부 정보 칸만 근거이거나 근거가 없던 제외 주제는 그대로 넣음."""
+    모두 지웠으면 넣지 않음. 세부 정보 칸 근거가 있거나 근거가 없던 제외 주제는 그대로 넣음."""
 
     async def build(connection):
         profile_id, _, old_set, first = await _seed(connection, ("exclude",))
         kept = await value(
             connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
         )
-        gone, gone_with_photo, gone_of_two, half, gone_beside_field = [
+        gone, gone_with_photo, gone_of_two, half, gone_beside_field, gone_beside_photo = [
             await value(
                 connection,
                 "INSERT INTO life_facts (profile_id, title, content)"
                 " VALUES (%s, %s, '합성 이야기') RETURNING fact_id",
                 (profile_id, title),
             )
-            for title in ("지울 제목 1", "지울 제목 2", "지울 제목 3", "남길 제목", "지울 제목 4")
+            for title in (
+                "지울 제목 1",
+                "지울 제목 2",
+                "지울 제목 3",
+                "남길 제목",
+                "지울 제목 4",
+                "지울 제목 5",
+            )
         ]
-        gone_photo = await value(
-            connection,
-            "INSERT INTO photos (profile_id, s3_object_key, description, analysis_status, model,"
-            " prompt_version) VALUES (%s, %s, '지울 사진 설명', 'completed', 'm', 'p')"
-            " RETURNING photo_id",
-            (profile_id, f"synthetic/{profile_id}/deleted.jpg"),
-        )
+        gone_photo, kept_photo = [
+            await value(
+                connection,
+                "INSERT INTO photos (profile_id, s3_object_key, description, analysis_status, model,"
+                " prompt_version) VALUES (%s, %s, '합성 사진 설명', 'completed', 'm', 'p')"
+                " RETURNING photo_id",
+                (profile_id, f"synthetic/{profile_id}/{name}.jpg"),
+            )
+            for name in ("deleted", "kept")
+        ]
         cursor = await connection.execute(
             "SELECT position, topic_id FROM conversation_cards WHERE set_id = %s", (old_set,)
         )
@@ -468,6 +478,7 @@ def test_excluded_topic_is_not_sent_once_its_stories_and_photos_are_deleted(migr
             5: [{"profileField": "hobby"}],  # 세부 정보 칸만
             6: [],  # 근거가 없던 주제
             7: [{"factId": str(gone_beside_field)}, {"profileField": "hobby"}],  # 세부 정보 칸이 남음
+            8: [{"factId": str(gone_beside_photo)}, {"photoId": str(kept_photo)}],  # 사진이 남음
         }
         for position, items in evidence.items():
             await connection.execute(
@@ -476,29 +487,33 @@ def test_excluded_topic_is_not_sent_once_its_stories_and_photos_are_deleted(migr
             )
             if position > 1:
                 await _exclude(connection, profile_id, old_set, topics[position])
-        for fact_id in (gone, gone_with_photo, gone_of_two, gone_beside_field):
+        for fact_id in (gone, gone_with_photo, gone_of_two, gone_beside_field, gone_beside_photo):
             await connection.execute("DELETE FROM life_facts WHERE fact_id = %s", (fact_id,))
         await connection.execute("DELETE FROM photos WHERE photo_id = %s", (gone_photo,))
         context = await build_context(connection, profile_id)
         stored = await value(
             connection, "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topics[2],)
         )
-        return context, old_set, topics, kept, half, gone, stored
+        return context, old_set, topics, kept, half, kept_photo, gone, stored
 
-    context, old_set, topics, kept, half, gone, stored = with_db(migrated_database_url, build)
+    context, old_set, topics, kept, half, kept_photo, gone, stored = with_db(
+        migrated_database_url, build
+    )
 
     sent = {topic.topic_id: topic for topic in context.topics}
-    for position in (1, 4, 5, 6, 7):
+    for position in (1, 4, 5, 6, 7, 8):
         assert [f.action for f in sent[topics[position]].feedback] == ["exclude"], position
-    # 남은 근거 이야기는 제외 규칙대로 입력에서 빠짐
-    assert sent[topics[1]].evidence == [] and sent[topics[4]].evidence == []
+    # 남은 근거 이야기와 사진은 제외 규칙대로 입력에서 빠짐
+    for position in (1, 4, 8):
+        assert sent[topics[position]].evidence == [], position
     assert {fact.fact_id for fact in context.life_facts}.isdisjoint({kept, half})
+    assert kept_photo not in {photo.photo_id for photo in context.photos}
     assert sent[topics[5]].evidence == [{"profileField": "hobby"}]
     assert sent[topics[6]].evidence == []
     assert sent[topics[7]].evidence == [{"profileField": "hobby"}]
     for position in (2, 3):
         assert topics[position] not in sent, position
-    assert all(topics[position] in sent for position in range(8, 13))
+    assert all(topics[position] in sent for position in range(9, 13))
     # 저장된 주제와 지난 카드는 그대로
     assert stored == [{"factId": str(gone)}]
     assert {c.topic_id for c in context.past_cards if c.set_id == old_set} == set(topics.values())

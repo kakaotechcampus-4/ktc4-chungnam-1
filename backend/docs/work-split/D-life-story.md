@@ -93,7 +93,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 - **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
-- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 사진에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
+- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 사진에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
 ## DB 변경
 
@@ -242,7 +242,7 @@ ALTER TABLE life_facts
 | --- | --- | --- |
 | `life_facts` | 지운 행 | 삭제 |
 | 4-1 `context.lifeFacts` | 다음 생성 입력 | 자동으로 빠짐 |
-| `profile_topics.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 입력을 만들 때 없는 `factId` 항목을 뺀다. 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 `topics`에 넣지 않는다(PM 결정 2026-11-08). 보호자가 제외한 주제는 근거 이야기와 사진이 하나라도 남아 있으면 넣고, 모두 지웠으면 넣지 않는다(PM 결정 2026-11-09) |
+| `profile_topics.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 입력을 만들 때 없는 `factId` 항목을 뺀다. 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 `topics`에 넣지 않는다(PM 결정 2026-11-08). 보호자가 제외한 주제는 근거 이야기와 사진이 하나라도 남아 있으면 넣고, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09) |
 | `conversation_cards.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 `pastCards` 입력을 만들 때 없는 `factId` 항목을 뺀다. 카드 문구는 그대로 넣는다(D3 미정) |
 | `card_sets.generation_log` | 생성 당시 보낸 항목 | ID만 남는다(D4 결정). 이전에 저장된 기록은 migration `685f243e9f1f`가 고친다 |
 | `life_fact_proposals` | 승인한 제안이면 출처 | 둔다. 7-3에서 `rejected`로 보이게 된다(D6) |
