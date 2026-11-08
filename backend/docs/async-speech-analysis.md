@@ -88,6 +88,15 @@ STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 �
 `--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
+리포트 생성은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`,
+기본 900초) 이상일 때만 시작한다. 임대는 생성 제한 시간보다 60초 이상 길어야 worker가
+시작하므로, 시작한 생성이 기한을 넘겨 전사문을 보내는 새 외부 호출을 하지 않는다. 기한이 그보다 적게 남은
+`sttCompleted` 작업(리포트 재요청 등)은 시작하지 않고 worker 정리 때 전사문을 지우며
+`failed`(`TRANSCRIPT_EXPIRED`)로 끝낸다. 리포트 호출 뒤 변경 제안 호출(전사문의 두 번째 외부
+전송) 직전에는 DB의 작업 행을 다시 읽는다. 그 사이 계정, 프로필이나 회차가 지워져 작업이
+없어졌거나, 작업이 `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`,
+전사가 지워졌거나 기한이 지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다. 이미 보낸
+리포트 호출은 되돌리지 못한다.
 
 ## 4. 공개 API
 
@@ -504,8 +513,13 @@ STT 경로만 확인할 때는 키 없이 `bash ./scripts/run_speech_worker.sh -
 
 ```bash
 uv run pytest tests/test_report_flow.py tests/test_visit_report_generator.py \
-  tests/test_speech_job_repository.py tests/test_speech_worker_options.py
+  tests/test_speech_job_repository.py tests/test_speech_worker_options.py \
+  tests/test_report_transcript_limit.py
 ```
+
+`tests/test_report_transcript_limit.py`는 전사 기한이 임대 안에 끝나는 작업의 생성 미시작,
+두 생성 호출 사이의 계정, 프로필, 회차 삭제와 작업 종료, 전사 만료 때 변경 제안 호출을 하지
+않는지 검사한다.
 
 ### 11.5 DB 확인
 
@@ -571,6 +585,10 @@ error_code = null
 | S3 삭제만 실패 | 전사 저장과 리포트 생성은 계속. 삭제 대기열 유지, `audio_deleted_at` 미기록 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |
 | STT 완료 후 24시간 안에 리포트 미저장 | 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+| 남은 전사 기한이 생성 단계 임대 시간보다 짧은 `sttCompleted` 작업 | 리포트 생성 시작 안 함(외부 전송 없음), 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+| 리포트 호출과 변경 제안 호출 사이에 계정, 프로필이나 회차 삭제 | 변경 제안 호출 안 함, 저장 없음. 작업 행은 연쇄 삭제됨 |
+| 리포트 호출과 변경 제안 호출 사이에 작업 종료나 임대 만료 | 변경 제안 호출 안 함, 저장 없음, `WORKER_LEASE_EXPIRED`(먼저 남은 실패 코드는 유지) |
+| 리포트 호출과 변경 제안 호출 사이에 전사 기한 경과 | 변경 제안 호출 안 함, 저장 없음, 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 
 오류 응답과 로그에서 WAV 내용, 전사문, Presigned URL, 객체 키, 인증 토큰과 AI 오류
 본문이 노출되지 않는지도 함께 확인한다.
@@ -611,7 +629,8 @@ accessToken         → Authorization Bearer
   받아야 한다(AI 담당 후속).
 - 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
   작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
-  worker가 매 주기에 확인해 지운다.
+  worker가 매 주기에 확인해 지운다. 리포트 생성은 남은 기한이 생성 단계 임대 시간 이상일
+  때만 시작하고, 변경 제안 호출 직전에 작업과 전사가 남아 있는지 다시 확인한다(3절).
 - 앱 재실행 후 홈 타일 전체를 복구할 면회 목록 API는 별도 기능이다. 현재는 앱이
   `analysisId`를 알고 있을 때 단건 상태 조회가 가능하다.
 
