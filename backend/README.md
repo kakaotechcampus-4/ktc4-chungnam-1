@@ -225,7 +225,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 `PATCH /auth/me/consents` 는 선택 동의(`serviceImprovement`, `pushNotification`, `photoAnalysis`) 중 보낸 항목만 바꾼다([API 1-6](../docs/architecture/api-spec.md#1-6-patch-authmeconsents--신규)).
 
 - 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 행을 더하며 약관 버전은 직전 이력의 값을 쓴다. 같은 계정의 동시 변경이 서로를 덮지 않도록 계정 행을 잠근 뒤 더한다.
-- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 AI 설명, 모델과 프롬프트 버전을 비우고 `pending`으로 되돌린다(2026-11-09 PM 결정, `accounts._discard_ai_photo_descriptions`). 보호자가 쓴 설명(`user_description`)은 남는다. 분석 중인 사진은 처리 함수가 저장 직전 동의를 다시 보고 결과를 버린다. 다시 동의하면 사진 worker가 `pending`인 사진을 다시 분석한다.
+- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 AI 설명, 모델과 프롬프트 버전을 비우고 `pending`으로 되돌린다(2026-11-09 PM 결정, `accounts._discard_ai_photo_descriptions`). 보호자가 쓴 설명(`user_description`)은 남는다. 분석 중인 사진은 처리 함수가 ML 업체를 부르기 바로 전과 저장 직전에 동의를 다시 보고, 부르기 전이면 부르지 않고 부른 뒤면 결과를 버린 채 `pending`으로 되돌린다. 다시 동의하면 사진 worker가 `pending`인 사진을 다시 분석한다.
 - 지운 설명이 카드 입력이던 프로필(보호자 설명이 없는 사진)은 아직 면회에 안 쓴 완료 묶음에 `stale_at`을 찍는다. `card_sets.mark_stale`은 카드 생성 중이면 409라 쓰지 않고, 동의 변경은 카드 생성 중에도 성공한다. 생성 중인 묶음은 저장할 때 입력 뒤 사진 설명이 바뀐 것을 보고 갱신 필요로 저장한다. 카드 저장, 사진 분석 저장과 같은 순서로 프로필 행을 먼저 잠근다.
 - 값은 `true`, `false`만 받는다. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 `REQUIRED_CONSENT_NOT_CHANGEABLE`(422), 본문이 비었거나 `null`을 보내면 `INVALID_REQUEST`(422)다.
 - 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.

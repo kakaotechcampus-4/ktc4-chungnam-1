@@ -345,7 +345,8 @@ async def _discard_ai_photo_descriptions(
     프롬프트 버전을 비우고 `pending`으로 되돌린다. `completed`가 아니면 셋 다 NULL 이어야
     하는 CHECK 때문에 함께 비운다. 보호자가 쓴 설명(`user_description`)은 그대로 둔다.
     다시 동의하면 사진 worker가 `pending`인 사진을 다시 분석한다. 분석 중(`processing`)인
-    사진은 처리 함수가 저장 직전에 동의를 다시 보고 결과를 버린 뒤 `pending`으로 되돌린다.
+    사진은 처리 함수가 ML 업체를 부르기 바로 전과 저장 직전에 동의를 다시 보고, 업체를 부르지
+    않거나 결과를 버린 뒤 `pending`으로 되돌린다(`photo_analysis_pipeline.py`).
 
     지운 설명이 카드 입력이던 프로필(보호자 설명이 없는 사진)은 아직 면회에 안 쓴 완료
     묶음에 `stale_at`을 찍는다. `card_sets.mark_stale`은 카드를 만드는 중이면 409를

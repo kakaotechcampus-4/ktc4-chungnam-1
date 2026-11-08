@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import threading
 from uuid import UUID
 
 from photo_analysis import PhotoDescription
@@ -13,10 +14,13 @@ from photo_analysis import PhotoDescription
 from app.core.database import connect
 from app.services.card_generation_jobs import CardGenerationQueue
 from app.services.card_sets import CardGenerationProcessor, build_context
+from app.services.photo_analysis_jobs import PhotoAnalysisQueue
+from app.services.photo_analysis_pipeline import PhotoAnalysisProcessor
+from app.workers.base import Worker
 from tests.card_fixtures import completed_card_set, visit_with, with_db
 from tests.support import run
 from tests.test_card_generation_worker import fake_result
-from tests.test_photo_analysis_pipeline import setup, worker
+from tests.test_photo_analysis_pipeline import FreshSyntheticStorage, setup, worker
 from tests.test_photo_description import patch
 
 
@@ -171,6 +175,67 @@ def test_withdrawal_during_analysis_discards_the_late_result(migrated_database_u
     assert _photo(api, photo) == PENDING_WITHOUT_AI
 
 
+class _ChangeBeforeVendorCall(FreshSyntheticStorage):
+    """worker가 사진을 가져가 조회 주소를 만든 직후, 업체를 부르기 전에 `change`를 실행한다."""
+
+    def __init__(self, change) -> None:
+        super().__init__()
+        self._change = change
+
+    async def create_download(self, *, object_key):
+        download = await super().create_download(object_key=object_key)
+        await asyncio.to_thread(self._change)
+        return download
+
+
+def _analyse_after(url: str, change, calls: list) -> bool:
+    def analyze(photo_url):
+        calls.append(photo_url)
+        return PhotoDescription(description="동의 확인 뒤 만든 합성 설명")
+
+    return run(Worker(
+        queue=PhotoAnalysisQueue(),
+        process=PhotoAnalysisProcessor(storage=_ChangeBeforeVendorCall(change), analyze=analyze,
+                                       model="synthetic-model", timeout_seconds=30),
+        open_connection=lambda: connect(url), lease_seconds=60,
+    ).run_once())
+
+
+def test_withdrawal_after_the_photo_is_taken_stops_the_vendor_call(migrated_database_url):
+    # worker가 사진을 가져간 뒤 업체를 부르기 전에 철회하면 사진을 업체에 보내지 않는다.
+    url = migrated_database_url
+    api, user, _, photo = setup(url)
+    calls = []
+
+    assert _analyse_after(url, lambda: _withdraw(user), calls)
+
+    assert calls == []
+    assert _photo(api, photo) == PENDING_WITHOUT_AI
+    # 철회한 동안에는 다시 가져가지 않는다.
+    assert not run(worker(url, lambda u: calls.append(u)).run_once())
+    assert calls == []
+
+
+def test_vendor_is_called_when_photo_analysis_consent_remains(migrated_database_url):
+    # 그사이 다른 선택 동의만 바꿔 동의 이력이 새로 생겨도 사진 분석 동의가 켜져 있으면 부른다.
+    url = migrated_database_url
+    api, user, _, photo = setup(url)
+
+    def change_other_consent():
+        response = user.call("PATCH", "/auth/me/consents", json={"serviceImprovement": True})
+        assert response.status_code == 200, response.text
+        assert response.json()["consent"]["photoAnalysis"]["granted"] is True
+
+    calls = []
+
+    assert _analyse_after(url, change_other_consent, calls)
+
+    assert len(calls) == 1
+    row = _photo(api, photo)
+    assert (row["analysis_status"], row["description"]) == (
+        "completed", "동의 확인 뒤 만든 합성 설명")
+
+
 async def _until_lock_waits(watcher, count: int, *, unless=None) -> None:
     """이 시험 DB에서 잠금을 기다리는 연결이 `count`개가 되거나 `unless`가 끝날 때까지."""
     for _ in range(400):
@@ -198,17 +263,23 @@ def test_withdrawal_waits_for_an_analysis_result_being_saved(migrated_database_u
         return set_id
 
     unused = with_db(url, seed)
+    called, release = threading.Event(), threading.Event()
+
+    def analyze(_url):
+        called.set()
+        assert release.wait(30)
+        return PhotoDescription(description="합성 AI 설명")
 
     async def scenario():
         async with connect(url) as blocker, connect(url) as watcher:
+            analysis = asyncio.create_task(worker(url, analyze, timeout=60).run_once())
+            assert await asyncio.to_thread(called.wait, 30)
             async with blocker.transaction():
-                # 분석 결과 저장 트랜잭션을 사진을 `completed`로 쓴 뒤, 묶음 갱신 표시에서 멈춘다.
+                # 업체 응답 뒤 결과 저장 트랜잭션이 프로필을 잠근 채 사진 행에서 멈추게 한다.
                 await blocker.execute(
-                    "SELECT 1 FROM card_sets WHERE set_id = %s FOR UPDATE", (unused,)
+                    "SELECT 1 FROM photos WHERE photo_id = %s FOR UPDATE", (photo,)
                 )
-                analysis = asyncio.create_task(
-                    worker(url, lambda _: PhotoDescription(description="합성 AI 설명")).run_once()
-                )
+                release.set()
                 await _until_lock_waits(watcher, 1)
                 withdrawal = asyncio.create_task(asyncio.to_thread(_withdraw, user))
                 await _until_lock_waits(watcher, 2, unless=withdrawal)
