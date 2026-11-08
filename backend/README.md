@@ -101,6 +101,7 @@ API를 나눠 구현할 때 모두 같은 방식으로 DB를 쓴다.
 | 쿼리 | psycopg로 SQL을 직접 쓴다. SQLAlchemy는 Alembic에만 쓴다 |
 | 연결 | 비동기 연결(`psycopg.AsyncConnection`)만 쓴다. 저장소는 연결을 직접 열지 않고, [deps.py](app/api/deps.py)의 `DbConnectionDep`이 요청마다 여는 연결을 받는다. 연결은 autocommit이다 |
 | 트랜잭션 | 여러 문장을 함께 반영해야 하면 서비스나 저장소 코드에서 `async with connection.transaction():`으로 묶는다. 의존성의 정리 단계에서 커밋하지 않는다. worker는 상태가 바뀔 때마다 짧게 커밋하고 AI 서버 호출 중에는 트랜잭션을 열어 두지 않는다 |
+| 인증 순서 | 인증이 필요한 라우트와 의존성은 `CurrentAccountDep`이나 `CurrentSessionDep`을 DB를 쓰는 다른 의존성보다 먼저 선언한다. FastAPI는 선언 순서대로 의존성을 풀기 때문에, 순서가 바뀌면 잘못된 토큰에도 DB 연결을 먼저 연다. [test_token_check_before_db.py](tests/test_token_check_before_db.py)가 모든 인증 경로를 확인한다 |
 | 소유 확인 | 경로의 ID는 `UUID`로 받고 [ownership.py](app/services/ownership.py)의 `require_owned`로 확인한다. 다른 계정의 자원과 없는 자원은 같은 404를 받는다 |
 | 테스트 | 저장소 SQL은 `SAEROK_TEST_DATABASE_URL`을 설정하고 임시 DB fixture(`migrated_database_url`, [conftest.py](tests/conftest.py))로 확인한다. 값이 없으면 건너뛴다. 비동기 코드는 [support.py](tests/support.py)의 `run`으로 실행한다 |
 
@@ -259,7 +260,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 세션의 형식, 서명, 만료와 종류(`typ`)를 먼저 확인하고, 통과한 요청만 폐기 여부를 확인하려고 DB 연결을 연다([deps.py](app/api/deps.py)의 `read_signed_session`, `get_current_session`). 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -271,11 +272,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | --- | --- | --- |
 | `INVALID_REQUEST` | 422 | 요청 형식이 계약과 다름 |
 | `AUTH_NOT_CONFIGURED` | 503 | 클라이언트 ID 또는 세션 서명 키가 설정되지 않음 |
-| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패 |
+| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패. 받아 둔 구글 공개키에 없는 `kid`는 마지막 JWKS 조회 뒤 60초 안이면 다시 조회하지 않고 이 오류로 거부 |
 | `ID_TOKEN_EXPIRED` | 401 | ID 토큰 만료 |
 | `ID_TOKEN_AUDIENCE_MISMATCH` | 401 | `aud` 가 허용 목록에 없음 |
 | `ID_TOKEN_ISSUER_MISMATCH` | 401 | `iss` 가 구글이 아님 |
-| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패 (`retryable: true`) |
+| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패. 조회가 실패한 뒤 60초 안에 받아 둔 공개키에 없는 `kid`가 와도 다시 조회하지 않고 이 오류로 거부 (`retryable: true`) |
 | `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름 |
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
@@ -287,6 +288,14 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `DATABASE_NOT_CONFIGURED` | 503 | `SAEROK_DATABASE_URL`이 설정되지 않아 계정 저장소를 쓸 수 없음 |
 
 JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한다. 검증하지 못한 토큰이 통과하는 경로는 없다.
+
+ID 토큰의 `kid`는 서명을 확인하기 전에 읽으므로 로그인하지 않은 요청도 마음대로 정할 수 있다. 그래서 JWKS를 다시 받는 횟수를 묶는다([google_identity.py](app/services/google_identity.py)).
+
+- 받아 둔 공개키는 `SAEROK_GOOGLE_JWKS_CACHE_SECONDS`(기본 3600초) 동안 쓰고, 그 안에서 공개키에 있는 `kid`는 다시 조회하지 않는다.
+- 없는 `kid`가 오면 다시 조회하되, 마지막 조회(성공과 실패 모두) 뒤 60초 안에는 조회하지 않고 거부한다. 마지막 조회가 성공이었으면 `INVALID_ID_TOKEN`(401), 실패였으면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이다. 구글이 키를 바꿔 새 `kid`가 오면 간격이 지난 뒤 한 번 다시 받아 찾는다. 마지막 조회 뒤 60초 안에 처음 보는 새 키의 토큰이 오면 그 사이에는 거부되므로, 앱은 잠시 뒤 다시 로그인하면 된다.
+- 동시에 여러 요청이 다시 조회해야 하면 한 요청만 조회하고 나머지는 그 결과(실패 포함)를 같이 쓴다.
+
+`POST /auth/google`의 ID 토큰과 `POST /auth/consent`의 등록 토큰은 DB 연결을 열기 전에 확인한다. 검증하지 못한 토큰은 DB 연결 없이 거절하고, JWKS를 받는 동안에도 DB 연결을 쥐지 않는다. 요청 본문이 형식 검사(422)에 걸린 경우는 FastAPI가 오류를 모아 두었다가 다른 의존성을 푼 뒤에 내므로, 이때는 DB 연결을 잠깐 열었다 닫는다.
 
 ### 설정
 

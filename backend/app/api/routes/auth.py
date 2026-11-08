@@ -20,7 +20,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
 
 from app.api.deps import (
     AccountServiceDep,
@@ -51,12 +51,13 @@ from app.services.accounts import (
     Withdrawal,
 )
 from app.schemas.common import ErrorResponse
+from app.services.google_identity import GoogleIdentity
 from app.services.push_devices import (
     FID_PATTERN,
     register_push_device,
     unregister_push_device,
 )
-from app.services.session_tokens import TokenIssuer
+from app.services.session_tokens import RegistrationClaims, TokenIssuer
 
 logger = logging.getLogger("saerok.auth")
 
@@ -117,6 +118,22 @@ def _authenticated(account: Account, issuer: TokenIssuer) -> AuthenticatedRespon
     )
 
 
+async def verify_google_login(
+    payload: GoogleLoginRequest, verifier: GoogleVerifierDep
+) -> GoogleIdentity:
+    # 계정 저장소(DB 연결)보다 먼저 선언해 푼다. 검증하지 못한 토큰은 DB 연결을 열기 전에
+    # 거절하고, JWKS 를 받아 오는 동안에도 DB 연결을 쥐고 있지 않는다.
+    return await verifier.verify(payload.id_token)
+
+
+def read_consent_registration(
+    payload: ConsentRequest, issuer: TokenIssuerDep
+) -> RegistrationClaims:
+    # 등록 토큰의 서명, 만료와 종류를 DB 연결보다 먼저 확인한다. `payload` 는 라우트와 같은
+    # 이름의 같은 본문이라 요청 본문 형식은 바뀌지 않는다.
+    return issuer.read_registration(payload.registration_token)
+
+
 @router.post(
     "/google",
     summary="구글 로그인",
@@ -124,8 +141,7 @@ def _authenticated(account: Account, issuer: TokenIssuer) -> AuthenticatedRespon
     responses=_errors(401, 422, 503),
 )
 async def google_login(
-    payload: GoogleLoginRequest,
-    verifier: GoogleVerifierDep,
+    identity: Annotated[GoogleIdentity, Depends(verify_google_login)],
     accounts: AccountServiceDep,
     issuer: TokenIssuerDep,
     settings: SettingsDep,
@@ -134,8 +150,6 @@ async def google_login(
 
     API 명세 1-1
     """
-
-    identity = await verifier.verify(payload.id_token)
 
     account = await accounts.find(provider="google", social_id=identity.subject)
     if account is not None:
@@ -167,6 +181,7 @@ async def google_login(
 )
 async def submit_consent(
     payload: ConsentRequest,
+    claims: Annotated[RegistrationClaims, Depends(read_consent_registration)],
     accounts: AccountServiceDep,
     issuer: TokenIssuerDep,
 ) -> AuthenticatedResponse:
@@ -174,8 +189,6 @@ async def submit_consent(
 
     API 명세 1-2
     """
-
-    claims = issuer.read_registration(payload.registration_token)
 
     existing = await accounts.find(
         provider=claims.provider, social_id=claims.social_id
