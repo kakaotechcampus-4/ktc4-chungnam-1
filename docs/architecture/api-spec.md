@@ -786,6 +786,8 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목·설명·첫 질문·꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, 카드별 `extra`).
+- 저장 트랜잭션은 프로필과 작업 행을 잠근 뒤 임대가 남은 `running` 작업일 때만 저장한다. 생성하는 동안 임대 시각이 지났으면 임대 만료 정리가 아직 돌지 않았어도 결과를 버리고 새 주제와 카드를 하나도 저장하지 않으며, 작업을 `WORKER_LEASE_EXPIRED`로 실패시킨다.
+- 임대 시각이 지난 뒤 온 생성 실패와 검증 실패도 그 코드 대신 `WORKER_LEASE_EXPIRED`로 남긴다. 이미 `failed`나 `completed`가 된 작업은 늦게 온 결과나 실패가 바꾸지 않는다.
 
 실패
 
@@ -798,7 +800,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
 | `CARD_GENERATION_NOT_STARTED` | 정해진 시간 안에 worker가 작업을 가져가지 않음(4절) |
-| `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함 |
+| `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함. 그 뒤에 온 결과는 저장하지 않음 |
 
 
 ### 4-2. `GET /api/v1/profiles/{profileId}/card-generations/status` — 신규
