@@ -146,7 +146,7 @@ def test_input_photo_changed_during_card_generation_requires_refresh(migrated_da
     api.query("INSERT INTO card_sets(profile_id,status,model,prompt_version) VALUES (%s,'running','synthetic','1')", (profile,))
     def generate(request):
         assert [p.description for p in request.context.photos] == ["입력 사진 설명"]
-        api.query("UPDATE photos SET user_description='생성 중 정정' WHERE photo_id=%s", (photo,))
+        api.query("UPDATE photos SET user_description='생성 중 정정', description_updated_at=now() WHERE photo_id=%s", (photo,))
         return fake_result(request)
     _generate_cards(migrated_database_url, generate)
     row = api.query("SELECT status, stale_at FROM card_sets")[0]
