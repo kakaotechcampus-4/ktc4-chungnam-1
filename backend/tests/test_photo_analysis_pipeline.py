@@ -103,28 +103,52 @@ def test_invalid_response_is_failed_without_leaking_content(migrated_database_ur
     assert "synthetic.invalid" not in caplog.text
 
 
-def test_completed_ready_cards_become_stale_when_photo_finishes(migrated_database_url):
-    api, _, profile, _ = setup(migrated_database_url)
-    async def seed(conn):
-        return await completed_card_set(conn, UUID(profile))
-    with_db(migrated_database_url, seed)
-    run(worker(migrated_database_url, lambda _: PhotoDescription(description="새 사진 설명")).run_once())
-    assert api.query("SELECT stale_at FROM card_sets")[0]["stale_at"] is not None
-
-
-def test_photo_finishes_during_card_generation_result_requires_refresh(migrated_database_url):
-    api, _, profile, _ = setup(migrated_database_url)
-    api.query("UPDATE profiles SET hobby='합성 취미' WHERE profile_id=%s", (profile,))
-    api.query("INSERT INTO card_sets(profile_id,status,model,prompt_version) VALUES (%s,'running','synthetic','1')", (profile,))
-    def generate(request):
-        run(worker(migrated_database_url, lambda _: PhotoDescription(description="생성 중 새 설명")).run_once())
-        return fake_result(request)
+def _generate_cards(url, generate):
     async def scenario():
-        async with connect(migrated_database_url) as conn:
+        async with connect(url) as conn:
             queue = CardGenerationQueue()
             job = await queue.claim(conn, lease_seconds=60)
             await CardGenerationProcessor(queue=queue, generate=generate)(conn, job)
     run(scenario())
+
+
+def test_photo_finishing_after_cards_keeps_ready_cards(migrated_database_url):
+    """온보딩 마치기에서 만든 첫 묶음 뒤에 분석이 끝나도 다시 만들 대상이 되지 않는다."""
+    api, user, profile, _ = setup(migrated_database_url)
+    async def seed(conn):
+        return await completed_card_set(conn, UUID(profile))
+    with_db(migrated_database_url, seed)
+    run(worker(migrated_database_url, lambda _: PhotoDescription(description="새 사진 설명")).run_once())
+    assert api.query("SELECT stale_at FROM card_sets")[0]["stale_at"] is None
+    status = user.call("GET", f"/api/v1/profiles/{profile}/card-generations/status")
+    assert status.json()["needsRefresh"] is False
+
+
+def test_photo_finishing_during_card_generation_keeps_result(migrated_database_url):
+    api, _, profile, _ = setup(migrated_database_url)
+    api.query("UPDATE profiles SET hobby='합성 취미' WHERE profile_id=%s", (profile,))
+    api.query("INSERT INTO card_sets(profile_id,status,model,prompt_version) VALUES (%s,'running','synthetic','1')", (profile,))
+    inputs = []
+    def generate(request):
+        inputs.append(request)
+        run(worker(migrated_database_url, lambda _: PhotoDescription(description="생성 중 새 설명")).run_once())
+        return fake_result(request)
+    _generate_cards(migrated_database_url, generate)
+    assert inputs[0].context.photos == []
+    row = api.query("SELECT status, stale_at FROM card_sets")[0]
+    assert row["status"] == "completed" and row["stale_at"] is None
+
+
+def test_input_photo_changed_during_card_generation_requires_refresh(migrated_database_url):
+    api, _, profile, photo = setup(migrated_database_url)
+    run(worker(migrated_database_url, lambda _: PhotoDescription(description="입력 사진 설명")).run_once())
+    api.query("UPDATE profiles SET hobby='합성 취미' WHERE profile_id=%s", (profile,))
+    api.query("INSERT INTO card_sets(profile_id,status,model,prompt_version) VALUES (%s,'running','synthetic','1')", (profile,))
+    def generate(request):
+        assert [p.description for p in request.context.photos] == ["입력 사진 설명"]
+        api.query("UPDATE photos SET user_description='생성 중 정정', description_updated_at=now() WHERE photo_id=%s", (photo,))
+        return fake_result(request)
+    _generate_cards(migrated_database_url, generate)
     row = api.query("SELECT status, stale_at FROM card_sets")[0]
     assert row["status"] == "completed" and row["stale_at"] is not None
 
