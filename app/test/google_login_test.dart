@@ -542,7 +542,7 @@ void main() {
         isFalse,
         reason: '이름을 비웠으면 보내지 않고 서버 기본값을 쓴다',
       );
-      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 프로필부터 만든다');
+      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 처음 오셨네요를 지나 홈으로 간다');
     });
 
     testWidgets('이름을 적으면 함께 보낸다', (tester) async {

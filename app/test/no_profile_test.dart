@@ -127,7 +127,6 @@ void main() {
     });
 
     final blocked = <String, Finder Function()>{
-      '오늘의 대화카드 받기': () => find.text('오늘의 대화카드 받기'),
       '알림': () => find.byTooltip('알림'),
       '일대기': () => find.text('일대기'),
       '리포트': () => find.text('리포트'),
@@ -146,7 +145,7 @@ void main() {
     testWidgets('안내창에서 닫기를 누르면 홈에 남는다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
-      await tapAndSettle(tester, find.text('오늘의 대화카드 받기'));
+      await tapAndSettle(tester, find.byTooltip('알림'));
       await tapAndSettle(tester, find.text('닫기'));
 
       expect(find.text(registerTitle), findsNothing);
@@ -156,10 +155,40 @@ void main() {
     testWidgets('안내창에서 등록하러 가기를 누르면 소중한 분 화면으로 간다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
-      await tapAndSettle(tester, find.text('오늘의 대화카드 받기'));
+      await tapAndSettle(tester, find.byTooltip('알림'));
       await tapAndSettle(tester, find.text('등록하러 가기'));
 
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
+    });
+
+    // 가입 직후에는 정보를 묻지 않고 홈부터 보여준다. 카드를 받으려 할 때 묻는다.
+    testWidgets('오늘의 대화카드 받기를 누르면 안내창 없이 기본 정보 입력을 연다', (tester) async {
+      await openAt(tester, AppRoutes.home);
+
+      await tapAndSettle(tester, find.text('오늘의 대화카드 받기'));
+
+      expect(find.text(registerTitle), findsNothing);
+      expect(find.text('기본 정보 입력'), findsOneWidget);
+    });
+
+    testWidgets('입력하다 나가면 입력 중으로 남고 다시 누르면 이어서 입력한다', (tester) async {
+      await openAt(tester, AppRoutes.home);
+
+      await tapAndSettle(tester, find.text('오늘의 대화카드 받기'));
+      await tester.enterText(find.byType(TextField).first, '박새록');
+      await tester.pump();
+      await tapAndSettle(tester, find.byTooltip('뒤로'));
+
+      expect(find.text('오늘의 대화카드 받기'), findsOneWidget, reason: '홈으로 돌아온다');
+
+      await tapAndSettle(tester, find.text('프로필 등록'));
+      expect(find.text('입력 중'), findsOneWidget, reason: '입력하던 분이 슬롯에 남는다');
+      await tapAndSettle(tester, find.byTooltip('뒤로'));
+
+      await tapAndSettle(tester, find.text('오늘의 대화카드 받기'));
+
+      expect(find.text('기본 정보 입력'), findsOneWidget);
+      expect(find.text('박새록'), findsOneWidget, reason: '적어 둔 이름이 남아 있다');
     });
   });
 

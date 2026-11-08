@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/profile_api.dart';
@@ -14,6 +12,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_entry.dart';
 import 'profile_dialogs.dart';
 
 /// 프로필 전환. 큰 제목은 함께하는 소중한 분이다.
@@ -144,24 +143,10 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
 
   /// 새로운 분을 등록하기 시작한다. 다른 분을 입력하던 중이어도 그 입력은
   /// `입력 중` 으로 남겨 두고 새로 시작한다.
-  void _startAdding() {
-    final id = ref.read(careProfilesProvider.notifier).beginAdding();
-    if (id == null) return;
-    ref.invalidate(setupControllerProvider);
-    ref.read(pendingSetupsProvider.notifier).save(id, const SetupState());
-    context.push(AppRoutes.profileAddOf(id));
-  }
+  void _startAdding() => startProfileSetup(context, ref);
 
   /// `입력 중` 인 분의 입력을 가 본 가장 먼 단계부터 다시 연다.
-  void _resumeAdding(String id) {
-    // 서버에서 불러온 입력 중인 분은 앱에 남은 입력이 없으니 서버 값으로 연다.
-    final entry = ref.read(careProfilesProvider).byId(id);
-    final saved =
-        ref.read(pendingSetupsProvider)[id] ??
-        (entry == null ? const SetupState() : SetupState.resumeOf(entry));
-    ref.read(setupControllerProvider.notifier).restore(saved);
-    context.push(AppRoutes.profileAddOf(id));
-  }
+  void _resumeAdding(String id) => resumeProfileSetup(context, ref, id);
 
   /// 고른 어르신으로 바꾸고 홈으로 돌아가 누구로 바뀌었는지 알린다.
   void _switchTo(CareProfileSummary profile) {
