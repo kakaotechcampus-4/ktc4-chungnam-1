@@ -688,18 +688,23 @@ class PostgresSpeechAnalysisJobRepository:
             )
             # 처리 중에 멈춘 작업은 실패로 끝내고 원본 삭제 요청을 함께 남긴다.
             # Lifecycle의 일 단위 만료만으로 정확한 삭제 시각을 보장할 수 없다.
+            # 전사 유지와 삭제 시각 기록은 한 번 읽은 시각(`clock`)으로 정한다. 이유는
+            # `_update_status`와 같다.
             processing = await self._connection.execute(
                 """
-                WITH expired AS (
+                WITH clock AS MATERIALIZED (
+                    SELECT clock_timestamp() AS checked_at
+                ), expired AS (
                 UPDATE speech_analysis_jobs
                    SET status = 'failed', error_code = %s,
-                       transcript = CASE WHEN transcript_expires_at > clock_timestamp() THEN transcript END,
+                       transcript = CASE WHEN transcript_expires_at > clock.checked_at THEN transcript END,
                        transcript_deleted_at = CASE
-                           WHEN transcript IS NOT NULL AND transcript_expires_at <= clock_timestamp() THEN now()
+                           WHEN transcript IS NOT NULL AND transcript_expires_at <= clock.checked_at THEN now()
                            ELSE transcript_deleted_at
                        END,
                        lease_expires_at = NULL, completed_at = now(),
                        updated_at = now()
+                  FROM clock
                  WHERE status IN ('transcribing', 'generatingReport')
                    AND lease_expires_at <= now()
                 RETURNING s3_object_key, audio_deleted_at
@@ -760,8 +765,11 @@ async def _update_status(
     # 완료한 리포트의 전사는 지운다. 생성 실패 시 기존 보관 기한까지만 남긴다.
     # `completed`는 `generatingReport`에서만, 끝난 작업(`completed`, `failed`)은 바꾸지 않는다.
     # `generatingReport`는 새 임대가 끝나기 전에 전사 기한이 오지 않을 때만 시작한다.
+    # 기한 비교는 모두 한 번 읽은 시각(`clock`)으로 한다. clock_timestamp()를 식마다 부르면
+    # 그 사이에 기한이 지나 전사는 남고 삭제 시각만 채워져 CHECK에 걸릴 수 있다.
     cursor = await connection.execute(
         """
+        WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS checked_at)
         UPDATE speech_analysis_jobs
            SET status = %(status)s::text, error_code = %(error_code)s,
                lease_expires_at = CASE
@@ -769,11 +777,11 @@ async def _update_status(
                    THEN now() + (%(lease_seconds)s * interval '1 second')
                END,
                transcript = CASE
-                   WHEN %(status)s::text = 'completed' OR transcript_expires_at <= clock_timestamp() THEN NULL
+                   WHEN %(status)s::text = 'completed' OR transcript_expires_at <= clock.checked_at THEN NULL
                    ELSE transcript
                END,
                transcript_deleted_at = CASE
-                   WHEN (%(status)s::text = 'completed' OR transcript_expires_at <= clock_timestamp())
+                   WHEN (%(status)s::text = 'completed' OR transcript_expires_at <= clock.checked_at)
                         AND transcript IS NOT NULL THEN now()
                    ELSE transcript_deleted_at
                END,
@@ -782,13 +790,14 @@ async def _update_status(
                    ELSE completed_at
                END,
                updated_at = now()
+          FROM clock
          WHERE analysis_id = %(analysis_id)s
            AND status NOT IN ('completed', 'failed')
            AND (%(status)s::text <> 'completed' OR status = 'generatingReport')
            AND (%(status)s::text <> 'generatingReport' OR (
                status='sttCompleted'
                AND transcript_expires_at
-                   > clock_timestamp() + (%(lease_seconds)s * interval '1 second')
+                   > clock.checked_at + (%(lease_seconds)s * interval '1 second')
            ))
         """,
         {

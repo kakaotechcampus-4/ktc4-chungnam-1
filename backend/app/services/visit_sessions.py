@@ -11,6 +11,7 @@ from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.schemas.visit_session import VisitSession
 from app.services.card_sets import lock_profile
+from app.services.ownership import CARD_SET, VISIT_SESSION, not_found
 
 
 def _invalid_selection(message: str) -> AppError:
@@ -33,6 +34,8 @@ async def load_visit_session(connection: DbConnection, session_id: UUID) -> Visi
         (session_id,),
     )
     row = await cursor.fetchone()
+    if row is None:
+        raise not_found(VISIT_SESSION)
     cursor = await connection.execute(
         "SELECT card_id FROM conversation_cards WHERE set_id = %s AND selected ORDER BY position",
         (row["set_id"],),
@@ -52,11 +55,12 @@ async def load_visit_session(connection: DbConnection, session_id: UUID) -> Visi
 
 async def create_visit_session(
     connection: DbConnection, profile_id: UUID, set_id: UUID, card_ids: list[UUID]
-) -> UUID:
+) -> VisitSession:
     """5-1. 한 트랜잭션에서 회차 생성, 묶음 연결, 고른 카드 `selected` 표시.
 
     묶음 소유 확인은 부르는 쪽에서 `require_owned(CARD_SET)`로 먼저 함. 4-1과 겹치지 않게
-    프로필 행을 먼저 잠금(`lock_profile`).
+    프로필 행을 먼저 잠금(`lock_profile`). 응답도 프로필을 잠근 이 트랜잭션에서 만듦. 5-1 오류
+    표에는 회차 404가 없는데, 커밋 뒤에 읽으면 그 사이 프로필 삭제로 회차가 사라질 수 있음.
     """
     if len(set(card_ids)) != len(card_ids):
         raise _invalid_selection("같은 카드를 두 번 고를 수 없습니다.")
@@ -68,6 +72,8 @@ async def create_visit_session(
             (set_id,),
         )
         card_set = await cursor.fetchone()
+        if card_set is None:
+            raise not_found(CARD_SET)
         if card_set["status"] != "completed":
             raise AppError(
                 status_code=409,
@@ -102,7 +108,7 @@ async def create_visit_session(
             "UPDATE conversation_cards SET selected = true WHERE set_id = %s AND card_id = ANY(%s)",
             (set_id, card_ids),
         )
-    return session_id
+        return await load_visit_session(connection, session_id)
 
 
 async def add_session_cards(connection: DbConnection, session_id: UUID, card_ids: list[UUID]) -> None:
@@ -117,6 +123,8 @@ async def add_session_cards(connection: DbConnection, session_id: UUID, card_ids
             (session_id,),
         )
         row = await cursor.fetchone()
+        if row is None:
+            raise not_found(VISIT_SESSION)
         if row["evaluated_at"] is not None:
             raise AppError(
                 status_code=409,

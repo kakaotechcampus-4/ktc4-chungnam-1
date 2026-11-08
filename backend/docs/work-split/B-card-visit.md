@@ -392,6 +392,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - 4-1과 겹치지 않게 트랜잭션 시작 때 프로필 행을 먼저 잠근다(`SELECT ... FROM profiles ... FOR UPDATE`).
 - 한 트랜잭션에서 `visit_sessions`를 넣고(`started_at` 기본값이 서버 시각), `UPDATE card_sets SET session_id = %s WHERE set_id = %s AND session_id IS NULL`로 묶음을 연결한다. 0행이면 동시 요청이 먼저 쓴 것이므로 409 `CARD_SET_ALREADY_USED`로 롤백한다. 마지막으로 고른 카드를 `selected = true`로 바꾼다.
 - `card_sets(session_id, profile_id)` FK가 회차와 묶음이 같은 프로필인지 DB에서도 확인한다.
+- 소유 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 묶음이 없어졌으면 같은 404 `CARD_GENERATION_NOT_FOUND`다. 응답은 프로필을 잠근 트랜잭션 안에서 만들어, 오류 표에 없는 회차 404가 나지 않게 한다.
 
 <br>
 
@@ -457,6 +458,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 **구현 메모**
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 없을 때만 받는다. 같은 묶음의 `position` 10~12 카드만 중복 없이 받고, 이미 `selected`인 카드는 무시한다.
+- 소유 확인 뒤나 카드를 더한 뒤 같은 계정의 다른 요청이 프로필을 지워 회차가 없어졌으면 같은 404 `VISIT_SESSION_NOT_FOUND`다.
 
 <br>
 
