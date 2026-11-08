@@ -91,3 +91,17 @@ def test_uncertain_candidates_are_kept_for_review(monkeypatch, labels, participa
     assert result.life_fact_proposals[0].reason == reason
     assert len(result.topic_proposals) == 1
     assert "life_fact_proposals_allowed" not in payloads[0]["transcript_context"]
+
+
+def test_prompt_keeps_processing_words_out_of_candidates():
+    """11/8 운영 시험: 이야기 후보 이유 칸에 '화자 역할이 확인되지 않아'가 나옴.
+    실제 모델 동작이 아니라 프롬프트 문구만 확인함."""
+    from proposal_generation.generate import PROMPT
+
+    text = PROMPT.read_text(encoding="utf-8")
+    assert "처리 과정을 가리키는 말을 쓰지 않는다" in text
+    assert "화자가 명확하지 않아" not in text.replace("'화자가 명확하지 않아' 대신", "")
+    # 11/8 운영 모델 비교: 이 규칙만 두면 말한 사람이 불확실한 후보를 아예 빼서 후보가 줄었다.
+    assert "이 규칙 때문에 후보를 빼지 않는다" in text
+    # 호칭과 관계는 모델에 맡긴다(PM 결정).
+    assert "가족 호칭은" not in text
