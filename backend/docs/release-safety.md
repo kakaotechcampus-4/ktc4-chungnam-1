@@ -4,13 +4,21 @@
 승인된 것은 아니다. 현재 열린 PR은 각 작성자의 작업으로 유지하며, 병합된 버전을
 별도 통합 작업공간에서 다시 검증한다.
 
+현재 구현 (2026-11-09 기준): #256(11/7 병합) 이후 운영 배포는 이 문서의 백업, 버전 대조와
+교체 순서를 옮긴 [승인 배포 workflow](../../docs/deploy-workflows.md)로 한다. 아래 수동 기준은
+workflow가 하지 않는 판단(되돌리기, DB 복원, 앱 확인)의 기준으로 남긴다. workflow의 서버 조건이 맞지 않으면
+손으로 배포하지 않고 서버 담당과 원인을 먼저 확인한다([서버 조건](../../docs/deploy-workflows.md#서버-조건)).
+운영 BE는 develop `9c2b8276`(11/8 Deploy run 42485750502)이다. 그 뒤 develop에 병합된 변경은 아직
+배포하지 않았으며, 그 목록과 처음 배포할 때 사람이 할 일은 [실제 실행 기록](../../docs/deploy-workflows.md#실제-실행-기록-2026-11-09-기준)에 둔다.
+BE 배포가 끝나도 Android 앱은 바뀌지 않는다. 앱은 Play 게시나 따로 배포한 APK로만 바뀐다.
+
 ## 주소와 배포 대상
 
 - 현재 앱이 사용하는 주소를 유지한다. 자동 할당 공인 IP에 새 Elastic IP를 붙이면 주소가 바뀐다. 기존 IP를 EIP로 전환하는 작업으로 취급하지 않는다.
 - 11월 19일까지 인스턴스를 의도적으로 중지하지 않는 것을 기본으로 한다. 이 조건도 AWS 장애까지 막는 보장은 아니다. 주소 변경은 새 AAB와 옛 앱 영향을 함께 검토하는 별도 결정이다.
-- versionCode 3의 설치 기기나 APK를 업데이트 전에 보존한다. 새 BE는 옛 앱과 새 앱으로 각각 확인한다.
-- 1차 배포 후보는 검증한 develop SHA와 팀이 병합한 #188~#190이다. 처리 중 작업을 끊지 않는 배포 조건을 먼저 확인한다. 2차 배포는 추가 수정분을 별도로 검사한 SHA로 구분한다.
-- API, card-worker, speech-worker를 모두 같은 검증 이미지로 맞춘다. DB migration은 해당 SHA의 Alembic head와 대조한다. 열린 PR의 head를 운영에 바로 올리지 않는다.
+- versionCode 3의 설치 기기나 APK를 업데이트 전에 보존한다. 새 BE는 옛 앱과 새 앱으로 각각 확인한다. (11/5 운영 배포 전인 11/3에 쓴 항목이다. develop의 앱 버전은 `1.0.0+7`(#270)이다.)
+- 1차 배포 후보는 검증한 develop SHA와 팀이 병합한 #188~#190이다. 처리 중 작업을 끊지 않는 배포 조건을 먼저 확인한다. 2차 배포는 추가 수정분을 별도로 검사한 SHA로 구분한다. (11/5 운영 배포 전인 11/3에 쓴 항목이다. 11/7 이후 배포 SHA와 교체 서비스는 Deploy workflow의 입력과 `DEPLOY_SERVICES`로 정한다.)
+- API, card-worker, speech-worker, photo-worker를 모두 같은 검증 이미지로 맞춘다. photo-worker는 11/8 00:21 KST 배포(Deploy run 42385596940)부터 운영에서 실행된다. DB migration은 해당 SHA의 Alembic head와 대조한다. 열린 PR의 head를 운영에 바로 올리지 않는다.
 
 ## 배포 전 기록
 
@@ -30,6 +38,9 @@ Git 체크아웃의 SHA와 실행 이미지의 SHA는 다를 수 있다. 이미�
 speech-worker가 어느 주소를 쓰는지, 이전 터널을 쓰는 서비스가 남아 있는지 확인한다.
 대체 경로 검증과 사용 관계 확인 전에는 어느 쪽도 제거하지 않는다.
 
+현재 구현 (2026-11-09 기준, 운영 배포 기록): 운영 서버에서는 11/5 배포 때 speech-worker에 붙였던 임시 이미지와
+설정을 걷어내며(#187의 11/5 운영 배포 기록) 임시 override 링크를 저장소 밖으로 옮겼고, 11/6 `stt-tunnel` 컨테이너를 지웠다.
+
 ## 백업과 격리 복원 검사
 
 `scripts/verify_database_backup.py`는 PostgreSQL 17 컨테이너에서 `pg_dump`를 실행한다.
@@ -39,6 +50,7 @@ speech-worker가 어느 주소를 쓰는지, 이전 터널을 쓰는 서비스�
 필수 인수는 `--source-container`, `--source-database`, `--source-user`, `--backup-dir`다.
 비밀번호를 인수로 받지 않는다. DB 컨테이너 안에서 허용된 로컬 인증을 사용하며,
 인증이 거절되면 인증을 해제하지 말고 실패로 남긴다. 운영 실행은 별도 승인이 필요하다.
+지금은 승인 배포 workflow가 `production` 승인 뒤 check와 deploy 실행마다 2단계에서 이 도구를 실행한다.
 
 - 새 파일만 만든다. 기존 백업을 덮어쓰지 않는다.
 - 복원용 DB는 컨테이너 내부 TCP 응답까지 기다린다. 초기화용 임시 Unix 소켓 서버를 준비 완료로 보지 않는다. 실패 기록에는 원문 오류 대신 중단 단계와 안전한 오류 코드를 남긴다.
@@ -57,10 +69,13 @@ python3 scripts/prune_database_backups.py --backup-dir /var/backups/saerok --kee
 ```
 
 - 하루 한 번 systemd timer나 cron으로 위 두 명령을 차례로 실행한다. 백업 검사가 실패하면 정리는 하지 않는다.
-- 보관 기한과 마지막 삭제 시점(AWS 종료 전 전부 삭제)은 `docs/legal/README.md`의 백업 항목을 따른다.
+- 2026-11-09 기준 운영 배포 기록에는 이 매일 실행이나 정리를 운영 서버에 설치한 기록이 없다. 운영 백업은 Deploy를 실행할 때마다 하나씩 생긴다.
+- 이 절차를 처음 쓸 때(11/4)는 보관 기한과 마지막 삭제 시점(AWS 종료 전 전부 삭제)을 `docs/legal/README.md`의 백업 항목에 맡겼다. 2026-11-09 기준 그 문서에는 이를 정한 백업 항목이 없고, 계정 삭제 시 백업의 실제 삭제 절차, 보관 기간과 삭제 증명은 [열린 쟁점](../../docs/legal/README.md#열린-쟁점)에 남아 있다.
 
 로컬 확인(2026-11-04): 로컬 Docker의 PostgreSQL 17에 최신 migration(`d73f0b5ca921`)과 합성 프로필 3건을 넣고 `verify_database_backup.py`를 실행했다. 4초 걸렸고 `restoreVerified: true`, 복원된 revision `d73f0b5ca921`, 사용자와 프로필과 이야기 각 3건이 원본과 같았으며 복원용 컨테이너는 지워졌다. 운영 DB에서 실행한 기록은 아니다.
 - SQL 복원 성공은 서비스 복구 완료와 다르다. 앱 연결, 이미지와 migration 호환성, 외부 S3 파일까지 복원됐다는 뜻도 아니다.
+
+운영 실행 기록: 11/7 check 실행 두 번(run 42345315160, 42383352798), 3단계에서 실패한 11/7 deploy 실행(run 42383634609)과 11/8 deploy 실행 세 번(run 42385596940, 42397653863, 42485750502)의 2단계가 모두 운영 DB 백업을 만들고 `restoreVerified: true`로 끝났다. 백업 파일은 서버의 백업 폴더에만 있다.
 
 로컬 검증은 합성 DB에서만 한다. `tests/test_backup_restore_tool.py`의 Docker 복원 시험은
 `SAELOG_BACKUP_TEST_CONTAINER`를 명시했을 때만 실행한다. 운영 컨테이너를 테스트 fixture에
@@ -72,9 +87,11 @@ python3 scripts/prune_database_backups.py --backup-dir /var/backups/saerok --kee
 2. 새 작업 접수와 진행 중 작업을 확인한다. worker만 꺼도 API 접수는 계속될 수 있다. 사용자 요청을 어떻게 차단할지 정하지 못했거나 진행 중 작업을 안전하게 끝내지 못하면 배포하지 않는다.
 3. 깨끗한 체크아웃에서 `SOURCE_REVISION` build arg에 전체 SHA를 넣어 이미지를 빌드한다. 해당 이미지에 SHA별 태그를 붙이고 이전 이미지도 보존한다.
 4. 승인한 유지보수 상태에서 migration을 적용한다. `init.sql`, DB 재생성, `compose down -v`를 쓰지 않는다.
-5. 명시한 compose 조합으로 API와 두 worker를 교체한다. 기존 override의 임시 image 값이 마지막에 덮어쓰지 않는지 확인한다.
+5. 명시한 compose 조합으로 API와 worker 셋(card-worker, speech-worker, photo-worker)을 교체한다. 기존 override의 임시 image 값이 마지막에 덮어쓰지 않는지 확인한다.
 6. 실제 image ID와 revision을 다시 기록하고 준비 상태, 로그인과 카드 생성, 녹음부터 리포트, 이야기 확인 후 다음 카드까지 검사한다.
-7. 옛 앱과 새 앱을 모두 확인한 후 새 AAB를 올린다. 공개 배포 승인 전까지는 승인된 비공개 테스트 설치 경로를 안내한다.
+7. 옛 앱과 새 앱을 모두 확인한 후 새 AAB를 올린다. 공개 배포 승인 전까지는 승인된 비공개 테스트 설치 경로를 안내한다. Play에 올리는 AAB는 업로드 키를 가진 릴리스 담당자가 서명해 만든다([FE README](../../app/README.md#play-업로드용-빌드)). 11/8 기준 Play 프로덕션 첫 게시는 검토 중이다([README의 배포와 시연](../../README.md#배포와-시연)).
+
+1~6의 기록, 빌드, migration, 교체와 상태 확인은 지금 Deploy workflow가 한다. 2는 처리 중 작업이 있으면 멈추는 방식이며 API 접수는 막지 않는다. 4도 유지보수 상태로 바꾸지 않고 API를 띄운 채 migration을 적용한다. 6의 기능 확인과 7은 사람이 한다.
 
 ## 이상이 생겼을 때
 

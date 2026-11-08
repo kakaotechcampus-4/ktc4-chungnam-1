@@ -2,7 +2,7 @@
 
 앱과 백엔드 사이의 공개 API, 백엔드와 AI 서버 사이의 내부 API를 정리한다. 저장 구조는 [init.sql](../../backend/database/init.sql)의 DB 스키마를 따른다. 예시 값은 모두 합성 데이터다.
 
-2026-10-12 문서 정리: 사진 설명은 별도 승인 없이 카드 생성에 쓰고 앨범에서 선택적으로 수정한다(3-3). 카드 API와 요청 및 결과 형식은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)에 맞췄다. 프로필 저장(2-4) 후 카드 생성을 요청(4-1)하고, BE의 4-1 처리에서 생성 함수를 호출한다. 이전 2-5와 내부 8-2는 삭제했으며, 실제 AI 생성 함수 연결은 후속 작업이다.
+2026-10-12 문서 정리: 사진 설명은 별도 승인 없이 카드 생성에 쓰고 앨범에서 선택적으로 수정한다(3-3). 카드 API와 요청 및 결과 형식은 [PR #99](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/99)에 맞췄다. 프로필 저장(2-4) 후 카드 생성을 요청(4-1)하고, BE의 4-1 처리에서 생성 함수를 호출한다. 이전 2-5와 내부 8-2는 삭제했으며, 실제 AI 생성 함수 연결은 당시 후속 작업이었고 [PR #120](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/120)에서 카드 생성 worker에 연결했다.
 
 STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내부 HTTP 형식을 실제 GPU 실행 위치와 동일시하지 않는다. 리포트(8-3)는 [PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)에서 BE가 `ai/`의 생성 함수를 직접 부르는 방식으로 연결한다. 요청과 응답 형식, BE 검증과 오류 코드는 그대로이며, 생성 함수 안에서 외부 ML API로 요청을 보낸다는 점도 같다.
 
@@ -69,11 +69,23 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 상한을 넘거나 1단계에서 거절한 업로드는 본문을 끝까지 받지 않고 응답하므로, 아직 본문을 보내던 클라이언트는 `413`이나 `401` 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
 
+현재 구현 (2026-11-09 기준): 이 절의 본문 상한, 본문 전 토큰 확인과 `REQUEST_TOO_LARGE`는 11/9 develop에 병합된 [#278](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/278)이며 운영 서버(develop `9c2b8276`)에는 아직 없다. 배포 workflow는 caddy를 교체하지 않으므로 Caddy 상한은 배포 뒤 caddy를 따로 다시 만들어야 적용된다([배포 문서의 갱신](../../backend/docs/deployment.md#갱신)).
+
 <br>
 
 ## API 목록
 
 상태: `완료` 구현됨, `미병합` 구현됐으나 develop에 병합 전, `수정` 기존 API 변경, `신규` 새로 구현, `미정` 결정 전
+
+2026-11-09 develop `d9643466` 기준 아래 공개 API는 모두 구현돼 있다. `신규`는 v0.2 이후 새로 만든 API라는 뜻이며 구현 전이라는 뜻이 아니다. 8-3, 8-4는 HTTP 경로 대신 worker가 `ai/`의 함수를 직접 부른다.
+
+현재 구현 (2026-11-09 기준): 이 문서는 develop 코드를 따른다. 운영 서버의 BE는 11/8 승인 배포([Deploy run 42485750502](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42485750502), develop `9c2b8276`) 그대로이고, 그 뒤 11/9에 develop에 병합된 다음 변경은 운영에 아직 없다.
+
+- [#275](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/275): 사진 분석이 끝나도 받아 둔 카드 묶음을 `needsRefresh`로 바꾸지 않는다([4절](#사실-정정-후-카드-갱신-기준)).
+- [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277): 7-4의 주제 결정 승인에 카드 묶음 잠금과 갱신 표시를 적용한다.
+- [#278](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/278): 요청 본문 크기 상한을 두고, 업로드 경로는 본문을 받기 전에 세션 토큰을 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
+- [#279](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/279): 리포트 생성이 전사 보관 기한을 넘기거나 지워진 작업의 전사를 보내지 않는다(6-5, 8절).
+- [#280](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/280): 전사 저장 직후 멈춘 음성 분석 작업을 다음 worker가 이어 처리한다(8-1 아래 worker 처리 순서).
 
 6-2, 6-3, 8-1은 공통 기반 작업에서 새 스키마와 worker 공통 골격에 맞췄다.
 
@@ -85,8 +97,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 1-4 | 프로필 설정 | `POST` | `/auth/logout` | 완료 |
 | 1-5 | 회원 탈퇴 | `DELETE` | `/auth/me` | 수정 |
 | 1-6 | 프로필 설정 | `PATCH` | `/auth/me/consents` | 신규 |
-| 1-7 | 앱 시작, 알림 수신 동의 | `PUT` | `/auth/me/push-devices/{fid}` | 미병합 |
-| 1-8 | 로그아웃, 알림 수신 철회 | `DELETE` | `/auth/me/push-devices/{fid}` | 미병합 |
+| 1-7 | 앱 시작, 알림 수신 동의 | `PUT` | `/auth/me/push-devices/{fid}` | 신규 |
+| 1-8 | 로그아웃, 알림 수신 철회 | `DELETE` | `/auth/me/push-devices/{fid}` | 신규 |
 | 2-1 | 로그인 직후, 어르신 목록 | `GET` | `/api/v1/profiles` | 신규 |
 | 2-2 | 기본 정보 입력 | `POST` | `/api/v1/profiles` | 신규 |
 | 2-3 | 마이페이지, 일대기 | `GET` | `/api/v1/profiles/{profileId}` | 신규 |
@@ -98,7 +110,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 2-9 | 일대기 이야기 삭제 | `DELETE` | `/api/v1/life-facts/{factId}` | 신규 |
 | 3-1 | 사진 첨부, 갤러리 추가 | `POST` | `/api/v1/profiles/{profileId}/photos` | 신규 |
 | 3-2 | 사진 분석 대기 | `GET` | `/api/v1/profile-photos/{photoId}` | 신규 |
-| 3-3 | 앨범에서 사진 설명 수정 | | | 수정 API 미정, 필수 승인 없음 |
+| 3-3 | 앨범에서 사진 설명 수정 | `PATCH` | `/api/v1/profile-photos/{photoId}/description` | 신규. 필수 승인 없음 |
 | 3-4 | 앨범에서 사진 삭제 | `DELETE` | `/api/v1/profile-photos/{photoId}` | 신규 |
 | 4-1 | 홈 | `POST` | `/api/v1/profiles/{profileId}/card-generations` | 신규 |
 | 4-2 | 홈 | `GET` | `/api/v1/profiles/{profileId}/card-generations/status` | 신규 |
@@ -114,6 +126,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 6-2 | 보호자 평가 | `POST` | `/api/v1/visit-sessions/{sessionId}/speech-analyses` | 완료 |
 | 6-3 | 홈 | `GET` | `/api/v1/speech-analyses/{analysisId}` | 완료 |
 | 6-4 | 리포트 | `GET` | `/api/v1/visit-sessions/{sessionId}/evaluation` | 신규 |
+| 6-5 | 홈, 리포트 실패 안내 | `POST` | `/api/v1/speech-analyses/{analysisId}/retry` | 신규 |
+| 6-6 | 세부 정보 음성 입력 | `POST` | `/api/v1/speech-transcriptions` | 신규 |
 | 7-1 | 리포트 기록 | `GET` | `/api/v1/profiles/{profileId}/reports` | 신규 |
 | 7-2 | 리포트 | `GET` | `/api/v1/visit-sessions/{sessionId}/report` | 신규 |
 | 7-3 | 변경 사항 확인 | `GET` | `/api/v1/visit-sessions/{sessionId}/proposals` | 신규 |
@@ -129,15 +143,17 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
     [로그인]      1-1 → (consentRequired) 1-2 → [온보딩]
                   1-1 (authenticated) → 2-1 → 빈 목록이거나 completed가 있으면 홈, inProgress만 있으면 미정(9)
-    [온보딩]      2-2 → (사진 첨부 시 3-1 → 3-2 폴링) → 2-4 (세부 정보) → 4-1 (카드 생성 시작)
+    [온보딩]      2-2 → (사진 첨부 시 3-1 → 3-2 폴링) → 2-4 (세부 정보, 음성 입력은 6-6) → 4-1 (카드 생성 시작)
     [홈]          4-2, 5-4. 카드 받기: 4-1 → 4-2 폴링, ready 또는 inVisit이면 4-3(4절 표)
     [어르신 목록] 2-1, 2-8 (삭제). 빈 슬롯 → [온보딩]
     [카드 선택]   4-3 → 면회 사진 촬영(단말)
     [면회]        5-1 (녹음 시작) → 5-2 (사진을 찍었으면) → 5-3 (필요 시) → 녹음 종료(단말). 다시 열면 4-3(`inVisit`)
-    [평가]        6-1 → 6-2 → 6-3 폴링
+    [평가]        6-1 → 6-2 → 6-3 폴링. 실패하면 6-5, 유효한 전사가 없어 RECORDING_REQUIRED이면 기기 녹음으로 6-2 재제출
     [리포트]      7-2, 6-4 → 7-3 → 7-4. 회차의 카드 전체 보기: 4-4, 좋았어요 표시: 4-5, 4-6
     [일대기]      2-3, 2-6, 2-7, 2-9
-    [마이페이지]  2-3, 2-4, 3-1, 3-2, 1-6, 7-1, 1-4, 1-5
+    [마이페이지]  2-3, 2-4, 3-1, 3-2, 3-3
+    [리포트 기록] 7-1
+    [설정]        알림 스위치와 계정 약관 동의 화면에서 1-6, 로그아웃 1-4, 탈퇴 1-5. 사진 분석 동의 시트에서 동의해도 1-6
     [푸시 기기]   알림 수신에 동의한 계정이면 앱을 켤 때마다 1-7. 로그아웃 전과 알림 수신 철회 때 1-8
 
 <br>
@@ -146,7 +162,9 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 ## 1. 계정
 
-2026-10-14 PM 결정: 가입 화면에는 기존 필수 2개와 선택 2개에 사진 서버 보관과 AI 분석의 선택 동의를 각각 추가한다. 계정별 기존 동의 이력에 저장하며, 유효한 동의는 기능 사용 때 다시 묻지 않는다. 미동의, 철회 또는 기록 없는 계정이 해당 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 이용할 수 있다. 아래 네 항목의 요청 및 응답 예시는 현재 계약이며 새 두 항목은 아직 구현되지 않았다. 필드명과 가입, 조회, 변경 API 확장은 FE 및 BE가 맞춘다. 정책 정본은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)이다.
+2026-10-14 PM 결정: 가입 화면에는 기존 필수 2개와 선택 2개에 사진 서버 보관과 AI 분석의 선택 동의를 각각 추가한다. 계정별 기존 동의 이력에 저장하며, 유효한 동의는 기능 사용 때 다시 묻지 않는다. 미동의, 철회 또는 기록 없는 계정이 해당 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 이용할 수 있다. 당시에는 네 항목이 계약이었고 새 두 항목의 필드명과 가입, 조회, 변경 API 확장은 FE와 BE가 맞출 후속 구현이었다(아래 현재 구현 참고). 정책 정본은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)이다.
+
+현재 구현 (2026-11-09 기준): 두 항목 중 AI 분석 동의만 선택 항목 `photoAnalysis`로 가입(1-1, 1-2), 조회(1-3)와 변경(1-6)에 들어갔다([PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)). 사진 서버 보관 동의는 아직 필드와 API가 없다.
 
 서버는 계정을 `users`, 동의 이력을 `consent_records`에 저장한다. 동의가 바뀔 때마다 이력 행을 추가하며, 현재 동의는 가장 최근 행(`current_consents`)이다.
 
@@ -208,13 +226,15 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
     "serviceData": true,
     "sensitiveData": true,
     "serviceImprovement": false,
-    "pushNotification": true
+    "pushNotification": true,
+    "photoAnalysis": false
   },
   "displayName": null
 }
 ```
 
 - `displayName`: 선택, 50자 이하
+- `consents.photoAnalysis`: 선택. 이전 앱은 보내지 않으므로 빠지면 거부로 저장한다.
 
 응답 `200` — 1-1의 `authenticated` 응답
 
@@ -282,16 +302,18 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 422 | `REQUIRED_CONSENT_NOT_CHANGEABLE` | `serviceData` 또는 `sensitiveData`를 보냄 |
 | 422 | `INVALID_REQUEST` | 본문이 비었음 |
 
-### 1-7. `PUT /auth/me/push-devices/{fid}` — 미병합
+<a id="1-7-put-authmepush-devicesfid--미병합"></a>
 
-리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음.
+### 1-7. `PUT /auth/me/push-devices/{fid}` — 신규
+
+리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음. [PR #248](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/248)로 develop에 병합됐고 11/7 운영 반영(develop `b9747ccd`, [실제 실행 기록](../deploy-workflows.md))부터 운영에 있으며 지금 운영(develop `9c2b8276`)에도 들어 있다.
 
 - `fid`: 앱이 FCM에 등록하고 받은 Firebase Installation ID(FID). FCM은 기기 토큰(`getToken`) 대신 FID를 쓰도록 바꿨고, 서버는 HTTP v1 발송의 `fid`에 이 값을 넣는다. 영문 대소문자, 숫자, `-`, `_`로 된 1~64자다(지금 FID는 22자).
 - 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
 - 다른 계정에 등록된 FID면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한 경우이며, 앞 계정의 알림이 이 기기로 가지 않게 된다.
 - 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
 - 탈퇴(1-5)하면 계정과 함께 지운다.
-- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. `data` 항목은 FE와 합의 전인 테스트 가정이다. 리포트 생성 실패는 알리지 않는다.
+- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`의 리포트를 연다([PR #264](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/264)). 리포트 생성 실패는 알리지 않는다.
 
 응답 `204`
 
@@ -300,7 +322,9 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 403 | `PUSH_NOTIFICATION_CONSENT_REQUIRED` | 알림 수신에 동의하지 않음 |
 | 422 | `INVALID_REQUEST` | `fid` 형식이 맞지 않음 |
 
-### 1-8. `DELETE /auth/me/push-devices/{fid}` — 미병합
+<a id="1-8-delete-authmepush-devicesfid--미병합"></a>
+
+### 1-8. `DELETE /auth/me/push-devices/{fid}` — 신규
 
 1-7의 등록을 지운다. 본문 없음. 앱은 로그아웃(1-4) 전과 알림 수신을 끌 때 보낸다. 로그아웃 뒤에는 세션이 없어 지울 수 없다.
 
@@ -502,11 +526,13 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 ## 3. 프로필 사진
 
-사진은 S3에 서버 측 암호화로 저장한다. 객체 키에는 개인정보를 넣지 않는다. 프로필 사진은 모두 이미지 분석(8-4)을 거친다. 면회 사진(5-2)은 분석하지 않는다.
+사진은 S3에 서버 측 암호화로 저장한다. 객체 키에는 개인정보를 넣지 않는다. 프로필 사진은 계정이 AI 사진 분석(`photoAnalysis`)에 동의한 경우에만 이미지 분석(8-4)을 거친다. 면회 사진(5-2)은 분석하지 않는다.
 
-2026-10-14 PM 결정: 사진 서버 보관과 AI 분석은 가입 화면에서 각각 선택 동의로 받고 기존 계정 동의 이력에 저장한다. 유효한 동의는 재요청하지 않으며, 미동의, 철회 또는 기록이 없는 계정이 해당 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 유지한다. 가입 시 수집과 계정별 저장 방향은 결정됐고 필드명 및 API는 후속 구현이다. 상세 기준은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
+2026-10-14 PM 결정: 사진 서버 보관과 AI 분석은 가입 화면에서 각각 선택 동의로 받고 기존 계정 동의 이력에 저장한다. 유효한 동의는 재요청하지 않으며, 미동의, 철회 또는 기록이 없는 계정이 해당 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 유지한다. 가입 시 수집과 계정별 저장 방향은 결정됐고 필드명 및 API는 당시 후속 구현이었다(아래 현재 구현 참고). 상세 기준은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
 
-위 자동 분석은 기존 API 제안이며 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다. 계정별 분석 동의의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 후속 계약에서 정한다. 아래 요청 필드와 응답 enum은 이번 문서 수정에서 바꾸지 않으며 실제 사용자 사진 처리에 적용하기 전 이 차이를 해소해야 한다.
+[ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다.
+
+현재 구현 (2026-11-09 기준, [PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)): 사진 분석 worker는 현재 동의 이력의 `photoAnalysis`가 켜진 계정의 `pending` 사진만 가져가고, 결과를 저장하기 직전에 동의를 다시 확인한다. 동의하지 않은 계정의 사진은 `pending`으로 남고 나중에 동의하면 그때 분석한다. 동의를 거두면(1-6) 더 가져가지 않고 분석 중이던 결과도 저장하지 않는다. 요청 필드와 응답 enum은 바꾸지 않았다. 동의하지 않은 계정은 보호자가 3-3으로 설명을 직접 적을 수 있다. 철회해도 이미 저장된 AI 설명은 지우지 않으며 카드 입력(4-1)도 그 설명을 읽는다. 이 처리는 PM 확인이 남아 있다. 사진 서버 보관 동의와 그 철회 처리는 구현되지 않았다.
 
 ### 3-1. `POST /api/v1/profiles/{profileId}/photos` — 신규
 
@@ -521,7 +547,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 응답 `201` — [ProfilePhoto](#profilephoto), `analysisStatus`는 `pending`
 
 - 프로필당 최대 5장이다.
-- 서버는 분석 작업(8-4)을 만든다.
+- 서버는 사진을 `pending`으로 저장한다. 사진 분석 worker(8-4)는 AI 사진 분석에 동의한 계정의 사진만 가져간다.
 - 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
 | HTTP | `errorCode` |
@@ -539,6 +565,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 응답 `200` — [ProfilePhoto](#profilephoto)
 
 - `failed`이면 온보딩을 계속한다.
+- AI 사진 분석에 동의하지 않은 계정의 사진은 `pending`에 머문다. 앱은 이때 폴링하지 않고 "분석 중" 대신 설명 입력란을 보여 준다([PR #261](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/261)).
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -551,7 +578,9 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 ### 3-3. `PATCH /api/v1/profile-photos/{photoId}/description` — 사진 설명 수정
 
-9월 23일 회의와 10월 6일 BE 논의에서 정한 대로, AI 사진 설명은 별도 승인 없이 카드 생성에 사용한다. 사용자는 원할 때 앨범에서 확인하거나 수정한다. 사진 등록과 카드 선택에 필수 확인 단계를 넣지 않으며, 수정 API가 정해지기 전이라는 이유로 설명 사용을 막지 않는다.
+[PR #205](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/205)로 구현했고 11/5 운영 배포(develop `6cebcf72`, [#187 배포 기록](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/187#issuecomment-6652039046))부터 들어 있다.
+
+9월 23일 회의와 10월 6일 BE 논의에서 정한 대로, AI 사진 설명은 별도 승인 없이 카드 생성에 사용한다. 사용자는 원할 때 앨범에서 확인하거나 수정한다. 사진 등록과 카드 선택에 필수 확인 단계를 넣지 않으며, 수정 API가 정해지기 전에도 이를 이유로 설명 사용을 막지 않았다.
 
 사진 설명을 질문의 입력으로 쓰는 것과 승인된 생애 사실을 저장하는 것은 다르다. 사진 설명이나 카드 선택만으로 `life_facts`에 저장하지 않는다. 사진 분석 동의도 별도로 확인한다. 기존 결정을 확인한 [PR #97 의견](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/97#discussion_r4183313066), [상세 흐름](card-generation-flow.md#4-사진-설명은-바로-사용하고-앨범에서-선택적으로-수정)을 참고한다.
 
@@ -594,12 +623,16 @@ AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`
 
 BE 구현(#158)은 묶음 단위로 처리한다.
 
-- 2-4, 2-7, 2-9로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9는 항상 남긴다.
+- 2-4, 2-7, 2-9, 3-3, 3-4로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이며 3-3은 실제로 쓰이는 사진 설명이 바뀔 때다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9와 3-4는 항상 남긴다.
 - 7-4(변경 사항 확인)는 주제 제안을 하나라도 승인하면 남긴다. 승인한 주제 피드백(`more`, `less`, `exclude`)이 다음 카드 생성에서 주제를 고르는 기준을 바꾸기 때문이다. 생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 남기지 않고 다음 생성부터 반영한다. 모두 거절한 확인도 남기지 않는다.
 - 면회에 쓴 묶음은 지난 기록이라 남기지 않는다.
 - `stale_at`이 있는 묶음은 4-2, 4-3에서 `status`가 그대로 `ready`이고 `needsRefresh`가 `true`다. 4-1은 이 묶음을 거절하지 않고 새로 만들며, 5-1은 `CARD_SET_NEEDS_REFRESH`로 거절한다.
-- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. 주제 제안 승인이 있는 7-4도 같다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다. 예를 들어 방금 제외한 주제가 그 묶음에 다시 들어갈 수 있다.
+- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9, 3-3, 3-4가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. 주제 제안 승인이 있는 7-4도 같다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다. 예를 들어 방금 제외한 주제가 그 묶음에 다시 들어갈 수 있다.
 - 카드 한 장 단위의 사용 중지 표시는 다루지 않는다.
+
+AI 사진 분석이 끝난 사진은 새 카드 재료로 보고 다음 카드부터 쓰며, 받아 둔 묶음에 `stale_at`을 남기지 않는다. 카드 생성이 끝날 때 입력에 쓴 사진이 그사이 지워졌거나 설명이 바뀌었으면 새 묶음에 `stale_at`을 남기고, 생성 중에 분석이 끝나 새로 생긴 사진은 남기지 않는다([사진 분석 실행 문서](../../backend/docs/photo-analysis.md)).
+
+현재 구현 (2026-11-09 기준): 위 7-4 항목과 사진 분석 완료 처리는 11/9 develop에 병합된 [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277)과 [#275](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/275)이며 운영 서버(develop `9c2b8276`)에는 아직 없다. 운영 서버는 7-4의 주제 결정 승인을 카드 생성 중에도 받고 `stale_at`을 남기지 않는다. 또 AI 사진 분석이 끝난 사진에 보호자 설명이 없으면 아직 면회에 안 쓴 완료 묶음에 `stale_at`을 남기고, 카드 생성이 끝날 때 사진 목록 전체를 비교한다. 그래서 운영에서는 AI 사진 분석에 동의한 계정이 온보딩에서 사진을 올리고 `마치기`로 받은 첫 묶음이, 그때 분석 중이던 사진의 분석이 끝나면 `needsRefresh`가 된다.
 
 카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
 
@@ -615,7 +648,7 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
-`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
+`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기, 프로필 사진 설명을 고쳤거나 사진을 지웠거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4, [4절 기준](#사실-정정-후-카드-갱신-기준)). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
 
 4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
 
@@ -648,7 +681,7 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 #### 4-1 카드 생성 처리
 
-BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연결은 후속 작업이다.
+카드 생성 worker(`card-worker`)가 `ai/card_generation`의 생성 함수를 부르고, 그 함수가 ML API를 호출한다([PR #120](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/120)에서 연결).
 
     context 조립(DB 읽기) → 생성 함수 호출(LLM, 트랜잭션 밖, 별도 스레드) → 결과 검증 → 저장(한 트랜잭션)
 
@@ -718,7 +751,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 }
 ```
 
-- `model`, `promptVersion`: BE 설정값(`SAEROK_CARD_GENERATION_MODEL`, `SAEROK_CARD_GENERATION_PROMPT_VERSION`). 4-1에서 `card_sets`를 `running`으로 만들 때 저장하고 그 값을 그대로 넘긴다. `promptVersion`은 카드 생성 방식의 번호(정수)이며 카드 생성은 아는 번호만 받는다.
+- `model`, `promptVersion`: BE 설정값(`SAEROK_CARD_GENERATION_MODEL`, `SAEROK_CARD_GENERATION_PROMPT_VERSION`). 4-1에서 `card_sets`를 `running`으로 만들 때 저장하고 그 값을 그대로 넘긴다. `promptVersion`은 카드 생성 방식의 번호(정수)이며 카드 생성은 아는 번호만 받는다. 현재 새 작업의 기본 모델은 `gpt-6-luna`이고, 예시의 모델은 이전 값이다.
 - `schemaVersion`: 요청과 결과 JSON 형식의 버전. 받는 쪽은 모르는 버전을 거절한다.
 - `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다.
 - `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
@@ -784,7 +817,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 검증과 저장
 
-- BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목·설명·첫 질문·꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
+- BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목, 설명, 첫 질문, 꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, 카드별 `extra`).
 
 실패
@@ -812,7 +845,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 ```
 
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
-- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 다른 상태에서는 늘 `false`다.
+- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기, 프로필 사진 설명을 고쳤거나 사진을 지웠거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 다른 상태에서는 늘 `false`다.
 - 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
@@ -1128,7 +1161,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 ### 6-6. `POST /api/v1/speech-transcriptions` — 프로필 입력용 전사
 
 인증된 계정이 multipart의 `audio` 파일 하나를 보낸다. 프로필과 회차 ID는 받지 않는다.
-WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
+WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 앱이 5분 타이머로 녹음을 멈추면 파일이 300초를 조금 넘으므로 2초 여유를 둔다([PR #267](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/267)). 응답은 `200`과
 `{"schemaVersion": 1, "text": "..."}`이며 인식 결과가 비었으면 `text`도 빈 문자열이다.
 
 동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
@@ -1270,6 +1303,8 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
 - 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
 
+현재 구현 (2026-11-09 기준): 위 두 항목과 아래 409 `CARD_GENERATION_IN_PROGRESS`는 11/9 develop에 병합된 [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277)이며 운영 서버(develop `9c2b8276`)에는 아직 없다. 운영 서버는 주제 결정을 승인해도 카드를 만드는 중에 거절하지 않고, 받아 둔 묶음의 `needsRefresh`도 바꾸지 않는다.
+
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
@@ -1344,7 +1379,9 @@ S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리�
 - 8-3(전사문의 외부 ML 전송)은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초) 이상일 때만 시작한다. 임대는 생성 제한 시간보다 60초 이상 길어 시작한 생성이 기한을 넘겨 새 외부 호출을 하지 않는다. 기한이 그보다 적게 남은 `sttCompleted` 작업은 시작하지 않고 worker 정리 시 `failed`와 `TRANSCRIPT_EXPIRED`로 끝낸다([외부 ML 전송과 기한](../../backend/docs/speech-recovery.md#외부-ml-전송과-기한)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
-8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.
+현재 구현 (2026-11-09 기준): 위의 이어받기는 [#280](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/280), 남은 전사 기한에 따른 8-3 시작 제한과 8-3 전송 방식의 변경 제안 호출 직전 확인은 [#279](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/279)로 11/9 develop에 병합됐고 운영 서버(develop `9c2b8276`)에는 아직 없다. #280 전인 운영 서버에서는 전사를 저장한 뒤 8-3을 시작하기 전에 멈춘 작업을 다시 가져가는 경로가 없어, 그 작업은 전사 기한(24시간)이 지나 worker 정리로 `TRANSCRIPT_EXPIRED`가 될 때까지 `sttCompleted`로 남는다.
+
+8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다. 이 검사 전에 무음에서 STT가 지어내는 알려진 문장을 지우며, 나뉘어 온 구간도 이어 붙여 비교한다([PR #267](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/267), [전사 입력 검사](../../backend/docs/speech-input-safety.md)).
 
 화자 라벨이 누락되거나 라벨 수가 예상 인원보다 적어도 리포트와 변경 제안 모델을 호출한다.
 화자 미확인 고정 안내로 대체하지 않으며, 라벨 상태만으로 생성 결과의 저장을 거절하지 않는다.
@@ -1451,7 +1488,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ### 8-4. `POST /internal/v1/image-analyses` — 신규
 
-아래는 내부 계약이다. 로컬 worker는 리포트와 같은 방식으로 `ai/photo_analysis` 함수를 직접 호출하며 이 HTTP 경로를 공개하지 않는다. 합성 사진용 연결과 운영 적용 조건은 [사진 분석 실행 문서](../../backend/docs/photo-analysis.md)를 따른다.
+아래는 내부 계약이다. 사진 분석 worker(`photo-worker`)는 리포트와 같은 방식으로 `ai/photo_analysis` 함수를 직접 호출하며 이 HTTP 경로를 공개하지 않는다. AI 사진 분석에 동의한 계정의 사진만 처리한다([PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)). 운영에는 11/8 배포([Deploy run 42385596940](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42385596940))부터 들어갔고, 11/8 운영 시험에서 공개 사진 43장을 두 번씩 분석한 86건이 모두 완료됐다([안정성 시험](../../backend/docs/stability-test-20261108.md)). 실행 조건은 [사진 분석 실행 문서](../../backend/docs/photo-analysis.md)를 따른다.
 
 프로필 사진만 요청한다. 면회 사진은 요청하지 않는다.
 
@@ -1503,7 +1540,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
     "serviceData": { "granted": true, "grantedAt": "2026-08-21T11:40:00+09:00" },
     "sensitiveData": { "granted": true, "grantedAt": "2026-08-21T11:40:00+09:00" },
     "serviceImprovement": { "granted": false, "grantedAt": null },
-    "pushNotification": { "granted": true, "grantedAt": "2026-08-21T11:40:00+09:00" }
+    "pushNotification": { "granted": true, "grantedAt": "2026-08-21T11:40:00+09:00" },
+    "photoAnalysis": { "granted": false, "grantedAt": null }
   },
   "createdAt": "2026-08-21T11:40:00+09:00"
 }
@@ -1567,13 +1605,15 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "imageUrlExpiresAt": "2026-08-21T12:35:00+09:00",
   "analysisStatus": "completed",
   "description": "한복을 입은 사람들이 잔치 자리에 모여 있는 사진이에요.",
+  "descriptionSource": "ai",
   "error": null,
   "createdAt": "2026-08-21T12:20:00+09:00"
 }
 ```
 
-- `analysisStatus`: `pending`, `processing`, `completed`, `failed`
-- `description`: `completed`일 때만 채우고 그 밖에는 `null`
+- `analysisStatus`: `pending`, `processing`, `completed`, `failed`. AI 사진 분석에 동의하지 않은 계정의 사진은 `pending`에 머문다.
+- `description`: 보호자가 3-3으로 고친 설명이 있으면 그 값, 없으면 `completed`인 AI 설명, 둘 다 없으면 `null`
+- `descriptionSource`: `caregiver`, `ai`, 설명이 없으면 `null`(3-3)
 - `error`: `failed`일 때 `{ "errorCode": "..." }`, 그 밖에는 `null`
 
 ### CardSet
@@ -1614,7 +1654,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
 - `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
-- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
+- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기, 프로필 사진 설명을 고쳤거나 사진을 지웠거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
@@ -1737,7 +1777,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 }
 ```
 
-- `topic.description`: 주제 설명이다. [CardSet](#cardset)의 `topic.description`, 8-2의 `topics[].description`과 같은 값이다.
+- `topic.description`: 주제 설명이다. [CardSet](#cardset)의 `topic.description`, 4-1 요청의 `topics[].description`과 같은 값이다.
 - `suggestedAction`: `more`, `less`, `exclude`
 - `reviewStatus`: `pending`, `accepted`, `rejected`. DB에는 `pending`과 `settled`만 저장하므로, `settled`인 제안은 승인 결과(생애 정보 또는 주제 피드백)가 있으면 `accepted`, 없으면 `rejected`로 반환한다.
 - `lifeFactProposals`의 `title`, `content`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
@@ -1750,10 +1790,10 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
-| 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음 | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
+| 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음. 해결: 3-3으로 구현했고 늦게 온 AI 결과는 보호자 설명을 덮지 않는다([PR #205](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/205)) | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 7-4가 없어 확인했는지 알 수 없음. 앱은 리포트와 제안을 모두 읽으면 확인한 것으로 보고 홈 알림을 지우며, 앱을 다시 켜면 다시 뜬다(#235). 서버 저장은 #236 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. 남은 것은 동의 필드 및 가입, 조회, 변경 API와 화면 연결, 분석하지 않는 사진의 상태 및 철회 처리 | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
-| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
+| 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. AI 분석 동의(`photoAnalysis`)의 필드, 가입, 조회, 변경 API와 화면, 미동의 사진의 `pending` 유지와 철회 시 분석 중단은 [PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)로 구현했다. 남은 것은 사진 서버 보관 동의의 필드, API와 화면, 그 철회 처리, 분석 동의 철회 전에 저장된 AI 설명의 처리 | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
+| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. 사진 한 장 삭제는 3-4로 구현했다([PR #240](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/240)). 보관 동의가 없어 그 철회 동선은 정하지 않았다. 삭제 대기열의 S3 삭제 실행기([PR #204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204)) 코드는 운영 이미지(develop `9c2b8276`)에 들어 있지만 compose 서비스가 아니라 손으로 실행하는 명령이며, 정기 실행은 정하지 않았고 실제 원본 삭제도 하지 않았다 | 3절 | FE, BE, PM |
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |

@@ -1,6 +1,6 @@
 # 카드 생성
 
-다음 면회에 쓸 대화 카드 12장을 만든다. backend 카드 생성 worker가 DB에서 모은 context를 넘기면 `card_generation.generate_cards()`가 카드 12장과 새로 만들 주제를 돌려준다. 이 모듈은 DB를 읽지도 쓰지도 않는다. 에이전트 도구는 넘겨받은 context를 조회한다(`memory/store.py`).
+다음 면회에 쓸 대화 카드 12장을 만든다. backend 카드 생성 worker가 DB에서 모은 context를 넘기면 `card_generation.generate_cards()`가 카드 12장과 새로 만들 주제를 돌려준다. 이 모듈은 DB를 읽지도 쓰지도 않는다. 에이전트 도구는 넘겨받은 context를 조회한다(`_steps/research/store.py`).
 
 ```
 __init__.py      backend가 import하는 이름: generate_cards, GenerationRequest, GenerationResult, CardGenerationError
@@ -12,6 +12,8 @@ _steps/          generate.py만 부르는 내부 단계
   match.py       ② 연결 판정
   select.py      ③ 12장 추첨
   write.py       ④ 문안
+  text_checks.py 카드의 치료 효과 단정 구문 검사(④에서 부름)
+  deadline.py    생성 전체 제한 시간(time_limit)
 _versions/       판(promptVersion)마다 프롬프트와 정해 둔 값. v1/prompts에 에이전트, 연결 판정, 같은 이야기 기준, 문안
 tests/           unit(PostgreSQL 단위 테스트), eval(실제 모델을 부르는 평가)
 ```
@@ -68,7 +70,7 @@ score = Σ (more면 +1, less면 -1) × 0.7^(그 결정 뒤로 지난 면회 수)
 
 시점은 날짜 대신 "면회 몇 번 전"(`visits_ago`, 0이 가장 최근)으로 준다. 이야기나 사진이 카드에 몇 번 쓰였는지도 같이 주는데, 실제 면회에 쓰인 카드 묶음만 센다.
 
-사진 설명은 AI가 쓰고 보호자가 원할 때 앨범에서 고친다. DB에는 보호자가 확인했는지 표시하는 칸이 없어서, 앨범을 한 번도 안 열었으면 AI가 쓴 설명이 그대로 쓰인다. 그래서 에이전트에게도 확인된 사실이 아니라고 알려 주고, 문안에서는 사진 속 장소, 사람, 때를 단정하지 않는다.
+사진 설명은 AI가 쓰고 보호자가 원할 때 앨범에서 고친다. 보호자가 고친 설명이 있으면 backend가 AI 원문 대신 그것을 넘긴다(#205). AI 설명은 AI 사진 분석에 동의한 계정의 사진에만 생긴다(#257). DB에는 보호자가 확인했는지 표시하는 칸이 없어서, 앨범을 한 번도 안 열었으면 AI가 쓴 설명이 그대로 쓰인다. 그래서 에이전트에게도 확인된 사실이 아니라고 알려 주고, 문안에서는 사진 속 장소, 사람, 때를 단정하지 않는다.
 
 질문에는 사진 속 사물, 사람, 장소를 맞히게 하는 형태(`_steps/write.py`의 `_QUIZ`)도 검사한다.
 "사진 속 ~은 무엇", "누군지 아세요?"처럼 정답을 묻는 좁은 형태만 잡고, "이 사진은 어디서 찍으셨어요?"나

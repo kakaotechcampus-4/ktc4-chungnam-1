@@ -31,6 +31,8 @@
 | 5-3 | `PATCH` | `/api/v1/visit-sessions/{sessionId}/cards` | 신규 | 바로 |
 | 8-2 | | 4-1 처리로 옮김 | 삭제 | |
 
+현재 구현 (2026-11-09 기준): 4-1, 4-2, 4-3, 5-1, 5-3도 develop에 구현돼 있다(`app/api/routes/card_generations.py`, `app/api/routes/visit_sessions.py`). 이 행들의 `신규`는 처음 작성 때의 상태다.
+
 ## 테이블 쓰기 소유권
 
 다른 담당의 테이블은 읽기만 한다. 다른 담당 테이블에 써야 하면 그 담당이 제공하는 함수를 쓴다.
@@ -80,10 +82,17 @@
 | `none` | 없음, 또는 평가까지 끝난 회차에 쓰임 | 카드 받기 | 4-1 → 4-2 폴링 |
 | `running` | 만드는 중 | 만드는 중 | — |
 | `ready` | 다 만들었고 아직 안 씀 | 카드 받기 | 4-3 → 카드 고르기 |
-| `inVisit` | 평가 전 회차(면회 중이거나 중간에 나감)에 쓰임 | 면회 이어서 하기 | 4-3 → 면회 화면 |
+| `ready` + `needsRefresh: true` | 다 만들었지만 카드를 받은 뒤 카드 생성에 쓰는 정보가 바뀜(아래 현재 구현) | 카드 받기 | 4-1로 12장을 새로 만듦 → 4-2 폴링. 옛 묶음으로는 5-1을 시작할 수 없다(`CARD_SET_NEEDS_REFRESH`) |
+| `inVisit` | 평가 전 회차(면회 중이거나 중간에 나감)에 쓰임 | 면회 이어서 하기(처음 계획). 앱은 `평가 이어서 하기` | 처음 계획은 4-3 → 면회 화면. 앱은 녹음 화면으로 돌아가지 않고 4-3의 `usedBySessionId`로 그 회차의 소감과 평가(6-1)로 보낸다 |
 | `failed` | 실패 | 카드 받기 | 4-1 → 4-2 폴링 |
 
-상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
+상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`, `stale_at`과 그 회차의 평가 여부로 계산한다.
+
+현재 구현(2026-11-09 기준):
+
+- `needsRefresh`는 #161(BE)로 들어왔다. 카드를 받은 뒤 2-4, 2-7, 2-9(#161), 3-3(#205), 3-4(#240)로 카드 생성에 쓰는 정보가 바뀌면 아직 면회에 안 쓴 완료 묶음에 `stale_at`을 남기고, 4-2와 4-3은 `status: ready`와 `needsRefresh: true`를 준다. 매번 다시 만들지 않고 보호자가 홈 버튼을 누를 때 4-1로 묶음 전체를 다시 만든다(앱 #171, #222). 정본은 [API 명세 4절의 사실 정정 후 카드 갱신 기준](../../../docs/architecture/api-spec.md#사실-정정-후-카드-갱신-기준)이다.
+- develop `d9643466`에서 바뀐 것(11/9 병합, 운영 미배포): 7-4에서 주제 결정(`more`, `less`, `exclude`)을 하나라도 승인해도 같은 표시를 남기고, 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 아무것도 저장하지 않는다(#277). 보호자 설명이 없는 프로필 사진의 분석이 끝날 때 표시하던 것(`photo_analysis_pipeline.py`)은 없앴고, 생성 결과를 저장할 때도 입력에 쓴 사진이 지워졌거나 설명이 바뀐 경우만 표시한다(#275, `card_sets.save_result`). 분석이 끝난 사진은 다음 카드부터 쓴다. 운영(develop `9c2b8276`)은 아직 분석 완료 때 표시하므로, AI 사진 분석에 동의한 계정은 온보딩 `마치기`에서 받은 첫 묶음이 사진 분석 뒤 `needsRefresh`가 될 수 있다.
+- `inVisit`의 처음 계획은 면회 화면으로 돌아가는 것이었다. 앱은 녹음 화면을 떠날 때 파일을 닫아 같은 파일에 이어 녹음할 수 없고, 6-2는 회차마다 녹음 하나를 받으므로 녹음을 이어 하지 않는다. 대신 카드 화면과 홈이 `평가 이어서 하기`를 보여주고 그 회차의 평가로 보낸다(앱 #244, [FE README의 면회 녹음](../../../app/README.md#면회-녹음)).
 
 ### 5. 면회
 
@@ -122,7 +131,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 호출 시점
 
 - 온보딩의 `마치기`(2-4 다음)
-- 홈에서 `오늘의 대화카드 받기`를 눌렀을 때(4-2 `status`가 `none`이나 `failed`)
+- 홈에서 `오늘의 대화카드 받기`를 눌렀을 때(4-2 `status`가 `none`이나 `failed`, 또는 `ready`이고 `needsRefresh: true`)
 
 응답 `202`
 
@@ -132,7 +141,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - 이미 만드는 중이면 새로 만들지 않고 같은 응답을 준다.
 - 평가 전 회차가 지금 묶음을 쓰는 중(`inVisit`)이면 409로 거절한다. 새 묶음이 생기면 면회 중인 카드를 4-3으로 받을 수 없게 되기 때문이다.
-- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다.
+- 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다. 단 그 묶음이 `needsRefresh`이면 거절하지 않고 새로 만든다(2026-11-09 기준 `card_sets.start_card_generation`). 옛 묶음은 5-1이 받지 않으므로 면회에 쓸 수 있는 묶음은 여전히 하나다.
 - 카드 생성 worker가 작업을 가져가 카드 12장과 새 주제를 저장한다(아래 처리). 앱은 4-2를 폴링한다.
 
 | HTTP | `errorCode` |
@@ -304,7 +313,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 
 **구현 메모**
 
-- 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝난 프로필 사진, `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
+- 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝났거나 보호자가 설명을 쓴 프로필 사진(보호자 설명 우선, 2026-11-09 기준 #205), `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - 결과 검증: 카드 12장, `position` 1~12가 한 번씩, `followUpQuestions` 3개, `cardTitle`·`description`·`primaryQuestion`·`followUpQuestions`가 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`는 이 프로필의 주제이고 `feedback`에 `exclude`가 없음, 근거 항목 형식과 ID가 context에 있음, `profileField`는 context에 값이 있는 항목, `evidenceSource`가 `none`이면 `evidence`는 빈 배열이고 나머지는 같은 종류의 근거 항목이 하나 이상이다. 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제를 `profile_topics`에 만들고 `conversation_cards` 12장을 넣은 뒤 `card_sets`를 `completed`로 바꾸고 `generation_log`(`{"input": context, ...}`)를 넣는다.
 - `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다.
@@ -321,10 +330,11 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 응답 `200`
 
 ```json
-{ "schemaVersion": 1, "status": "ready" }
+{ "schemaVersion": 1, "status": "ready", "needsRefresh": false }
 ```
 
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
+- `needsRefresh`: 카드를 받은 뒤 카드 생성에 쓰는 정보를 고친 `ready` 묶음이면 `true`. 그 밖에는 `false`다(#161로 추가, 4절 표).
 - 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
@@ -333,7 +343,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 
 **구현 메모**
 
-- `created_at DESC`의 첫 행을 회차와 `LEFT JOIN`해서 정한다. `completed`이고 `session_id`가 없으면 `ready`, 있고 그 회차의 `evaluated_at`이 없으면 `inVisit`, 있으면 `none`이다.
+- `created_at DESC`의 첫 행을 회차와 `LEFT JOIN`해서 정한다. `completed`이고 `session_id`가 없으면 `ready`, 있고 그 회차의 `evaluated_at`이 없으면 `inVisit`, 있으면 `none`이다. `ready`이면서 `stale_at`이 있으면 `needsRefresh`가 `true`다.
 
 <br>
 
@@ -382,7 +392,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `CARD_GENERATION_NOT_FOUND` |
-| 409 | `CARD_GENERATION_NOT_COMPLETED`, `CARD_SET_ALREADY_USED` |
+| 409 | `CARD_GENERATION_NOT_COMPLETED`, `CARD_SET_ALREADY_USED`, `CARD_SET_NEEDS_REFRESH`(카드를 받은 뒤 정보를 고친 묶음. #161로 추가) |
 | 422 | `INVALID_CARD_SELECTION` |
 
 **구현 메모**
@@ -422,10 +432,11 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
 - **실제 사용자의 면회 사진도 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 가입 시 받은 동의는 기존 계정 동의 이력에 저장한다. 테스트 자료로 업로드와 조회를 먼저 구현하고, 실제 사용자 사진을 받기 전에는 동의 조회와 미동의 차단을 검증한다(후속 3).
-- 현재 5-2 코드에는 사진 보관 동의 검사가 없다. 위 정책을 구현한 상태가 아니며, 테스트 자료로 먼저 개발하되 실제 사용자 사진 수집 전에 해당 검사를 추가한다.
+- 현재 5-2 코드에는 사진 보관 동의 검사가 없다. 위 정책을 구현한 상태가 아니며, 테스트 자료로 먼저 개발하되 실제 사용자 사진 수집 전에 해당 검사를 추가한다. 2026-11-09 기준으로도 사진 보관 동의는 구현하지 않았다. #257로 들어온 AI 사진 분석 동의(`photoAnalysis`)는 프로필 사진의 분석 여부만 정하며, 면회 사진은 분석하지 않는다.
 - 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
 - S3 업로드 동안 회차 행을 잠그지 않도록 평가 여부를 올리기 전에 한 번 확인해 일찍 거절하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 본문 상한(develop `d9643466`, #278, 운영 미배포): 3-1과 같이 미들웨어 `app/api/body_limits.py`가 5-2 본문을 `SAEROK_MAX_IMAGE_BYTES` + 1 MiB(기본 21 MiB)로 막아, 넘으면 본문을 다 읽기 전에 413 `IMAGE_TOO_LARGE`로 거절한다. 본문을 읽기 전에 앱 버전(426)과 세션 토큰의 서명과 만료(401)도 확인한다.
 - 구현: [routes/visit_sessions.py](../../app/api/routes/visit_sessions.py), [services/visit_photos.py](../../app/services/visit_photos.py), 테스트 [test_visit_photos.py](../../tests/test_visit_photos.py)
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
 
@@ -477,6 +488,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "schemaVersion": 1,
   "setId": "00000000-0000-4000-8000-000000000401",
   "usedBySessionId": null,
+  "needsRefresh": false,
   "cards": [
     {
       "cardId": "00000000-0000-4000-8000-000000000501",
@@ -503,7 +515,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 ```
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
-- `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다.
+- `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 처음 계획은 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부르는 것이었다. 2026-11-09 기준 앱은 이 값으로 이어서 할 회차를 찾아 그 회차의 평가로 보내며, 녹음 화면으로 돌아가 5-2, 5-3을 부르지 않는다(4절 표).
+- `needsRefresh`: 4-2와 같다. `true`인 묶음으로는 5-1로 면회를 시작할 수 없고, 앱은 이 묶음의 카드를 보여주지 않는다.
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
@@ -548,4 +561,4 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | # | 항목 | 영향 | 확인할 곳 |
 | --- | --- | --- | --- |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 확인했는지 알 수 없음 | 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | 2026-10-14 PM 결정: 사진 보관과 AI 분석은 가입 시 별도 선택 동의로 받고 기존 계정 동의 이력에 저장. 테스트 자료로 개발을 진행하며, 동의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 실제 사용자 사진 처리 전 구현 및 검증 | 3-1, 5-2, 8-4 | FE, BE, AI. 남은 개인정보 검토는 PM |
+| 3 | 2026-10-14 PM 결정: 사진 보관과 AI 분석은 가입 시 별도 선택 동의로 받고 기존 계정 동의 이력에 저장. 테스트 자료로 개발을 진행하며, 동의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 실제 사용자 사진 처리 전 구현 및 검증. 2026-11-09 기준 AI 분석 동의는 #257로 구현됐고, 5-2에 걸리는 사진 보관 동의는 남음 | 3-1, 5-2, 8-4 | FE, BE, AI. 남은 개인정보 검토는 PM |

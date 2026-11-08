@@ -26,14 +26,16 @@
 
 ## 배경
 
-PR #125(2026-10-15 develop 병합)는 일대기 화면을 목 데이터로 만들었다. 서버 연결과 실기기 확인은 남아 있다.
+PR #125(2026-10-15 develop 병합)는 일대기 화면을 목 데이터로 만들었다. 이 문서를 쓸 때는 서버 연결과 실기기 확인이 남아 있었다.
+
+현재 구현(2026-11-09 기준): BE는 #135(2026-10-17 병합)로 분류, 그림 번호와 2-9 삭제를 develop에 넣었고, 앱은 #137(2026-10-22 병합)로 로그인한 계정의 일대기 조회, 추가, 수정, 삭제를 2-3, 2-6, 2-7, 2-9에 연결했다. 앱의 `LifeFact`는 새 형식(`factId`, `storyCategory`, `title`, `content`, `imageNumber`, `createdAt`)이다. 로그인하지 않은 목 모드만 앱이 켜져 있는 동안 편집 내용을 기억한다. 필드 이름은 여전히 임시이고(D1, D2) 아래 미정 사항은 그대로다.
 
 - 화면: 표지(`/album`), 첫 장(`/album/book`), 분류별 목차(`/album/category/:category`), 이야기 한 편(`.../story/:storyId`), 추가(`/album/new`), 수정(`/album/edit/:storyId`)
 - 이야기는 두 종류다.
   - **세부 정보 이야기**: 프로필의 세부 정보 네 항목(`occupation`, `hometown`, `hobby`, `family`)에서 앱이 만든다. 분류는 고정(하시던 일→일, 고향, 취미, 가족)이고, 지우지 않으며, 연필은 프로필 세부 정보 수정(2-4)을 연다. 날짜가 없어 목차 맨 앞에 둔다.
   - **담은 이야기**: `life_facts`의 행이다. 보호자가 일대기에서 직접 담거나(2-6), 면회 변경 제안을 승인해서(7-4) 생긴다. 분류, 제목, 내용, 기본 그림 번호를 가지며 고치고 지울 수 있다.
 - 기본 그림은 분류마다 5장, 모두 35장이며 앱 `assets`에 들어 있다(`assets/images/life-story-<분류>-<1~5>.webp`). **서버는 그림 파일을 저장하지 않고 번호만 저장한다.**
-- 지금 앱은 분류, 그림 번호, 삭제 API가 없어 추가, 수정, 삭제한 이야기를 **앱이 켜져 있는 동안만** 기억한다(`lifeStoryEditsProvider`).
+- 이 문서를 쓸 때 앱은 분류, 그림 번호, 삭제 API가 없어 추가, 수정, 삭제한 이야기를 **앱이 켜져 있는 동안만** 기억했다(`lifeStoryEditsProvider`). 2026-11-09 기준 로그인한 계정은 서버에 저장하고(`lifeStoryStoreProvider`), 이 기억은 로그인하지 않은 목 모드에만 쓴다.
 
 FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dart)(표시용 모델 `LifeStory`, 분류 enum), [life_story_providers.dart](../../../app/lib/features/life_story/life_story_providers.dart)(목 이야기와 편집 내용 합치기), [life_story_edit_screen.dart](../../../app/lib/features/life_story/life_story_edit_screen.dart)(추가와 수정), [life_story_story_screen.dart](../../../app/lib/features/life_story/life_story_story_screen.dart)(수정과 삭제 버튼)
 
@@ -63,13 +65,13 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 | # | 메서드 | 경로 | 지금 상태 | 이 작업 |
 | --- | --- | --- | --- | --- |
-| 2-3 | `GET` | `/api/v1/profiles/{profileId}` | 구현됨(미병합) | `lifeFacts[]` 항목에 `storyCategory`, `imageNumber` 추가 |
-| 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 구현됨(미병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
-| 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 구현됨(미병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
-| 2-9 | `DELETE` | `/api/v1/life-facts/{factId}` | 구현됨(미병합) | 행만 삭제. 카드와 주제 처리는 D3 결정을 따름 |
+| 2-3 | `GET` | `/api/v1/profiles/{profileId}` | 구현됨(#135로 병합) | `lifeFacts[]` 항목에 `storyCategory`, `imageNumber` 추가 |
+| 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 구현됨(#135로 병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
+| 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 구현됨(#135로 병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
+| 2-9 | `DELETE` | `/api/v1/life-facts/{factId}` | 구현됨(#135로 병합) | 행만 삭제. 카드와 주제 처리는 D3 결정을 따름 |
 | 7-4 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 구현됨(작업 C) | 요청은 그대로. 승인한 이야기의 분류와 번호는 `create_life_fact` 기본값(D5) |
 
-번호 2-9는 2절의 다음 번호로 붙여 API 명세에 넣었다. 구현은 `feature/backend-app-life-story` 브랜치에 있으며 develop에 병합 전이다.
+번호 2-9는 2절의 다음 번호로 붙여 API 명세에 넣었다. 구현은 `feature/backend-app-life-story` 브랜치에서 했고, 이 문서를 쓸 때는 develop에 병합 전이었다. 2026-10-17 #135로 develop에 병합됐다.
 
 ### 화면과 API
 
@@ -226,6 +228,8 @@ ALTER TABLE life_facts
 
 작업 C의 API다. D5가 결정될 때까지 요청과 응답을 바꾸지 않는다.
 
+현재 구현(2026-11-09 기준): 요청과 성공 응답 형식은 그대로다. develop `d9643466`의 #277(11/9 병합, 운영 미배포)로 주제 결정을 하나라도 승인한 확인은 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고(API 명세 7-4의 오류 표에 더함) 아직 면회에 안 쓴 묶음을 `needsRefresh`로 바꾸지만, 생애 정보 제안만 승인한 확인은 2-6처럼 둘 다 하지 않는다(`app/services/proposals.py`).
+
 - 승인한 생애 정보 제안은 `create_life_fact`의 기본값으로 만든다. 분류는 `other`, 그림 번호는 서버가 고른다. 보호자는 일대기의 `기타`에서 찾아 2-7로 옮긴다.
 - D5가 정해지면 바뀔 수 있는 곳
   - 보호자가 고름: 7-4 `lifeFacts[]`의 `accepted` 항목에 `storyCategory`(와 `imageNumber`)를 더한다. 변경 사항 확인 화면에 분류 고르기가 생긴다.
@@ -236,6 +240,8 @@ ALTER TABLE life_facts
 ## 삭제와 카드 생성
 
 D3 결정 전의 임시 안이다. 지금 구조에서 이야기를 지울 때 영향을 받는 곳을 정리한다.
+
+현재 구현(2026-11-09 기준, #161): 2-9는 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고 지우지 않는다. 아직 면회에 안 쓴 완료 묶음은 `stale_at`을 남겨 `needsRefresh`가 되고, 보호자가 홈 버튼을 누를 때 묶음 전체를 다시 만든다(`app/services/life_facts.py`의 `delete_life_fact`). 아래 생성 중 삭제 설명과 '현재 묶음' 항목은 처음 작성 때의 임시 안이다.
 
 | 저장소 | 지운 이야기와의 관계 | 임시 안의 처리 |
 | --- | --- | --- |
@@ -305,8 +311,12 @@ D8 결정 전이므로 구현하지 않는다. decmoon05 의견의 방향을 택
 
 ## FE 연결 메모
 
-FE 작업이며 참고로 적는다.
+FE 작업이며 참고로 적는다. 아래 세 항목은 처음 작성 때의 할 일이다.
+
+현재 구현 (2026-11-09 기준): #137(2026-10-22 병합)로 앱이 일대기 이야기의 조회, 추가, 수정, 삭제를 서버(2-3, 2-6, 2-7, 2-9)에 연결했다. 앱의 `LifeFact`는 `factId`, `storyCategory`, `imageNumber`, `title`, `content` 형식이다(`app/lib/data/models.dart`). `lifeStoryEditsProvider`의 앱 안 기억은 로그인 없이 여는 목 모드에서만 쓰고, 서버에 저장한 분은 서버로 보낸다(`life_story_providers.dart`의 `LifeStoryStore`).
 
 - 앱의 `LifeFact` 모델(`app/lib/data/models.dart`)은 옛 형식(`category`, `text`, `sourceType`)이다. PR #125의 후속 작업으로 새 형식(`factId`, `title`, `content`, `createdAt`)에 이 문서의 `storyCategory`, `imageNumber`를 더해 바꾼다. 목 이야기 10편도 목 데이터 원본(`assets/mock/profile.json`)으로 옮긴다.
 - 화면은 `LifeStory`만 보므로 `LifeFact` → `LifeStory` 변환 한 곳만 고친다. `storyCategory`는 `LifeStoryCategory.parse`로 읽고, 모르는 값이 오면 `other`로 보일지 오류로 볼지 FE가 정한다.
 - 저장 뒤에는 2-3을 다시 읽거나 응답의 LifeFact로 목록을 고친다. `lifeStoryEditsProvider`의 앱 안 기억은 서버 연결 뒤 필요 없다.
+
+현재 구현(2026-11-09 기준, #137): 앱의 `LifeFact`는 새 형식(`factId`, `storyCategory`, `title`, `content`, `imageNumber`, `createdAt`)으로 바뀌었고 목 이야기 10편은 `assets/mock/profile.json`에 있다. `LifeStory.fromLifeFact` 한 곳에서 바꾸며 모르는 분류는 `기타`로, 범위 밖 그림 번호는 1~5 안으로 둔다. 로그인한 계정의 추가, 수정, 삭제는 `lifeStoryStoreProvider`가 2-6, 2-7, 2-9로 보내고 응답으로 목록을 고친다. `lifeStoryEditsProvider`는 로그인하지 않은 목 모드에서만 쓴다. 자세한 동작은 [FE README](../../../app/README.md)의 H 일대기 설명에 있다.
