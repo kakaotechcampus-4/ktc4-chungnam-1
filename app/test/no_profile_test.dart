@@ -108,21 +108,21 @@ void main() {
   const registerTitle = '어르신을 먼저 등록해주세요';
 
   group('홈', () {
-    testWidgets('이름 없이 묻고 오른쪽 위에 어르신 등록을 둔다', (tester) async {
+    testWidgets('이름 없이 묻고 오른쪽 위에 프로필 등록을 둔다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
       expect(find.text('오늘은 무슨 주제로\n대화를 나눠볼까요?'), findsOneWidget);
-      expect(find.text('어르신 등록'), findsOneWidget);
+      expect(find.text('프로필 등록'), findsOneWidget);
       expect(find.byTooltip('다음 분 보기'), findsNothing);
     });
 
-    testWidgets('어르신 등록을 누르면 함께하는 소중한 분 화면으로 간다', (tester) async {
+    testWidgets('프로필 등록을 누르면 함께하는 소중한 분 화면으로 간다', (tester) async {
       await openAt(tester, AppRoutes.home);
 
-      await tapAndSettle(tester, find.text('어르신 등록'));
+      await tapAndSettle(tester, find.text('프로필 등록'));
 
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
-      expect(find.text('프로필 더하기'), findsNWidgets(3));
+      expect(find.text('프로필 추가'), findsNWidgets(3));
       expect(find.text('프로필 정보 지우기'), findsNothing, reason: '지울 분이 없다');
     });
 
@@ -201,7 +201,7 @@ void main() {
       expect(find.text('프로필 전환'), findsOneWidget);
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
       expect(find.text('김새록님 (어머니)'), findsOneWidget);
-      expect(find.text('프로필 더하기'), findsNWidgets(2));
+      expect(find.text('프로필 추가'), findsNWidgets(2));
       expect(find.text('프로필 정보 지우기'), findsOneWidget);
     });
   });
@@ -219,7 +219,7 @@ void main() {
       await tapAndSettle(tester, find.text('지우기'));
 
       expect(find.text('함께하는 소중한 분'), findsOneWidget);
-      expect(find.text('프로필 더하기'), findsNWidgets(3));
+      expect(find.text('프로필 추가'), findsNWidgets(3));
       expect(find.text('김새록님 (어머니)'), findsNothing);
     });
   });

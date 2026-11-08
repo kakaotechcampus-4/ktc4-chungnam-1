@@ -128,7 +128,7 @@ void main() {
     testWidgets('기본 정보를 서버에 저장하고 바로 보여준다', (tester) async {
       final server = _server();
       await _open(tester, server, AppRoutes.profile);
-      expect(find.text('김새록 어르신'), findsOneWidget);
+      expect(find.text('김새록님'), findsOneWidget, reason: '서버 목록에는 관계가 없다');
 
       await _tap(tester, find.text('수정하기').first);
       await tester.enterText(find.byType(TextField).first, '김새봄');
@@ -145,7 +145,7 @@ void main() {
         reason: '관계는 단말에만 둔다',
       );
       expect(find.text('기본 정보를 저장했어요.'), findsOneWidget);
-      expect(find.text('김새봄 어르신'), findsOneWidget);
+      expect(find.text('김새봄님 (어머니)'), findsOneWidget);
     });
 
     testWidgets('세부 정보를 비우면 서버에 null 로 보내 지운다', (tester) async {

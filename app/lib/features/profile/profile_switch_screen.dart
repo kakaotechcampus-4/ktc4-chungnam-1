@@ -438,7 +438,7 @@ class _EmptySlot extends StatelessWidget {
             child: const Icon(Icons.add, color: HomeColors.accent),
           ),
           const SizedBox(width: AppSpacing.lg),
-          const Expanded(child: Text('프로필 더하기', style: AppTypography.body)),
+          const Expanded(child: Text('프로필 추가', style: AppTypography.body)),
         ],
       ),
     );

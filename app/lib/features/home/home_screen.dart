@@ -157,7 +157,7 @@ class HomeScreen extends ConsumerWidget {
                           Text(
                             name == null
                                 ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                                : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
+                                : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
                             // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
                             style: AppTypography.sectionTitle,
                             textAlign: TextAlign.center,
@@ -503,7 +503,7 @@ class _TopBar extends StatelessWidget {
 /// 원형 화살표는 목록 순서대로 다음 어르신으로 바로 바꾼다. 어르신이 한
 /// 분이면 바꿀 대상이 없어 두지 않는다.
 ///
-/// 등록한 어르신이 없으면 같은 자리에 `어르신 등록` 알약을 둔다. 누르면 함께
+/// 등록한 어르신이 없으면 같은 자리에 `프로필 등록` 알약을 둔다. 누르면 함께
 /// 하는 소중한 분 화면으로 간다.
 class _ProfileSwitcher extends ConsumerWidget {
   const _ProfileSwitcher();
@@ -622,7 +622,7 @@ class _RegisterPill extends StatelessWidget {
               children: [
                 Icon(Icons.add, size: 24, color: AppColors.ink),
                 SizedBox(width: AppSpacing.xs),
-                Text('어르신 등록', style: AppTypography.bodyStrong),
+                Text('프로필 등록', style: AppTypography.bodyStrong),
               ],
             ),
           ),

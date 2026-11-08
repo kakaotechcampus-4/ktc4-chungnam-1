@@ -186,7 +186,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('기본 정보를 저장했어요.'), findsOneWidget);
-      expect(find.text('김새봄 어르신'), findsOneWidget);
+      expect(find.text('김새봄님 (어머니)'), findsOneWidget);
       expect(find.text(ConditionStage.unknown.label), findsOneWidget);
 
       final entry = container.read(careProfilesProvider).selected!;

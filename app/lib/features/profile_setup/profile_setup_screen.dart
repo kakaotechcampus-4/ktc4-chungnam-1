@@ -253,7 +253,7 @@ class _ActionsState extends State<_Actions> {
       if (addingId != null) {
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('지금부터 $name 어르신과 함께해요')));
+          ..showSnackBar(SnackBar(content: Text('지금부터 $name님과 함께해요')));
       }
     }
 

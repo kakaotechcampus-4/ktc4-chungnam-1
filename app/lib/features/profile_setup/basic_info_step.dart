@@ -62,7 +62,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           label: '이름',
           controller: _name,
           required: true,
-          hintText: '어르신의 성함을 입력해주세요',
+          hintText: '함께하는 분의 성함을 입력해주세요',
           errorText: _draft.nameTooLong
               ? '이름은 ${SetupDraft.maxNameLength}자까지 적을 수 있어요.'
               : null,
