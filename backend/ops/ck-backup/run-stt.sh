@@ -10,6 +10,8 @@ runtime_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 export HF_HOME HF_HUB_OFFLINE=1 PYANNOTE_METRICS_ENABLED=0
 export SAEROK_STT_CUDA_DEVICE_INDEX SAEROK_STT_ASR_COMPUTE_TYPE
+# 전사 옵션은 runtime.env에 적었을 때만 넘긴다. 적지 않으면 서버 기본값(VAD 켬, 앞 문장 조건 끔)을 쓴다.
+export SAEROK_STT_ASR_VAD_FILTER SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export SAEROK_ENVIRONMENT=production SAEROK_ALLOW_LOCAL_AUDIO=false
 export TMPDIR="$runtime_dir/audio-temp"

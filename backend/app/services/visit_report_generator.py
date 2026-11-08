@@ -12,6 +12,10 @@
   동기 함수라 스레드는 멈추지 않지만 그 결과는 아무도 읽지 않고, 생성 함수는 DB를
   쓰지 않는다. 시간 초과를 확정하면 마감에 취소를 표시해, 남은 스레드는 다음 외부 호출
   직전 `deadline.check()`에서 멈춘다.
+- 전사문을 두 번째로 보내기 직전(변경 제안 호출)에는 `deadline.check_job()`이 마감과 함께
+  DB의 작업 행을 다시 읽는다. 행이 없거나(계정, 프로필, 회차 삭제) `generatingReport`가
+  아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면
+  `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다.
 - 결과가 와도 저장 직전에 마감을 다시 확인한다.
 - 저장 트랜잭션은 먼저 작업 행을 잠그고 `generatingReport`이며 임대가 남았는지
   확인한다. 아니면(임대 만료로 다른 worker가 실패 처리함) `WORKER_LEASE_EXPIRED`로
@@ -30,6 +34,7 @@
 """
 
 import asyncio
+import logging
 import threading
 import time
 from collections import Counter
@@ -60,6 +65,8 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 _SUMMARIZED_REACTIONS = {"positive", "neutral", "negative"}
 _NOT_EVALUATED_REACTIONS = {"notUsed", None}
 
+logger = logging.getLogger("saerok.speech_analysis")
+
 
 class ReportDeadline:
     """리포트 생성 한 번의 마감 시각과 취소 상태."""
@@ -68,6 +75,7 @@ class ReportDeadline:
         self.seconds = seconds
         self._end = time.monotonic() + seconds
         self._cancelled = threading.Event()
+        self._job_check: Callable[[], None] | None = None
 
     def left(self) -> float:
         return self._end - time.monotonic()
@@ -81,9 +89,24 @@ class ReportDeadline:
         if self._cancelled.is_set() or self.left() <= 0:
             raise _timed_out()
 
+    def watch_job(self, job_check: Callable[[], None]) -> None:
+        """`check_job()`이 부를 작업 확인 함수를 정한다. 생성기가 요청을 만든 뒤 넣는다."""
+        self._job_check = job_check
+
+    def check_job(self) -> None:
+        """전사문을 다시 외부로 보내기 직전에 부른다. 마감과 DB의 작업 상태를 확인한다.
+
+        생성 스레드에서만 부른다. 작업 확인은 이벤트 루프에서 돌고 그동안 스레드가 기다린다.
+        """
+        self.check()
+        if self._job_check is not None:
+            self._job_check()
+            self.check()
+
 
 # 8-3 요청과 마감을 받아 응답을 돌려주는 동기 함수. 실패는 `AppError`로 올린다.
-# 외부 호출 직전마다 `deadline.check()`로 마감을 확인한다.
+# 외부 호출 직전마다 `deadline.check()`로 마감을 확인하고, 전사문을 두 번째로 보내기
+# 직전에는 `deadline.check_job()`으로 작업이 아직 진행 중인지도 확인한다.
 GenerateReport = Callable[[VisitReportRequest, ReportDeadline], VisitReportResult]
 
 # 생성 함수의 실패 코드를 기존 8-3 작업 실패 코드로 바꾼다(API 계약 유지).
@@ -113,6 +136,7 @@ class VisitReportGenerator:
         profile_id, request = await build_request(connection, session_uuid, speech)
         deadline.check()
         _require_transcript(request)
+        deadline.watch_job(_job_check_from_thread(connection, request.analysis_id, deadline))
         result = await _run_until(deadline, lambda: self._generate(request, deadline))
         validate_result(request, result)
         # 마감 직후 도착한 결과도 저장하지 않는다.
@@ -158,6 +182,53 @@ async def _run_until(
         # 아직 마감 전으로 볼 수 있다. 취소를 표시해 다음 외부 호출 전에 멈추게 한다.
         deadline.cancel()
         raise _timed_out() from None
+
+
+def _job_check_from_thread(
+    connection: DbConnection, analysis_id: str, deadline: ReportDeadline
+) -> Callable[[], None]:
+    """생성 스레드에서 부를 작업 확인 함수. 확인은 worker의 연결로 이벤트 루프에서 한다.
+
+    worker는 생성 함수가 끝나기를 기다리는 동안 이 연결을 쓰지 않는다. 마감까지만 기다린다.
+    """
+    loop = asyncio.get_running_loop()
+
+    def check() -> None:
+        future = asyncio.run_coroutine_threadsafe(
+            require_active_job(connection, analysis_id), loop
+        )
+        try:
+            future.result(timeout=max(0.0, deadline.left()))
+        except TimeoutError:
+            future.cancel()
+            raise _timed_out() from None
+
+    return check
+
+
+async def require_active_job(connection: DbConnection, analysis_id: str) -> None:
+    """전사문을 다시 외부로 보내도 되는지 작업 행으로 확인한다. 안 되면 `AppError`.
+
+    행이 없거나(계정, 프로필, 회차 삭제의 연쇄 삭제) `generatingReport`가 아니거나 임대가
+    끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 보관 기한이 지났으면
+    `TRANSCRIPT_EXPIRED`다. 로그에는 작업 ID와 이유만 남긴다.
+    """
+    cursor = await connection.execute(
+        "SELECT status = 'generatingReport' AND lease_expires_at > now() AS leased, "
+        "transcript IS NOT NULL AND transcript_expires_at > clock_timestamp() AS transcript_live "
+        "FROM speech_analysis_jobs WHERE analysis_id = %s",
+        (analysis_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or not row["leased"]:
+        reason = "job_missing" if row is None else "job_not_active"
+        logger.info("report_generation_stopped analysis_id=%s reason=%s", analysis_id, reason)
+        raise _lease_lost()
+    if not row["transcript_live"]:
+        logger.info(
+            "report_generation_stopped analysis_id=%s reason=transcript_expired", analysis_id
+        )
+        raise _transcript_expired()
 
 
 async def build_request(
@@ -417,6 +488,14 @@ def _lease_lost() -> AppError:
         status_code=409,
         error_code=LEASE_EXPIRED_ERROR,
         message="작업 임대가 끝나 리포트를 저장하지 않았습니다.",
+    )
+
+
+def _transcript_expired() -> AppError:
+    return AppError(
+        status_code=409,
+        error_code="TRANSCRIPT_EXPIRED",
+        message="전사 보관 기한이 지나 리포트를 만들지 않았습니다.",
     )
 
 

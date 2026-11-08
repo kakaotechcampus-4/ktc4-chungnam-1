@@ -9,7 +9,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentAccountDep, DbConnectionDep, ImageStorageDep
+from app.api.deps import (
+    CurrentAccountDep,
+    DbConnectionDep,
+    ImageStorageDep,
+    SettingsDep,
+)
 from app.schemas.common import ErrorResponse
 from app.schemas.reports import (
     ChangeProposal,
@@ -31,7 +36,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필, 회차 또는 리포트 없음",
-        409: "이미 확인한 변경 제안",
+        409: "이미 확인한 변경 제안 또는 카드를 만드는 중",
         422: "요청 형식 또는 변경 제안 확인 오류",
         503: "DB 또는 사진 저장소 설정 미완료, 사진 저장소 오류",
     }
@@ -121,7 +126,12 @@ async def review_proposals(
     payload: ProposalReviewRequest,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
 ) -> ChangeProposal:
     return await proposals.review_proposals(
-        connection, session_id, account_id=account.account_id, payload=payload
+        connection,
+        session_id,
+        account_id=account.account_id,
+        payload=payload,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )

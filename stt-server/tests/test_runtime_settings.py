@@ -51,6 +51,35 @@ class RuntimeSettingsTest(unittest.TestCase):
                         "SAEROK_STT_CUDA_DEVICE_INDEX": device_index,
                     })
 
+    def test_transcription_options_default_to_vad_on_and_no_previous_condition(self) -> None:
+        # 2026-11-09 ck 비교 결과(docs/vad-condition-comparison-20261109.md)를 기본값으로 둔다.
+        settings = RuntimeSettings.from_environment({})
+        self.assertIs(settings.asr_vad_filter, True)
+        self.assertIs(settings.asr_condition_on_previous_text, False)
+        self.assertIs(RuntimeSettings().asr_vad_filter, True)
+        self.assertIs(RuntimeSettings().asr_condition_on_previous_text, False)
+
+    def test_transcription_options_can_be_turned_back_with_environment(self) -> None:
+        settings = RuntimeSettings.from_environment({
+            "SAEROK_STT_ASR_VAD_FILTER": "false",
+            "SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT": " TRUE ",
+        })
+        self.assertIs(settings.asr_vad_filter, False)
+        self.assertIs(settings.asr_condition_on_previous_text, True)
+
+    def test_accepts_the_same_boolean_words_as_the_local_audio_switch(self) -> None:
+        for raw, expected in (("1", True), ("yes", True), ("on", True), ("0", False), ("no", False), ("OFF", False)):
+            with self.subTest(raw=raw):
+                settings = RuntimeSettings.from_environment({"SAEROK_STT_ASR_VAD_FILTER": raw})
+                self.assertIs(settings.asr_vad_filter, expected)
+
+    def test_rejects_unclear_boolean_values_without_falling_back(self) -> None:
+        for name in ("SAEROK_STT_ASR_VAD_FILTER", "SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT"):
+            for value in ("", "maybe", "2", "참", "enable"):
+                with self.subTest(name=name, value=value):
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        RuntimeSettings.from_environment({name: value})
+
     def test_settings_do_not_change_after_environment_is_modified(self) -> None:
         environment = {"SAEROK_STT_CUDA_DEVICE_INDEX": "2"}
         settings = RuntimeSettings.from_environment(environment)
@@ -93,6 +122,42 @@ class AsrRuntimeConfigurationTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 AsrRuntime()
         model.assert_not_called()
+
+    @staticmethod
+    def _empty_transcription(model) -> None:
+        model.return_value.transcribe.return_value = (
+            iter([]), SimpleNamespace(language="ko", language_probability=1.0, duration=1.0),
+        )
+
+    @patch("stt_server.stt.runtime.WhisperModel")
+    def test_transcribe_turns_on_vad_and_drops_the_previous_text_condition(self, model) -> None:
+        self._empty_transcription(model)
+        runtime = AsrRuntime(settings=RuntimeSettings())
+        with self.assertLogs("stt_server.progress", level="INFO") as logs:
+            runtime.transcribe("synthetic-analysis", Path("synthetic.wav"), "ko")
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("stage=asr_vad vad=True", logs.output[0])
+        self.assertNotIn("synthetic", logs.output[0])
+        model.return_value.transcribe.assert_called_once_with(
+            "synthetic.wav",
+            language="ko",
+            word_timestamps=True,
+            vad_filter=True,
+            condition_on_previous_text=False,
+        )
+
+    @patch("stt_server.stt.runtime.WhisperModel")
+    def test_transcribe_options_follow_the_environment(self, model) -> None:
+        self._empty_transcription(model)
+        with patch.dict("os.environ", {
+            "SAEROK_STT_ASR_VAD_FILTER": "false",
+            "SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT": "true",
+        }):
+            runtime = AsrRuntime()
+        runtime.transcribe("synthetic-analysis", Path("synthetic.wav"), "ko")
+        _, kwargs = model.return_value.transcribe.call_args
+        self.assertIs(kwargs["vad_filter"], False)
+        self.assertIs(kwargs["condition_on_previous_text"], True)
 
     @patch("stt_server.stt.runtime.WhisperModel")
     def test_model_load_failure_is_not_replaced_with_a_different_model(self, model) -> None:

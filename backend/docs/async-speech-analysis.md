@@ -31,7 +31,8 @@ Flutter
   └─ WAV + participantCount + sessionId
         ↓ multipart/form-data
 BE API
-  ├─ 세션 인증
+  ├─ 본문을 읽기 전: 앱 버전, 세션 서명과 만료, 본문 상한(음성 상한 + 1 MiB)
+  ├─ 세션 폐기 여부와 계정 확인
   ├─ 계정 필수 동의 확인
   ├─ 면회 소유권·보호자 평가 제출 확인
   ├─ WAV/PCM 16-bit/16kHz/mono 검증
@@ -95,12 +96,21 @@ worker가 같은 작업 ID와 저장된 전사로 `generatingReport`부터 이�
 반복하지 않고, 빠진 원본 삭제 요청은 S3를 부르지 않고 삭제 대기열에만 남긴다. 이미 이어받은
 작업이면 늦게 돌아온 원래 worker는 `generatingReport`로 바꾸지 못하므로 리포트를 두 번 만들지
 않는다. 이어받는 작업은 `generatingReport`로 바뀌어 다시 `sttCompleted`로 돌아오지 않으므로
-작업마다 한 번뿐이다. 전사 보관 기한이 지난 작업은 이어받지 않고 아래와 같이
+작업마다 한 번뿐이다. 남은 전사 기한이 생성 단계 임대 시간보다 짧은 작업은 이어받지 않고 아래와 같이
 `TRANSCRIPT_EXPIRED`로 끝낸다. `--stt-only`는 인계 임대를 두지 않으므로 나중에 기본 worker를
 실행해도 그 작업을 리포트 생성에 넘기지 않는다.
 
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
+리포트 생성은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`,
+기본 900초) 이상일 때만 시작한다. 임대는 생성 제한 시간보다 60초 이상 길어야 worker가
+시작하므로, 시작한 생성이 기한을 넘겨 전사문을 보내는 새 외부 호출을 하지 않는다. 기한이 그보다 적게 남은
+`sttCompleted` 작업(리포트 재요청 등)은 시작하지 않고 worker 정리 때 전사문을 지우며
+`failed`(`TRANSCRIPT_EXPIRED`)로 끝낸다. 리포트 호출 뒤 변경 제안 호출(전사문의 두 번째 외부
+전송) 직전에는 DB의 작업 행을 다시 읽는다. 그 사이 계정, 프로필이나 회차가 지워져 작업이
+없어졌거나, 작업이 `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`,
+전사가 지워졌거나 기한이 지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다. 이미 보낸
+리포트 호출은 되돌리지 못한다.
 
 ## 4. 공개 API
 
@@ -519,8 +529,13 @@ STT 경로만 확인할 때는 키 없이 `bash ./scripts/run_speech_worker.sh -
 
 ```bash
 uv run pytest tests/test_report_flow.py tests/test_visit_report_generator.py \
-  tests/test_speech_job_repository.py tests/test_speech_worker_options.py
+  tests/test_speech_job_repository.py tests/test_speech_worker_options.py \
+  tests/test_report_transcript_limit.py
 ```
+
+`tests/test_report_transcript_limit.py`는 전사 기한이 임대 안에 끝나는 작업의 생성 미시작,
+두 생성 호출 사이의 계정, 프로필, 회차 삭제와 작업 종료, 전사 만료 때 변경 제안 호출을 하지
+않는지 검사한다.
 
 ### 11.5 DB 확인
 
@@ -567,8 +582,8 @@ error_code = null
 | WAV가 아닌 파일 | 422 `INVALID_AUDIO_FORMAT`, S3 업로드 없음 |
 | 빈 파일 | 422 `INVALID_AUDIO`, S3 업로드 없음 |
 | 헤더만 있거나 음성 데이터가 잘린 WAV | 422 `INVALID_AUDIO`, S3 업로드 없음 |
-| 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨 |
-| 인증 없음 | 401 `UNAUTHENTICATED` |
+| 크기 상한 초과 | 413 `AUDIO_TOO_LARGE`, 작업 접수 안 됨. 본문이 음성 상한 + 1 MiB를 넘으면 끝까지 받지 않음 |
+| 인증 없음 | 401 `UNAUTHENTICATED`, 본문을 읽기 전에 거절 |
 | 다른 계정의 면회 | 404 `VISIT_SESSION_NOT_FOUND` |
 | 보호자 평가 전 | 409 `EVALUATION_REQUIRED`, 업로드 없음 |
 | 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
@@ -578,7 +593,7 @@ error_code = null
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | 전사 저장 뒤 리포트 시작 전 worker 중단 | 인계 임대 동안 `sttCompleted` 유지. 끝나면 다음 worker가 같은 작업 ID로 리포트 생성, STT 반복 없음, 빠진 원본 삭제 요청은 대기열에 기록 |
-| 위 작업의 전사 보관 기한도 지남 | 이어받지 않음. 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+| 위 작업의 남은 전사 기한이 임대 시간보다 짧음 | 이어받지 않음. 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | 리포트 생성 중 모델 연결 실패, 시간 초과 | 작업 `failed`, `AI_SERVER_UNAVAILABLE`, 저장 없음 |
 | 리포트 생성 중 그 밖의 호출 실패, 잘린 응답, JSON 오류 | 작업 `failed`, `AI_SERVER_ERROR`, 저장 없음 |
@@ -588,6 +603,10 @@ error_code = null
 | S3 삭제만 실패 | 전사 저장과 리포트 생성은 계속. 삭제 대기열 유지, `audio_deleted_at` 미기록 |
 | 같은 면회 반복 제출 | 새 객체를 만들지 않고 기존 활성 작업 반환 |
 | STT 완료 후 24시간 안에 리포트 미저장 | 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+| 남은 전사 기한이 생성 단계 임대 시간보다 짧은 `sttCompleted` 작업 | 리포트 생성 시작 안 함(외부 전송 없음), 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+| 리포트 호출과 변경 제안 호출 사이에 계정, 프로필이나 회차 삭제 | 변경 제안 호출 안 함, 저장 없음. 작업 행은 연쇄 삭제됨 |
+| 리포트 호출과 변경 제안 호출 사이에 작업 종료나 임대 만료 | 변경 제안 호출 안 함, 저장 없음, `WORKER_LEASE_EXPIRED`(먼저 남은 실패 코드는 유지) |
+| 리포트 호출과 변경 제안 호출 사이에 전사 기한 경과 | 변경 제안 호출 안 함, 저장 없음, 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 
 오류 응답과 로그에서 WAV 내용, 전사문, Presigned URL, 객체 키, 인증 토큰과 AI 오류
 본문이 노출되지 않는지도 함께 확인한다.
@@ -630,7 +649,8 @@ accessToken         → Authorization Bearer
   받아야 한다(AI 담당 후속).
 - 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
   작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
-  worker가 매 주기에 확인해 지운다.
+  worker가 매 주기에 확인해 지운다. 리포트 생성은 남은 기한이 생성 단계 임대 시간 이상일
+  때만 시작하고, 변경 제안 호출 직전에 작업과 전사가 남아 있는지 다시 확인한다(3절).
 - 앱 재실행 후 홈 타일 전체를 복구할 면회 목록 API는 별도 기능이다. 현재는 앱이
   `analysisId`를 알고 있을 때 단건 상태 조회가 가능하다.
 

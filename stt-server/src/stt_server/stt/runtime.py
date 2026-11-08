@@ -2,6 +2,7 @@ from pathlib import Path
 
 from faster_whisper import WhisperModel
 
+from stt_server.progress import logger as progress_logger
 from stt_server.runtime_settings import RuntimeSettings
 from stt_server.stt.schemas import AsrResult, AsrSegment, AsrWord
 
@@ -11,6 +12,7 @@ class AsrRuntime:
 
     def __init__(self, settings: RuntimeSettings | None = None) -> None:
         settings = settings if settings is not None else RuntimeSettings.from_environment()
+        self.settings = settings
         self.model = WhisperModel(
             "large-v3-turbo",
             device="cuda",
@@ -30,6 +32,8 @@ class AsrRuntime:
             str(audio_path),
             language=language,
             word_timestamps=True,
+            vad_filter=self.settings.asr_vad_filter,
+            condition_on_previous_text=self.settings.asr_condition_on_previous_text,
         )
 
         asr_segments: list[AsrSegment] = []
@@ -58,6 +62,15 @@ class AsrRuntime:
             )
 
         full_text = " ".join(segment.text for segment in asr_segments)
+        # VAD가 말소리를 얼마나 남겼는지 길이만 남긴다(전사 내용과 파일 이름은 남기지 않음).
+        # 빈 전사가 늘었을 때 VAD 때문인지(소리가 작은지) 가를 수 있게 한다.
+        progress_logger.info(
+            "stage=asr_vad vad=%s duration_s=%.1f after_vad_s=%.1f segments=%d",
+            self.settings.asr_vad_filter,
+            info.duration,
+            getattr(info, "duration_after_vad", info.duration),
+            len(asr_segments),
+        )
 
         return AsrResult(
             analysisId=analysis_id,

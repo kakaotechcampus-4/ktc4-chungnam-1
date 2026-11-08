@@ -110,7 +110,9 @@ def report_generator(settings: Settings) -> GenerateReport:
 
     리포트와 변경 제안을 차례로 만들고 `combine`으로 8-3 응답 하나로 합친다. 각 호출
     직전에 마감과 취소 상태를 확인해, 제한 시간이 지난 뒤 남은 스레드가 외부 ML API로
-    전사문을 다시 보내지 않게 한다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
+    전사문을 다시 보내지 않게 한다. 변경 제안 호출 직전에는 DB의 작업 행도 다시 읽어,
+    그 사이 계정, 프로필이나 회차가 지워졌거나 작업이 끝났거나 전사 기한이 지났으면
+    보내지 않는다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
     """
     api_key = settings.ml_api_key.get_secret_value()
     if not api_key:
@@ -134,7 +136,8 @@ def report_generator(settings: Settings) -> GenerateReport:
             deadline.check()
             report = report_generation.generate_report(sent, model=model, api_key=api_key)
             # 리포트 응답이 시간 초과 확정 뒤에 와도 변경 제안 호출을 시작하지 않는다.
-            deadline.check()
+            # 작업이 지워졌거나 끝났거나 전사 기한이 지났어도 전사문을 다시 보내지 않는다.
+            deadline.check_job()
             proposals = proposal_generation.generate_proposals(
                 sent, model=model, api_key=api_key
             )

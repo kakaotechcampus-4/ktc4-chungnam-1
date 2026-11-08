@@ -181,8 +181,8 @@ async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 2-4, 2-7, 2-9의 정정이 같은 프로필에서 차례로
-    실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-7, 2-9,
+    3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함.
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """
@@ -239,8 +239,8 @@ async def start_card_generation(
 async def mark_stale(
     connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
 ) -> None:
-    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9가 카드 생성에 쓰는
-    값을 고칠 때 같은 트랜잭션 안에서 부름.
+    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9, 3-3, 3-4가 카드 생성에
+    쓰는 값을 고칠 때와 7-4가 주제 결정을 승인할 때 같은 트랜잭션 안에서 부름.
 
     면회에 쓴 묶음은 지난 기록이라 찍지 않음.
     카드를 만드는 중이면 409로 거절함. 고치기 전 내용으로 새 묶음이 만들어질 수 있음.
@@ -557,8 +557,9 @@ async def save_result(
             "log": result.log,
             "cards": [{"position": card.position, **card.extra} for card in result.cards],
         }
-        # 사진 분석은 카드 생성과 병렬로 끝날 수 있다. 입력 뒤 사진 설명이 바뀌면
-        # 생성 결과를 정정 전 카드처럼 사용하지 않고 다음 준비 때 갱신한다.
+        # 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀌면 생성 결과를 정정 전
+        # 카드처럼 사용하지 않고 다음 준비 때 갱신한다. 생성 중에 분석이 끝나 새로
+        # 생긴 사진은 입력에 없던 새 재료라서 다음 카드부터 쓴다.
         current_photos = await _rows(
             connection,
             "SELECT photo_id, COALESCE(user_description, description) AS description FROM photos"
@@ -566,9 +567,10 @@ async def save_result(
             " AND (user_description IS NOT NULL OR analysis_status='completed')",
             job.profile_id,
         )
-        photos_changed = {str(p.photo_id): p.description for p in context.photos} != {
-            str(p["photo_id"]): p["description"] for p in current_photos
-        }
+        current = {str(p["photo_id"]): p["description"] for p in current_photos}
+        photos_changed = any(
+            current.get(str(p.photo_id)) != p.description for p in context.photos
+        )
         await connection.execute(
             "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
             " generation_log = %s, stale_at = CASE WHEN %s THEN now() ELSE NULL END WHERE set_id = %s",

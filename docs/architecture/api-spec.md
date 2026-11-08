@@ -39,10 +39,35 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 | 401 | `UNAUTHENTICATED` | 세션이 없거나 유효하지 않음. 폐기한 세션 포함 |
 | 401 | `SESSION_EXPIRED` | 세션 만료 |
 | 404 | `ACCOUNT_NOT_FOUND` | 세션의 계정이 없음 |
+| 413 | `REQUEST_TOO_LARGE` | 업로드가 아닌 요청의 본문이 1 MiB를 넘음. 로그인 전 API 포함([본문 크기와 확인 순서](#본문-크기와-확인-순서)) |
 | 422 | `INVALID_REQUEST` | 요청 형식 오류 |
 | 426 | `APP_UPDATE_REQUIRED` | 앱 버전(`X-App-Version-Code`)이 최소 지원 버전보다 낮음. 로그인 전 API 포함 |
 | 500 | `INTERNAL_SERVER_ERROR` | 서버 내부 오류 |
 | 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
+
+### 본문 크기와 확인 순서
+
+서버는 본문을 읽기 전에 경로별 본문 상한을 정하고, 넘는 본문은 끝까지 받지 않고 `413`으로 거절한다. `Content-Length`가 상한을 넘으면 본문을 읽지 않는다. 길이를 밝히지 않은 chunked 본문은 받은 양이 상한을 넘는 순간 끊는다.
+
+| 경로 | 본문 상한 | 넘으면 |
+| --- | --- | --- |
+| 3-1 프로필 사진, 5-2 면회 사진 | 사진 상한(`SAEROK_MAX_IMAGE_BYTES`, 기본 20 MiB) + 1 MiB | `413 IMAGE_TOO_LARGE` |
+| 6-2 면회 음성 | 음성 상한(`SAEROK_MAX_AUDIO_BYTES`, 기본 512 MiB) + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| 6-6 프로필 입력용 전사 | 10 MiB와 `SAEROK_MAX_AUDIO_BYTES` 중 작은 값 + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| 그 밖의 모든 경로 | 1 MiB | `413 REQUEST_TOO_LARGE` |
+
+더한 1 MiB는 multipart 경계와 파일이 아닌 필드의 여유다. 파일 자체의 크기는 지금처럼 라우트가 검사하므로, 본문 상한 안에서 파일만 상한을 넘으면 같은 오류 코드를 라우트가 돌려준다.
+
+업로드 네 경로는 다음 순서로 확인한다. 업로드가 아닌 경로는 2부터 시작한다.
+
+1. 본문을 읽기 전에 앱 버전(`426 APP_UPDATE_REQUIRED`)과 세션 토큰의 형식, 서명, 만료(`401 UNAUTHENTICATED`, `401 SESSION_EXPIRED`)를 확인한다.
+2. 본문 상한(`413`)을 `Content-Length`로 먼저 보고, 받는 동안 다시 센다.
+3. 본문을 다 받은 뒤 앱 버전, 세션(업로드가 아닌 경로는 이때 형식, 서명, 만료도 확인한다)과 폐기 여부, 계정, 소유권과 동의를 확인한다. 로그아웃이나 탈퇴로 폐기한 세션은 이 단계에서 `401 UNAUTHENTICATED`다.
+4. 라우트가 파일 형식과 크기를 검사한다.
+
+HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 정상 설정에서는 위 경로별 상한이 더 작아 API가 먼저 응답하고, Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이다. 그때 Caddy의 `413`에는 위 오류 형식의 본문이 없다.
+
+상한을 넘거나 1단계에서 거절한 업로드는 본문을 끝까지 받지 않고 응답하므로, 아직 본문을 보내던 클라이언트는 `413`이나 `401` 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
 
 <br>
 
@@ -497,6 +522,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 - 프로필당 최대 5장이다.
 - 서버는 분석 작업(8-4)을 만든다.
+- 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -569,10 +595,11 @@ AI 설명은 `photos.description`, 보호자가 고친 값은 `user_description`
 BE 구현(#158)은 묶음 단위로 처리한다.
 
 - 2-4, 2-7, 2-9로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9는 항상 남긴다.
+- 7-4(변경 사항 확인)는 주제 제안을 하나라도 승인하면 남긴다. 승인한 주제 피드백(`more`, `less`, `exclude`)이 다음 카드 생성에서 주제를 고르는 기준을 바꾸기 때문이다. 생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 남기지 않고 다음 생성부터 반영한다. 모두 거절한 확인도 남기지 않는다.
 - 면회에 쓴 묶음은 지난 기록이라 남기지 않는다.
 - `stale_at`이 있는 묶음은 4-2, 4-3에서 `status`가 그대로 `ready`이고 `needsRefresh`가 `true`다. 4-1은 이 묶음을 거절하지 않고 새로 만들며, 5-1은 `CARD_SET_NEEDS_REFRESH`로 거절한다.
-- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다.
-- 카드 한 장 단위의 사용 중지 표시와 7-4(제안 승인으로 이야기 추가)는 다루지 않는다.
+- 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. 주제 제안 승인이 있는 7-4도 같다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다. 예를 들어 방금 제외한 주제가 그 묶음에 다시 들어갈 수 있다.
+- 카드 한 장 단위의 사용 중지 표시는 다루지 않는다.
 
 카드 생성은 비동기 작업이며 `card_sets`에 저장한다. 프로필마다 진행 중(`running`)인 작업은 하나뿐이다.
 
@@ -588,7 +615,7 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 상태는 저장하지 않고 가장 최근 묶음의 `card_sets.status`, `session_id`와 그 회차의 평가 여부로 계산한다.
 
-`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤다는 뜻이다. 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
+`ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
 
 4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
 
@@ -785,7 +812,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 ```
 
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
-- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 다른 상태에서는 늘 `false`다.
+- `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 다른 상태에서는 늘 `false`다.
 - 작업이 없어도 오류가 아니라 `none`이다.
 
 | HTTP | `errorCode` |
@@ -909,6 +936,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - `evaluationPending` 상태에서만 받는다. 다시 올리면 기존 사진을 지우고 교체한다.
 - 이미지 분석을 하지 않는다.
+- 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -1052,6 +1080,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
 - 완료한 회차는 다시 받지 않는다.
 - 앱은 `202`를 받아도 단말 WAV와 회차 연결을 남긴다. 실패 후 재전송에 사용한다.
+- 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -1105,6 +1134,7 @@ WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
 `AUDIO_TOO_LARGE` 413, 형식과 손상은 `INVALID_AUDIO_FORMAT` 또는 `INVALID_AUDIO` 422다.
 STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
+세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
 원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
 먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
@@ -1124,6 +1154,9 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 
 응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
 이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
+worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 900초) 이상일 때만 새 작업의
+생성을 시작한다. 그보다 적게 남았으면 생성하지 않고 전사를 지워 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로
+끝내므로, 이 작업 ID로 다시 요청하면 `RECORDING_REQUIRED`다.
 
 | HTTP | errorCode | 처리 |
 | --- | --- | --- |
@@ -1234,11 +1267,14 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 - `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(4-1)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
+- `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
+- 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
+| 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중(4-2 `running`). 404, `PROPOSAL_ALREADY_REVIEWED`, 422 검사가 먼저다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
 | 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
 
@@ -1250,7 +1286,7 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 
 백엔드 worker가 동기 호출한다. 앱은 호출하지 않는다. 원본 파일은 수명이 짧은 S3 Presigned GET URL로만 전달한다. 피보호자의 이름, 성별, 생년월일은 어떤 요청에도 넣지 않는다.
 
-AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다.
+AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 남은 전사 기한이 생성 단계 임대 시간보다 짧아 생성을 시작할 수 없거나, 변경 제안 호출 직전에 전사 기한이 지났으면 `TRANSCRIPT_EXPIRED`다.
 
 8-3, 8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다. 카드 생성은 AI 서버를 거치지 않으며 4-1에 적는다(8-2 삭제).
 
@@ -1300,11 +1336,12 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본 삭제 요청 기록과 S3 삭제 시도 → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
 
-8-3 시작 전에 worker가 멈추면 작업은 `sttCompleted`로 남는다. 전사 저장 때 기록한 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초)가 끝나면 다음 worker가 같은 작업과 저장된 전사로 8-3부터 이어 간다. 8-1과 S3 다운로드는 반복하지 않고, 원본 삭제 기록이 없으면 삭제 요청을 대기열에 남긴다. 이어받기는 작업마다 한 번이며 실패한 작업이나 전사 보관 기한이 지난 작업은 이어받지 않는다. `--stt-only`로 멈춘 작업도 이어받지 않는다.
+8-3 시작 전에 worker가 멈추면 작업은 `sttCompleted`로 남는다. 전사 저장 때 기록한 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초)가 끝나면 다음 worker가 같은 작업과 저장된 전사로 8-3부터 이어 간다. 8-1과 S3 다운로드는 반복하지 않고, 원본 삭제 기록이 없으면 삭제 요청을 대기열에 남긴다. 이어받기는 작업마다 한 번이며 실패한 작업이나 남은 전사 기한이 생성 단계 임대 시간보다 짧은 작업은 이어받지 않는다. `--stt-only`로 멈춘 작업도 이어받지 않는다.
 
 S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
 
 - 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 실패 전사는 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다(2026-11-03 PM 승인). 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
+- 8-3(전사문의 외부 ML 전송)은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초) 이상일 때만 시작한다. 임대는 생성 제한 시간보다 60초 이상 길어 시작한 생성이 기한을 넘겨 새 외부 호출을 하지 않는다. 기한이 그보다 적게 남은 `sttCompleted` 작업은 시작하지 않고 worker 정리 시 `failed`와 `TRANSCRIPT_EXPIRED`로 끝낸다([외부 ML 전송과 기한](../../backend/docs/speech-recovery.md#외부-ml-전송과-기한)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.
@@ -1323,7 +1360,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ### 8-3. `POST /internal/v1/visit-reports` — 신규
 
-전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
+전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 변경 제안 호출(전사문의 두 번째 외부 전송) 직전에는 작업 행을 다시 읽어, 행이 없거나(계정, 프로필, 회차 삭제) 임대가 남은 `generatingReport`가 아니면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 호출하지 않는다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
 
 요청
 
@@ -1577,7 +1614,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `setId`: 녹음을 시작할 때 5-1에 보낸다.
 - `usedBySessionId`: 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null`. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
-- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤으면 `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
+- `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.

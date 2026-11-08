@@ -1,5 +1,11 @@
 # 개발 서버의 HTTPS 앞단. .env의 SAEROK_PUBLIC_HOST 이름으로 인증서를 받고 api로 넘긴다.
 # 주소는 저장소에 적지 않는다. 값이 비어 있으면 설정 오류로 Caddy가 시작하지 않는다.
 {$SAEROK_PUBLIC_HOST} {
+	# 본문 크기의 바깥 상한. API의 가장 큰 경로별 상한(면회 음성: SAEROK_MAX_AUDIO_BYTES 기본 512MiB
+	# + 1MiB)보다 조금 크게 둔다. 경로별 상한과 업로드 경로의 인증 확인은 API(app/api/body_limits.py)가 한다.
+	# SAEROK_MAX_AUDIO_BYTES를 513MiB보다 크게 올리면 이 값도 함께 올린다.
+	request_body {
+		max_size 514MiB
+	}
 	reverse_proxy api:8000
 }

@@ -76,7 +76,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 모드, SHA, 대상 브
 - `docker compose`, `git`, `curl`, `sudo`, `jq`와 Python 3.11 이상이 있다(운영 서버는 3.12). `scripts/`의 도구가 3.11 기능을 쓴다.
 - DB는 compose의 `db` 컨테이너다(`saerok-db-1`, DB와 사용자 이름 `saerok`).
 - 서버 저장소의 `origin`이 이 GitHub 저장소다. 저장소 소유자는 `ubuntu`다.
-- 운영 서버는 `workers`, `local-db`, `https` 프로필을 모두 쓴다. `DEPLOY_COMPOSE_PROFILES=workers local-db https`로 두고, `DEPLOY_SERVICES`는 기본값(`api card-worker speech-worker photo-worker`)을 쓴다. 처음 들어오는 worker는 컨테이너가 아직 없어도 사전 점검을 통과하고 교체 단계에서 만들어진다. db와 caddy는 교체하지 않는다.
+- 운영 서버는 `workers`, `local-db`, `https` 프로필을 모두 쓴다. `DEPLOY_COMPOSE_PROFILES=workers local-db https`로 두고, `DEPLOY_SERVICES`는 기본값(`api card-worker speech-worker photo-worker`)을 쓴다. 처음 들어오는 worker는 컨테이너가 아직 없어도 사전 점검을 통과하고 교체 단계에서 만들어진다. db와 caddy는 교체하지 않는다. `backend/Caddyfile`이 바뀐 배포는 caddy를 따로 다시 만든다([배포 문서의 갱신](../backend/docs/deployment.md#갱신)).
 - 서버 저장소에 추적하지 않는 메모 파일이 있어도 된다. Dockerfile이 필요한 폴더만 복사하므로 이미지에 들어가지 않는다. 추적 파일이 바뀌어 있으면 멈춘다.
 
 ## 팀이 설정할 항목

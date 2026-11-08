@@ -57,6 +57,7 @@ uv run pytest
 | API 문서 | 실행 후 `http://127.0.0.1:8000/docs` |
 | API 명세 대조 | [test_api_spec_routes.py](tests/test_api_spec_routes.py)가 서버의 실제 경로와 `docs/architecture/api-spec.md`의 `METHOD /경로` 제목이 서로 빠짐없는지 확인. 상태 확인과 AI 서버의 `/internal` 경로는 제외. 필드와 설명은 비교하지 않음 |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
+| 본문 크기 상한 | 경로별 본문 상한과 업로드 경로의 본문 읽기 전 세션 확인. [요청 본문 크기 상한](#요청-본문-크기-상한), [test_request_body_limit.py](tests/test_request_body_limit.py) |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
 ## 데이터베이스 마이그레이션 (Alembic)
@@ -258,7 +259,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 
@@ -314,7 +315,7 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 
 ## 최소 지원 앱 버전
 
-구버전 앱이 바뀐 API를 부르다 이상하게 실패하는 대신, 업데이트가 필요하다는 응답을 받게 한다. 앱은 모든 요청에 안드로이드 versionCode를 `X-App-Version-Code` 헤더로 싣는다(`app/README.md`의 "서버에 앱 버전 알리기"). 서버는 [deps.py](app/api/deps.py)의 `require_supported_app_version`에서 이 값을 설정과 비교한다. [router.py](app/api/router.py)가 `/health/*`를 뺀 모든 경로에 이 의존성을 건다.
+구버전 앱이 바뀐 API를 부르다 이상하게 실패하는 대신, 업데이트가 필요하다는 응답을 받게 한다. 앱은 모든 요청에 안드로이드 versionCode를 `X-App-Version-Code` 헤더로 싣는다(`app/README.md`의 "서버에 앱 버전 알리기"). 서버는 [deps.py](app/api/deps.py)의 `require_supported_app_version`에서 이 값을 설정과 비교한다. [router.py](app/api/router.py)가 `/health/*`를 뺀 모든 경로에 이 의존성을 건다. 업로드 네 경로는 본문을 읽기 전에 [body_limits.py](app/api/body_limits.py)가 같은 함수로 한 번 더 확인해, 큰 본문을 받기 전에 426을 돌려준다.
 
 | 요청 | 결과 |
 | --- | --- |
@@ -333,6 +334,28 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 **올리는 순서.** 구버전 앱과 맞지 않는 서버 변경을 배포할 때는, 맞는 앱 빌드를 Play에 먼저 낸 뒤 이 값을 그 빌드의 versionCode로 올린다. 앱 쪽 헤더를 처음 싣는 빌드보다 앞선 빌드는 헤더가 없어 이 검사로 막을 수 없다.
 
 헤더 값은 사용자를 식별하지 않는 앱 빌드 번호다. 요청 로그([logging.py](app/core/logging.py))는 헤더를 기록하지 않는다.
+
+## 요청 본문 크기 상한
+
+FastAPI는 앱 버전, 인증, 소유권과 파일 크기를 확인하는 의존성보다 multipart와 JSON 본문을 먼저 끝까지 읽는다. 상한이 없으면 로그인하지 않은 요청의 큰 본문도 API의 메모리와 임시 파일에 다 쓴 뒤에야 거절된다. [body_limits.py](app/api/body_limits.py)의 `RequestBodyLimit`은 FastAPI가 본문을 읽기 전에 도는 ASGI 미들웨어로, 경로별 본문 상한과 업로드 경로의 세션 확인을 맡는다. [main.py](app/main.py)에서 요청 로그보다 먼저 등록해 요청 로그 안쪽에 놓인다.
+
+| 경로 | 본문 상한 | 넘으면 |
+| --- | --- | --- |
+| `POST /api/v1/profiles/{profileId}/photos`, `POST /api/v1/visit-sessions/{sessionId}/photo` | `SAEROK_MAX_IMAGE_BYTES` + 1 MiB | `413 IMAGE_TOO_LARGE` |
+| `POST /api/v1/visit-sessions/{sessionId}/speech-analyses` | `SAEROK_MAX_AUDIO_BYTES` + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| `POST /api/v1/speech-transcriptions` | `min(SAEROK_MAX_AUDIO_BYTES, speech_transcription.MAX_BYTES)` + 1 MiB | `413 AUDIO_TOO_LARGE` |
+| 그 밖의 모든 요청 | 1 MiB | `413 REQUEST_TOO_LARGE` |
+
+- 상한은 라우트가 쓰는 설정값과 상수에서 계산한다. 더한 1 MiB는 multipart 경계와 파일이 아닌 필드의 여유다. 파일 자체의 크기 검사(`validate_image`, `validate_visit_audio`)는 그대로 라우트가 한다.
+- `Content-Length`가 상한을 넘으면 본문을 읽지 않고 거절한다. 길이가 없거나(chunked) 실제로 더 보내면 받은 양을 세다가 상한을 넘는 조각에서 끊는다. 이때 만들던 multipart 임시 파일은 Starlette가 닫는다.
+- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
+- 상한을 넘거나 본문 전 확인에서 거절한 업로드는 본문을 끝까지 받지 않고 응답한다. 앞단(Caddy)은 읽지 않은 본문이 많으면 응답 뒤 연결을 닫을 수 있어, 아직 본문을 보내던 클라이언트는 413이나 401 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
+- 업로드 경로의 413은 라우트의 파일 검사와 같은 오류 코드와 문구를 쓴다. JSON 요청이 상한을 넘으면 `413 REQUEST_TOO_LARGE`다([API 명세의 본문 크기와 확인 순서](../docs/architecture/api-spec.md#본문-크기와-확인-순서)).
+- 본문을 읽기 전에 거절한 요청은 경로를 찾기 전이라 요청 로그의 `route`가 `unmatched`로 남는다. 요청 ID와 상태 코드는 그대로 남는다.
+- 테스트가 `dependency_overrides`로 `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
+- 기본 설정에서 면회 음성 경로는 로그인한 계정이 요청마다 513 MiB까지 보낼 수 있다. 음성 상한을 낮추거나 받는 동안 검증하는 것은 별도 결정이다.
+
+HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 가장 큰 경로별 상한보다 조금 큰 바깥 상한을 둔다. 정상 설정에서는 경로별 상한(최대 513 MiB)이 더 작아 API가 먼저 공통 형식의 `413`이나 `401`을 돌려준다. Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이며, 그때 Caddy가 돌려주는 `413`에는 공통 오류 본문이 없다. `SAEROK_MAX_AUDIO_BYTES`를 513 MiB보다 크게 올리면 Caddyfile도 함께 올린다. Caddyfile 변경을 서버에 적용하는 절차는 [배포 문서](docs/deployment.md#갱신)에 있다.
 
 ## 프로필과 생애 정보 API
 
@@ -417,14 +440,17 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 남은 기한 동안 전사를 재사용한다(2026-11-03 PM 승인). 재시도로 기한을
 늘리지 않는다. 성공 시 전사를 지우고, 만료분은 worker 정리 때 삭제하며 작업을
 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. worker 중단이나 긴 처리 중에는 정리가 늦어질
-수 있으므로 기한 삭제 감시가 필요하다([보관 대조](docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)). worker는 위의 공통 골격으로 동작하며,
+수 있으므로 기한 삭제 감시가 필요하다([보관 대조](docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
+리포트 생성(전사문의 외부 ML 전송)은 남은 전사 기한이 생성 단계 임대 시간 이상일 때만
+시작하고, 그보다 적게 남은 `sttCompleted` 작업은 시작하지 않고 같은 코드로 끝낸다
+([외부 ML 전송과 기한](docs/speech-recovery.md#외부-ml-전송과-기한)). worker는 위의 공통 골격으로 동작하며,
 임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 전사를 저장할 때
 리포트까지 이어 갈 worker는 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`)를 함께 기록한다.
 그 안에 리포트 생성을 시작하지 못하고 멈춘 작업은 임대가 끝난 뒤 다음 worker가 같은 작업 ID와
 저장된 전사로 이어받는다. STT를 반복하지 않고, 원본 삭제 기록이 없으면 삭제 요청만 대기열에
-남긴다. 이미 이어받은 작업이면 늦게 돌아온 worker는 리포트 생성을 시작하지 못한다. 전사 보관
-기한이 지난 작업은 이어받지 않는다([분석 복구](docs/speech-recovery.md)). 실패한 작업의 자동
-재시도와 취소는 없으며 실패를 숨겨 재실행하지 않는다. 리포트 생성의 시간 제한과 늦은 결과
+남긴다. 이미 이어받은 작업이면 늦게 돌아온 worker는 리포트 생성을 시작하지 못한다. 이어받을 때도
+남은 전사 기한이 생성 단계 임대 시간 이상이어야 한다([분석 복구](docs/speech-recovery.md)). 실패한
+작업의 자동 재시도와 취소는 없으며 실패를 숨겨 재실행하지 않는다. 리포트 생성의 시간 제한과 늦은 결과
 처리는 [평가와 리포트 API](#평가와-리포트-api)에 정리한다.
 
 API 서버와 별도 터미널에서 worker를 실행한다.
@@ -463,8 +489,8 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_SPEECH_AUDIO_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 기본 86100초. STT가 24시간을 넘는 기한을 거절하므로 서버 시계 차이를 감안해 86100초보다 길게 줘도 86100초로 쓴다(86400초까지 받음) |
-| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
-| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계, 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음 |
+| `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한. 면회 음성 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계, 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음. 리포트 생성은 남은 전사 기한이 이 값 이상일 때만 시작 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
 | `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
@@ -529,7 +555,9 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
 [image_validation.py](app/services/image_validation.py)의 `validate_image`로 검사한다.
 
-    validate_image(파일, max_size_bytes=설정값)       # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
+    본문을 읽기 전 앱 버전, 세션 서명과 본문 상한     # body_limits.py. 426, 401, 413 IMAGE_TOO_LARGE
+    → 본문을 받은 뒤 세션 폐기, 계정과 소유권 확인
+    → validate_image(파일, max_size_bytes=설정값)     # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
     → storage.object_key(photo_id=..., image=...)     # photos/{photoId}.jpg, 개인정보 없음
     → storage.upload(object_key=..., file=..., image=...)
     → photos 행 저장 (실패하면 storage.delete로 올린 객체를 지운다)
@@ -565,7 +593,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `SAEROK_IMAGE_S3_PREFIX` | 개인정보를 넣지 않는 객체 키 접두사, 기본 `photos` |
 | `SAEROK_IMAGE_S3_ENCRYPTION` | 서버 측 암호화 `AES256` 또는 `aws:kms` |
 | `SAEROK_IMAGE_PRESIGNED_TTL_SECONDS` | 조회와 AI 다운로드 URL 수명, 기본 900초 |
-| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB |
+| `SAEROK_MAX_IMAGE_BYTES` | 사진 크기 상한, 기본 20MB. 사진 업로드 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
 
 ## 평가와 리포트 API
 
@@ -596,10 +624,16 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   URL을 만든다. URL을 만들지 못하면 7-2는 503이지만, 7-1은 썸네일 때문에 목록이 열리지 않으면
   안 되므로 그 항목만 `photo: null`로 담고 `report_list_photo_url_failed` 경고 로그를 요청마다
   한 번 남긴다(실패 수와 `errorCode`만).
-- 7-4는 회차 행을 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고, 승인한 생애 정보
-  제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의 `action`으로
-  `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈 요청을 보내면
-  아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
+- 7-4는 프로필 행과 회차 행을 차례로 잠근 한 트랜잭션에서 모든 제안을 `settled`로 바꾸고,
+  승인한 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의
+  `action`으로 `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈
+  요청을 보내면 아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
+- 주제 제안 승인이 하나라도 있는 7-4는 다음 카드 생성(4-1)에서 주제를 고르는 기준을 바꾸므로
+  2-4, 2-7, 2-9와 같이 `card_sets.mark_stale`을 부른다. 카드를 만드는 중이면
+  `CARD_GENERATION_IN_PROGRESS`(409)로 거절하고 아무것도 저장하지 않으며, 아니면 아직 면회에 안
+  쓴 완료 묶음에 `stale_at`을 남긴다. 생애 정보만 승인한 확인은 이야기 추가(2-6)와 같아서, 모두
+  거절한 확인과 함께 부르지 않는다. 리포트 저장(8-3)과 서로 기다리지 않게 프로필을 잠그기
+  전에 리포트가 있는지 먼저 본다.
 - 리포트 생성기(8-3)는 요청 조립(이름, 성별, 생년월일 제외) → 생성 함수 호출(트랜잭션 밖,
   별도 스레드) → 응답 검증 → 리포트, 카드 요약, 변경 제안 저장과 작업 `completed`(한
   트랜잭션) 순서다. 검증에 걸리면 아무것도 저장하지 않고 작업을 `INVALID_AI_RESPONSE`로
@@ -633,6 +667,14 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   표시하므로, 스레드가 읽는 시계가 해상도 차이(Windows)로 아직 마감 전이어도 다음 호출 전에
   멈춘다. 이미 시작한 호출 하나는 끝날 때까지 남을 수 있고, 시간 초과 확정 전에 마감 확인을
   통과한 변경 제안 호출도 시작될 수 있다(결과는 버리고 저장하지 않는다).
+- 전사 기한과 외부 전송: `generatingReport`로 바꿀 때(최초 생성, 6-5 재요청, 인계 임대가 끝난 작업의 이어받기 모두) 남은 전사
+  기한이 새 임대 시간 이상이어야 한다. 아니면 생성을 시작하지 않고 worker 정리에서 전사를
+  지우며 `TRANSCRIPT_EXPIRED`로 끝낸다. 임대가 제한 시간보다 60초 이상 길므로 생성 중 새 외부
+  호출은 전사 기한 전에만 시작된다. 변경 제안 호출(전사문의 두 번째 외부 전송) 직전에는 마감과
+  함께 DB의 작업 행을 다시 읽는다. 행이 없거나(계정, 프로필, 회차 삭제의 연쇄 삭제)
+  `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이
+  지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다. 이 확인은 생성 스레드가 worker 연결로
+  이벤트 루프에서 실행하며, `speech_analysis` 로거에 작업 ID와 멈춘 이유만 info로 남긴다.
 - 늦은 결과 저장 방지: 마감 뒤 도착한 결과는 아무도 읽지 않고, 생성 함수는 DB를 쓰지 않는다.
   결과가 와도 저장 직전에 마감을 다시 확인한다. 저장 트랜잭션은 먼저 작업 행을
   `FOR UPDATE`로 잠그고 `generatingReport`이며 `lease_expires_at > now()`일 때만 저장한다.
@@ -655,6 +697,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `REPORT_NOT_FOUND` | 404 | 7-2 ~ 7-4. 리포트 저장 전 |
 | `EVALUATION_ALREADY_SUBMITTED` | 409 | 6-1. 이미 평가함 |
 | `PROPOSAL_ALREADY_REVIEWED` | 409 | 7-4. 이미 확인한 회차 |
+| `CARD_GENERATION_IN_PROGRESS` | 409 | 7-4. 주제 제안 승인이 있는 확인인데 카드를 만드는 중. 카드 생성이 끝난 뒤 다시 보낸다 |
 | `INVALID_CARD_REVIEW` | 422 | 6-1. 선택 카드가 아니거나, 중복이거나, `wasUsed`와 `caregiverReaction`의 짝이 틀림 |
 | `INVALID_PROPOSAL_REVIEW` | 422 | 7-4. `pending` 제안이 빠졌거나 다른 회차의 제안이거나 중복 |
 | `IMAGE_STORAGE_UNAVAILABLE`, `IMAGE_STORAGE_NOT_CONFIGURED` | 503 | 7-2. 면회 사진의 조회 URL을 만들지 못함 |
@@ -664,7 +707,10 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 
 worker가 작업 실패로 남기는 코드: `INVALID_AI_RESPONSE`, `AI_SERVER_TIMEOUT`,
 `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `REPORT_ALREADY_GENERATED`(이미 리포트가 있는 회차),
-`EVALUATION_REQUIRED`(평가 없는 회차. 6-2가 막으므로 정상 흐름에서는 생기지 않음).
+`EVALUATION_REQUIRED`(평가 없는 회차. 6-2가 막으므로 정상 흐름에서는 생기지 않음),
+`WORKER_LEASE_EXPIRED`(임대가 끝났거나 변경 제안 호출 전에 작업이 끝남),
+`TRANSCRIPT_EXPIRED`(전사 기한이 지났거나 남은 기한이 임대 시간보다 짧아 생성을 시작하거나
+이어 갈 수 없음).
 
 ### 다른 작업과 병합한 뒤 정리할 것
 
