@@ -1076,7 +1076,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 변경 사항
 
 - 보호자 평가를 제출한 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
-- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다.
+- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다. 6-5 재요청 횟수를 모두 쓴 회차도 같으며, 이 제출은 재요청 횟수에 넣지 않는다.
 - 유효한 전사가 남은 실패 작업은 `REPORT_RETRY_AVAILABLE`로 6-5 사용을 안내한다.
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
 - 완료한 회차는 다시 받지 않는다.
@@ -1135,8 +1135,9 @@ WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 입력 오류와 동시 요청 거절은 아래 표와 같다. STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
 
-같은 계정의 6-6은 동시에 1건(서버 설정 `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT`)만
-처리한다. 앞 요청이 끝나기 전에 온 요청은 S3 저장과 STT 호출 없이
+같은 계정의 6-6은 동시에 2건(서버 설정 `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT`)까지
+처리한다. 앱은 전사 중에도 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있으므로, 앞 전사 하나가 남아
+있어도 다음 녹음은 받는다. 이미 2건이 처리 중일 때 온 요청은 S3 저장과 STT 호출 없이
 `SPEECH_TRANSCRIPTION_IN_PROGRESS` 429(`retryable: true`)로 거절한다. 앞 요청이 끝나면 다시 보낼
 수 있다. 다른 계정의 요청은 기다리지 않는다(2026-11-09 PM 결정).
 
@@ -1145,7 +1146,7 @@ WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 필수 동의 누락 |
 | 413 | `AUDIO_TOO_LARGE` | 크기 또는 5분 초과 |
 | 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` | 형식이 다르거나 손상됨 |
-| 429 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 같은 계정의 6-6이 아직 처리 중 |
+| 429 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 같은 계정의 6-6이 이미 2건 처리 중 |
 
 원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
 먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
@@ -1162,27 +1163,36 @@ WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
 기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
 동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
-재요청은 면회 회차당 3회(서버 설정 `SAEROK_REPORT_RETRIES_PER_SESSION`)까지 접수하며, 그다음
-요청은 전사가 남아 있든 없든 새 작업을 만들지 않고 `REPORT_RETRY_LIMIT_EXCEEDED`로 거절한다.
-전사가 없어도 이때는 `RECORDING_REQUIRED`로 녹음 재제출을 안내하지 않는다.
-처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 세지 않는다(2026-11-09 PM 결정).
+재요청은 면회 회차당 3회(서버 설정 `SAEROK_REPORT_RETRIES_PER_SESSION`)까지 접수한다. 횟수는 남은
+전사를 다시 쓸 때만 적용한다. 횟수를 모두 썼고 전사가 남아 있으면 새 작업을 만들지 않고
+`REPORT_RETRY_LIMIT_EXCEEDED`로 거절한다. 전사가 없거나 기한이 지났으면 횟수와 관계없이
+`RECORDING_REQUIRED`이므로, 앱이 기기 녹음을 6-2로 다시 보내 그 회차의 리포트를 받을 수 있다.
+6-2로 다시 낸 녹음과, 처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 횟수에 넣지
+않는다(2026-11-09 PM 결정).
 
 응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
 이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
 worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 900초) 이상일 때만 새 작업의
 생성을 시작한다. 그보다 적게 남았으면 생성하지 않고 전사를 지워 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로
-끝내므로, 이 작업 ID로 다시 요청하면 `RECORDING_REQUIRED`다. 회차의 재요청 횟수를 모두 썼으면
-`REPORT_RETRY_LIMIT_EXCEEDED`다.
+끝내므로, 이 작업 ID로 다시 요청하면 회차의 재요청 횟수와 관계없이 `RECORDING_REQUIRED`다.
+
+서버는 아래 순서로 확인하고 처음 걸린 오류를 돌려준다.
+
+1. 필수 동의가 없으면 `SPEECH_PROCESSING_CONSENT_REQUIRED`, 이 계정의 작업이 아니면 `SPEECH_ANALYSIS_NOT_FOUND`.
+2. 회차에 끝나지 않은 작업이 있으면 업로드 중은 `ANALYSIS_SUBMISSION_IN_PROGRESS`, 완료는 `ANALYSIS_ALREADY_COMPLETED`, 처리 중은 그 작업을 `202`로 반환.
+3. 이 작업 ID로 이미 재요청했으면 `ANALYSIS_ALREADY_FAILED`.
+4. 다시 쓸 전사가 없거나 기한이 지났으면 `RECORDING_REQUIRED`.
+5. 회차의 재요청 횟수를 모두 썼으면 `REPORT_RETRY_LIMIT_EXCEEDED`.
 
 | HTTP | errorCode | 처리 |
 | --- | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 재전송으로 우회하지 않고 동의 상태 확인 |
 | 404 | `SPEECH_ANALYSIS_NOT_FOUND` | 다른 계정 또는 없는 작업 |
-| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출 |
+| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
 | 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
 | 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
-| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
-| 409 | `REPORT_RETRY_LIMIT_EXCEEDED` | 이 회차의 재요청 횟수를 모두 씀. 다시 요청하지 않고 안내만 표시 |
+| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출. 재요청 횟수를 모두 쓴 회차도 같음 |
+| 409 | `REPORT_RETRY_LIMIT_EXCEEDED` | 횟수를 모두 썼고 전사가 남아 있음. 바로 다시 요청하지 않음. 전사 기한(최초 STT부터 24시간)이 지나면 같은 요청이 `RECORDING_REQUIRED`가 되어 녹음을 다시 보낼 수 있음 |
 
 전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 

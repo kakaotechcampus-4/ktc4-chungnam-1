@@ -2,11 +2,12 @@
 
 import asyncio
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
-from app.api.deps import get_current_account
+from app.api.deps import get_current_account, get_speech_audio_storage
 from app.core.config import Settings, get_settings
 from app.core.database import connect
 from app.core.errors import AppError
@@ -17,7 +18,8 @@ from app.services.speech_analysis_jobs import (
 from app.services.speech_analysis_pipeline import create_speech_worker
 from app.services.visit_report_generator import VisitReportGenerator
 from tests.support import request, run
-from tests.test_speech_analyses import ACCOUNT
+from tests.test_speech_analyses import ACCOUNT, synthetic_wav
+from tests.test_speech_analyses import FakeAudioStorage as UploadStorage
 from tests.test_speech_job_repository import TRANSCRIPT, _Db, _accept, _generating, _job
 from tests.test_visit_report_generator import (
     FakeAi, FakeAudioStorage, Records, TIME_LIMIT_SECONDS, _evaluated,
@@ -238,7 +240,70 @@ def test_retry_limit_follows_the_setting_through_the_api(migrated_database_url):
     assert second.json()["retryable"] is False
 
 
-def test_in_memory_repository_applies_the_same_limit():
+def test_expired_transcript_after_the_limit_asks_for_the_recording_again(migrated_database_url):
+    """한도는 남은 전사를 다시 쓸 때만 막는다. 전사 기한이 지나면 6-5는 `RECORDING_REQUIRED`이고
+    6-2는 기기 녹음을 다시 받는다. 그 재제출은 재요청 횟수에 넣지 않는다(2026-11-09 PM 결정)."""
+    db = _Db(migrated_database_url)
+    owner, old = _failed_report(db)
+    latest = old
+    for _ in range(3):
+        latest = _fail_retry(db, owner, latest.analysis_id)
+    storage = UploadStorage()
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        database_url=migrated_database_url, session_secret="s" * 32,
+    )
+    app.dependency_overrides[get_current_account] = lambda: replace(ACCOUNT, account_id=owner)
+    app.dependency_overrides[get_speech_audio_storage] = lambda: storage
+
+    def retry(analysis_id):
+        return request(app, "POST", f"/api/v1/speech-analyses/{analysis_id}/retry")
+
+    def upload():
+        return request(
+            app, "POST", f"/api/v1/visit-sessions/{old.session_id}/speech-analyses",
+            data={"participantCount": "2"},
+            files={"audio": ("synthetic.wav", synthetic_wav(), "audio/wav")},
+        )
+
+    # 전사가 남아 있는 동안은 6-5도 6-2도 받지 않는다.
+    assert retry(latest.analysis_id).json()["errorCode"] == "REPORT_RETRY_LIMIT_EXCEEDED"
+    assert upload().json()["errorCode"] == "REPORT_RETRY_AVAILABLE"
+
+    # 기한은 지났지만 worker 정리 전이라 전사 행이 남은 경우와, 정리로 지워진 경우 모두 녹음을 다시 받는다.
+    db.execute("UPDATE speech_analysis_jobs SET transcript_expires_at=now()-interval '1 second' "
+               "WHERE transcript IS NOT NULL")
+    expired = retry(latest.analysis_id)
+    assert expired.status_code == 409
+    assert expired.json()["errorCode"] == "RECORDING_REQUIRED"
+    run(db.repository.expire_transcripts())
+    assert db.job_row(latest.analysis_id)["transcript"] is None
+    assert retry(latest.analysis_id).json()["errorCode"] == "RECORDING_REQUIRED"
+
+    uploaded = upload()
+    assert uploaded.status_code == 202, uploaded.text
+    new_id = uploaded.json()["analysisId"]
+    assert len(storage.objects) == 1
+    assert db.job_row(new_id)["retry_of_analysis_id"] is None
+    retries = db.execute(
+        "SELECT count(*) AS n FROM speech_analysis_jobs "
+        "WHERE session_id=%s AND retry_of_analysis_id IS NOT NULL", (old.session_id,),
+    )
+    assert retries[0]["n"] == 3
+
+    # 재제출한 작업의 리포트가 다시 실패하면 그 전사로는 한도가 적용된다.
+    run(db.repository.claim_next(lease_seconds=900))
+    run(db.repository.mark_stt_completed(analysis_id=new_id, transcript=TRANSCRIPT))
+    run(db.repository.mark_generating_report(analysis_id=new_id))
+    run(db.repository.mark_failed(analysis_id=new_id, error_code="AI_SERVER_TIMEOUT"))
+    assert retry(new_id).json()["errorCode"] == "REPORT_RETRY_LIMIT_EXCEEDED"
+    # 재제출을 횟수에 넣었다면 4번째가 되어 한도 4에서도 거절된다.
+    fourth = run(db.repository.retry_report(analysis_id=new_id, account_id=owner, max_retries=4))
+    assert fourth.status == "sttCompleted"
+
+
+def _memory_session_at_limit():
+    """메모리 저장소에서 한도 1회를 쓰고 그 재요청도 실패한 회차를 만든다."""
     jobs = InMemorySpeechAnalysisJobRepository()
     jobs.allow_session(account_id="synthetic-account", session_id="synthetic-session")
     first = _job("synthetic-session")
@@ -250,12 +315,33 @@ def test_in_memory_repository_applies_the_same_limit():
     retry = run(jobs.retry_report(analysis_id=first.analysis_id, account_id="synthetic-account",
                                   max_retries=1))
     run(jobs.mark_failed(analysis_id=retry.analysis_id, error_code="AI_SERVER_TIMEOUT"))
+    return jobs, retry
+
+
+def test_in_memory_repository_applies_the_same_limit():
+    jobs, retry = _memory_session_at_limit()
 
     with pytest.raises(AppError) as error:
         run(jobs.retry_report(analysis_id=retry.analysis_id, account_id="synthetic-account",
                               max_retries=1))
 
     assert error.value.error_code == "REPORT_RETRY_LIMIT_EXCEEDED"
+
+
+def test_in_memory_repository_asks_for_the_recording_once_the_transcript_expires():
+    jobs, retry = _memory_session_at_limit()
+    # 메모리 저장소는 만료 정리를 하지 않으므로 기한만 지난 전사가 남는다.
+    jobs._jobs[retry.analysis_id] = replace(
+        jobs._jobs[retry.analysis_id], transcript_expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    with pytest.raises(AppError) as error:
+        run(jobs.retry_report(analysis_id=retry.analysis_id, account_id="synthetic-account",
+                              max_retries=1))
+    uploaded, created = run(jobs.reserve(_job("synthetic-session")))
+
+    assert error.value.error_code == "RECORDING_REQUIRED"
+    assert created and uploaded.analysis_id != retry.analysis_id
 
 
 class _Crash(BaseException):

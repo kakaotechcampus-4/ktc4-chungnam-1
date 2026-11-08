@@ -172,7 +172,8 @@ class InMemorySpeechAnalysisJobRepository:
             existing_id = self._by_session.get(job.session_id)
             if existing_id is not None:
                 existing = self._jobs[existing_id]
-                if existing.status != SpeechAnalysisStatus.FAILED or existing.transcript is not None:
+                # PostgreSQL 저장소와 같이 기한이 지난 전사는 남아 있어도 재제출을 막지 않는다.
+                if existing.status != SpeechAnalysisStatus.FAILED or _has_reusable_transcript(existing):
                     return existing, False
             self._jobs[job.analysis_id] = job
             self._by_session[job.session_id] = job.analysis_id
@@ -196,14 +197,13 @@ class InMemorySpeechAnalysisJobRepository:
                                message="녹음을 전송하고 있습니다.", retryable=True)
             if current.status != SpeechAnalysisStatus.FAILED:
                 return current
+            # 횟수는 남은 전사를 다시 쓸 때만 센다. 전사가 없으면 한도와 관계없이 녹음 재제출을 안내한다.
+            if not _has_reusable_transcript(old):
+                raise _recording_required()
             retries = sum(1 for retry_id in self._report_retries
                           if self._jobs[retry_id].session_id == old.session_id)
             if retries >= max_retries:
                 raise _retry_limit_exceeded()
-            if (not old.transcript or old.transcript_expires_at is None
-                    or old.transcript_expires_at <= datetime.now(UTC)):
-                raise AppError(status_code=409, error_code="RECORDING_REQUIRED",
-                               message="기기에 남아 있는 녹음을 다시 보내 주세요.")
             new = replace(old, analysis_id=str(uuid4()), status=SpeechAnalysisStatus.STT_COMPLETED,
                           error_code=None)
             self._jobs[old.analysis_id] = replace(old, transcript=None)
@@ -473,6 +473,15 @@ class PostgresSpeechAnalysisJobRepository:
             if previous_retry:
                 raise AppError(status_code=409, error_code="ANALYSIS_ALREADY_FAILED",
                                message="재요청한 작업도 종료됐습니다. 최신 처리 상태를 확인해 주세요.")
+            # 횟수는 남은 전사를 다시 쓸 때만 센다. 전사가 없거나 기한이 지났으면 한도와 관계없이
+            # 녹음 재제출(6-2)을 안내한다. 6-2로 새로 받은 작업은 재요청이 아니므로 세지 않는다.
+            reusable = await (await self._connection.execute(
+                "SELECT 1 FROM speech_analysis_jobs WHERE analysis_id=%s AND status='failed' "
+                "AND transcript IS NOT NULL AND transcript_expires_at > clock_timestamp()",
+                (UUID(analysis_id),),
+            )).fetchone()
+            if reusable is None:
+                raise _recording_required()
             # 회차 행을 잠근 뒤 세므로 동시 재요청에도 횟수를 넘지 않는다. 처리 중인 재요청을
             # 다시 보낸 경우는 위에서 그 작업을 돌려주므로 세지 않는다.
             retries = await (await self._connection.execute(
@@ -495,8 +504,8 @@ class PostgresSpeechAnalysisJobRepository:
                 (new_id, UUID(analysis_id)),
             )).fetchone()
             if row is None:
-                raise AppError(status_code=409, error_code="RECORDING_REQUIRED",
-                               message="분석에 쓸 전사가 남아 있지 않습니다. 기기의 녹음을 다시 보내 주세요.")
+                # 위에서 확인한 뒤 이 문장 사이에 기한이 지난 경우다.
+                raise _recording_required()
             await self._connection.execute(
                 "UPDATE speech_analysis_jobs SET transcript=NULL, transcript_deleted_at=now(), updated_at=now() "
                 "WHERE analysis_id=%s", (UUID(analysis_id),),
@@ -826,9 +835,21 @@ async def _update_status(
     return cursor.rowcount > 0
 
 
+def _has_reusable_transcript(job: SpeechAnalysisJob) -> bool:
+    """메모리 저장소에서 리포트 재요청에 다시 쓸 전사가 남았는지. PostgreSQL 저장소는 같은 조건을 SQL로 본다."""
+    return (job.transcript is not None and job.transcript_expires_at is not None
+            and job.transcript_expires_at > datetime.now(UTC))
+
+
+def _recording_required() -> AppError:
+    return AppError(status_code=409, error_code="RECORDING_REQUIRED",
+                    message="분석에 쓸 전사가 남아 있지 않습니다. 기기의 녹음을 다시 보내 주세요.")
+
+
 def _retry_limit_exceeded() -> AppError:
     return AppError(status_code=409, error_code="REPORT_RETRY_LIMIT_EXCEEDED",
-                    message="이 면회의 리포트 재요청 횟수를 모두 사용했습니다.")
+                    message=("이 면회의 리포트 재요청 횟수를 모두 사용했습니다. 남은 전사의 보관 기한이 "
+                             "지나면 기기의 녹음을 다시 보내 요청할 수 있습니다."))
 
 
 def _session_not_found() -> AppError:

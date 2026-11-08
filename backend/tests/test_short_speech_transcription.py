@@ -224,7 +224,7 @@ def test_downgrade_refuses_to_remove_active_upload_guard(alembic_config, test_da
     assert db.execute("SELECT not_before IS NOT NULL AS kept FROM storage_deletion_request_queue") == [{"kept": True}]
 
 
-# ── 계정당 동시 요청 수(2026-11-09 PM 결정, 기본 1건) ───────────────────────────
+# ── 계정당 동시 요청 수(2026-11-09 PM 결정, 기본 2건) ───────────────────────────
 
 
 OTHER_ACCOUNT = replace(ACCOUNT, account_id="00000000-0000-0000-0000-0000000000a2")
@@ -246,14 +246,18 @@ def _accounts_by_header(app):
     app.dependency_overrides[get_current_account] = current
 
 
-def test_second_concurrent_request_of_the_same_account_is_rejected(migrated_database_url):
+def test_third_concurrent_request_of_the_same_account_is_rejected(migrated_database_url):
+    """기본 2건. 앱은 앞 전사가 끝나기 전에 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있다."""
     async def scenario():
-        started, finish = asyncio.Event(), asyncio.Event()
+        both_running, finish = asyncio.Event(), asyncio.Event()
+        waiting = []
 
         class WaitingAi(FakeAiServer):
             async def analyze_speech(self, payload):
-                if not started.is_set():
-                    started.set()
+                if len(waiting) < 2:
+                    waiting.append(payload)
+                    if len(waiting) == 2:
+                        both_running.set()
                     await finish.wait()
                 return await super().analyze_speech(payload)
 
@@ -261,13 +265,13 @@ def test_second_concurrent_request_of_the_same_account_is_rejected(migrated_data
         _accounts_by_header(app)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-            first = asyncio.create_task(_send_as(client, "first"))
-            await started.wait()
+            running = [asyncio.create_task(_send_as(client, "first")) for _ in range(2)]
+            await both_running.wait()
             busy = await _send_as(client, "first")
             uploads_while_busy = len(storage.objects)
             elsewhere = await _send_as(client, "other")
             finish.set()
-            done = await first
+            done = await asyncio.gather(*running)
             after = await _send_as(client, "first")
         return storage, ai, uploads_while_busy, busy, elsewhere, done, after
 
@@ -275,12 +279,12 @@ def test_second_concurrent_request_of_the_same_account_is_rejected(migrated_data
     assert busy.status_code == 429, busy.text
     assert busy.json()["errorCode"] == "SPEECH_TRANSCRIPTION_IN_PROGRESS"
     assert busy.json()["retryable"] is True
-    # 거절한 요청은 S3에 올리지 않고 STT도 부르지 않는다. 처리 중인 첫 요청의 원본만 있다.
-    assert uploads_while_busy == 1
-    assert [r.status_code for r in (elsewhere, done, after)] == [200, 200, 200]
-    assert len(ai.payloads) == 3 and len(storage.deleted) == 3
+    # 거절한 요청은 S3에 올리지 않고 STT도 부르지 않는다. 처리 중인 두 요청의 원본만 있다.
+    assert uploads_while_busy == 2
+    assert [r.status_code for r in (elsewhere, *done, after)] == [200, 200, 200, 200]
+    assert len(ai.payloads) == 4 and len(storage.deleted) == 4
     rows = _Db(migrated_database_url).execute("SELECT count(*) AS n FROM storage_deletion_request_queue")
-    assert rows[0]["n"] == 3
+    assert rows[0]["n"] == 4
 
 
 def test_failed_request_does_not_block_the_next_one(migrated_database_url):
@@ -306,26 +310,26 @@ def test_concurrency_follows_the_setting(migrated_database_url):
 
         class WaitingAi(FakeAiServer):
             async def analyze_speech(self, payload):
-                self.payloads.append(payload)
-                if len(self.payloads) == 2:
+                if not started.is_set():
                     started.set()
-                await finish.wait()
-                return await FakeAiServer().analyze_speech(payload)
+                    await finish.wait()
+                return await super().analyze_speech(payload)
 
         app, _, _ = harness(migrated_database_url, ai=WaitingAi())
         app.dependency_overrides[get_settings] = lambda: Settings(
             database_url=migrated_database_url, ai_server_timeout_seconds=5,
-            session_secret="s" * 32, short_transcription_concurrency_per_account=2,
+            session_secret="s" * 32, short_transcription_concurrency_per_account=1,
         )
         _accounts_by_header(app)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-            running = [asyncio.create_task(_send_as(client, "first")) for _ in range(2)]
+            first = asyncio.create_task(_send_as(client, "first"))
             await started.wait()
-            third = await _send_as(client, "first")
+            second = await _send_as(client, "first")
             finish.set()
-            return third, await asyncio.gather(*running)
+            return second, await first
 
-    third, running = run(scenario())
-    assert third.status_code == 429
-    assert [r.status_code for r in running] == [200, 200]
+    second, first = run(scenario())
+    assert second.status_code == 429
+    assert second.json()["errorCode"] == "SPEECH_TRANSCRIPTION_IN_PROGRESS"
+    assert first.status_code == 200

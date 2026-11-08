@@ -114,7 +114,8 @@ class Settings(BaseSettings):
 
     # 계정별 사용 한도(2026-11-09 PM 결정). 한 계정이 DB 연결, STT와 ML 호출을 독차지하지
     # 않게 한다. 짧은 음성 전사(6-6)를 한 계정이 동시에 보낼 수 있는 수. 넘으면 429.
-    short_transcription_concurrency_per_account: int = Field(default=1, ge=1)
+    # 앱은 전사 중에도 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있어 기본을 2로 둔다.
+    short_transcription_concurrency_per_account: int = Field(default=2, ge=1)
     # 계정당 푸시 받을 기기 수(1-7). 넘으면 등록 시각이 가장 오래된 기기를 지운다.
     push_devices_per_account: int = Field(default=5, ge=1)
     # 면회 회차당 리포트 재요청(6-5) 수. 넘으면 409.

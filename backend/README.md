@@ -58,7 +58,7 @@ uv run pytest
 | API 명세 대조 | [test_api_spec_routes.py](tests/test_api_spec_routes.py)가 서버의 실제 경로와 `docs/architecture/api-spec.md`의 `METHOD /경로` 제목이 서로 빠짐없는지 확인. 상태 확인과 AI 서버의 `/internal` 경로는 제외. 필드와 설명은 비교하지 않음 |
 | 오류 테스트 | [test_errors.py](tests/test_errors.py)의 404, 422, 500, 503 응답 |
 | 본문 크기 상한 | 경로별 본문 상한과 업로드 경로의 본문 읽기 전 세션 확인. [요청 본문 크기 상한](#요청-본문-크기-상한), [test_request_body_limit.py](tests/test_request_body_limit.py) |
-| 계정별 사용 한도 | 짧은 음성 전사 동시 1건, 푸시 기기 5대, 리포트 재요청 회차당 3회. [계정별 사용 한도](#계정별-사용-한도) |
+| 계정별 사용 한도 | 짧은 음성 전사 동시 2건, 푸시 기기 5대, 리포트 재요청 회차당 3회. [계정별 사용 한도](#계정별-사용-한도) |
 | 요청 로그 | 요청 ID로 응답과 로그를 연결. 경로 템플릿과 안전한 예외 종류 및 스택을 기록하며 요청 본문과 전사문은 제외 |
 
 ## 데이터베이스 마이그레이션 (Alembic)
@@ -365,22 +365,22 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 
 | 대상 | 기본 한도 | 넘으면 | 구현 |
 | --- | --- | --- | --- |
-| 짧은 음성 전사(6-6) | 계정당 동시 1건 | `429 SPEECH_TRANSCRIPTION_IN_PROGRESS`, `retryable: true`. S3 저장과 STT 호출 전에 거절 | 라우트가 요청의 DB 연결에 세션 수준 advisory lock을 잡는다([account_slots.py](app/services/account_slots.py)). 트랜잭션을 열지 않고 계정 행도 잠그지 않는다. 요청이 끝나면 풀고, 연결이 끊기면 PostgreSQL이 푼다 |
+| 짧은 음성 전사(6-6) | 계정당 동시 2건 | `429 SPEECH_TRANSCRIPTION_IN_PROGRESS`, `retryable: true`. S3 저장과 STT 호출 전에 거절 | 라우트가 요청의 DB 연결에 세션 수준 advisory lock을 잡는다([account_slots.py](app/services/account_slots.py)). 트랜잭션을 열지 않고 계정 행도 잠그지 않는다. 요청이 끝나면 풀고, 연결이 끊기면 PostgreSQL이 푼다 |
 | 푸시 받을 기기(1-7) | 계정당 5대 | 오류 없이 `204`. `registered_at`이 가장 오래된 기기의 등록을 지움 | 계정 행 `FOR UPDATE` 뒤 같은 트랜잭션에서 정리([푸시 받을 기기](#푸시-받을-기기)) |
-| 리포트 재요청(6-5) | 면회 회차당 3회 | `409 REPORT_RETRY_LIMIT_EXCEEDED`, `retryable: false`. 새 작업을 만들지 않고 전사도 옮기지 않음 | 회차 행 `FOR UPDATE` 뒤 그 회차의 재요청 작업(`retry_of_analysis_id`가 있는 행)을 센다. 처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 세지 않는다 |
+| 리포트 재요청(6-5) | 면회 회차당 3회 | `409 REPORT_RETRY_LIMIT_EXCEEDED`, `retryable: false`. 새 작업을 만들지 않고 전사도 옮기지 않음. 남은 전사를 다시 쓸 때만 막고, 전사가 없거나 기한이 지났으면 한도와 관계없이 `RECORDING_REQUIRED` | 회차 행 `FOR UPDATE` 뒤 그 회차의 재요청 작업(`retry_of_analysis_id`가 있는 행)을 센다. 처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우와 6-2로 녹음을 다시 낸 작업은 세지 않는다 |
 
 | 환경 변수 | 설명 |
 | --- | --- |
-| `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT` | 한 계정이 동시에 보낼 수 있는 6-6 수, 기본 1. 1 이상 |
+| `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT` | 한 계정이 동시에 보낼 수 있는 6-6 수, 기본 2. 1 이상. 앱은 앞 전사가 끝나기 전에 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있으므로 1로 내리면 그 녹음이 거절된다 |
 | `SAEROK_PUSH_DEVICES_PER_ACCOUNT` | 계정당 푸시 받을 기기 수, 기본 5. 1 이상 |
 | `SAEROK_REPORT_RETRIES_PER_SESSION` | 면회 회차당 6-5 수, 기본 3. 1 이상. 자동 재시도는 여전히 없다 |
 
 | `errorCode` | HTTP | 언제 |
 | --- | --- | --- |
-| `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 429 | 6-6. 같은 계정의 앞 요청이 아직 처리 중. 앞 요청이 끝난 뒤 다시 보낸다 |
-| `REPORT_RETRY_LIMIT_EXCEEDED` | 409 | 6-5. 이 회차의 재요청 횟수를 모두 씀 |
+| `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 429 | 6-6. 같은 계정의 앞 요청이 한도만큼 아직 처리 중. 앞 요청이 끝난 뒤 다시 보낸다 |
+| `REPORT_RETRY_LIMIT_EXCEEDED` | 409 | 6-5. 이 회차의 재요청 횟수를 모두 썼고 다시 쓸 전사가 남아 있음. 전사 기한이 지나면 같은 요청이 `RECORDING_REQUIRED`가 된다 |
 
-- 한도에 닿은 회차에 전사가 남아 있는 동안은 6-2도 `REPORT_RETRY_AVAILABLE`로 녹음 재제출을 받지 않는다. 전사 기한이 지나면 6-2는 기존 규칙대로 새 작업을 받지만, 6-5가 `RECORDING_REQUIRED` 대신 이 오류를 돌려주므로 지금 앱은 녹음을 다시 보내지 않는다. 기기 녹음 재제출을 횟수에 넣을지는 정하지 않았다.
+- 한도에 닿은 회차에 전사가 남아 있는 동안은 6-2도 `REPORT_RETRY_AVAILABLE`로 녹음 재제출을 받지 않는다. 전사 기한(최초 STT부터 24시간)이 지나면 6-5는 `RECORDING_REQUIRED`로 답하고, 앱이 기기 녹음을 6-2로 다시 보내면 기존 규칙대로 새 작업을 받는다. 이 재제출은 재요청 횟수에 넣지 않는다(2026-11-09 PM 결정). 재제출한 작업의 리포트가 다시 실패하면 그 전사로 하는 6-5에는 같은 한도가 적용된다.
 - 6-6의 동시 요청 수는 계정마다 따로 센다. 서버 전체의 STT 동시 처리 수를 제한하지는 않는다.
 
 ## 프로필과 생애 정보 API

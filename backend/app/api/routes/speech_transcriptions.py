@@ -20,7 +20,8 @@ async def transcribe(
     storage: Annotated[AudioStorage, Depends(get_speech_audio_storage)],
 ) -> dict:
     # 한 요청이 STT 응답을 기다리는 동안 DB 연결과 STT 서버를 붙잡으므로, 같은 계정의
-    # 동시 요청 수를 설정(기본 1)까지만 받는다(2026-11-09 PM 결정). 넘으면 S3와 STT를
+    # 동시 요청 수를 설정(기본 2)까지만 받는다(2026-11-09 PM 결정). 앱은 앞 전사가 끝나기
+    # 전에 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있어 2건까지 둔다. 넘으면 S3와 STT를
     # 부르지 않고 거절한다.
     async with account_slot(
         connection, scope="short-transcription", account_id=account.account_id,
