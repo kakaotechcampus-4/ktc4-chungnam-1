@@ -22,6 +22,10 @@ from app.services.transcript_filters import drop_known_hallucinations
 
 logger = logging.getLogger("saerok.speech_transcription")
 MAX_SECONDS = 300
+# 앱은 녹음을 시작한 뒤 5분 타이머를 켜고, 타이머가 끝나면 녹음을 멈춘다. 그래서 5분을 채운
+# 파일은 늘 300초를 조금 넘는다(11/8 운영 시험에서 300.004초 파일이 413으로 거절됨).
+# 멈추는 데 걸리는 시간만큼만 여유를 둔다.
+STOP_GRACE_SECONDS = 2
 # 합의한 5분 PCM은 9.6 MB다. 헤더 여유를 포함하며 면회 업로드 상한을 늘리지 않는다.
 MAX_BYTES = 10 * 1024 * 1024
 
@@ -36,7 +40,7 @@ async def transcribe_short_audio(
     with wave.open(audio.file, "rb") as wav:
         seconds = wav.getnframes() / wav.getframerate()
     await audio.seek(0)
-    if seconds > MAX_SECONDS:
+    if seconds > MAX_SECONDS + STOP_GRACE_SECONDS:
         raise AppError(status_code=413, error_code="AUDIO_TOO_LARGE",
                        message="음성 입력은 5분까지 보낼 수 있습니다.")
 
