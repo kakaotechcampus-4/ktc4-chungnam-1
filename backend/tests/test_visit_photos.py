@@ -6,14 +6,19 @@
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import BinaryIO
 from uuid import UUID
+
+from fastapi import UploadFile
+import pytest
 
 from app.api.deps import get_image_storage
 from app.core.database import connect
 from app.core.errors import AppError
 from app.services.image_storage import ImageDownload, UnconfiguredImageStorage
 from app.services.image_validation import ValidatedImage
+from app.services.visit_photos import replace_visit_photo
 from tests.card_fixtures import (
     completed_card_set,
     make_app,
@@ -22,7 +27,8 @@ from tests.card_fixtures import (
     visit_with,
     with_db,
 )
-from tests.support import request
+from tests.support import request, run
+from tests.test_storage_deletion import TARGETS, FakeDelete, process
 
 JPEG = b"\xff\xd8\xff\xe0" + b"synthetic-jpeg"
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png"
@@ -210,7 +216,9 @@ def test_session_evaluated_during_upload_removes_its_object(migrated_database_ur
     assert res.status_code == 409 and res.json()["errorCode"] == "INVALID_SESSION_STATE"
     assert storage.uploads == 1 and storage.objects == {}
     assert _photo_rows(migrated_database_url, session_id) == []
-    assert _deletion_queue(migrated_database_url) == []
+    # 바로 지웠어도 삭제 확인은 실행기에 맡기므로 요청이 남는다.
+    [queued] = _deletion_queue(migrated_database_url)
+    assert queued["s3_object_key"].startswith("photos/")
 
 
 def test_object_that_cannot_be_removed_is_queued_for_deletion(migrated_database_url):
@@ -278,3 +286,47 @@ def test_storage_failures_are_reported_without_saving(migrated_database_url):
     assert not_configured.status_code == 503
     assert not_configured.json()["errorCode"] == "IMAGE_STORAGE_NOT_CONFIGURED"
     assert _photo_rows(migrated_database_url, session_id) == []
+
+
+class _Stopped(BaseException):
+    """업로드 직후 프로세스가 끝나 이후 코드가 돌지 않은 경우를 흉내 낸다."""
+
+
+def test_object_left_by_a_stopped_upload_stays_in_the_deletion_queue(migrated_database_url):
+    _, _, session_id, _ = with_db(migrated_database_url, _session)
+
+    async def stop():
+        raise _Stopped
+
+    storage = MemoryImageStorage(on_upload=stop)
+
+    async def upload():
+        async with connect(migrated_database_url) as connection:
+            await replace_visit_photo(
+                connection,
+                storage,
+                session_id,
+                image=UploadFile(file=BytesIO(JPEG), filename="visit.jpg"),
+                max_size_bytes=1024,
+            )
+
+    with pytest.raises(_Stopped):
+        run(upload())
+    [object_key] = storage.objects
+    assert _photo_rows(migrated_database_url, session_id) == []
+    # 기한 전에는 삭제 실행기가 건너뛰고, 기한이 지나면 행이 없는 객체로 보고 지운다.
+    pending = query(
+        migrated_database_url,
+        "SELECT s3_object_key, not_before > now() AS not_due FROM storage_deletion_request_queue",
+    )
+    assert pending == [{"s3_object_key": object_key, "not_due": True}]
+    assert process(migrated_database_url, FakeDelete())["inspected"] == 0
+    query(
+        migrated_database_url,
+        "UPDATE storage_deletion_request_queue SET not_before = now() - interval '1 second' "
+        "RETURNING s3_object_key",
+    )
+    backend = FakeDelete()
+    assert process(migrated_database_url, backend, apply=True)["deleted"] == 1
+    assert backend.calls == [(TARGETS[1], object_key)]
+    assert _deletion_queue(migrated_database_url) == []

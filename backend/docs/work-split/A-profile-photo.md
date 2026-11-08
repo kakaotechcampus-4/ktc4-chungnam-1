@@ -378,9 +378,9 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - 프로필 사진(`session_id IS NULL`)이 이미 5장이면 409다. 동시 업로드로 5장을 넘지 않게 프로필 행을 `FOR UPDATE`로 잠그고 센다.
-- 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장. 행을 저장하지 못하면 `storage.delete`로 올린 객체를 지운다.
+- 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → 삭제 대기열에 객체 키 사전 등록(`not_before` 1시간 뒤) → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장과 사전 등록 삭제를 한 트랜잭션으로. 행을 저장하지 못하면 사전 등록의 `not_before`를 지금으로 앞당기고 `storage.delete`로 올린 객체를 지운다([services/photo_uploads.py](../../app/services/photo_uploads.py)).
 - 8-4 worker를 연결하면 대기열에서 사진을 가져가 분석한다. 현재 worker는 미연결이라 업로드만으로 분석이 시작되지는 않는다(8-4 구현 메모).
-- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. 정리할 때 바로 지웠어도 `storage_deletion_request_queue`의 요청은 남겨 삭제 실행기가 확인한다.
 - 구현: [routes/profile_photos.py](../../app/api/routes/profile_photos.py), [services/profile_photos.py](../../app/services/profile_photos.py), 테스트 [test_profile_photos.py](../../tests/test_profile_photos.py)
 - 실제 사용자 사진은 **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의는 가입 시 받아 기존 계정 동의 이력에 저장한다. 필드와 분석하지 않는 사진의 상태는 후속 계약으로 맞추되, 테스트 자료를 사용하는 업로드와 분석 구현은 먼저 진행한다. 테스트 가정은 기록하고 실제 사용자 처리에 그대로 적용하지 않는다(후속 3).
 - 현재 3-1 코드에는 사진 보관 동의 검사가 없고 모든 등록 사진을 `pending`으로 저장한다. 위 정책을 구현한 상태가 아니므로 실제 사용자 사진 수집 전 동의 검사와 분석 대상 구분을 추가한다.

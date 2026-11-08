@@ -92,6 +92,21 @@ def test_inventory_pages_unknown_root_and_known_expired_without_body_or_delete()
     assert "known.wav" not in str(result) and "synthetic-bucket" not in str(result)
 
 
+def test_inventory_separates_unreferenced_objects_already_queued():
+    now = datetime.now(UTC)
+    def obj(key):
+        return {"Key": key, "Size": 5, "LastModified": now}
+    client = FakeS3([{"Contents": [obj("photos/a.jpg"), obj("photos/b.jpg"),
+                                   obj("photos/c.jpg"), obj("photos/kept.jpg")]}])
+    # a는 업로드 중 사전 등록(기한 전), b는 기한이 지난 요청, c는 대기열 밖이다.
+    result = inspect_bucket(client, "synthetic", references={"photos/kept.jpg"}, deadlines={},
+                            now=now, queued={"photos/a.jpg": True, "photos/b.jpg": False,
+                                             "photos/kept.jpg": False})
+    assert result["unreferenced"] == 3
+    assert result["unreferenced_queued"] == 2 and result["unreferenced_queued_not_due"] == 1
+    assert "photos/" not in str(result)
+
+
 def test_inventory_limit_reports_incomplete():
     client = FakeS3([{"Contents": [], "IsTruncated": True}])
     result = inspect_bucket(client, "synthetic", references=set(), deadlines={}, now=datetime.now(UTC), limit=1)
