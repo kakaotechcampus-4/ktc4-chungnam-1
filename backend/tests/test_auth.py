@@ -404,34 +404,40 @@ def test_unknown_kids_refresh_at_most_once_per_interval() -> None:
     verifier, calls = _counting_verifier(
         [google_tokens.jwks_document()] * 3, clock=clock
     )
-    asyncio.run(verifier.verify(google_tokens.id_token()))
-    assert calls["count"] == 1
 
-    def unknown(index: int) -> str | None:
-        try:
-            asyncio.run(verifier.verify(google_tokens.id_token(key_id=f"x-{index}")))
-        except AppError as error:
-            return error.error_code
-        return None
+    async def unknown(count: int, start: int) -> list[str | None]:
+        results = []
+        for index in range(start, start + count):
+            try:
+                await verifier.verify(google_tokens.id_token(key_id=f"x-{index}"))
+            except AppError as error:
+                results.append(error.error_code)
+            else:
+                results.append(None)
+        return results
 
-    # 방금 받은 키 묶음에 없는 kid 는 간격 안에서 몇 번이 와도 다시 받지 않는다.
-    within = [unknown(index) for index in range(20)]
-    clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS - 1
-    within.append(unknown(20))
-    assert within == ["INVALID_ID_TOKEN"] * 21
-    assert calls["count"] == 1
+    async def scenario() -> None:
+        await verifier.verify(google_tokens.id_token())
+        assert calls["count"] == 1
 
-    # 간격이 지나면 한 번만 다시 받고, 그 뒤 간격 안에서는 다시 받지 않는다.
-    clock["now"] += 1
-    after = [unknown(index) for index in range(21, 31)]
-    assert after == ["INVALID_ID_TOKEN"] * 10
-    assert calls["count"] == 2
+        # 방금 받은 키 묶음에 없는 kid 는 간격 안에서 몇 번이 와도 다시 받지 않는다.
+        within = await unknown(20, 0)
+        clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS - 1
+        within += await unknown(1, 20)
+        assert within == ["INVALID_ID_TOKEN"] * 21
+        assert calls["count"] == 1
 
-    # 이미 알고 있는 kid 의 정상 토큰은 그동안에도 그대로 통과한다.
-    assert asyncio.run(verifier.verify(google_tokens.id_token())).subject == (
-        "google-sub-0001"
-    )
-    assert calls["count"] == 2
+        # 간격이 지나면 한 번만 다시 받고, 그 뒤 간격 안에서는 다시 받지 않는다.
+        clock["now"] += 1
+        assert await unknown(10, 21) == ["INVALID_ID_TOKEN"] * 10
+        assert calls["count"] == 2
+
+        # 이미 알고 있는 kid 의 정상 토큰은 그동안에도 그대로 통과한다.
+        identity = await verifier.verify(google_tokens.id_token())
+        assert identity.subject == "google-sub-0001"
+        assert calls["count"] == 2
+
+    asyncio.run(scenario())
 
 
 def test_failed_refresh_is_shared_and_not_retried_within_the_interval() -> None:
@@ -451,29 +457,29 @@ def test_failed_refresh_is_shared_and_not_retried_within_the_interval() -> None:
         cache_seconds=3600,
         clock=lambda: clock["now"],
     )
-    asyncio.run(verifier.verify(google_tokens.id_token()))
-    # 이후 조회는 모두 실패한다. 캐시는 아직 유효하다.
-    state["failing"] = True
-    clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS
     tokens = [google_tokens.id_token(key_id=f"x-{index}") for index in range(5)]
 
-    async def verify_all() -> list[Any]:
-        return await asyncio.gather(
+    async def scenario() -> None:
+        await verifier.verify(google_tokens.id_token())
+        # 이후 조회는 모두 실패한다. 캐시는 아직 유효하다.
+        state["failing"] = True
+        clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS
+
+        concurrent = await asyncio.gather(
             *(verifier.verify(token) for token in tokens), return_exceptions=True
         )
+        with pytest.raises(AppError) as again:
+            await verifier.verify(google_tokens.id_token(key_id="x-again"))
 
-    concurrent = asyncio.run(verify_all())
-    with pytest.raises(AppError) as again:
-        asyncio.run(verifier.verify(google_tokens.id_token(key_id="x-again")))
+        # 동시에 온 요청은 실패한 한 번의 조회 결과를 같이 받고, 간격 안에서는 다시 받지 않는다.
+        assert _error_codes_of(concurrent) == ["IDENTITY_PROVIDER_UNAVAILABLE"] * 5
+        assert again.value.error_code == "IDENTITY_PROVIDER_UNAVAILABLE"
+        assert state["calls"] == 2
+        # 캐시에 있는 kid 는 조회 실패와 상관없이 통과한다.
+        identity = await verifier.verify(google_tokens.id_token())
+        assert identity.subject == "google-sub-0001"
 
-    # 동시에 온 요청은 실패한 한 번의 조회 결과를 같이 받고, 간격 안에서는 다시 받지 않는다.
-    assert _error_codes_of(concurrent) == ["IDENTITY_PROVIDER_UNAVAILABLE"] * 5
-    assert again.value.error_code == "IDENTITY_PROVIDER_UNAVAILABLE"
-    assert state["calls"] == 2
-    # 캐시에 있는 kid 는 조회 실패와 상관없이 통과한다.
-    assert asyncio.run(verifier.verify(google_tokens.id_token())).subject == (
-        "google-sub-0001"
-    )
+    asyncio.run(scenario())
 
 
 def test_login_is_refused_when_no_client_id_is_configured() -> None:

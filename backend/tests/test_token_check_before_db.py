@@ -15,6 +15,7 @@ from typing import Any
 import jwt
 import pytest
 from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient, Response
 
 from app.api import deps
 from app.api.deps import get_google_verifier
@@ -23,7 +24,7 @@ from app.main import create_app
 from app.services.google_identity import GoogleIdTokenVerifier
 from app.services.session_tokens import TokenIssuer
 from tests import google_tokens
-from tests.support import request
+from tests.support import run
 
 SESSION_SECRET = "test-session-secret-value-32bytes-long"
 # 대역 connect 에만 넘어가는 주소다. 실제로 접속하지 않는다.
@@ -122,6 +123,30 @@ def _authenticated_routes() -> list[tuple[str, str]]:
 AUTHENTICATED_ROUTES = _authenticated_routes()
 
 
+def _send_all(
+    app: FastAPI, method: str, path: str, calls: list[dict[str, Any]]
+) -> list[Response]:
+    # 요청마다 이벤트 루프를 새로 만들지 않고 한 루프에서 보낸다. 이 PC의 Windows에서는
+    # 루프를 만들 때 쓰는 socketpair가 드물게 멈추므로 루프 수를 줄인다.
+    async def send() -> list[Response]:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        responses = []
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            for call in calls:
+                token = call.get("token")
+                headers = None if token is None else {"Authorization": f"Bearer {token}"}
+                responses.append(
+                    await client.request(
+                        method, path, json=call.get("json"), headers=headers
+                    )
+                )
+        return responses
+
+    return run(send())
+
+
 def _send(
     app: FastAPI,
     method: str,
@@ -129,11 +154,8 @@ def _send(
     *,
     token: str | None = None,
     json: dict[str, Any] | None = None,
-) -> Any:
-    headers = {"Authorization": f"Bearer {token}"} if token is not None else None
-    return request(
-        app, method, path, json=json, headers=headers, raise_app_exceptions=False
-    )
+) -> Response:
+    return _send_all(app, method, path, [{"token": token, "json": json}])[0]
 
 
 def test_authenticated_routes_are_found() -> None:
@@ -147,12 +169,10 @@ def test_authenticated_routes_are_found() -> None:
 def test_bad_session_is_rejected_before_opening_a_db_connection(
     method: str, path: str, connections: list[str]
 ) -> None:
-    app = _app()
-
-    responses = {
-        name: _send(app, method, path, token=token)
-        for name, token in BAD_SESSIONS.items()
-    }
+    sent = _send_all(
+        _app(), method, path, [{"token": token} for token in BAD_SESSIONS.values()]
+    )
+    responses = dict(zip(BAD_SESSIONS, sent, strict=True))
 
     statuses = {name: response.status_code for name, response in responses.items()}
     assert statuses == {name: 401 for name in BAD_SESSIONS}
@@ -162,7 +182,9 @@ def test_bad_session_is_rejected_before_opening_a_db_connection(
 
 def test_valid_session_opens_the_db_connection(connections: list[str]) -> None:
     # 대조군. 서명이 맞는 세션은 폐기 여부를 보려고 DB 연결을 연다.
-    response = _send(_app(), "GET", "/auth/me", token=ISSUER.issue_session("acc-1").value)
+    session = ISSUER.issue_session("acc-1").value
+
+    response = _send(_app(), "GET", "/auth/me", token=session)
 
     assert response.status_code == 500
     assert connections == [UNUSED_DATABASE_URL]
