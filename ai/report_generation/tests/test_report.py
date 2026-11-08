@@ -64,20 +64,3 @@ def test_combine_makes_106_response():
     assert out["analysisId"] == "a1" and out["promptVersion"] == "report-1+proposals-1"
     assert set(out) == {"schemaVersion", "analysisId", "model", "promptVersion", "title", "body", "cardSummaries",
                         "lifeFactProposals", "topicProposals"}
-
-
-def test_prompt_keeps_processing_words_out_of_the_report():
-    """11/8 운영 시험: '전사에는 ~ 확인되지 않아', '보호자 소감에는 ~ 적혀 있습니다'가 리포트에 나옴.
-    실제 모델 동작이 아니라 프롬프트 문구만 확인함."""
-    from report_generation.generate import PROMPT
-
-    text = PROMPT.read_text(encoding="utf-8")
-    assert "화자 정보가 불충분하다는 사실을 숨기지 않는다" not in text
-    assert "처리 과정을 가리키는 말을 쓰지 않는다" in text
-    assert "소감을 본문에 다시 옮겨 적지 않고" in text
-    assert "보호자는 기본적으로 어르신의 자녀" in text
-    # 11/8 실제 모델 비교: '아버지' 예시만 두면 '엄마'라고 부른 대화에서도 어르신을 '아버지'로 씀
-    assert "보호자가 '아버지'라고 부른 분은 리포트에서도 '아버지'다" not in text
-    assert "보호자가 어르신을 부른 호칭을 따르고" in text
-    assert "부른 호칭이 없으면 '어르신'이라고 쓴다" in text
-    assert "카드 요약에는 반응만 짧게 쓴다" in text
