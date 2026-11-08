@@ -5,6 +5,11 @@
 `topic_feedback`으로 남긴다. DB에는 `pending`과 `settled`만 저장하므로 응답의
 `accepted`, `rejected`는 승인 결과(생애 정보 또는 주제 피드백)가 있는지로 정한다.
 제안 값(`title`, `content`, `reason`, `suggested_action`)은 확인 뒤에도 바꾸지 않는다.
+
+승인한 생애 정보와 주제 피드백은 다음 카드 생성(4-1)의 입력이다. 그래서 승인이 하나라도
+있으면 2-4, 2-7, 2-9처럼 카드를 만드는 중에는 거절하고, 아직 면회에 안 쓴 완료 묶음은
+다시 만들어야 하는 묶음으로 바꾼다(`card_sets.mark_stale`). 모두 거절한 확인은 카드 생성
+입력을 바꾸지 않으므로 둘 다 하지 않는다.
 """
 
 from uuid import UUID
@@ -18,7 +23,7 @@ from app.schemas.reports import (
     ProposalTopic,
     TopicProposal,
 )
-from app.services import ownership
+from app.services import card_sets, ownership
 from app.services.life_facts import create_life_fact
 from app.services.reports import report_not_found
 
@@ -40,13 +45,24 @@ async def review_proposals(
     *,
     account_id: str,
     payload: ProposalReviewRequest,
+    start_timeout_seconds: int,
 ) -> ChangeProposal:
-    """7-4. 회차의 `pending` 제안을 한 트랜잭션에서 모두 확인한다."""
+    """7-4. 회차의 `pending` 제안을 한 트랜잭션에서 모두 확인한다.
+
+    승인이 하나라도 있으면 카드를 만드는 중일 때 409 `CARD_GENERATION_IN_PROGRESS`로
+    거절하고 아무것도 저장하지 않는다. 확인 여부(409 `PROPOSAL_ALREADY_REVIEWED`)와
+    요청 검사(422 `INVALID_PROPOSAL_REVIEW`)가 먼저다.
+    """
     profile_id = await ownership.require_owned(
         connection, ownership.VISIT_SESSION, session_id, account_id=account_id
     )
     async with connection.transaction():
-        # 같은 회차의 확인이 동시에 들어와도 한 번만 처리되게 회차 행을 잠근다.
+        # 리포트 저장(8-3)은 회차 행을 고친 뒤 이 프로필을 참조하는 제안을 넣는다. 저장 중에
+        # 이 요청이 프로필을 먼저 잠그면 서로 기다리다 멈출 수 있어 리포트부터 확인한다.
+        await _require_report(connection, session_id, lock=False)
+        # 2-8, 4-1, 5-1처럼 프로필을 먼저 잠근다. 같은 회차의 확인이 동시에 들어와도 한 번만
+        # 처리되게 회차 행도 잠근다.
+        await card_sets.lock_profile(connection, profile_id)
         await _require_report(connection, session_id, lock=True)
         cursor = await connection.execute(
             "SELECT proposal_id, status FROM life_fact_proposals "
@@ -79,6 +95,11 @@ async def review_proposals(
         )
 
         accepted_facts = [r for r in payload.life_facts if r.review_status == "accepted"]
+        accepted_topics = [r for r in payload.topics if r.review_status == "accepted"]
+        if accepted_facts or accepted_topics:
+            await card_sets.mark_stale(
+                connection, profile_id, start_timeout_seconds=start_timeout_seconds
+            )
 
         await connection.execute(
             "UPDATE life_fact_proposals SET status = 'settled' "
@@ -99,9 +120,7 @@ async def review_proposals(
                 source_proposal_id=review.proposal_id,
             )
         topic_ids = {row["proposal_id"]: row["topic_id"] for row in topic_rows}
-        for review in payload.topics:
-            if review.review_status != "accepted":
-                continue
+        for review in accepted_topics:
             await connection.execute(
                 "INSERT INTO topic_feedback (profile_id, topic_id, proposal_id, action) "
                 "VALUES (%s, %s, %s, %s)",
