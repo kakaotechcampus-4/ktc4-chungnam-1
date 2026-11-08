@@ -27,7 +27,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     descriptions = {
         401: "인증 실패",
         404: "프로필, 생애 정보 또는 계정 없음",
-        409: "카드를 만드는 중이라 고칠 수 없음",
+        409: "카드를 만드는 중이라 고칠 수 없음, 또는 프로필의 이야기 수 초과",
         422: "요청 형식 오류",
         503: "DB 설정 미완료",
     }
@@ -42,7 +42,7 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, object]]:
     summary="생애 정보 추가",
     status_code=status.HTTP_201_CREATED,
     response_model=LifeFactResponse,
-    responses=_errors(401, 404, 422, 503),
+    responses=_errors(401, 404, 409, 422, 503),
 )
 async def add_life_fact(
     profile_id: UUID,
@@ -50,7 +50,7 @@ async def add_life_fact(
     account: CurrentAccountDep,
     connection: DbConnectionDep,
 ) -> LifeFactResponse:
-    """일대기에서 세부 정보 네 항목 밖의 생애 정보 추가.
+    """일대기에서 세부 정보 네 항목 밖의 생애 정보 추가. 프로필당 300개까지(409).
 
     API 명세 2-6
     """

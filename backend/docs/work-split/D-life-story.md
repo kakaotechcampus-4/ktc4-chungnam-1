@@ -146,7 +146,8 @@ ALTER TABLE life_facts
 
 - `storyCategory`: 필수. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
 - `title`: 필수. 100자 이하, 비울 수 없다.
-- `content`: 필수. 비울 수 없다.
+- `content`: 필수. 5,000자 이하, 비울 수 없다(2026-11-09 PM 결정).
+- 프로필 하나의 이야기는 7-4 승인으로 만든 것을 포함해 300개까지다(2026-11-09 PM 결정).
 - `imageNumber`: 필수. 1~5 정수. 앱이 처음에 하나를 무작위로 골라 두고 보호자가 바꿀 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
@@ -154,7 +155,8 @@ ALTER TABLE life_facts
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` | |
-| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖 |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED` | 프로필에 이야기가 이미 300개 있음 |
+| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖이거나, 제목 100자 또는 내용 5,000자를 넘음 |
 
 **구현 메모**
 

@@ -174,6 +174,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - 프로필 하나를 지우면([API 2-8](api-spec.md#2-8-delete-apiv1profilesprofileid--신규)) 그 프로필 아래의 모든 기록을 지우고 계정과 다른 프로필은 남긴다. 마지막 프로필도 지울 수 있다.
 - `setupStatus` 값은 `inProgress`, `completed`이다. 저장하지 않고 계산하며, 카드 생성 작업이 하나라도 있으면 `completed`, 없으면 `inProgress`다. 기본 정보 입력을 마치면 `inProgress`로 만들어지고, 프로필 입력을 마칠 때 첫 카드 생성 작업([API 4-1](api-spec.md#4-1-post-apiv1profilesprofileidcard-generations--신규))이 만들어지면 `completed`가 된다.
 - `name`은 50자 이하다. `gender` 값은 `male`, `female`이다. `birthDate`는 `YYYY-MM-DD`다.
+- `birthDate`는 만 10세 이상인 날짜만 받는다(서버의 UTC 날짜 기준). 미래 날짜와 10년이 안 된 날짜는 만들거나 고칠 때 `422 INVALID_REQUEST`다. 카드 생성 요청의 연령대가 `10s` 이상이어야 하기 때문이며, 그 밖의 나이 제한은 정하지 않았다.
 - 피보호자의 이름, 성별, 생년월일은 서버에 저장하지만 AI 서버 요청에는 넣지 않는다. BE가 `birthDate`로 연령대를 계산해 `{십 단위 나이}s` 형식(예: `70s`, `80s`)으로 보낸다.
 - `condition.stage` 값은 `mildCognitiveImpairment`, `mildDementia`, `unknown`이다.
 - `occupation`, `hometown`, `hobby`, `family`는 세부 정보 네 항목이다. 건너뛰었거나 프로필 입력을 마치기 전이면 `null`이며 빈 문자열은 받지 않는다. 수정할 때 `null`을 보내면 지운다.
@@ -201,7 +202,8 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 ```
 
 - 세부 정보 네 항목 밖의 생애 정보다. 네 항목은 [Profile](#프로필-profile)의 필드로 저장한다.
-- `title`은 100자 이하이며 `title`과 `content`는 비울 수 없다.
+- `title`은 100자, `content`는 5,000자 이하이며 `title`과 `content`는 비울 수 없다. 글자 수는 유니코드 코드 포인트 수로 센다.
+- 프로필 하나의 생애 사실은 300개까지다. 일대기에서 추가한 것과 변경 제안 승인으로 만든 것을 함께 센다. 넘으면 저장하지 않고 `409 LIFE_FACT_LIMIT_EXCEEDED`다. 내용 길이와 개수 상한은 2026-11-09 PM 결정이다.
 - 생애 사실은 일대기에서 확인하고 직접 추가한다. 마이페이지(프로필 설정)에는 세부 정보 네 항목만 둔다.
 - 두 경로로 만든다. 보호자가 일대기에서 추가하거나([API 2-6](api-spec.md#2-6-post-apiv1profilesprofileidlife-facts--신규)), 보호자가 변경 제안의 생애 정보 제안을 승인하면([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) BE가 만든다. 승인할 때 보호자가 제목과 내용을 고칠 수 있으며, BE는 고친 값으로 만들고 원래 제안은 바꾸지 않는다. 승인으로 만든 사실은 그 제안을 출처로 저장하며 응답에는 출처를 담지 않는다. 승인은 이야기 추가(2-6)와 같아서 아직 면회에 안 쓴 카드 묶음을 다시 만들 대상(`needsRefresh`)으로 바꾸지 않고, 카드를 만드는 중에도 받는다. 다음 카드 생성부터 반영된다.
 - 출처 면회가 삭제되면 보호자가 승인한 사실은 유지하고 해당 출처 연결만 해제한다. 생성 시 출처 연결과 삭제 후 연결 해제를 구분하며, 출처 연결을 이유로 회차 삭제를 막지 않는다.
@@ -805,7 +807,7 @@ AI 성공 응답은 다음과 같다.
   - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
 - `reviewStatus` 값은 `pending`, `accepted`, `rejected`이다. 제안은 승인 전까지 프로필에 반영하지 않는다.
 - 검토는 회차의 `pending` 제안을 모두 한 번에 보낸다. 화면에 남긴 항목은 `accepted`, 제외한 항목은 `rejected`다. `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
-- `accepted`인 항목에는 보호자가 확인한 최종 값을 함께 보낸다. 생애 정보 제안은 최종 제목과 내용, 주제 제안은 보호자가 고른 행동(`more`, `less`, `exclude`)이며 제안과 달라도 된다. 고치지 않았으면 제안 값을 그대로 보낸다.
+- `accepted`인 항목에는 보호자가 확인한 최종 값을 함께 보낸다. 생애 정보 제안은 최종 제목과 내용, 주제 제안은 보호자가 고른 행동(`more`, `less`, `exclude`)이며 제안과 달라도 된다. 고치지 않았으면 제안 값을 그대로 보낸다. 최종 제목과 내용은 [LifeFact](#확인된-생애-사실-lifefact)와 같이 100자와 5,000자 이하이고, 승인한 생애 정보 제안을 더해 300개를 넘으면 검토 전체를 저장하지 않는다.
 - `accepted`인 생애 정보 제안은 BE가 보호자가 확인한 제목과 내용으로, 그 제안을 출처로 하는 [LifeFact](#확인된-생애-사실-lifefact)를 만든다. `accepted`인 주제 제안은 보호자가 고른 행동을 주제 피드백으로 기록하고 다음 [CardGenerationRequest](#카드-생성-요청-cardgenerationrequest)의 `topics`에 넣는다. 원래 제안의 값은 바꾸지 않는다.
 - 승인한 제안을 되돌리는 기능은 없다. 승인으로 만든 생애 사실은 일대기에서 직접 고친다.
 - 거절한 이야기 후보의 30일 보관과 복구는 [별도 복구 기준](card-generation-flow.md#이야기-후보의-승인-거절과-복구)을 따른다. 복구 시 다시 확인할 후보가 되며 자동 승인하지 않는다. 복구 API와 상태 전환은 후속 설계 대상이다. 현재 `reviewStatus`에 `reverted`를 추가하거나 승인 취소를 뜻하도록 바꾸지 않는다.

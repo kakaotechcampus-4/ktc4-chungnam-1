@@ -219,6 +219,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - `name`: 50자 이하
 - `gender`: `male`, `female`
+- `birthDate`: 만 10세 이상인 날짜만 받는다(서버의 UTC 날짜 기준). 미래이거나 10년이 안 된 날짜는 422 `INVALID_REQUEST`
 - `condition.stage`: `mildCognitiveImpairment`, `mildDementia`, `unknown`
 - `condition.symptomNote`: 선택
 
@@ -271,6 +272,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
 - `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
+- `birthDate`는 2-2와 같이 만 10세 이상인 날짜만 받는다.
 
 응답 `200` — [Profile](#profile)
 
@@ -298,7 +300,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 }
 ```
 
-- `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `title`: 100자 이하. `content`: 5,000자 이하. `title`과 `content`는 비울 수 없다.
+- 프로필 하나의 이야기는 300개까지다. 넘으면 409 `LIFE_FACT_LIMIT_EXCEEDED`
 
 응답 `201` — [LifeFact](#lifefact)
 

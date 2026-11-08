@@ -376,6 +376,9 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 - 계정당 프로필은 입력 중인 것을 포함해 3개까지다. DB 제약이 없으므로 같은 트랜잭션에서 계정 행을 `FOR UPDATE`로 잠근 뒤 세어, 동시 요청에도 넘지 않는다. 넘으면 `PROFILE_LIMIT_EXCEEDED`(409)다.
 - 2-4의 세부 정보 네 항목은 `null`을 보내면 지운다. 이름, 성별, 생년월일과 `condition`은 `null`로 지울 수 없다. `condition`을 보낼 때 `stage`는 항상 보내며, `symptomNote`를 빼면 저장된 메모를 그대로 두고 `null`을 보낼 때만 지운다. 본문이 비어 있으면 바꾸지 않고 현재 프로필을 돌려준다.
 - 빈 문자열과 공백만 있는 값은 이름, 세부 정보와 생애 정보의 제목과 내용에서 `INVALID_REQUEST`(422)다. DB CHECK도 막지만 요청 검증이 먼저 거절한다.
+- 2-2와 2-4의 `birthDate`는 만 10세 이상인 날짜만 받는다(`app.schemas.profiles.BirthDate`, `MIN_AGE_YEARS`). 미래 날짜와 10년이 안 된 날짜는 `INVALID_REQUEST`(422)다. 카드 생성은 `card_sets.build_context`가 DB의 `current_date`로 센 연령대가 `10s` 이상이어야 하므로, 걸러지지 않으면 생성이 늘 `INVALID_CONTEXT`로 실패한다. 기준일은 API의 UTC 날짜다. API와 DB 컨테이너가 시간대를 따로 두지 않아(UTC) DB 날짜와 같고, DB를 한국 시간으로 두어도 DB 날짜가 같거나 늦어 받은 값은 카드 생성에서도 통과한다. 이 검사 전에 저장된 생년월일은 바꾸지 않으므로, 그런 프로필은 2-4로 고칠 때까지 카드 생성이 실패한다.
+- 생애 정보의 제목은 100자, 내용은 5,000자 이하다(`LIFE_FACT_TITLE_MAX_LENGTH`, `LIFE_FACT_CONTENT_MAX_LENGTH`, 2026-11-09 PM 결정). 2-6, 2-7과 7-4가 같은 요청 형식(`LifeFactTitle`, `LifeFactContent`)을 쓰며 넘으면 `INVALID_REQUEST`(422)다. 길이는 파이썬 문자열 길이(유니코드 코드 포인트)로 센다.
+- 프로필 하나의 생애 정보는 300개까지다(`life_facts.LIFE_FACT_LIMIT`, 2026-11-09 PM 결정). DB 제약이 없으므로 2-6과 7-4가 함께 쓰는 `create_life_fact`가 넣기 전에 센다. 동시 요청에도 넘지 않도록 부르는 쪽이 같은 트랜잭션에서 프로필 행을 먼저 잠근다(2-6은 트랜잭션 안에서 `card_sets.lock_profile`을 부르고, 7-4는 제안을 확인하기 전에 이미 잠근다). 넘으면 `LIFE_FACT_LIMIT_EXCEEDED`(409)다.
 - 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
 - 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 실행기는 #204로 들어왔고 운영 배포는 남아 있다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
 - 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
@@ -628,6 +631,9 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   승인한 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를, 승인한 주제 제안은 요청의
   `action`으로 `topic_feedback`을 만든다. 제안 값은 바꾸지 않는다. 제안이 없는 회차에 빈
   요청을 보내면 아무것도 바꾸지 않고 `200`이다(명세 미정 사항 2).
+- 7-4의 최종 제목과 내용은 2-6과 같은 길이 제한(100자, 5,000자)을 받는다. 승인한 생애 정보를
+  더해 프로필의 이야기가 300개를 넘으면 `create_life_fact`가 `LIFE_FACT_LIMIT_EXCEEDED`(409)로
+  거절하고, 같은 트랜잭션이라 제안 정리와 주제 피드백도 저장하지 않는다.
 - 주제 제안 승인이 하나라도 있는 7-4는 다음 카드 생성(4-1)에서 주제를 고르는 기준을 바꾸므로
   2-4, 2-7, 2-9와 같이 `card_sets.mark_stale`을 부른다. 카드를 만드는 중이면
   `CARD_GENERATION_IN_PROGRESS`(409)로 거절하고 아무것도 저장하지 않으며, 아니면 아직 면회에 안
@@ -698,6 +704,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 | `EVALUATION_ALREADY_SUBMITTED` | 409 | 6-1. 이미 평가함 |
 | `PROPOSAL_ALREADY_REVIEWED` | 409 | 7-4. 이미 확인한 회차 |
 | `CARD_GENERATION_IN_PROGRESS` | 409 | 7-4. 주제 제안 승인이 있는 확인인데 카드를 만드는 중. 카드 생성이 끝난 뒤 다시 보낸다 |
+| `LIFE_FACT_LIMIT_EXCEEDED` | 409 | 7-4. 승인한 생애 정보를 더하면 프로필의 이야기가 300개를 넘음. 2-6에서도 같은 코드다 |
 | `INVALID_CARD_REVIEW` | 422 | 6-1. 선택 카드가 아니거나, 중복이거나, `wasUsed`와 `caregiverReaction`의 짝이 틀림 |
 | `INVALID_PROPOSAL_REVIEW` | 422 | 7-4. `pending` 제안이 빠졌거나 다른 회차의 제안이거나 중복 |
 | `IMAGE_STORAGE_UNAVAILABLE`, `IMAGE_STORAGE_NOT_CONFIGURED` | 503 | 7-2. 면회 사진의 조회 URL을 만들지 못함 |
