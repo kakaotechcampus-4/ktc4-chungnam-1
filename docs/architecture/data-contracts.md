@@ -550,6 +550,7 @@ BE는 `audioPending`인 회차만 받으며, 원본을 S3에 임시 저장하고
 - 공개 상태는 `queued`, `transcribing`, `sttCompleted`, `generatingReport`,
   `completed`, `failed`다.
 - `sttCompleted`는 AI 응답 검증과 전사문 임시 저장이 끝났지만 리포트는 아직 준비되지 않은 상태다. 원본 삭제는 즉시 시도하며 실패 시 삭제 대기열에 남긴다. 이 상태가 원본 삭제 완료를 뜻하지는 않는다.
+- 리포트를 이어 갈 worker가 `sttCompleted`에서 멈추면 작업을 실패로 바꾸지 않는다. 인계 임대(기본 900초)가 끝나면 다른 worker가 같은 `analysisId`로 `generatingReport`부터 이어 가므로, 그동안 `sttCompleted`가 유지될 수 있다. 상태 이름과 응답 형식은 바뀌지 않는다.
 - `completed`는 STT뿐 아니라 리포트와 변경 제안 저장까지 끝난 상태다.
 - 실패 시 `errorCode`만 제공하며 AI 오류 본문, 전사문, S3 URL과 객체 키를 제공하지 않는다.
 - 유효한 전사가 남은 실패 작업은 6-5로 리포트만 다시 요청하고, 전사가 없거나 만료됐으면 6-2로 기기 녹음을 다시 제출한다. 처리 중인 작업은 반환하고 완료한 회차는 다시 받지 않는다. [API 명세](api-spec.md)의 6-2와 6-5를 따른다.

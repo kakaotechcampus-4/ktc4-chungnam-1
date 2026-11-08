@@ -87,6 +87,19 @@ STT 중 임대가 끝나 이미 `failed`가 된 작업은 STT 응답이 늦게 �
 생성도 시작하지 않는다. 받은 전사문을 외부 생성 함수로 보내지 않기 위해서다. 이때 worker는
 `speech_analysis_stopped` info 로그에 작업 ID(`analysis_id`)와 멈춘 단계(`stage`)만 남긴다.
 `--stt-only`(development/test)로 실행하면 리포트 생성기를 만들지 않고 `sttCompleted`에서 멈춘다.
+
+리포트까지 이어 가는 worker는 전사문을 저장하는 같은 문장에서 인계 임대
+(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초)를 기록한다. 전사 저장과 `generatingReport`
+사이에 하는 일은 원본 삭제 요청과 S3 삭제 시도뿐이다. 그 사이 worker가 강제 종료되거나 DB
+오류로 실패 기록도 남기지 못하면 작업은 `sttCompleted`에 남는다. 인계 임대가 끝나면 다음
+worker가 같은 작업 ID와 저장된 전사로 `generatingReport`부터 이어 간다. STT와 S3 다운로드를
+반복하지 않고, 빠진 원본 삭제 요청은 S3를 부르지 않고 삭제 대기열에만 남긴다. 이미 이어받은
+작업이면 늦게 돌아온 원래 worker는 `generatingReport`로 바꾸지 못하므로 리포트를 두 번 만들지
+않는다. 이어받는 작업은 `generatingReport`로 바뀌어 다시 `sttCompleted`로 돌아오지 않으므로
+작업마다 한 번뿐이다. 남은 전사 기한이 생성 단계 임대 시간보다 짧은 작업은 이어받지 않고 아래와 같이
+`TRANSCRIPT_EXPIRED`로 끝낸다. `--stt-only`는 인계 임대를 두지 않으므로 나중에 기본 worker를
+실행해도 그 작업을 리포트 생성에 넘기지 않는다.
+
 전사문은 STT 완료 후 24시간까지만 작업에 남는다. 그때까지 리포트를 저장하지 못하면
 worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다.
 리포트 생성은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`,
@@ -220,6 +233,8 @@ sha256
 data_expires_at
 attempt_count
 lease_expires_at           uploading, transcribing, generatingReport에서 필수
+                           sttCompleted에서는 리포트로 넘기기 전 인계 임대
+                           (STT 단독 실행과 리포트 재요청 작업은 비움)
 error_code
 audio_deleted_at
 stt_completed_at
@@ -577,6 +592,8 @@ error_code = null
 | AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
+| 전사 저장 뒤 리포트 시작 전 worker 중단 | 인계 임대 동안 `sttCompleted` 유지. 끝나면 다음 worker가 같은 작업 ID로 리포트 생성, STT 반복 없음, 빠진 원본 삭제 요청은 대기열에 기록 |
+| 위 작업의 남은 전사 기한이 임대 시간보다 짧음 | 이어받지 않음. 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
 | AI 응답 스키마 오류 | 작업 `failed`, `INVALID_AI_RESPONSE` |
 | 리포트 생성 중 모델 연결 실패, 시간 초과 | 작업 `failed`, `AI_SERVER_UNAVAILABLE`, 저장 없음 |
 | 리포트 생성 중 그 밖의 호출 실패, 잘린 응답, JSON 오류 | 작업 `failed`, `AI_SERVER_ERROR`, 저장 없음 |
@@ -622,8 +639,10 @@ accessToken         → Authorization Bearer
 - 독립 실행 가능한 Mock AI HTTP 서버는 없으며 테스트의 `FakeAiServer`는 pytest에서만
   사용한다.
 - worker가 멈춘 작업은 임대가 만료되면 정리한다. 업로드 중이던 작업은 지워 다시 제출할
-  수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도,
-  사용자 재시도와 취소는 아직 없다.
+  수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 전사 저장 뒤 리포트
+  시작 전에 멈춘 작업만 인계 임대가 끝난 뒤 리포트 생성을 이어받는다(3절). 실패한 작업의
+  자동 재시도와 취소는 없다. 리포트 생성에 실패한 작업은 전사가 남아 있으면 사용자가 리포트만
+  다시 요청한다([분석 복구](speech-recovery.md)).
 - 기본 worker는 STT 뒤 리포트까지 만든다. `--stt-only`(development/test)는 `sttCompleted`에서
   멈춘다. 리포트 생성 제한 시간이 지난 뒤에도 이미 시작한 ML API 호출 하나는 생성 함수 쪽에서
   끊을 수 없어 끝날 때까지 남는다(결과는 저장하지 않음). 끊으려면 `ai/` 생성 함수가 마감을

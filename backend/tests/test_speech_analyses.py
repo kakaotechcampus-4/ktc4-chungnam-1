@@ -420,8 +420,8 @@ def test_worker_stops_before_report_when_the_job_fails_after_stt(caplog) -> None
     accepted = submit(application).json()
     stt_completed = jobs.mark_stt_completed
 
-    async def fail_after_stt(*, analysis_id, transcript):
-        stored = await stt_completed(analysis_id=analysis_id, transcript=transcript)
+    async def fail_after_stt(*, analysis_id, transcript, **options):
+        stored = await stt_completed(analysis_id=analysis_id, transcript=transcript, **options)
         await jobs.mark_failed(analysis_id=analysis_id, error_code="TRANSCRIPT_EXPIRED")
         return stored
 

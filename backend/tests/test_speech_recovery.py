@@ -16,7 +16,7 @@ from app.services.speech_analysis_pipeline import create_speech_worker
 from app.services.visit_report_generator import VisitReportGenerator
 from tests.support import request, run
 from tests.test_speech_analyses import ACCOUNT
-from tests.test_speech_job_repository import _Db, _accept, _generating, _job
+from tests.test_speech_job_repository import TRANSCRIPT, _Db, _accept, _generating, _job
 from tests.test_visit_report_generator import (
     FakeAi, FakeAudioStorage, Records, TIME_LIMIT_SECONDS, _evaluated,
     _report, _run_worker, _violations,
@@ -167,3 +167,116 @@ def test_repeated_report_failure_requires_latest_id_without_extending_expiry(mig
     assert error.value.error_code == "ANALYSIS_ALREADY_FAILED"
     second = run(db.repository.retry_report(analysis_id=first.analysis_id, account_id=owner))
     assert second.transcript_expires_at == first.transcript_expires_at
+
+
+class _Crash(BaseException):
+    """worker 프로세스가 죽은 상황. 골격은 `Exception`만 잡으므로 실패 기록 없이 끝난다."""
+
+
+def _speech_worker(database_url, ai, *, storage=None, jobs_for=None):
+    return create_speech_worker(
+        jobs_for=jobs_for or (lambda c: PostgresSpeechAnalysisJobRepository(c, lease_seconds=900)),
+        audio_storage=storage or FakeAudioStorage(), ai_server=ai.client(),
+        open_connection=lambda: connect(database_url), lease_seconds=900,
+        report_generator=VisitReportGenerator(generate=ai.generate, time_limit_seconds=TIME_LIMIT_SECONDS),
+    )
+
+
+def _stt_completed(db, *, hand_off):
+    _, session = db.seed_session()
+    job = _accept(db, session)
+    run(db.repository.claim_next(lease_seconds=900))
+    assert run(db.repository.mark_stt_completed(
+        analysis_id=job.analysis_id, transcript=TRANSCRIPT, hand_off=hand_off,
+    ))
+    return job
+
+
+@pytest.mark.parametrize("crash_at", ["queue_audio_deletion", "mark_generating_report"])
+def test_job_left_after_stt_is_resumed_once_the_hand_off_ends(migrated_database_url, crash_at):
+    records = Records(migrated_database_url)
+    visit = _evaluated(records)
+    analysis_id = str(records.job(visit.session_id, "queued"))
+    ai = FakeAi(_report(visit, analysis_id=analysis_id))
+
+    def crashing(connection):
+        jobs = PostgresSpeechAnalysisJobRepository(connection, lease_seconds=900)
+
+        async def crash(**kwargs):
+            raise _Crash
+
+        setattr(jobs, crash_at, crash)
+        return jobs
+
+    with pytest.raises(_Crash):
+        run(_speech_worker(migrated_database_url, ai, jobs_for=crashing).run_once())
+    db = _Db(migrated_database_url)
+    stuck = db.job_row(analysis_id)
+    assert stuck["status"] == "sttCompleted" and stuck["transcript"]
+    assert stuck["lease_expires_at"] is not None
+
+    storage = FakeAudioStorage()
+    worker = _speech_worker(migrated_database_url, ai, storage=storage)
+    # 인계 임대 안에서는 STT를 마친 worker가 이어 갈 수 있으므로 가져가지 않는다.
+    assert run(worker.run_once()) is False
+    assert db.job_row(analysis_id)["status"] == "sttCompleted"
+
+    db.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second' "
+        "WHERE analysis_id = %s", (analysis_id,),
+    )
+    assert run(worker.run_once()) is True
+    assert run(worker.run_once()) is False
+
+    row = db.job_row(analysis_id)
+    assert (row["status"], row["error_code"], row["attempt_count"]) == ("completed", None, 2)
+    assert row["transcript"] is None and row["transcript_deleted_at"] is not None
+    assert len(ai.report_requests) == 1
+    assert records.scalar("SELECT count(*) FROM life_fact_proposals") == 1
+    # 이어받은 리포트 생성은 S3를 부르지 않는다. 빠진 원본 삭제 요청만 대기열에 남긴다.
+    assert storage.deleted == []
+    queued = {r["s3_object_key"] for r in db.execute("SELECT s3_object_key FROM storage_deletion_request_queue")}
+    if crash_at == "queue_audio_deletion":
+        assert row["audio_deleted_at"] is None and queued == {row["s3_object_key"]}
+    else:
+        assert row["audio_deleted_at"] is not None and queued == set()
+
+
+def test_resume_waits_for_the_hand_off_and_does_not_run_twice(migrated_database_url):
+    db = _Db(migrated_database_url)
+    job = _stt_completed(db, hand_off=True)
+    assert run(db.repository.claim_next(lease_seconds=900, include_reports=True)) is None
+
+    db.execute("UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second'")
+    # STT 단독 worker는 리포트 단계를 이어받지 않는다.
+    assert run(db.repository.claim_next(lease_seconds=900)) is None
+    resumed = run(db.repository.claim_next(lease_seconds=900, include_reports=True))
+    assert (resumed.analysis_id, resumed.status) == (job.analysis_id, "generatingReport")
+    assert resumed.transcript == TRANSCRIPT
+    # 늦게 돌아온 원래 worker는 리포트 생성을 시작하지 못한다.
+    assert run(db.repository.mark_generating_report(analysis_id=job.analysis_id)) is False
+    assert run(db.repository.claim_next(lease_seconds=900, include_reports=True)) is None
+
+
+def test_stt_only_result_is_not_handed_to_report_generation(migrated_database_url):
+    db = _Db(migrated_database_url)
+    job = _stt_completed(db, hand_off=False)
+    db.execute("UPDATE speech_analysis_jobs SET stt_completed_at = now() - interval '1 hour'")
+
+    assert db.job_row(job.analysis_id)["lease_expires_at"] is None
+    assert run(db.repository.claim_next(lease_seconds=900, include_reports=True)) is None
+
+
+def test_job_left_after_stt_with_an_expired_transcript_is_not_resumed(migrated_database_url):
+    db = _Db(migrated_database_url)
+    job = _stt_completed(db, hand_off=True)
+    db.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second', "
+        "transcript_expires_at = now() - interval '1 second'"
+    )
+
+    assert run(db.repository.claim_next(lease_seconds=900, include_reports=True)) is None
+    assert run(db.repository.expire_transcripts()) == 1
+    row = db.job_row(job.analysis_id)
+    assert (row["status"], row["error_code"]) == ("failed", "TRANSCRIPT_EXPIRED")
+    assert row["transcript"] is None and row["lease_expires_at"] is None

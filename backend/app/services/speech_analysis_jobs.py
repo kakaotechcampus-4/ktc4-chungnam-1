@@ -97,9 +97,13 @@ class SpeechAnalysisJobRepository(Protocol):
         ...
 
     async def mark_stt_completed(
-        self, *, analysis_id: str, transcript: Mapping[str, Any]
+        self, *, analysis_id: str, transcript: Mapping[str, Any], hand_off: bool = False
     ) -> bool:
-        """`transcribing` 작업만 `sttCompleted`로 바꾸고 전사문을 남긴다. 바꿨으면 `True`."""
+        """`transcribing` 작업만 `sttCompleted`로 바꾸고 전사문을 남긴다. 바꿨으면 `True`.
+
+        `hand_off`면 같은 worker가 리포트 생성을 이어 간다는 인계 임대를 둔다. 그 안에
+        리포트 생성을 시작하지 못하고 멈춘 작업은 다른 worker가 `claim_next`로 이어받는다.
+        """
         ...
 
     async def mark_completed(self, *, analysis_id: str) -> None: ...
@@ -260,8 +264,10 @@ class InMemorySpeechAnalysisJobRepository:
         return True
 
     async def mark_stt_completed(
-        self, *, analysis_id: str, transcript: Mapping[str, Any]
+        self, *, analysis_id: str, transcript: Mapping[str, Any], hand_off: bool = False
     ) -> bool:
+        # 메모리 저장소는 임대를 다루지 않으므로(`expire_leases`와 같다) 인계 임대도 두지 않는다.
+        del hand_off
         if self._jobs[analysis_id].status != SpeechAnalysisStatus.TRANSCRIBING:
             return False
         self._jobs[analysis_id] = replace(
@@ -325,7 +331,7 @@ class PostgresSpeechAnalysisJobRepository:
 
     def __init__(self, connection: DbConnection, *, lease_seconds: int) -> None:
         self._connection = connection
-        # 업로드와 리포트 생성 단계의 작업 임대 시간. 전사 단계는 worker가 정한다.
+        # 업로드, STT 뒤 인계와 리포트 생성 단계의 작업 임대 시간. 전사 단계는 worker가 정한다.
         self._lease_seconds = lease_seconds
 
     async def assert_session_access(
@@ -528,15 +534,19 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None:
-        # 리포트 재요청은 임대(생성 제한 시간 + 저장 여유 이상)가 끝나기 전에 전사 기한이
-        # 오지 않을 때만 가져간다. 시작할 수 없게 된 작업은 expire_transcripts가 끝낸다.
+        # `sttCompleted`는 리포트 재요청 작업이면 바로, STT를 마친 worker가 인계 임대 안에
+        # 리포트 생성을 시작하지 못하고 멈춘 작업이면 그 임대가 끝난 뒤 가져간다. STT 단독
+        # 실행으로 멈춘 작업은 인계 임대가 없어 가져가지 않는다. 어느 쪽이든 임대(생성 제한
+        # 시간 + 저장 여유 이상)가 끝나기 전에 전사 기한이 오지 않을 때만 가져간다. 시작할 수
+        # 없게 된 작업은 expire_transcripts가 끝낸다.
         cursor = await self._connection.execute(
             """
             WITH candidate AS (
                 SELECT analysis_id
                   FROM speech_analysis_jobs
                  WHERE status = 'queued' OR (
-                     %s AND status = 'sttCompleted' AND retry_of_analysis_id IS NOT NULL
+                     %s AND status = 'sttCompleted'
+                     AND (retry_of_analysis_id IS NOT NULL OR lease_expires_at <= now())
                      AND transcript_expires_at > clock_timestamp() + (%s * interval '1 second')
                  )
                  ORDER BY created_at
@@ -563,21 +573,29 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def mark_stt_completed(
-        self, *, analysis_id: str, transcript: Mapping[str, Any]
+        self, *, analysis_id: str, transcript: Mapping[str, Any], hand_off: bool = False
     ) -> bool:
+        # 인계 임대는 전사 저장과 같은 문장에서 정한다. 따로 정하면 그 사이에 멈춘 작업을
+        # 이어받을 수 없다. STT 뒤 리포트 시작 전까지는 원본 삭제 요청만 하므로 리포트
+        # 단계와 같은 임대 시간이면 충분하다.
         cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
                SET status = 'sttCompleted', stt_completed_at = now(),
                    transcript = %s,
                    transcript_expires_at = now() + (%s * interval '1 second'),
-                   lease_expires_at = NULL, updated_at = now()
+                   lease_expires_at = CASE
+                       WHEN %s THEN now() + (%s * interval '1 second')
+                   END,
+                   updated_at = now()
              WHERE analysis_id = %s AND status = 'transcribing'
                AND lease_expires_at > clock_timestamp()
             """,
             (
                 Jsonb(dict(transcript)),
                 TRANSCRIPT_RETENTION_SECONDS,
+                hand_off,
+                self._lease_seconds,
                 UUID(analysis_id),
             ),
         )
