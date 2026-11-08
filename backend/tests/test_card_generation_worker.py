@@ -3,6 +3,7 @@
 임시 DB에 최신 migration을 적용해 실행(`conftest.py`). 값은 모두 합성 데이터.
 """
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -376,6 +377,62 @@ def test_result_is_saved_only_while_the_lease_lasts(migrated_database_url, lease
     else:
         assert (card_set["status"], card_set["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
         assert (cards, new_topics) == (0, 0)
+
+
+def test_lease_that_ends_while_save_waits_for_the_profile_lock_is_not_saved(
+    migrated_database_url,
+):
+    """저장 트랜잭션이 프로필 잠금을 기다리는 사이 임대가 끝나면 저장하지 않는다.
+
+    임대는 잠금을 잡은 뒤의 시각(`clock_timestamp()`)으로 본다. 트랜잭션 시작 시각(`now()`)으로
+    보면 기다리는 동안 끝난 임대를 남은 것으로 보고 저장한다."""
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with (
+            connect(migrated_database_url) as connection,
+            connect(migrated_database_url) as holder,
+        ):
+            profile_id, set_id, _, _ = await _seed(connection)
+            job = await queue.claim(connection, lease_seconds=600)
+            async with holder.transaction():
+                await holder.execute(
+                    "SELECT 1 FROM profiles WHERE profile_id = %s FOR UPDATE", (profile_id,)
+                )
+                processing = asyncio.create_task(
+                    CardGenerationProcessor(queue=queue, generate=fake_result)(connection, job)
+                )
+                await _until_waiting_for_lock(holder, connection.info.backend_pid)
+                # 저장 트랜잭션이 시작된 뒤의 시각을 임대 끝으로 둔다.
+                await holder.execute(
+                    "UPDATE card_sets SET lease_expires_at = clock_timestamp() WHERE set_id = %s",
+                    (set_id,),
+                )
+            await processing
+            cursor = await connection.execute("SELECT * FROM card_sets WHERE set_id = %s", (set_id,))
+            card_set = await cursor.fetchone()
+            cards = await value(
+                connection, "SELECT count(*) FROM conversation_cards WHERE set_id = %s", (set_id,)
+            )
+            return card_set, cards
+
+    card_set, cards = run(scenario())
+
+    assert (card_set["status"], card_set["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
+    assert cards == 0
+
+
+async def _until_waiting_for_lock(observer, pid):
+    """`pid` 연결이 잠금을 기다리기 시작할 때까지 기다림. pg_stat_activity는 트랜잭션 안에서
+    처음 읽은 값을 계속 돌려주므로 pg_locks를 봄."""
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        cursor = await observer.execute(
+            "SELECT count(*) AS n FROM pg_locks WHERE pid = %s AND NOT granted", (pid,)
+        )
+        if (await cursor.fetchone())["n"] > 0:
+            return
+    raise AssertionError("저장이 프로필 잠금을 기다리지 않음")
 
 
 def test_generation_error_fails_the_job_with_its_code_and_input(migrated_database_url):
