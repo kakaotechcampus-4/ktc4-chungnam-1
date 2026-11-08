@@ -61,13 +61,14 @@ async def register_push_device(
             (fid, user_id),
         )
         # 앱은 켤 때마다 다시 등록하므로 등록 시각이 가장 오래된 기기가 가장 오래 쓰지 않은
-        # 기기다. 방금 등록한 기기는 시각이 같더라도 남긴다.
+        # 기기다. 방금 등록한 기기는 시각이 같더라도 남긴다. 고른 기기가 그사이 같은 기기로
+        # 로그인한 다른 계정으로 옮겨 갔으면, 바깥 조건의 계정을 다시 확인해 지우지 않는다.
         await connection.execute(
-            "DELETE FROM push_devices WHERE fid IN ("
+            "DELETE FROM push_devices WHERE user_id = %s AND fid IN ("
             " SELECT fid FROM push_devices WHERE user_id = %s"
             " ORDER BY fid = %s DESC, registered_at DESC, fid"
             " OFFSET %s)",
-            (user_id, fid, max_devices),
+            (user_id, user_id, fid, max_devices),
         )
 
 

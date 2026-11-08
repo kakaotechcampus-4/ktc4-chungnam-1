@@ -4,9 +4,12 @@
 """
 
 import asyncio
+from uuid import UUID
 
 from httpx import ASGITransport, AsyncClient
 
+from app.core.database import connect
+from app.services.push_devices import register_push_device
 from tests.db_api import DbApi
 from tests.support import request, run
 
@@ -264,3 +267,47 @@ def test_concurrent_registrations_do_not_exceed_the_limit(migrated_database_url)
 
     assert [r.status_code for r in responses] == [204] * 8
     assert len(_devices(api)) == 5
+
+
+def test_trimming_keeps_a_device_another_account_took_meanwhile(migrated_database_url):
+    """정리할 기기를 고른 뒤 그 기기가 다른 계정으로 옮겨 가면 지우지 않는다."""
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    new_owner = api.create_account()
+    caregiver.call("PUT", f"/auth/me/push-devices/{_fid(0)}")
+
+    async def scenario():
+        async with (
+            connect(migrated_database_url) as mover,
+            connect(migrated_database_url) as registrar,
+        ):
+            # 같은 기기로 다른 계정에 로그인해 등록하는 중이다. 아직 커밋하지 않았다.
+            async with mover.transaction():
+                await mover.execute(
+                    "UPDATE push_devices SET user_id = %s WHERE fid = %s",
+                    (UUID(new_owner.account_id), _fid(0)),
+                )
+                trimming = asyncio.create_task(register_push_device(
+                    registrar, caregiver.account_id, _fid(1), max_devices=1,
+                ))
+                await _until_blocked_by(mover)
+            await trimming
+
+    run(scenario())
+
+    assert [(d["fid"], d["user_id"]) for d in _devices(api)] == [
+        (_fid(0), new_owner.account_id), (_fid(1), caregiver.account_id),
+    ]
+
+
+async def _until_blocked_by(holder):
+    # pg_stat_activity는 트랜잭션 안에서 처음 읽은 값을 계속 돌려주므로 pg_locks를 본다.
+    for _ in range(200):
+        await asyncio.sleep(0.05)
+        cursor = await holder.execute(
+            "SELECT count(*) AS n FROM pg_locks"
+            " WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid))"
+        )
+        if (await cursor.fetchone())["n"] > 0:
+            return
+    raise AssertionError("기기 정리가 옮기는 중인 행을 기다리지 않음")
