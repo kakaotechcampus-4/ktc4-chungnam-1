@@ -222,9 +222,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 `POST /auth/logout` 은 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. `DELETE /auth/me` 는 탈퇴 이유를 선택 본문(`reasons`, `otherText`)으로 받으며, 고르지 않았으면 본문 없이 보낸다.
 
-`PATCH /auth/me/consents` 는 선택 동의(`serviceImprovement`, `pushNotification`) 중 보낸 항목만 바꾼다([API 1-6](../docs/architecture/api-spec.md#1-6-patch-authmeconsents--신규)).
+`PATCH /auth/me/consents` 는 선택 동의(`serviceImprovement`, `pushNotification`, `photoAnalysis`) 중 보낸 항목만 바꾼다([API 1-6](../docs/architecture/api-spec.md#1-6-patch-authmeconsents--신규)).
 
 - 직전 동의 이력을 복사해 보낸 항목만 바꾼 이력 행을 더하며 약관 버전은 직전 이력의 값을 쓴다. 같은 계정의 동시 변경이 서로를 덮지 않도록 계정 행을 잠근 뒤 더한다.
+- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 AI 설명, 모델과 프롬프트 버전을 비우고 `pending`으로 되돌린다(2026-11-09 PM 결정, `accounts._discard_ai_photo_descriptions`). 보호자가 쓴 설명(`user_description`)은 남는다. 분석 중인 사진은 처리 함수가 저장 직전 동의를 다시 보고 결과를 버린다. 다시 동의하면 사진 worker가 `pending`인 사진을 다시 분석한다.
+- 지운 설명이 카드 입력이던 프로필(보호자 설명이 없는 사진)은 아직 면회에 안 쓴 완료 묶음에 `stale_at`을 찍는다. `card_sets.mark_stale`은 카드 생성 중이면 409라 쓰지 않고, 동의 변경은 카드 생성 중에도 성공한다. 생성 중인 묶음은 저장할 때 입력 뒤 사진 설명이 바뀐 것을 보고 갱신 필요로 저장한다. 카드 저장, 사진 분석 저장과 같은 순서로 프로필 행을 먼저 잠근다.
 - 값은 `true`, `false`만 받는다. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 `REQUIRED_CONSENT_NOT_CHANGEABLE`(422), 본문이 비었거나 `null`을 보내면 `INVALID_REQUEST`(422)다.
 - 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.
 - 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
@@ -580,7 +582,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
 - 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
 - 현재 5-2 코드에도 사진 보관 동의 검사가 없다. 가입 시 계정별 동의를 받는 정책은 위 ADR-001로 확정했으며, 실제 사용자 사진을 받기 전 동의 조회와 미동의 차단 구현 및 검증이 남아 있다. 테스트 자료로 개발을 먼저 진행하는 기준은 유지한다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
-- 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다.
+- 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다. 저장된 AI 설명은 2026-11-09 PM 결정에 따라 1-6에서 지운다([로그인 API](#로그인-api)의 `PATCH /auth/me/consents`).
 - 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.
 - S3 삭제 대기열 실행과 삭제 결과 확인은 #204로 들어왔다([storage-deletion](docs/storage-deletion.md)). 운영 배포, 주기 실행과 운영 버킷 검증은 남아 있다. AI는 임시 사본의 기한 삭제를 구현해야 한다. 실제 사용자 사진을 받기 전에 동의 화면부터 원본 삭제까지 검증한다. 어댑터 제공, DB 행 삭제 또는 대기열 등록만으로 삭제 완료를 표시하지 않는다.
 
