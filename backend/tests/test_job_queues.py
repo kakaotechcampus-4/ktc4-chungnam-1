@@ -180,6 +180,8 @@ def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
     [
         # 앞 작업을 처리하는 중이다
         ("processing", ("running", None), ("running", None)),
+        # migration 전에 가져가 가져간 시각은 없지만 임대가 남은 앞 작업을 처리하는 중이다
+        ("processing_without_claimed_at", ("running", None), ("running", None)),
         # 5분 걸린 앞 작업을 막 끝내고 다음 작업을 가져가기 직전이다
         ("between_jobs", ("running", None), ("completed", None)),
         # 10분 전에 앞 작업을 가져간 뒤 멈춰 임대도 끝났다
@@ -215,7 +217,11 @@ def test_job_waiting_behind_another_accounts_job_fails_only_when_worker_stopped(
             )
             job = await queue.claim(connection, lease_seconds=300)
             assert job.set_id == ahead, "먼저 들어온 작업을 먼저 가져간다"
-            if worker == "between_jobs":
+            if worker == "processing_without_claimed_at":
+                await connection.execute(
+                    "UPDATE card_sets SET claimed_at = NULL WHERE set_id = %s", (ahead,)
+                )
+            elif worker == "between_jobs":
                 await connection.execute(
                     "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
                     " generation_log = '{\"input\": {}}',"
