@@ -228,7 +228,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 401 | `REGISTRATION_TOKEN_EXPIRED` | 등록 토큰 수명(기본 600초)이 지남 |
 | 409 | `CONSENT_VERSION_MISMATCH` | 약관 버전이 서버와 다름 |
 | 422 | `REQUIRED_CONSENT_MISSING` | 필수 동의를 거부함 |
-| 422 | `INVALID_REQUEST` | `consents` 값이 `true`, `false`가 아님 |
+| 422 | `INVALID_REQUEST` | 요청 형식 오류. `consents` 값이 `true`, `false`가 아니거나 `displayName`이 50자를 넘는 경우 포함 |
+| 503 | `AUTH_NOT_CONFIGURED` | 서버의 세션 서명 키가 설정되지 않음 |
 | 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
 
 ### 1-3. `GET /auth/me` — 완료
