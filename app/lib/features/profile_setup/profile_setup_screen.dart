@@ -8,6 +8,7 @@ import '../../data/profile_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
+import '../profile/photo_consent_prompt.dart';
 import 'basic_info_step.dart';
 import 'life_fact_step.dart';
 import 'photo_steps.dart';
@@ -159,7 +160,7 @@ class _StepBody extends StatelessWidget {
   }
 }
 
-class _Actions extends StatefulWidget {
+class _Actions extends ConsumerStatefulWidget {
   const _Actions({
     required this.state,
     required this.controller,
@@ -171,10 +172,10 @@ class _Actions extends StatefulWidget {
   final String? addingId;
 
   @override
-  State<_Actions> createState() => _ActionsState();
+  ConsumerState<_Actions> createState() => _ActionsState();
 }
 
-class _ActionsState extends State<_Actions> {
+class _ActionsState extends ConsumerState<_Actions> {
   /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않게 버튼을 막는다.
   bool _saving = false;
 
@@ -257,6 +258,12 @@ class _ActionsState extends State<_Actions> {
       }
     }
 
+    // AI 사진 분석에 동의하지 않았으면 올리기 전에 동의 시트를 띄운다.
+    Future<void> upload() async {
+      await askPhotoAnalysisBeforeUpload(context, ref);
+      await controller.uploadPhotos();
+    }
+
     if (!draft.hasPhoto) {
       return SecondaryButton(
         borderColor: HomeColors.outline,
@@ -300,7 +307,7 @@ class _ActionsState extends State<_Actions> {
               color: HomeColors.accent,
               loadingColor: HomeColors.accentLoading,
               label: '다시 올리기',
-              onPressed: controller.uploadPhotos,
+              onPressed: upload,
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
@@ -316,7 +323,7 @@ class _ActionsState extends State<_Actions> {
       color: HomeColors.accent,
       loadingColor: HomeColors.accentLoading,
       label: '마치기',
-      onPressed: controller.uploadPhotos,
+      onPressed: upload,
     );
   }
 }

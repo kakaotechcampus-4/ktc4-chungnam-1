@@ -17,6 +17,7 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/profile/photo_consent_prompt.dart';
 import 'package:saerok/features/profile_setup/photo_picker.dart';
 
 import 'fake_profile_server.dart';
@@ -59,6 +60,11 @@ class _FakePicker implements PhotoPicker {
         ),
     ];
   }
+}
+
+class _AlreadyAsked extends PhotoConsentAsked {
+  @override
+  bool build() => true;
 }
 
 Future<void> _settle(WidgetTester tester) async {
@@ -107,6 +113,8 @@ _openProfile(WidgetTester tester, {int photos = 2}) async {
     overrides: [
       server.override,
       photoPickerProvider.overrideWithValue(picker),
+      // 사진 분석 동의를 묻는 시트는 photo_consent_prompt_test 가 본다.
+      photoConsentAskedProvider.overrideWith(_AlreadyAsked.new),
       profileSampleProvider.overrideWith((ref) async => sample),
       accountProvider.overrideWith((ref) async => account),
       photoAnalysisPollIntervalProvider.overrideWithValue(

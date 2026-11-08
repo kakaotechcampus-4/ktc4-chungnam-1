@@ -9,6 +9,7 @@ import '../../widgets/app_scaffold.dart';
 import '../profile_setup/photo_picker.dart';
 import '../profile_setup/photo_steps.dart';
 import '../profile_setup/photo_uploader.dart';
+import 'photo_consent_prompt.dart';
 
 /// 등록을 마친 어르신의 사진을 더 올리는 동안의 사진 목록이다.
 ///
@@ -106,7 +107,15 @@ class ProfilePhotoAddScreen extends ConsumerWidget {
         ),
         body: ScreenBody(
           scrollable: true,
-          bottom: _Actions(controller: controller, photos: photos),
+          bottom: _Actions(
+            controller: controller,
+            photos: photos,
+            // AI 사진 분석에 동의하지 않았으면 올리기 전에 동의 시트를 띄운다.
+            onUpload: () async {
+              await askPhotoAnalysisBeforeUpload(context, ref);
+              await controller.upload();
+            },
+          ),
           child: Padding(
             padding: const EdgeInsets.only(top: AppSpacing.xl),
             child: PhotoUploadStep(
@@ -125,9 +134,16 @@ class ProfilePhotoAddScreen extends ConsumerWidget {
 }
 
 class _Actions extends StatelessWidget {
-  const _Actions({required this.controller, required this.photos});
+  const _Actions({
+    required this.controller,
+    required this.photos,
+    required this.onUpload,
+  });
 
   final ProfilePhotoAddController controller;
+
+  /// 올리기와 다시 올리기. 사진 분석 동의를 먼저 물을 수 있다.
+  final Future<void> Function() onUpload;
 
   /// 상태가 바뀔 때 다시 그리도록 받는다.
   final List<SetupPhoto> photos;
@@ -172,7 +188,7 @@ class _Actions extends StatelessWidget {
               color: HomeColors.accent,
               loadingColor: HomeColors.accentLoading,
               label: '다시 올리기',
-              onPressed: controller.upload,
+              onPressed: onUpload,
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
@@ -191,7 +207,7 @@ class _Actions extends StatelessWidget {
       color: HomeColors.accent,
       loadingColor: HomeColors.accentLoading,
       label: '마치기',
-      onPressed: controller.upload,
+      onPressed: onUpload,
     );
   }
 }
