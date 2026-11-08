@@ -117,7 +117,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 분석 처리 함수는 아직 없다 |
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
-- 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 자동 재시도는 하지 않는다.
+- 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 음성 작업이 전사 저장 뒤 리포트 시작 전에 멈추면 실패시키지 않고 인계 임대가 끝난 뒤 리포트 생성을 이어받는다([AI 음성 분석 연동](#ai-음성-분석-연동)). 실패한 작업의 자동 재시도는 하지 않는다.
 - 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
@@ -418,8 +418,13 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 늘리지 않는다. 성공 시 전사를 지우고, 만료분은 worker 정리 때 삭제하며 작업을
 `failed`(`TRANSCRIPT_EXPIRED`)로 바꾼다. worker 중단이나 긴 처리 중에는 정리가 늦어질
 수 있으므로 기한 삭제 감시가 필요하다([보관 대조](docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)). worker는 위의 공통 골격으로 동작하며,
-임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 자동 재시도와
-취소는 아직 없으며 실패를 숨겨 재실행하지 않는다. 리포트 생성의 시간 제한과 늦은 결과
+임대 시간 안에 끝나지 않은 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 전사를 저장할 때
+리포트까지 이어 갈 worker는 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`)를 함께 기록한다.
+그 안에 리포트 생성을 시작하지 못하고 멈춘 작업은 임대가 끝난 뒤 다음 worker가 같은 작업 ID와
+저장된 전사로 이어받는다. STT를 반복하지 않고, 원본 삭제 기록이 없으면 삭제 요청만 대기열에
+남긴다. 이미 이어받은 작업이면 늦게 돌아온 worker는 리포트 생성을 시작하지 못한다. 전사 보관
+기한이 지난 작업은 이어받지 않는다([분석 복구](docs/speech-recovery.md)). 실패한 작업의 자동
+재시도와 취소는 없으며 실패를 숨겨 재실행하지 않는다. 리포트 생성의 시간 제한과 늦은 결과
 처리는 [평가와 리포트 API](#평가와-리포트-api)에 정리한다.
 
 API 서버와 별도 터미널에서 worker를 실행한다.
@@ -437,7 +442,8 @@ bash ./scripts/run_speech_worker.sh --once
 기본 worker는 리포트 생성에 `SAEROK_ML_API_KEY`가 필요하며, 없으면 시작하지 않는다(키
 없이 전체 처리가 되는 것처럼 실행하지 않는다). 키 없이 STT만 확인할 때는
 `--stt-only`(development/test 환경에서만)를 쓴다. 리포트 생성기를 만들지 않고 작업은
-`sttCompleted`에서 멈추며 `completed`가 되지 않는다.
+`sttCompleted`에서 멈추며 `completed`가 되지 않는다. 인계 임대를 두지 않으므로 나중에 기본
+worker를 실행해도 이 작업을 리포트 생성에 넘기지 않는다.
 
 ```bash
 bash ./scripts/run_speech_worker.sh --stt-only --once
@@ -458,7 +464,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 기본 86100초. STT가 24시간을 넘는 기한을 거절하므로 서버 시계 차이를 감안해 86100초보다 길게 줘도 86100초로 쓴다(86400초까지 받음) |
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한 |
-| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계와 리포트 생성 단계에서 각각 새로 잡음 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계, 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
 | `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |

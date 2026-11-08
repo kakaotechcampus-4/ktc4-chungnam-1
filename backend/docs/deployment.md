@@ -126,6 +126,7 @@ docker compose up -d api card-worker
 - `.env`의 `SAEROK_CARD_STOP_GRACE_SECONDS`, `SAEROK_SPEECH_STOP_GRACE_SECONDS`로 Compose 유예를 조정할 수 있다. 임대 설정이나 override를 바꿨다면 `python scripts/check_shutdown_budget.py --compose-file compose.yml`로 실제 합성 설정을 검사한다. 추가 override를 사용하면 같은 옵션으로 파일을 순서대로 모두 지정한다. 이 명령은 `docker compose config`만 읽고 컨테이너를 바꾸지 않는다. 비밀 값이 포함될 수 있는 config 원문은 출력하지 않는다.
 - 유예 시간은 작업의 무조건 성공을 보장하지 않는다. 외부 호출이나 DB가 멈추거나 유예를 넘기면 여전히 강제 종료될 수 있다. API 접수를 차단하고 진행 중 작업이 끝났는지 확인한 뒤 교체한다. worker만 멈춰도 API는 새 작업을 받을 수 있다.
 - `docker compose stop -t`처럼 시간을 별도 지정하면 Compose 설정을 덮어쓴다. 배포 중 짧은 `-t`를 붙이지 않는다. 유예 안에 끝나지 않은 작업과 임대 만료는 별도 장애로 기록하며, 유예 시간 증가가 분석 재시도 기능을 구현한 것은 아니다.
+- 녹음 작업이 전사 저장 뒤 리포트 시작 전에 강제 종료되면 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`)가 끝난 뒤 다음 worker가 리포트 생성을 이어받는다. 그래서 재시작 직후에는 그 작업이 `sttCompleted`로 남아 있을 수 있다. 전사나 리포트 생성 도중 강제 종료된 작업은 임대가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다.
 - 기다리지 않고 바로 끝내야 하면 `docker compose kill <서비스>`를 쓴다. 로컬에서 직접 실행한 worker는 Ctrl+C를 두 번 누르면 바로 끝난다.
 
 ### 앱 연결

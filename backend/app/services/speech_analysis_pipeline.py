@@ -248,15 +248,24 @@ class SpeechAnalysisProcessor:
             if not any(segment.text.strip() for segment in speech.segments):
                 raise AppError(status_code=422, error_code="EMPTY_TRANSCRIPT",
                                message="다시 분석할 발화를 확인하지 못했습니다.")
+            if job.audio_deleted_at is None:
+                # STT 직후 멈춘 작업을 이어받았다면 원본 삭제 요청이 빠졌을 수 있다. 리포트만
+                # 만드는 경로에서는 S3를 부르지 않고 삭제 대기열에만 남긴다. 요청이 이미 있으면
+                # 그대로 둔다.
+                await jobs.queue_audio_deletion(analysis_id=job.analysis_id)
             await self._report_generator.generate(connection, session_id=job.session_id, speech=speech)
             await self._complete(connection, jobs, job)
             return
         speech = await self._transcribe(job)
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
         # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
+        # 리포트까지 이어 갈 때만 인계 임대를 둔다. 아래 리포트 시작 전에 worker가 멈추면
+        # 임대가 끝난 뒤 다른 worker가 이어받는다. 이미 이어받은 작업이면 이 worker가 늦게
+        # 돌아와도 `mark_generating_report`가 거절해 리포트를 두 번 만들지 않는다.
         stored = await jobs.mark_stt_completed(
             analysis_id=job.analysis_id,
             transcript=_transcript_for_report(speech),
+            hand_off=self._report_generator is not None,
         )
         # 삭제 요청을 DB에 먼저 남긴다. S3 삭제만 실패했다면 전사는 보존하고
         # 리포트 생성을 계속한다. 이미 끝난 작업의 원본도 정리 대상이다.
