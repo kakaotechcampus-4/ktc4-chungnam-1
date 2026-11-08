@@ -13,7 +13,9 @@ ADR-007 은 세션의 형식과 수명, 갱신 방식을 BE 가 정하도록 남
 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 짧은 수명의 토큰이다. 아직 계정이
 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 세션 토큰과 `typ` 으로 구분해서
 서로의 용도로 쓰이지 않게 한다. 저장하기로 한 항목만 담으며, 기본 설정에서는 제공자
-식별자 외에 아무것도 담지 않는다.
+식별자와 무작위 `jti` 외에 아무것도 담지 않는다. 등록 토큰은 한 번만 쓴다. 동의 제출
+(API 1-2)이 계정을 만들거나 세션을 줄 때 이 `jti` 를 폐기 목록에 올리고, 같은 토큰을
+다시 보내면 구글 인증 없이 세션을 받지 못하게 거절한다.
 """
 
 from dataclasses import dataclass
@@ -47,6 +49,9 @@ class SessionClaims:
 class RegistrationClaims:
     provider: Literal["google"]
     social_id: str
+    # 등록 토큰 하나를 가리키는 무작위 값. 한 번 쓴 토큰을 폐기 목록에서 찾는 키로만 쓴다.
+    token_id: str
+    expires_at: datetime
     email: str | None = None
     name: str | None = None
 
@@ -83,6 +88,7 @@ class TokenIssuer:
             "sub": social_id,
             "typ": _REGISTRATION_TYPE,
             "provider": provider,
+            "jti": uuid4().hex,
         }
         # 저장하지 않기로 한 항목은 토큰에도 넣지 않는다. 호출하는 쪽이
         # `store_google_profile` 설정을 보고 넘길지 정한다.
@@ -129,7 +135,15 @@ class TokenIssuer:
         )
         social_id = payload.get("sub")
         provider = payload.get("provider")
-        if not isinstance(social_id, str) or not social_id or provider != "google":
+        # `jti` 가 없으면 이미 쓴 토큰인지 확인할 수 없다. 받지 않고 다시 로그인하게 한다.
+        token_id = payload.get("jti")
+        if (
+            not isinstance(social_id, str)
+            or not social_id
+            or provider != "google"
+            or not isinstance(token_id, str)
+            or not token_id
+        ):
             raise self._error(
                 401,
                 "INVALID_REGISTRATION_TOKEN",
@@ -140,6 +154,8 @@ class TokenIssuer:
         return RegistrationClaims(
             provider="google",
             social_id=social_id,
+            token_id=token_id,
+            expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
             email=email if isinstance(email, str) else None,
             name=name if isinstance(name, str) else None,
         )

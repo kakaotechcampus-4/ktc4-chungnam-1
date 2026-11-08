@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
-| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다 |
+| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다. 1-2 가입 동의는 쓴 등록 토큰의 `jti` 를 남긴다 |
 | `profiles` | 2-2 생성, 2-4 세부 정보 저장과 수정, 2-8 삭제 | B는 4-1 카드 생성 요청에서 저장된 프로필을 읽는다. 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
