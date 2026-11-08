@@ -83,6 +83,15 @@ void main() {
       expect(find.text(titleOf(i)), findsOneWidget);
     }
     expect(find.text('다음'), findsNothing);
+    // 마지막 장에서 설정의 도움말에서 다시 볼 수 있다고 알린다. 화면 아래의
+    // 같은 안내와 소개의 것 중 소개 것을 찾는다.
+    expect(
+      find.descendant(
+        of: find.byType(OnboardingTutorial),
+        matching: find.text(tutorialHelpHint),
+      ),
+      findsOneWidget,
+    );
     // 화면 아래의 시작하기와 소개의 시작하기 중 소개 것을 누른다.
     await tester.tap(
       find.descendant(
@@ -124,6 +133,11 @@ void main() {
 
     expect(find.byType(OnboardingTutorial), findsNothing);
     expect(find.text('새록에\n처음 오셨네요!'), findsOneWidget);
+    expect(
+      find.text(tutorialHelpHint),
+      findsOneWidget,
+      reason: '건너뛰어도 설정의 도움말에서 다시 볼 수 있다고 알린다',
+    );
 
     await tester.tap(find.text('새록 소개 다시 보기'));
     await tester.pumpAndSettle();

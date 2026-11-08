@@ -14,15 +14,16 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../auth/auth_providers.dart';
-import '../auth/consent_form.dart';
-import '../auth/consent_terms.dart';
+import '../profile_setup/onboarding_tutorial.dart';
 import '../profile_setup/setup_controller.dart';
 import '../push/push_registration.dart';
 
 /// 설정. 하단 탭 맨 오른쪽의 톱니바퀴로 들어온다.
 ///
-/// 알림 설정과 계정 약관 동의 두 구역이다. 동의는 어르신마다가 아니라 보호자
-/// 계정에 한 번 받으므로 어르신이 없어도 열린다. 아래에 저장하기, 로그아웃,
+/// 위에서부터 알림 설정, 도움말, 계정 약관 동의 세 구역이다. 도움말은 새록
+/// 소개를 다시 띄우고, 계정 약관 동의는 한 단계 들어가
+/// ([AppRoutes.settingsConsents]) 확인하고 바꾼다. 동의는 어르신마다가 아니라
+/// 보호자 계정에 한 번 받으므로 어르신이 없어도 열린다. 아래에 로그아웃과
 /// 회원탈퇴를 둔다.
 ///
 /// 계정 정보를 읽지 못해도 로그아웃은 둔다. 세션이 만료돼 다시 시도해도 같은
@@ -40,8 +41,8 @@ class SettingsScreen extends ConsumerWidget {
         title: '설정',
       ),
       body: account.when(
-        // 체크 상태는 처음 받은 값에서 시작하므로, 저장 뒤 다시 읽는 중에는
-        // 이전 값을 보여주지 않고 기다린다.
+        // 스위치는 서버의 동의를 보여주므로, 저장 뒤 다시 읽는 중에는 이전 값을
+        // 보여주지 않고 기다린다.
         skipLoadingOnRefresh: false,
         loading: () => const LoadingView(),
         error: (error, _) => Column(
@@ -73,82 +74,44 @@ class _Body extends ConsumerStatefulWidget {
   ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends ConsumerState<_Body>
-    with SingleTickerProviderStateMixin {
+class _BodyState extends ConsumerState<_Body> {
   static const _pushKey = 'pushNotification';
-
-  /// 지금 화면에서 동의한 항목의 키. 계정의 동의에서 시작한다.
-  late final Set<String> _agreed = {
-    for (final entry in widget.account.consent.entries)
-      if (entry.value.granted) entry.key,
-  };
 
   /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않는다.
   bool _saving = false;
+
+  /// 서버에 저장된 알림 수신 동의.
+  bool get _pushAgreed => widget.account.consent[_pushKey]?.granted ?? false;
 
   /// 알림 스위치. 서버에 저장된 알림 수신 동의(1-6 `pushNotification`)다.
   ///
   /// 리포트 완료 알림은 이 동의로만 정한다. 동의가 있으면 앱이 기기를 등록하고
   /// (`push_registration.dart`), 동의를 거두면 서버가 그 계정의 기기 등록을 같은
   /// 트랜잭션에서 지운다. 그래서 스위치는 따로 기억하지 않고 이 동의를 바로
-  /// 저장한다. 아래 체크만 하고 저장하지 않은 동안에는 켜지지 않는다.
-  bool get _alertOn =>
-      _offlineAlert ?? widget.account.consent[_pushKey]?.granted ?? false;
+  /// 저장한다. 계정 약관 동의 화면에서 이 동의를 저장해도 따라 바뀐다.
+  bool get _alertOn => _offlineAlert ?? _pushAgreed;
 
   /// 로그인하지 않은 목 모드에서 바꾼 스위치. 서버가 없어 화면에서만 기억한다.
   bool? _offlineAlert;
 
-  /// 동의 없이 알림을 켜려 했다. 빨간 안내와 동의 줄 강조를 보인다.
+  /// 동의 없이 알림을 켜려 했다. 빨간 안내를 보이고, 계정 약관 동의에 들어가면
+  /// 알림 수신 동의 줄을 강조한다.
   bool _needsConsent = false;
-
-  /// 알림 수신 동의 줄. 안내할 때 보이는 자리로 끌어온다.
-  final _pushRowKey = GlobalKey();
-
-  /// 알림 수신 동의 줄을 깜빡인다.
-  late final AnimationController _flash = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 280),
-  );
-
-  @override
-  void dispose() {
-    _flash.dispose();
-    super.dispose();
-  }
-
-  bool get _pushAgreed => _agreed.contains(_pushKey);
-
-  bool get _requiredAgreed => consentTerms
-      .where((term) => term.required)
-      .every((term) => _agreed.contains(term.key));
-
-  bool get _allAgreed => _agreed.length == consentTerms.length;
-
-  /// 처음 값과 달라진 선택 동의. 필수 동의는 1-6 으로 바꿀 수 없어 담지 않는다.
-  Map<String, bool> get _changedOptional => {
-    for (final term in consentTerms)
-      if (!term.required &&
-          _agreed.contains(term.key) !=
-              (widget.account.consent[term.key]?.granted ?? false))
-        term.key: _agreed.contains(term.key),
-  };
 
   // ── 알림 설정 ──────────────────────────────────
 
-  /// 스위치를 켜고 끈다. 켤 때는 아래 알림 수신 동의에 체크해 두어야 한다.
-  /// 끄면 그 동의도 함께 거둔다. 어느 쪽이든 동의를 바로 저장한다(1-6).
+  /// 스위치를 켜고 끈다. 켤 때는 알림 수신 동의가 저장돼 있어야 한다. 끄면 그
+  /// 동의를 거둔다. 어느 쪽이든 동의를 바로 저장한다(1-6).
   void _setAlert(bool on) {
     if (_saving) return;
     if (on && !_pushAgreed) {
       setState(() => _needsConsent = true);
-      unawaited(_pointAtConsent());
       return;
     }
-    if (!on) setState(() => _agreed.remove(_pushKey));
     unawaited(_saveAlert(on));
   }
 
-  /// 알림 수신 동의만 서버에 저장한다. 다른 동의는 저장하기로 따로 저장한다.
+  /// 알림 수신 동의만 서버에 저장한다. 다른 동의는 계정 약관 동의에서 저장한다.
   Future<void> _saveAlert(bool on) async {
     if (ref.read(sessionProvider) == null) {
       // 로그인하지 않은 목 모드는 서버도 알림도 없다. 화면에서만 바꾼다.
@@ -162,11 +125,8 @@ class _BodyState extends ConsumerState<_Body>
       await ref.read(accountApiProvider).updateConsents({_pushKey: on});
     } on ApiFailure catch (failure) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        // 끄지 못했으면 체크를 되돌린다. 알림은 계속 온다.
-        if (!on) _agreed.add(_pushKey);
-      });
+      // 끄지 못했으면 스위치는 서버 값 그대로 켜져 있다. 알림은 계속 온다.
+      setState(() => _saving = false);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
@@ -180,89 +140,10 @@ class _BodyState extends ConsumerState<_Body>
     if (mounted) setState(() => _saving = false);
   }
 
-  /// 알림 수신 동의 줄을 보이는 자리로 끌어와 두 번 깜빡인다.
-  Future<void> _pointAtConsent() async {
-    final row = _pushRowKey.currentContext;
-    if (row != null) {
-      unawaited(
-        Scrollable.ensureVisible(
-          row,
-          alignment: 0.4,
-          duration: const Duration(milliseconds: 300),
-        ),
-      );
-    }
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _flash.value = 1;
-      return;
-    }
-    try {
-      for (var i = 0; i < 2; i++) {
-        await _flash.forward(from: 0).orCancel;
-        await _flash.reverse().orCancel;
-      }
-    } on TickerCanceled {
-      // 화면을 떠났다.
-    }
-  }
-
-  // ── 동의 ──────────────────────────────────────
-
-  void _toggle(String key, bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.add(key);
-      } else {
-        _agreed.remove(key);
-      }
-      if (_pushAgreed) _needsConsent = false;
-    });
-  }
-
-  void _toggleAll(bool? value) {
-    setState(() {
-      if (value ?? false) {
-        _agreed.addAll(consentTerms.map((t) => t.key));
-      } else {
-        _agreed.clear();
-      }
-      if (_pushAgreed) _needsConsent = false;
-    });
-  }
-
-  /// 로그인했으면 바꾼 선택 동의를 서버에 저장한다(1-6). 저장하지 못하면
-  /// 알린다. 설정은 탭 화면이라 저장한 뒤에도 그대로 둔다.
-  Future<void> _save() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final changes = _changedOptional;
-    final online = ref.read(sessionProvider) != null;
-    if (!online || changes.isEmpty) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('바꾼 동의가 없어요.')));
-      return;
-    }
-
-    setState(() => _saving = true);
-    // 화면을 떠난 뒤에는 ref 를 쓸 수 없어 미리 잡아 둔다.
-    final container = ProviderScope.containerOf(context, listen: false);
-    try {
-      await ref.read(accountApiProvider).updateConsents(changes);
-    } on ApiFailure catch (failure) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(consentFailureMessage(failure))));
-      return;
-    }
-    // 서버의 새 동의 이력을 다시 읽는다.
-    container.invalidate(accountProvider);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('동의를 저장했어요.')));
-    if (mounted) setState(() => _saving = false);
-  }
+  void _openConsents() => context.push(
+    AppRoutes.settingsConsents,
+    extra: _needsConsent && !_pushAgreed,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -275,19 +156,15 @@ class _BodyState extends ConsumerState<_Body>
 
           // ── 알림 설정
           // 제목과 안내 글을 한 묶음으로 두고 스위치는 그 오른쪽 가운데에 둔다.
-          // 제목과 안내 글 사이는 아래 계정 약관 동의와 같은 간격이고, 스위치의
-          // 누름 영역(48)이 그 간격을 벌리지 않는다.
+          // 제목과 안내 글 사이는 아래 구역들과 같은 간격이고, 스위치의 누름
+          // 영역(48)이 그 간격을 벌리지 않는다.
           MergeSemantics(
             child: Row(
               children: [
                 const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('알림 설정', style: AppTypography.sectionTitle),
-                      SizedBox(height: AppSpacing.sm),
-                      Text('만남 리포트가 완성되면 알려드려요.', style: AppTypography.sub),
-                    ],
+                  child: _SectionText(
+                    title: '알림 설정',
+                    sub: '만남 리포트가 완성되면 알려드려요.',
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -299,60 +176,35 @@ class _BodyState extends ConsumerState<_Body>
               ],
             ),
           ),
-          if (_needsConsent) ...[
+          if (_needsConsent && !_pushAgreed) ...[
             const SizedBox(height: AppSpacing.sm),
             Semantics(
               liveRegion: true,
               child: Text(
-                '아래 알림 수신 동의에 체크해야 알림을 켤 수 있어요.',
+                '아래 계정 약관 동의에서 알림 수신 동의에 체크하고 저장해야 알림을 켤 수 있어요.',
                 style: AppTypography.sub.copyWith(color: AppColors.danger),
               ),
             ),
           ],
           const SizedBox(height: AppSpacing.section),
 
-          // ── 계정 약관 동의
-          // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다.
-          const Text('계정 약관 동의', style: AppTypography.sectionTitle),
-          const SizedBox(height: AppSpacing.sm),
-          const Text('함께하는 모든 분에게 똑같이 적용돼요.', style: AppTypography.sub),
-          const SizedBox(height: AppSpacing.lg),
-          for (final term in consentTerms) ...[
-            if (term.key == _pushKey)
-              AnimatedBuilder(
-                key: _pushRowKey,
-                animation: _flash,
-                builder: (context, child) => _Highlight(
-                  strength: _needsConsent
-                      ? (_flash.value > 0.3 ? _flash.value : 0.3)
-                      : 0,
-                  child: child!,
-                ),
-                child: _row(term),
-              )
-            else
-              _row(term),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Divider(),
-          ),
-          _CheckLine(
-            checked: _allAgreed,
-            onChanged: _toggleAll,
-            label: const Text('전체 동의', style: AppTypography.bodyStrong),
+          // ── 도움말
+          _MenuRow(
+            title: '도움말',
+            sub: '새록 소개를 다시 볼 수 있어요.',
+            onTap: () => showOnboardingTutorial(context, replay: true),
           ),
           const SizedBox(height: AppSpacing.section),
 
-          PrimaryButton(
-            color: HomeColors.accent,
-            loadingColor: HomeColors.accentLoading,
-            label: _saving ? '저장하는 중이에요' : '저장하기',
-            // 필수 동의를 모두 유지해야 저장할 수 있다. 회원가입과 같은 규칙이다.
-            onPressed: _requiredAgreed && !_saving ? _save : null,
+          // ── 계정 약관 동의
+          // 동의는 어르신마다가 아니라 보호자 계정에 한 번 받는다.
+          _MenuRow(
+            title: '계정 약관 동의',
+            sub: '함께하는 모든 분에게 똑같이 적용돼요.',
+            onTap: _openConsents,
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.section),
+
           // 로그아웃과 회원탈퇴를 가운데 점으로 나눠 한 줄에 놓는다. 글자를 키워 한
           // 줄에 들어가지 않으면 다음 줄로 넘긴다.
           Wrap(
@@ -379,122 +231,59 @@ class _BodyState extends ConsumerState<_Body>
       ),
     );
   }
-
-  /// 동의 한 줄. 쓰임새(note)는 위 알림 설정이 말하므로 여기서는 두지 않는다.
-  Widget _row(ConsentTerm term) => _CheckLine(
-    checked: _agreed.contains(term.key),
-    onChanged: (value) => _toggle(term.key, value),
-    label: Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: term.required ? '[필수] ' : '[선택] ',
-            style: AppTypography.body.copyWith(
-              fontWeight: FontWeight.w600,
-              color: term.required ? AppColors.danger : AppColors.textSub,
-            ),
-          ),
-          TextSpan(text: term.label, style: AppTypography.body),
-        ],
-      ),
-    ),
-    below: TextButton(
-      onPressed: () => showConsentDetails(context, term),
-      style: TextButton.styleFrom(
-        foregroundColor: AppColors.textSub,
-        padding: EdgeInsets.zero,
-        alignment: Alignment.centerLeft,
-        minimumSize: const Size(0, 28),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('자세히 보기', style: AppTypography.sub),
-          const Icon(Icons.chevron_right, size: 18, color: AppColors.textSub),
-        ],
-      ),
-    ),
-  );
 }
 
-/// 체크박스와 이름 한 줄. 이름을 체크박스와 같은 줄에서 세로 가운데에 맞춘다.
-/// [below] 는 이름 아래, 이름과 같은 왼쪽 선에 둔다. 줄 전체를 눌러 체크한다.
-class _CheckLine extends StatelessWidget {
-  const _CheckLine({
-    required this.checked,
-    required this.onChanged,
-    required this.label,
-    this.below,
-  });
+/// 구역 제목과 그 아래 작은 회색 글.
+class _SectionText extends StatelessWidget {
+  const _SectionText({required this.title, required this.sub});
 
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final Widget label;
-  final Widget? below;
-
-  /// 줄인 체크박스 자리(40)와 이름 사이 간격을 더한 왼쪽 들여쓰기. 자세히 보기가
-  /// 이름과 같은 왼쪽 선에 온다.
-  static const _indent = 40 + AppSpacing.xs;
+  final String title;
+  final String sub;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!checked),
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // 줄 전체를 눌러 체크하므로 체크박스 자리는 40 으로 줄여 이름과
-              // 아래 자세히 보기 사이를 좁힌다.
-              Checkbox(
-                value: checked,
-                onChanged: onChanged,
-                activeColor: HomeColors.accent,
-                side: const BorderSide(color: HomeColors.outline, width: 2),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(child: label),
-            ],
-          ),
-          if (below case final below?)
-            Padding(
-              padding: const EdgeInsets.only(left: _indent),
-              child: Transform.translate(
-                offset: const Offset(0, -AppSpacing.xs),
-                child: below,
-              ),
-            ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(title, style: AppTypography.sectionTitle),
+        const SizedBox(height: AppSpacing.sm),
+        Text(sub, style: AppTypography.sub),
+      ],
     );
   }
 }
 
-/// 연한 빨간 바탕과 테두리로 감싼다. [strength] 0 이면 아무 표시도 없다.
-class _Highlight extends StatelessWidget {
-  const _Highlight({required this.strength, required this.child});
+/// 눌러서 들어가는 구역. 제목과 글 오른쪽 가운데에 꺾쇠를 둔다. 알림 설정의
+/// 스위치와 같은 자리다.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.title, required this.sub, required this.onTap});
 
-  final double strength;
-  final Widget child;
+  final String title;
+  final String sub;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    // 평소에는 바탕을 비워 둔다. 흰 바탕을 깔면 줄에 커서를 올렸을 때의 회색
-    // 표시가 가려진다. 강조하는 동안에도 보이도록 투명한 Material 위에 그린다.
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.dangerSurface.withValues(alpha: strength),
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.danger.withValues(alpha: strength),
-          width: 1.5,
+        child: Row(
+          children: [
+            Expanded(
+              child: _SectionText(title: title, sub: sub),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            // 스위치의 누름 영역(48)과 같은 폭에 맞춰 오른쪽 선을 맞춘다.
+            const SizedBox(
+              width: AppSizes.minTouch,
+              height: AppSizes.minTouch,
+              child: Icon(Icons.chevron_right, color: AppColors.textSub),
+            ),
+          ],
         ),
       ),
-      child: Material(type: MaterialType.transparency, child: child),
     );
   }
 }

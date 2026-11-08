@@ -28,6 +28,7 @@ void main() {
       '/splash',
       AppRoutes.googleConsent,
       AppRoutes.onboarding,
+      AppRoutes.settingsConsents,
       AppRoutes.profileCreate,
       AppRoutes.cards,
       AppRoutes.visitPhoto,

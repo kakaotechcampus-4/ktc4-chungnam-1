@@ -1,5 +1,5 @@
-// 프로필 설정의 계정 약관 동의가 서버(`api-spec.md` 1-3, 1-6)와 이어지는지
-// 확인한다.
+// 설정과 그 아래 계정 약관 동의 화면이 서버(`api-spec.md` 1-3, 1-6)와
+// 이어지는지 확인한다.
 //
 // 서버 대신 `MockClient` 를 쓴다. 값은 모두 합성이다.
 
@@ -24,6 +24,7 @@ import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/session_store.dart';
+import 'package:saerok/features/profile_setup/onboarding_tutorial.dart';
 
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
@@ -211,11 +212,16 @@ void main() {
 
     Future<GoRouter> open(
       WidgetTester tester,
-      _FakeAccountServer server,
-    ) async {
-      tester.view.physicalSize = const Size(1236, 6000);
+      _FakeAccountServer server, {
+      double width = 412,
+      double height = 2000,
+      double scale = 1,
+    }) async {
+      tester.view.physicalSize = Size(width * 3, height * 3);
       tester.view.devicePixelRatio = 3;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
       addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
       final sample = (await tester.runAsync(
         () => const MockRepository().loadProfile(),
@@ -264,6 +270,13 @@ void main() {
       return router;
     }
 
+    /// 설정에서 계정 약관 동의 줄을 눌러 들어간다.
+    Future<void> openConsents(WidgetTester tester) async {
+      await tester.tap(find.text('계정 약관 동의'));
+      await settle(tester);
+      expect(find.text('전체 동의'), findsOneWidget);
+    }
+
     /// 그 동의 줄의 체크 상태.
     bool? checked(WidgetTester tester, String label) => tester
         .widget<Checkbox>(
@@ -279,9 +292,51 @@ void main() {
         )
         .value;
 
+    testWidgets('설정은 알림 설정, 도움말, 계정 약관 동의 순서이고 동의는 한 단계 들어간다', (tester) async {
+      await open(tester, _FakeAccountServer());
+
+      final order = [
+        '알림 설정',
+        '도움말',
+        '계정 약관 동의',
+      ].map((title) => tester.getTopLeft(find.text(title)).dy).toList();
+      expect(order, orderedEquals([...order]..sort()));
+      expect(find.text('전체 동의'), findsNothing, reason: '동의 항목은 들어가야 보인다');
+      expect(find.widgetWithText(FilledButton, '저장하기'), findsNothing);
+
+      await openConsents(tester);
+      expect(
+        find.textContaining('서비스 개선 활용 동의', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(FilledButton, '저장하기'), findsOneWidget);
+    });
+
+    testWidgets('도움말에서 새록 소개를 다시 보고 닫는다', (tester) async {
+      await open(tester, _FakeAccountServer());
+
+      await tester.tap(find.text('도움말'));
+      await settle(tester);
+      expect(find.byType(OnboardingTutorial), findsOneWidget);
+      expect(find.text(tutorialPages.first.title), findsOneWidget);
+
+      for (var i = 1; i < tutorialPages.length; i++) {
+        await tester.tap(find.text('다음'));
+        await settle(tester);
+      }
+      expect(find.text('시작하기'), findsNothing, reason: '다시 볼 때는 닫기다');
+      expect(find.text(tutorialHelpHint), findsNothing, reason: '이미 도움말에 있다');
+      await tester.tap(find.text('닫기'));
+      await settle(tester);
+
+      expect(find.byType(OnboardingTutorial), findsNothing);
+      expect(find.text('도움말'), findsOneWidget, reason: '설정에 남는다');
+    });
+
     testWidgets('바꾼 선택 동의만 서버에 저장하고 알린다', (tester) async {
       final server = _FakeAccountServer();
       await open(tester, server);
+      await openConsents(tester);
 
       await tester.tap(find.textContaining('서비스 개선 활용 동의', findRichText: true));
       await tester.pump();
@@ -296,7 +351,7 @@ void main() {
       expect(
         find.text('계정 약관 동의'),
         findsOneWidget,
-        reason: '설정은 탭 화면이라 저장해도 그대로 둔다',
+        reason: '저장해도 계정 약관 동의 화면에 그대로 둔다',
       );
     });
 
@@ -304,35 +359,38 @@ void main() {
       final answer = Completer<void>();
       final server = _FakeAccountServer()..patchHold = answer.future;
       final router = await open(tester, server);
+      await openConsents(tester);
 
       await tester.tap(find.textContaining('서비스 개선 활용 동의', findRichText: true));
       await tester.pump();
       await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
       await tester.pump();
-      // 응답이 오기 전에 뒤로 간다.
+      // 응답이 오기 전에 설정으로 돌아간다.
       router.pop();
       await settle(tester);
-      expect(find.text('계정 약관 동의'), findsNothing);
+      expect(find.text('전체 동의'), findsNothing);
 
       answer.complete();
       await settle(tester);
       expect(server.consent['serviceImprovement'], isTrue);
 
-      router.push(AppRoutes.settings);
-      await settle(tester);
+      await openConsents(tester);
       expect(checked(tester, '서비스 개선 활용 동의'), isTrue);
     });
 
     testWidgets('저장 중 연 회원탈퇴 화면은 저장을 마쳐도 닫지 않는다', (tester) async {
       final answer = Completer<void>();
       final server = _FakeAccountServer()..patchHold = answer.future;
-      await open(tester, server);
+      final router = await open(tester, server);
+      await openConsents(tester);
 
       await tester.tap(find.textContaining('서비스 개선 활용 동의', findRichText: true));
       await tester.pump();
       await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
       await tester.pump();
-      // 응답을 기다리는 동안 회원탈퇴 화면을 연다.
+      // 응답을 기다리는 동안 설정으로 돌아가 회원탈퇴 화면을 연다.
+      router.pop();
+      await settle(tester);
       await tester.tap(find.text('회원탈퇴'));
       await settle(tester);
       expect(find.textContaining('새록과 이별인가요?'), findsOneWidget);
@@ -386,6 +444,7 @@ void main() {
     testWidgets('바꾼 것이 없으면 서버에 보내지 않는다', (tester) async {
       final server = _FakeAccountServer();
       await open(tester, server);
+      await openConsents(tester);
 
       await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
       await settle(tester);
@@ -397,6 +456,7 @@ void main() {
     testWidgets('저장하지 못하면 알리고 화면에 남는다', (tester) async {
       final server = _FakeAccountServer()..patchOffline = true;
       await open(tester, server);
+      await openConsents(tester);
 
       await tester.tap(find.textContaining('알림 수신 동의', findRichText: true));
       await tester.pump();
@@ -414,7 +474,8 @@ void main() {
     bool alertOn(WidgetTester tester) =>
         tester.widget<Switch>(find.byType(Switch)).value;
 
-    const needsConsent = '아래 알림 수신 동의에 체크해야 알림을 켤 수 있어요.';
+    const needsConsent = '아래 계정 약관 동의에서 알림 수신 동의에 체크하고 저장해야 알림을 켤 수 있어요.';
+    const pointedAtPush = '알림 수신 동의에 체크하고 저장하면 알림이 켜져요.';
 
     List<Object?> patches(_FakeAccountServer server) => [
       for (final r in server.requests)
@@ -434,13 +495,15 @@ void main() {
       ], reason: '알림 동의만 보내고 저장하기를 기다리지 않는다');
       expect(server.consent['pushNotification'], isFalse);
       expect(alertOn(tester), isFalse);
-      expect(checked(tester, '알림 수신 동의'), isFalse);
       expect(find.text('알림을 껐어요.'), findsOneWidget);
+
+      await openConsents(tester);
+      expect(checked(tester, '알림 수신 동의'), isFalse);
     });
 
-    testWidgets('알림 수신 동의 없이 알림을 켜려 하면 빨간 글로 알리고 켜지 않는다', (tester) async {
+    testWidgets('알림 수신 동의 없이 알림을 켜려 하면 빨간 글로 알리고 동의 화면에서 강조한다', (tester) async {
       final server = _FakeAccountServer()..consent['pushNotification'] = false;
-      await open(tester, server);
+      final router = await open(tester, server);
       expect(alertOn(tester), isFalse);
       expect(find.text(needsConsent), findsNothing);
 
@@ -450,23 +513,36 @@ void main() {
       expect(find.text(needsConsent), findsOneWidget);
       expect(patches(server), isEmpty);
 
-      // 동의에 체크하면 안내가 사라진다. 저장하기 전이라 알림은 아직 꺼져 있다.
-      // 안내 글에도 같은 이름이 있어 아래의 동의 줄을 누른다.
+      // 계정 약관 동의에 들어가면 알림 수신 동의 줄을 강조한다.
+      await openConsents(tester);
+      expect(find.text(pointedAtPush), findsOneWidget);
+
+      // 체크하면 강조가 사라진다. 저장하면 알림도 켜진다. 안내 글에도 같은
+      // 이름이 있어 아래의 동의 줄을 누른다.
       await tester.tap(
         find.textContaining('알림 수신 동의', findRichText: true).last,
       );
       await tester.pump();
-      expect(find.text(needsConsent), findsNothing);
-      expect(alertOn(tester), isFalse, reason: '저장하지 않은 동의로 켜지지 않는다');
-
-      // 체크한 채 스위치를 켜면 동의를 바로 저장한다.
-      await tester.tap(find.byType(Switch));
+      expect(find.text(pointedAtPush), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
       await settle(tester);
       expect(patches(server), [
         {'pushNotification': true},
       ]);
+
+      router.pop();
+      await settle(tester);
       expect(alertOn(tester), isTrue);
-      expect(find.text('알림을 켰어요.'), findsOneWidget);
+      expect(find.text(needsConsent), findsNothing);
+    });
+
+    testWidgets('설정에서 바로 들어가면 알림 수신 동의 줄을 강조하지 않는다', (tester) async {
+      final server = _FakeAccountServer()..consent['pushNotification'] = false;
+      await open(tester, server);
+
+      await openConsents(tester);
+
+      expect(find.text(pointedAtPush), findsNothing);
     });
 
     testWidgets('알림을 끄지 못하면 알리고 켜진 채로 둔다', (tester) async {
@@ -482,30 +558,60 @@ void main() {
       );
       expect(server.consent['pushNotification'], isTrue);
       expect(alertOn(tester), isTrue, reason: '알림은 계속 온다');
+
+      await openConsents(tester);
       expect(checked(tester, '알림 수신 동의'), isTrue);
     });
 
     testWidgets('저장하기로 알림 수신 동의를 거두면 스위치도 꺼진다', (tester) async {
       final server = _FakeAccountServer();
-      await open(tester, server);
+      final router = await open(tester, server);
+      expect(alertOn(tester), isTrue);
+      await openConsents(tester);
 
       await tester.tap(find.textContaining('알림 수신 동의', findRichText: true));
       await tester.pump();
-      expect(alertOn(tester), isTrue, reason: '저장하기 전에는 그대로다');
-
       await tester.tap(find.widgetWithText(FilledButton, '저장하기'));
       await settle(tester);
       expect(server.consent['pushNotification'], isFalse);
+
+      router.pop();
+      await settle(tester);
       expect(alertOn(tester), isFalse);
     });
+
+    for (final scale in [1.3, 2.0]) {
+      testWidgets('360dp 글자 $scale배에서도 설정과 계정 약관 동의가 넘치지 않는다', (tester) async {
+        final server = _FakeAccountServer()
+          ..consent['pushNotification'] = false;
+        await open(tester, server, width: 360, height: 800, scale: scale);
+        expect(tester.takeException(), isNull);
+
+        // 가장 긴 빨간 안내까지 띄운다.
+        await tester.tap(find.byType(Switch));
+        await settle(tester);
+        expect(tester.takeException(), isNull);
+
+        await tester.ensureVisible(find.text('계정 약관 동의'));
+        await settle(tester);
+        await openConsents(tester);
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.widgetWithText(FilledButton, '저장하기'));
+        await settle(tester);
+        expect(tester.takeException(), isNull);
+      });
+    }
 
     testWidgets('계정 약관 동의에는 알림 쓰임새 문구를 두지 않는다', (tester) async {
       await open(tester, _FakeAccountServer());
 
-      // 위 알림 설정에 한 번만 있다.
+      // 설정의 알림 설정에만 있다.
       expect(find.text('만남 리포트가 완성되면 알려드려요.'), findsOneWidget);
       expect(find.widgetWithText(TextButton, '로그아웃'), findsOneWidget);
       expect(find.widgetWithText(TextButton, '회원탈퇴'), findsOneWidget);
+
+      await openConsents(tester);
+      expect(find.text('만남 리포트가 완성되면 알려드려요.'), findsNothing);
     });
   });
 }
