@@ -194,7 +194,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 401 | `INVALID_ID_TOKEN`, `ID_TOKEN_EXPIRED`, `ID_TOKEN_AUDIENCE_MISMATCH`, `ID_TOKEN_ISSUER_MISMATCH` |
 | 503 | `AUTH_NOT_CONFIGURED`, `IDENTITY_PROVIDER_UNAVAILABLE`, `DATABASE_NOT_CONFIGURED` |
 
-ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토큰은 DB 설정과 관계없이 위 `401`이나 `IDENTITY_PROVIDER_UNAVAILABLE`이다. 토큰의 `kid`가 서버가 받아 둔 구글 공개키에 없으면 공개키를 다시 받는다. 다만 마지막 조회 뒤 60초 안에는 다시 받지 않고, 그 조회가 성공이었으면 `401 INVALID_ID_TOKEN`, 실패였으면 `503 IDENTITY_PROVIDER_UNAVAILABLE`(`retryable: true`)로 거절한다.
+ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토큰은 DB 설정과 관계없이 위 `401`이나 `IDENTITY_PROVIDER_UNAVAILABLE`이다. 토큰의 `kid`가 서버가 받아 둔 구글 공개키에 없으면 공개키를 다시 받는다. 다만 받아 둔 공개키의 캐시 기간 안이면 마지막 조회 뒤 60초 안에는 다시 받지 않고, 그 조회가 성공이었으면 `401 INVALID_ID_TOKEN`, 실패였으면 `503 IDENTITY_PROVIDER_UNAVAILABLE`(`retryable: true`)로 거절한다.
 
 ### 1-2. `POST /auth/consent` — 완료
 

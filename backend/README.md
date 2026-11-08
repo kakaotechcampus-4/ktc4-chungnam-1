@@ -272,11 +272,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | --- | --- | --- |
 | `INVALID_REQUEST` | 422 | 요청 형식이 계약과 다름 |
 | `AUTH_NOT_CONFIGURED` | 503 | 클라이언트 ID 또는 세션 서명 키가 설정되지 않음 |
-| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패. 받아 둔 구글 공개키에 없는 `kid`는 마지막 JWKS 조회 뒤 60초 안이면 다시 조회하지 않고 이 오류로 거부 |
+| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패. 캐시 기간 안의 구글 공개키에 없는 `kid`는 마지막 JWKS 조회 뒤 60초 안이면 다시 조회하지 않고 이 오류로 거부 |
 | `ID_TOKEN_EXPIRED` | 401 | ID 토큰 만료 |
 | `ID_TOKEN_AUDIENCE_MISMATCH` | 401 | `aud` 가 허용 목록에 없음 |
 | `ID_TOKEN_ISSUER_MISMATCH` | 401 | `iss` 가 구글이 아님 |
-| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패. 조회가 실패한 뒤 60초 안에 받아 둔 공개키에 없는 `kid`가 와도 다시 조회하지 않고 이 오류로 거부 (`retryable: true`) |
+| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패. 조회가 실패한 뒤 60초 안에 캐시 기간 안의 공개키에 없는 `kid`가 와도 다시 조회하지 않고 이 오류로 거부 (`retryable: true`) |
 | `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름 |
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
@@ -292,7 +292,8 @@ JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한�
 ID 토큰의 `kid`는 서명을 확인하기 전에 읽으므로 로그인하지 않은 요청도 마음대로 정할 수 있다. 그래서 JWKS를 다시 받는 횟수를 묶는다([google_identity.py](app/services/google_identity.py)).
 
 - 받아 둔 공개키는 `SAEROK_GOOGLE_JWKS_CACHE_SECONDS`(기본 3600초) 동안 쓰고, 그 안에서 공개키에 있는 `kid`는 다시 조회하지 않는다.
-- 없는 `kid`가 오면 다시 조회하되, 마지막 조회(성공과 실패 모두) 뒤 60초 안에는 조회하지 않고 거부한다. 마지막 조회가 성공이었으면 `INVALID_ID_TOKEN`(401), 실패였으면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이다. 구글이 키를 바꿔 새 `kid`가 오면 간격이 지난 뒤 한 번 다시 받아 찾는다. 마지막 조회 뒤 60초 안에 처음 보는 새 키의 토큰이 오면 그 사이에는 거부되므로, 앱은 잠시 뒤 다시 로그인하면 된다.
+- 캐시 기간 안에 공개키에 없는 `kid`가 오면 다시 조회하되, 마지막 조회(성공과 실패 모두) 뒤 60초 안에는 조회하지 않고 거부한다. 마지막 조회가 성공이었으면 `INVALID_ID_TOKEN`(401), 실패였으면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이다. 구글이 키를 바꿔 새 `kid`가 오면 간격이 지난 뒤 한 번 다시 받아 찾는다. 마지막 조회 뒤 60초 안에 처음 보는 새 키의 토큰이 오면 그 사이에는 거부되므로, 앱은 잠시 뒤 다시 로그인하면 된다.
+- 캐시가 비었거나 기간이 지났으면 60초 간격과 관계없이 다시 조회한다. 이때 조회가 실패하면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이고, 실패 뒤 쉬는 간격은 없다.
 - 동시에 여러 요청이 다시 조회해야 하면 한 요청만 조회하고 나머지는 그 결과(실패 포함)를 같이 쓴다.
 
 `POST /auth/google`의 ID 토큰과 `POST /auth/consent`의 등록 토큰은 DB 연결을 열기 전에 확인한다. 검증하지 못한 토큰은 DB 연결 없이 거절하고, JWKS를 받는 동안에도 DB 연결을 쥐지 않는다. 요청 본문이 형식 검사(422)에 걸린 경우는 FastAPI가 오류를 모아 두었다가 다른 의존성을 푼 뒤에 내므로, 이때는 DB 연결을 잠깐 열었다 닫는다.
@@ -357,11 +358,11 @@ FastAPI는 앱 버전, 인증, 소유권과 파일 크기를 확인하는 의존
 
 - 상한은 라우트가 쓰는 설정값과 상수에서 계산한다. 더한 1 MiB는 multipart 경계와 파일이 아닌 필드의 여유다. 파일 자체의 크기 검사(`validate_image`, `validate_visit_audio`)는 그대로 라우트가 한다.
 - `Content-Length`가 상한을 넘으면 본문을 읽지 않고 거절한다. 길이가 없거나(chunked) 실제로 더 보내면 받은 양을 세다가 상한을 넘는 조각에서 끊는다. 이때 만들던 multipart 임시 파일은 Starlette가 닫는다.
-- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
+- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`이 의존성으로 쓰는 것과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
 - 상한을 넘거나 본문 전 확인에서 거절한 업로드는 본문을 끝까지 받지 않고 응답한다. 앞단(Caddy)은 읽지 않은 본문이 많으면 응답 뒤 연결을 닫을 수 있어, 아직 본문을 보내던 클라이언트는 413이나 401 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
 - 업로드 경로의 413은 라우트의 파일 검사와 같은 오류 코드와 문구를 쓴다. JSON 요청이 상한을 넘으면 `413 REQUEST_TOO_LARGE`다([API 명세의 본문 크기와 확인 순서](../docs/architecture/api-spec.md#본문-크기와-확인-순서)).
 - 본문을 읽기 전에 거절한 요청은 경로를 찾기 전이라 요청 로그의 `route`가 `unmatched`로 남는다. 요청 ID와 상태 코드는 그대로 남는다.
-- 테스트가 `dependency_overrides`로 `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
+- 테스트가 `dependency_overrides`로 `read_signed_session`, `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
 - 기본 설정에서 면회 음성 경로는 로그인한 계정이 요청마다 513 MiB까지 보낼 수 있다. 음성 상한을 낮추거나 받는 동안 검증하는 것은 별도 결정이다.
 
 HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 가장 큰 경로별 상한보다 조금 큰 바깥 상한을 둔다. 정상 설정에서는 경로별 상한(최대 513 MiB)이 더 작아 API가 먼저 공통 형식의 `413`이나 `401`을 돌려준다. Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이며, 그때 Caddy가 돌려주는 `413`에는 공통 오류 본문이 없다. `SAEROK_MAX_AUDIO_BYTES`를 513 MiB보다 크게 올리면 Caddyfile도 함께 올린다. Caddyfile 변경을 서버에 적용하는 절차는 [배포 문서](docs/deployment.md#갱신)에 있다.

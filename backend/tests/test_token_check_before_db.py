@@ -126,8 +126,8 @@ AUTHENTICATED_ROUTES = _authenticated_routes()
 def _send_all(
     app: FastAPI, method: str, path: str, calls: list[dict[str, Any]]
 ) -> list[Response]:
-    # 요청마다 이벤트 루프를 새로 만들지 않고 한 루프에서 보낸다. 이 PC의 Windows에서는
-    # 루프를 만들 때 쓰는 socketpair가 드물게 멈추므로 루프 수를 줄인다.
+    # 요청마다 이벤트 루프를 새로 만들지 않고 한 루프에서 보낸다. 로컬 Windows에서 루프를
+    # 만들 때 쓰는 socketpair가 드물게 멈춘 적이 있어 루프 수를 줄인다.
     async def send() -> list[Response]:
         transport = ASGITransport(app=app, raise_app_exceptions=False)
         responses = []
