@@ -5,6 +5,7 @@
 않는다(메모리 사진 저장소와 합성 분석 함수).
 """
 
+import asyncio
 from uuid import UUID
 
 from photo_analysis import PhotoDescription
@@ -74,9 +75,10 @@ def test_withdrawal_clears_ai_descriptions_and_marks_unused_cards_stale(
 
     used, unused, other = with_db(url, seed)
 
-    # 다른 선택 동의만 바꾸면 AI 설명을 지우지 않는다.
-    user.call("PATCH", "/auth/me/consents", json={"serviceImprovement": True})
-    assert _photo(api, photo)["description"] == "합성 AI 설명"
+    # 다른 선택 동의만 바꾸거나 이미 동의한 사진 분석을 다시 켜면 AI 설명을 지우지 않는다.
+    for change in ({"serviceImprovement": True}, {"photoAnalysis": True}):
+        assert user.call("PATCH", "/auth/me/consents", json=change).status_code == 200
+        assert _photo(api, photo)["description"] == "합성 AI 설명"
 
     _withdraw(user)
 
@@ -167,6 +169,58 @@ def test_withdrawal_during_analysis_discards_the_late_result(migrated_database_u
     run(worker(url, analyze).run_once())
 
     assert _photo(api, photo) == PENDING_WITHOUT_AI
+
+
+async def _until_lock_waits(watcher, count: int, *, unless=None) -> None:
+    """이 시험 DB에서 잠금을 기다리는 연결이 `count`개가 되거나 `unless`가 끝날 때까지."""
+    for _ in range(400):
+        if unless is not None and unless.done():
+            return
+        cursor = await watcher.execute(
+            "SELECT count(*) AS n FROM pg_stat_activity "
+            "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+        )
+        if (await cursor.fetchone())["n"] >= count:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("잠금 대기를 확인하지 못했다")
+
+
+def test_withdrawal_waits_for_an_analysis_result_being_saved(migrated_database_url):
+    # 분석 결과를 저장하는 트랜잭션이 끝나기 전에 철회가 들어오면, 철회는 프로필 잠금에서
+    # 기다렸다가 저장된 설명을 지운다. 프로필을 잠그지 않으면 철회의 UPDATE는 아직
+    # `processing`으로 보이는 사진을 건너뛰고, 뒤이어 커밋된 결과가 설명을 되살린다.
+    url = migrated_database_url
+    api, user, profile, photo = setup(url)
+
+    async def seed(connection):
+        set_id, _ = await completed_card_set(connection, UUID(profile))
+        return set_id
+
+    unused = with_db(url, seed)
+
+    async def scenario():
+        async with connect(url) as blocker, connect(url) as watcher:
+            async with blocker.transaction():
+                # 분석 결과 저장 트랜잭션을 사진을 `completed`로 쓴 뒤, 묶음 갱신 표시에서 멈춘다.
+                await blocker.execute(
+                    "SELECT 1 FROM card_sets WHERE set_id = %s FOR UPDATE", (unused,)
+                )
+                analysis = asyncio.create_task(
+                    worker(url, lambda _: PhotoDescription(description="합성 AI 설명")).run_once()
+                )
+                await _until_lock_waits(watcher, 1)
+                withdrawal = asyncio.create_task(asyncio.to_thread(_withdraw, user))
+                await _until_lock_waits(watcher, 2, unless=withdrawal)
+            assert await analysis
+            await withdrawal
+
+    run(scenario())
+
+    assert _photo(api, photo) == PENDING_WITHOUT_AI
+    assert api.query("SELECT stale_at FROM card_sets WHERE set_id = %s", (unused,))[0][
+        "stale_at"
+    ] is not None
 
 
 def test_consenting_again_reanalyses_the_photo(migrated_database_url):
