@@ -40,7 +40,7 @@
 - `mark_failed`, `expire_leases`: 기한 전이면 실패 전사를 유지한다. 이미 만료된 경우에는 전사와 임대 정보를 정리한다.
 - `retry_report`: 원래 STT 시각과 만료 시각을 새 작업에 그대로 옮기고 이전 작업의 전사는 지운다. 재실패와 재요청으로 보관 기한을 늘리지 않는다.
 - `complete_job`: 리포트 저장 트랜잭션에서 전사를 지운다.
-- `expire_transcripts`: 실패한 작업을 포함해 만료된 전사를 지우고 `TRANSCRIPT_EXPIRED`로 기록한다. 생성을 기다리는 `sttCompleted` 작업은 남은 기한이 임대 시간보다 짧아지면 시작할 수 없으므로 같은 방식으로 앞당겨 끝낸다. 실행 중인 `generatingReport`와 실패 작업의 전사는 원래 기한까지 둔다. 새 접수가 없어도 worker의 다음 `run_once`에서 실행한다.
+- `expire_transcripts`: 실패한 작업을 포함해 만료된 전사를 지우고 `TRANSCRIPT_EXPIRED`로 기록한다. 모든 `sttCompleted` 작업(`--stt-only` 결과 포함)은 남은 기한이 임대 시간보다 짧아지면 리포트 생성을 시작할 수 없으므로 같은 방식으로 앞당겨 끝낸다. 실행 중인 `generatingReport`와 실패 작업의 전사는 원래 기한까지 둔다. 새 접수가 없어도 worker의 다음 `run_once`에서 실행한다.
 - 계정 또는 프로필 삭제: 외래키 연쇄 삭제로 연결된 회차와 작업 전사도 삭제한다. 백업 사본의 삭제는 이 테스트 범위가 아니다.
 
 ### 외부 ML 전송과 기한
