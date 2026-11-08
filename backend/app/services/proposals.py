@@ -6,10 +6,11 @@
 `accepted`, `rejected`는 승인 결과(생애 정보 또는 주제 피드백)가 있는지로 정한다.
 제안 값(`title`, `content`, `reason`, `suggested_action`)은 확인 뒤에도 바꾸지 않는다.
 
-승인한 생애 정보와 주제 피드백은 다음 카드 생성(4-1)의 입력이다. 그래서 승인이 하나라도
-있으면 2-4, 2-7, 2-9처럼 카드를 만드는 중에는 거절하고, 아직 면회에 안 쓴 완료 묶음은
-다시 만들어야 하는 묶음으로 바꾼다(`card_sets.mark_stale`). 모두 거절한 확인은 카드 생성
-입력을 바꾸지 않으므로 둘 다 하지 않는다.
+승인한 주제 피드백(`more`, `less`, `exclude`)은 다음 카드 생성(4-1)에서 주제를 고르는 기준을
+바꾼다. 그래서 주제 제안을 하나라도 승인하면 2-4, 2-7, 2-9처럼 카드를 만드는 중에는 거절하고,
+아직 면회에 안 쓴 완료 묶음은 다시 만들어야 하는 묶음으로 바꾼다(`card_sets.mark_stale`).
+생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 둘 다 하지 않고 다음 생성부터 반영한다.
+모두 거절한 확인도 둘 다 하지 않는다.
 """
 
 from uuid import UUID
@@ -49,8 +50,8 @@ async def review_proposals(
 ) -> ChangeProposal:
     """7-4. 회차의 `pending` 제안을 한 트랜잭션에서 모두 확인한다.
 
-    승인이 하나라도 있으면 카드를 만드는 중일 때 409 `CARD_GENERATION_IN_PROGRESS`로
-    거절하고 아무것도 저장하지 않는다. 확인 여부(409 `PROPOSAL_ALREADY_REVIEWED`)와
+    주제 제안 승인이 하나라도 있으면 카드를 만드는 중일 때 409 `CARD_GENERATION_IN_PROGRESS`로
+    거절하고 아무것도 저장하지 않는다. 생애 정보만 승인한 확인은 2-6처럼 거절하지 않는다. 확인 여부(409 `PROPOSAL_ALREADY_REVIEWED`)와
     요청 검사(422 `INVALID_PROPOSAL_REVIEW`)가 먼저다.
     """
     profile_id = await ownership.require_owned(
@@ -96,7 +97,7 @@ async def review_proposals(
 
         accepted_facts = [r for r in payload.life_facts if r.review_status == "accepted"]
         accepted_topics = [r for r in payload.topics if r.review_status == "accepted"]
-        if accepted_facts or accepted_topics:
+        if accepted_topics:
             await card_sets.mark_stale(
                 connection, profile_id, start_timeout_seconds=start_timeout_seconds
             )

@@ -59,8 +59,8 @@ def _assert_nothing_reviewed(records: Records) -> None:
 
 
 # ── 카드를 만드는 중 ─────────────────────────────────────
-@pytest.mark.parametrize("accept", ["lifeFact", "exclude"])
-def test_review_with_an_approval_is_refused_while_cards_are_being_made(
+@pytest.mark.parametrize("accept", ["exclude", "more"])
+def test_topic_approval_is_refused_while_cards_are_being_made(
     migrated_database_url, accept
 ):
     records = Records(migrated_database_url)
@@ -138,8 +138,8 @@ def test_review_waits_for_a_card_generation_that_is_starting(migrated_database_u
 
 
 # ── 아직 면회에 안 쓴 묶음 ───────────────────────────────
-@pytest.mark.parametrize("accept", ["lifeFact", "exclude"])
-def test_approval_marks_the_unused_card_set(migrated_database_url, accept):
+@pytest.mark.parametrize("accept", ["exclude", "more"])
+def test_topic_approval_marks_the_unused_card_set(migrated_database_url, accept):
     records = Records(migrated_database_url)
     user_id, profile_id, visit, fact, topic = _reported_with_proposals(records)
     # 평가를 마친 뒤 다음 면회 카드를 먼저 받았다.
@@ -184,3 +184,28 @@ async def _until_a_request_waits_for_lock(holder):
         if (await cursor.fetchone())["n"] > 0:
             return
     raise AssertionError("요청이 프로필 잠금을 기다리지 않음")
+
+
+def test_life_fact_approval_is_allowed_while_cards_are_being_made(migrated_database_url):
+    """생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 카드를 만드는 중에도 받는다."""
+    records = Records(migrated_database_url)
+    user_id, profile_id, visit, fact, topic = _reported_with_proposals(records)
+    with_db(migrated_database_url, lambda c: card_set_in(c, profile_id, "running"))
+
+    response = records.call(user_id, "POST", _review_path(visit), json=_body(fact, topic, "lifeFact"))
+
+    assert response.status_code == 200
+    assert records.scalar("SELECT count(*) FROM life_facts") == 1
+    assert records.scalar("SELECT count(*) FROM topic_feedback") == 0
+
+
+def test_life_fact_approval_keeps_the_unused_card_set(migrated_database_url):
+    """이야기 추가(2-6)처럼 표시하지 않고 다음 생성부터 반영한다."""
+    records = Records(migrated_database_url)
+    user_id, profile_id, visit, fact, topic = _reported_with_proposals(records)
+    next_set, _ = with_db(migrated_database_url, lambda c: completed_card_set(c, profile_id))
+
+    response = records.call(user_id, "POST", _review_path(visit), json=_body(fact, topic, "lifeFact"))
+
+    assert response.status_code == 200
+    assert _stale_at(records, next_set) is None

@@ -435,7 +435,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - 작업 상태는 이 객체에 넣지 않는다. 홈의 `오늘의 대화카드 받기`는 [API 4-2](api-spec.md#4-2-get-apiv1profilesprofileidcard-generationsstatus--신규)의 `status`(`none`, `running`, `ready`, `inVisit`, `failed`)로 정한다. 4-3으로는 `ready`(고르기 전)나 `inVisit`(평가 전 회차에 쓰는 중)일 때만 받는다. 평가가 끝난 회차의 묶음은 4-4로 읽기만 하며 면회에 다시 쓰지 않는다.
 - `setId`는 녹음을 시작할 때 [API 5-1](api-spec.md#5-1-post-apiv1visit-sessions--신규)에 보낸다.
 - `usedBySessionId`는 이 묶음을 쓰는 평가 전 회차이며 고르기 전이면 `null`이다. 앱을 다시 켰을 때 이 값으로 5-2, 5-3을 부른다. 4-4에서는 요청한 회차이며 평가가 끝난 회차일 수 있다.
-- `needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고치거나 변경 사항을 반영해서([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) 다시 만들어야 하는 묶음이면 `true`다. 볼 수는 있지만 이 묶음으로 면회를 시작할 수 없다. 4-2 응답에도 같은 값이 있다([API 4절](api-spec.md#4-대화-카드)).
+- `needsRefresh`는 카드를 받은 뒤 프로필이나 일대기를 고치거나 변경 사항에서 주제 결정을 반영해서([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) 다시 만들어야 하는 묶음이면 `true`다. 볼 수는 있지만 이 묶음으로 면회를 시작할 수 없다. 4-2 응답에도 같은 값이 있다([API 4절](api-spec.md#4-대화-카드)).
 - `cards`는 12장이다. `cardId`는 BE가 부여한다. `position` 1~9가 선택 화면 대상이고 10~12가 면회 중 보충용이다.
 - `topic`은 프로필의 주제이며 `topicId`로 회차 간에 같은 주제를 잇는다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `topic.description`과 `description`은 보호자에게 주제와 카드를 알려주는 설명이다. 어르신에게 그대로 여쭙는 문장은 `primaryQuestion`이며 둘은 역할이 다르다.
