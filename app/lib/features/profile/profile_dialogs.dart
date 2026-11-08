@@ -14,7 +14,7 @@ Future<bool> showRemoveProfileDialog(
   required String name,
   required bool pending,
 }) async {
-  final title = name.isEmpty ? '입력하던 정보를 지울까요?' : '$name 어르신의 정보를 지울까요?';
+  final title = name.isEmpty ? '입력하던 정보를 지울까요?' : '$name님의 정보를 지울까요?';
   final detail = pending
       ? '입력하던 내용이 지워지고 되돌릴 수 없어요.'
       // 서버에서 무엇까지 지울지는 BE 와 정하기 전이라 범위를 말하지 않는다.

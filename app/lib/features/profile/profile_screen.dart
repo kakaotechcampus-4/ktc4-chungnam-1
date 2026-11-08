@@ -109,8 +109,10 @@ class _Body extends StatelessWidget {
                       // 오게 한다. 연필은 글자 바로 옆에 붙는다.
                       const SizedBox(width: AppSizes.minTouch),
                       Flexible(
+                        // 홈 알약, 프로필 전환과 같이 `○○님 (관계)` 로 부른다.
+                        // 관계를 적지 않았으면 `○○님` 이다.
                         child: Text(
-                          '${profile.name} 어르신',
+                          careDisplayName(profile.name, profile.relationship),
                           style: AppTypography.sectionTitle,
                           textAlign: TextAlign.center,
                         ),
@@ -161,6 +163,9 @@ class _Body extends StatelessWidget {
                           label: '성별',
                           value: _genderLabel(profile.gender),
                         ),
+                        // 관계는 선택 항목이다. 적지 않았으면 줄을 뺀다.
+                        if (profile.relationship case final relationship?)
+                          _InfoRow(label: '관계', value: relationship),
                         _InfoRow(
                           label: '생년월일',
                           value: _dateLabel(profile.birthDate),

@@ -19,9 +19,14 @@ class PhotoUploadStep extends ConsumerStatefulWidget {
     required this.canEdit,
     required this.onAdded,
     required this.onRemoved,
+    this.name = '',
     this.existing = 0,
     super.key,
   });
+
+  /// 사진의 주인. 제목을 `김철수님과 관련된 사진` 처럼 부른다. 비어 있으면
+  /// 이름 없이 묻는다.
+  final String name;
 
   /// 이 화면에서 고른 사진. [existing] 은 담지 않는다.
   final List<SetupPhoto> photos;
@@ -90,8 +95,10 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Spacer(flex: 2),
-        const Text(
-          '어르신과 관련된 사진을\n올려주세요',
+        Text(
+          widget.name.trim().isEmpty
+              ? '관련된 사진을\n올려주세요'
+              : '${widget.name.trim()}님과 관련된 사진을\n올려주세요',
           style: AppTypography.screenTitle,
           textAlign: TextAlign.center,
         ),

@@ -88,6 +88,13 @@ enum ConditionStage {
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 피보호자를 화면에서 부르는 이름이다. 관계가 있으면 `김철수님 (아버지)`,
+/// 없으면 `김철수님` 이다. 관계는 보호자가 기본 정보에 적은 값이다.
+String careDisplayName(String name, String? relationship) {
+  final rel = relationship?.trim();
+  return rel == null || rel.isEmpty ? '$name님' : '$name님 ($rel)';
+}
+
 class Profile {
   const Profile({
     required this.profileId,
@@ -98,6 +105,7 @@ class Profile {
     required this.stage,
     required this.lifeFactIds,
     required this.photoIds,
+    this.relationship,
     this.symptomNote,
     this.occupation,
     this.hometown,
@@ -112,6 +120,7 @@ class Profile {
       profileId: json['profileId'] as String,
       name: localOnly['name'] as String,
       gender: localOnly['gender'] as String,
+      relationship: localOnly['relationship'] as String?,
       birthDate: localOnly['birthDate'] as String,
       ageRange: json['ageRange'] as String,
       stage: ConditionStage.parse(condition['stage'] as String),
@@ -130,6 +139,9 @@ class Profile {
   /// `localOnly` 에 속한다. 외부 요청에 담지 않는다.
   final String name;
   final String gender;
+
+  /// 보호자와의 관계. 받기 전에 등록한 분은 `null` 이다.
+  final String? relationship;
   final String birthDate;
 
   final String ageRange;

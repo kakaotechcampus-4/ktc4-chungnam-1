@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../app/routes.dart';
 import '../../data/api_client.dart';
+import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -13,9 +12,10 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_entry.dart';
 import 'profile_dialogs.dart';
 
-/// 함께하는 소중한 분.
+/// 프로필 전환. 큰 제목은 함께하는 소중한 분이다.
 ///
 /// 홈 상단의 어르신 알약을 누르면 들어온다. 등록할 수 있는 어르신 수만큼
 /// 슬롯을 두고, 채워진 슬롯을 누르면 그 어르신으로 바꿔 홈으로 돌아간다.
@@ -48,11 +48,14 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
 
     return Scaffold(
       backgroundColor: HomeColors.background,
-      appBar: const AppTopBar(backgroundColor: HomeColors.background),
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '프로필 전환',
+      ),
       body: summaries.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorStateView(
-          message: '소중한 분 목록을 불러오지 못했어요.',
+          message: '프로필 목록을 불러오지 못했어요.',
           onRetry: () => ref.invalidate(careProfileSummariesProvider),
         ),
         data: (profiles) => SafeArea(
@@ -87,7 +90,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
                 else if (profiles.isNotEmpty)
                   Center(
                     child: AppTextButton(
-                      label: '소중한 분 정보 지우기',
+                      label: '프로필 정보 지우기',
                       onPressed: () => setState(() => _removing = true),
                     ),
                   ),
@@ -140,24 +143,10 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
 
   /// 새로운 분을 등록하기 시작한다. 다른 분을 입력하던 중이어도 그 입력은
   /// `입력 중` 으로 남겨 두고 새로 시작한다.
-  void _startAdding() {
-    final id = ref.read(careProfilesProvider.notifier).beginAdding();
-    if (id == null) return;
-    ref.invalidate(setupControllerProvider);
-    ref.read(pendingSetupsProvider.notifier).save(id, const SetupState());
-    context.push(AppRoutes.profileAddOf(id));
-  }
+  void _startAdding() => startProfileSetup(context, ref);
 
   /// `입력 중` 인 분의 입력을 가 본 가장 먼 단계부터 다시 연다.
-  void _resumeAdding(String id) {
-    // 서버에서 불러온 입력 중인 분은 앱에 남은 입력이 없으니 서버 값으로 연다.
-    final entry = ref.read(careProfilesProvider).byId(id);
-    final saved =
-        ref.read(pendingSetupsProvider)[id] ??
-        (entry == null ? const SetupState() : SetupState.resumeOf(entry));
-    ref.read(setupControllerProvider.notifier).restore(saved);
-    context.push(AppRoutes.profileAddOf(id));
-  }
+  void _resumeAdding(String id) => resumeProfileSetup(context, ref, id);
 
   /// 고른 어르신으로 바꾸고 홈으로 돌아가 누구로 바뀌었는지 알린다.
   void _switchTo(CareProfileSummary profile) {
@@ -168,7 +157,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     ref.read(careProfilesProvider.notifier).select(profile.id);
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('지금부터 ${profile.name} 어르신과 함께해요')));
+      ..showSnackBar(SnackBar(content: Text('지금부터 ${profile.name}님과 함께해요')));
   }
 
   /// 한 번 더 묻고 지운다. 마지막 한 분도 지운다. 프로필 삭제는 계정 탈퇴가
@@ -190,6 +179,9 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     if (remoteId != null) {
       try {
         await ref.read(profileApiProvider).delete(remoteId);
+        // 단말에만 둔 관계도 함께 지운다. 입력 중이던 분은 목록에 서버 ID 가
+        // 없을 수 있어 여기서 지운다.
+        profiles.rememberRelationship(remoteId, null);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         ScaffoldMessenger.of(context)
@@ -209,7 +201,7 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(name.isEmpty ? '입력하던 정보를 지웠어요' : '$name 어르신의 정보를 지웠어요'),
+          content: Text(name.isEmpty ? '입력하던 정보를 지웠어요' : '$name님의 정보를 지웠어요'),
         ),
       );
   }
@@ -310,7 +302,10 @@ class _ProfileSlot extends StatelessWidget {
           ProfileAvatar(gender: profile.gender, size: _photo),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
-            child: Text('${profile.name} 어르신', style: AppTypography.bodyStrong),
+            child: Text(
+              careDisplayName(profile.name, profile.relationship),
+              style: AppTypography.bodyStrong,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           // 테두리 굵기만으로 알리지 않도록 표시를 함께 둔다.
@@ -367,7 +362,7 @@ class _PendingSlot extends StatelessWidget {
           const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Text(
-              name.isEmpty ? '새로운 분' : '$name 어르신',
+              name.isEmpty ? '새로운 분' : '$name님',
               style: AppTypography.bodyStrong,
             ),
           ),
@@ -428,7 +423,7 @@ class _EmptySlot extends StatelessWidget {
             child: const Icon(Icons.add, color: HomeColors.accent),
           ),
           const SizedBox(width: AppSpacing.lg),
-          const Expanded(child: Text('소중한 분 더하기', style: AppTypography.body)),
+          const Expanded(child: Text('프로필 추가', style: AppTypography.body)),
         ],
       ),
     );

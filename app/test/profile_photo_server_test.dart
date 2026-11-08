@@ -79,6 +79,7 @@ Future<void> _until(bool Function() check) async {
 const _filled = SetupDraft(
   name: '김새록',
   gender: 'female',
+  relationship: '어머니',
   birthYear: 1943,
   birthMonth: 3,
   birthDay: 12,

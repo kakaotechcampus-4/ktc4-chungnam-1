@@ -168,7 +168,7 @@ void main() {
       final container = await _open(tester, withDetails: true);
       await openEdit(tester);
 
-      await tester.enterText(find.byType(TextField), '김새봄');
+      await tester.enterText(find.byType(TextField).first, '김새봄');
       await tester.pump();
       await tester.tap(find.text(ConditionStage.unknown.label));
       await tester.pump();
@@ -186,7 +186,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('기본 정보를 저장했어요.'), findsOneWidget);
-      expect(find.text('김새봄 어르신'), findsOneWidget);
+      expect(find.text('김새봄님 (어머니)'), findsOneWidget);
       expect(find.text(ConditionStage.unknown.label), findsOneWidget);
 
       final entry = container.read(careProfilesProvider).selected!;
@@ -199,16 +199,16 @@ void main() {
       await _open(tester);
       await openEdit(tester);
 
-      await tester.enterText(find.byType(TextField), '  ');
+      await tester.enterText(find.byType(TextField).first, '  ');
       await tester.pump();
       expect(enabled(tester), isFalse, reason: '이름은 필수다');
 
-      await tester.enterText(find.byType(TextField), '가' * 51);
+      await tester.enterText(find.byType(TextField).first, '가' * 51);
       await tester.pump();
       expect(find.text('이름은 50자까지 적을 수 있어요.'), findsOneWidget);
       expect(enabled(tester), isFalse);
 
-      await tester.enterText(find.byType(TextField), '가' * 50);
+      await tester.enterText(find.byType(TextField).first, '가' * 50);
       await tester.pump();
       expect(find.text('이름은 50자까지 적을 수 있어요.'), findsNothing);
       expect(enabled(tester), isTrue);

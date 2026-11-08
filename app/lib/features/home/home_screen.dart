@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../data/card_api.dart';
+import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -14,6 +15,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
 import '../profile/profile_dialogs.dart';
+import '../profile_setup/setup_entry.dart';
 import 'home_talk.dart';
 
 /// 시작 화면.
@@ -24,8 +26,9 @@ import 'home_talk.dart';
 /// 왼쪽 상단 알림 아이콘을 누르면 같은 상태를 다시 보여주는 `notice_screen.dart`
 /// 가 뜬다. 상태를 새로 만들지 않고 `reportNoticeProvider` 를 그대로 본다.
 ///
-/// 등록한 어르신이 없으면 이름 없이 묻고, 알림, 일대기와 대화 카드 받기를
-/// 누르면 등록부터 안내한다.
+/// 등록한 어르신이 없으면 이름 없이 묻고, 알림과 일대기를 누르면 등록부터
+/// 안내한다. 대화 카드 받기는 안내창 없이 기본 정보 입력을 바로 연다. 가입
+/// 직후에는 정보를 묻지 않고 홈부터 보여주기 때문이다.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -70,7 +73,7 @@ class HomeScreen extends ConsumerWidget {
                 child: ScreenBody(
                   bottom: Column(
                     children: [
-                      _CardButton(needsProfile: needsProfile),
+                      _CardButton(hasProfile: hasProfile),
                       // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
                       // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
                       if (notice != null) ...[
@@ -156,7 +159,7 @@ class HomeScreen extends ConsumerWidget {
                           Text(
                             name == null
                                 ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                                : '오늘은 $name 어르신과\n무슨 주제로 대화를 나눠볼까요?',
+                                : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
                             // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
                             style: AppTypography.sectionTitle,
                             textAlign: TextAlign.center,
@@ -279,10 +282,13 @@ class _HillsPainter extends CustomPainter {
 ///
 /// 버튼은 지금 고른 어르신의 상태를 보여준다. 다른 분으로 바꿔도 앞의 분은
 /// 서버와 앱 모두에서 이어서 만든다.
+///
+/// 등록을 마친 분이 없으면 카드를 준비하지 않고 기본 정보 입력을 연다. 입력하다
+/// 나간 분이 있으면 그 입력을 이어서 연다([openFirstProfileSetup]).
 class _CardButton extends ConsumerWidget {
-  const _CardButton({required this.needsProfile});
+  const _CardButton({required this.hasProfile});
 
-  final void Function(VoidCallback open) needsProfile;
+  final bool hasProfile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -310,7 +316,9 @@ class _CardButton extends ConsumerWidget {
           loading: making,
           color: HomeColors.accent,
           loadingColor: HomeColors.accentLoading,
-          onPressed: () => needsProfile(() => _getCards(context, ref)),
+          onPressed: () => hasProfile
+              ? _getCards(context, ref)
+              : openFirstProfileSetup(context, ref),
         ),
         if (stage == CardMaking.remaking) ...[
           const SizedBox(height: AppSpacing.md),
@@ -502,7 +510,7 @@ class _TopBar extends StatelessWidget {
 /// 원형 화살표는 목록 순서대로 다음 어르신으로 바로 바꾼다. 어르신이 한
 /// 분이면 바꿀 대상이 없어 두지 않는다.
 ///
-/// 등록한 어르신이 없으면 같은 자리에 `어르신 등록` 알약을 둔다. 누르면 함께
+/// 등록한 어르신이 없으면 같은 자리에 `프로필 등록` 알약을 둔다. 누르면 함께
 /// 하는 소중한 분 화면으로 간다.
 class _ProfileSwitcher extends ConsumerWidget {
   const _ProfileSwitcher();
@@ -550,7 +558,7 @@ class _ProfileSwitcher extends ConsumerWidget {
                     // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
                     constraints: const BoxConstraints(maxWidth: 160),
                     child: Text(
-                      '${profile.name} 어르신',
+                      careDisplayName(profile.name, profile.relationship),
                       style: AppTypography.bodyStrong,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -586,7 +594,7 @@ class _ProfileSwitcher extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('지금부터 ${next.profile.name} 어르신과 함께해요')),
+        SnackBar(content: Text('지금부터 ${next.profile.name}님과 함께해요')),
       );
   }
 }
@@ -621,7 +629,7 @@ class _RegisterPill extends StatelessWidget {
               children: [
                 Icon(Icons.add, size: 24, color: AppColors.ink),
                 SizedBox(width: AppSpacing.xs),
-                Text('어르신 등록', style: AppTypography.bodyStrong),
+                Text('프로필 등록', style: AppTypography.bodyStrong),
               ],
             ),
           ),

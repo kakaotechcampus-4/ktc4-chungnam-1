@@ -22,6 +22,7 @@ class SetupDraft {
   const SetupDraft({
     this.name = '',
     this.gender,
+    this.relationship = '',
     this.birthYear,
     this.birthMonth,
     this.birthDay,
@@ -32,6 +33,10 @@ class SetupDraft {
 
   final String name;
   final String? gender;
+
+  /// 보호자와의 관계. "어머니", "아버지"처럼 자유롭게 적는 선택 항목이다.
+  /// 서버에 보내지 않고 단말에만 둔다.
+  final String relationship;
   final int? birthYear;
   final int? birthMonth;
   final int? birthDay;
@@ -65,10 +70,18 @@ class SetupDraft {
 
   bool get nameTooLong => name.trim().length > maxNameLength;
 
+  /// 관계는 홈 알약에 이름과 함께 들어가므로 짧게 받는다. 서버 계약에 없는
+  /// 단말 값이라 앱이 정한 길이다.
+  static const maxRelationshipLength = 20;
+
+  bool get relationshipTooLong =>
+      relationship.trim().length > maxRelationshipLength;
+
   bool get basicInfoFilled =>
       name.trim().isNotEmpty &&
       !nameTooLong &&
       gender != null &&
+      !relationshipTooLong &&
       birthYear != null &&
       birthMonth != null &&
       birthDay != null &&
@@ -80,6 +93,7 @@ class SetupDraft {
     return SetupDraft(
       name: info.name,
       gender: info.gender,
+      relationship: info.relationship ?? '',
       birthYear: birth.year,
       birthMonth: birth.month,
       birthDay: birth.day,
@@ -94,6 +108,7 @@ class SetupDraft {
     return EnteredBasicInfo(
       name: name.trim(),
       gender: gender!,
+      relationship: relationship.trim().isEmpty ? null : relationship.trim(),
       birthDate: '$birthYear-${two(birthMonth!)}-${two(birthDay!)}',
       stage: stage!,
     );
@@ -102,6 +117,7 @@ class SetupDraft {
   SetupDraft copyWith({
     String? name,
     String? gender,
+    String? relationship,
     int? birthYear,
     int? birthMonth,
     int? birthDay,
@@ -111,6 +127,7 @@ class SetupDraft {
   }) => SetupDraft(
     name: name ?? this.name,
     gender: gender ?? this.gender,
+    relationship: relationship ?? this.relationship,
     birthYear: birthYear ?? this.birthYear,
     birthMonth: birthMonth ?? this.birthMonth,
     birthDay: birthDay ?? this.birthDay,
@@ -220,6 +237,10 @@ class SetupController extends Notifier<SetupState> {
           : await api.updateBasicInfo(id, info);
       if (!ref.mounted) return;
       state = state.copyWith(remoteId: saved.profileId);
+      // 관계는 서버에 보내지 않으므로 서버 ID 가 생긴 지금 단말에 기억한다.
+      ref
+          .read(careProfilesProvider.notifier)
+          .rememberRelationship(saved.profileId, info.relationship);
       if (addingId != null) {
         ref
             .read(careProfilesProvider.notifier)

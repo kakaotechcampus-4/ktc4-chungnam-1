@@ -150,6 +150,7 @@ class _StepBody extends StatelessWidget {
     }
 
     return PhotoUploadStep(
+      name: state.draft.name,
       photos: state.draft.photos,
       canEdit: state.draft.canEditPhotos,
       onAdded: controller.addPhotos,
@@ -252,7 +253,7 @@ class _ActionsState extends State<_Actions> {
       if (addingId != null) {
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('지금부터 $name 어르신과 함께해요')));
+          ..showSnackBar(SnackBar(content: Text('지금부터 $name님과 함께해요')));
       }
     }
 

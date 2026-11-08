@@ -128,18 +128,24 @@ void main() {
     testWidgets('기본 정보를 서버에 저장하고 바로 보여준다', (tester) async {
       final server = _server();
       await _open(tester, server, AppRoutes.profile);
-      expect(find.text('김새록 어르신'), findsOneWidget);
+      expect(find.text('김새록님'), findsOneWidget, reason: '서버 목록에는 관계가 없다');
 
       await _tap(tester, find.text('수정하기').first);
-      await tester.enterText(find.byType(TextField), '김새봄');
+      await tester.enterText(find.byType(TextField).first, '김새봄');
+      await tester.enterText(find.byType(TextField).at(1), '어머니');
       await tester.pump();
       await _tap(tester, find.widgetWithText(FilledButton, '저장하기'));
 
       final patch = server.requests.lastWhere((r) => r.method == 'PATCH');
       expect(patch.path, '/api/v1/profiles/p1');
       expect((patch.body as Map)['name'], '김새봄');
+      expect(
+        (patch.body as Map).containsKey('relationship'),
+        isFalse,
+        reason: '관계는 단말에만 둔다',
+      );
       expect(find.text('기본 정보를 저장했어요.'), findsOneWidget);
-      expect(find.text('김새봄 어르신'), findsOneWidget);
+      expect(find.text('김새봄님 (어머니)'), findsOneWidget);
     });
 
     testWidgets('세부 정보를 비우면 서버에 null 로 보내 지운다', (tester) async {
@@ -173,7 +179,7 @@ void main() {
       final container = await _open(tester, server, AppRoutes.profile);
 
       await _tap(tester, find.text('수정하기').first);
-      await tester.enterText(find.byType(TextField), '김새봄');
+      await tester.enterText(find.byType(TextField).first, '김새봄');
       await tester.pump();
       server.offline = true;
       await _tap(tester, find.widgetWithText(FilledButton, '저장하기'));
@@ -193,8 +199,9 @@ void main() {
 
   group('어르신 지우기', () {
     Future<void> remove(WidgetTester tester) async {
-      await _tap(tester, find.text('소중한 분 정보 지우기'));
-      await _tap(tester, find.text('김새록 어르신'));
+      await _tap(tester, find.text('프로필 정보 지우기'));
+      // 관계를 적지 않은 분은 이름만 보인다.
+      await _tap(tester, find.text('김새록님'));
       await _tap(tester, find.text('지우기'));
     }
 

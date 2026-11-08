@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/design/theme.dart';
@@ -37,6 +38,7 @@ import 'package:saerok/features/visit/visit_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_report_server.dart';
+import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
 import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
@@ -277,6 +279,9 @@ Widget _app({
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
       selectedProfileStoreProvider.overrideWithValue(
         selectedProfile ?? FakeSelectedProfileStore(),
+      ),
+      profileRelationshipStoreProvider.overrideWithValue(
+        FakeProfileRelationshipStore(),
       ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
@@ -537,7 +542,7 @@ void main() {
         isFalse,
         reason: '이름을 비웠으면 보내지 않고 서버 기본값을 쓴다',
       );
-      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 프로필부터 만든다');
+      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 처음 오셨네요를 지나 홈으로 간다');
     });
 
     testWidgets('이름을 적으면 함께 보낸다', (tester) async {

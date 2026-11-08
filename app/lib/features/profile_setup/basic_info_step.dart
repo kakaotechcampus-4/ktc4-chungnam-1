@@ -5,7 +5,10 @@ import '../../design/tokens.dart';
 import '../../widgets/app_text_field.dart';
 import 'setup_controller.dart';
 
-/// B-2 기본 정보 입력. 이름, 성별, 생년월일, 현재 상태를 받는다.
+/// B-2 기본 정보 입력. 이름, 성별, 관계, 생년월일, 현재 상태를 받는다.
+///
+/// 관계는 보호자가 자유롭게 적는 선택 항목이다. 예시는 안내 글자로만 보여주고
+/// 고르게 하지 않는다. 앱에서 부를 때만 쓰고 이 휴대폰에만 저장한다.
 ///
 /// 현재 상태의 선택지는 계약의 `ConditionStage` 셋뿐이다. 화면에서 값을 늘리지
 /// 않는다.
@@ -30,10 +33,14 @@ class BasicInfoStep extends StatefulWidget {
 
 class _BasicInfoStepState extends State<BasicInfoStep> {
   late final _name = TextEditingController(text: widget.draft.name);
+  late final _relationship = TextEditingController(
+    text: widget.draft.relationship,
+  );
 
   @override
   void dispose() {
     _name.dispose();
+    _relationship.dispose();
     super.dispose();
   }
 
@@ -55,7 +62,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           label: '이름',
           controller: _name,
           required: true,
-          hintText: '어르신의 성함을 입력해주세요',
+          hintText: '함께하는 분의 성함을 입력해주세요',
           errorText: _draft.nameTooLong
               ? '이름은 ${SetupDraft.maxNameLength}자까지 적을 수 있어요.'
               : null,
@@ -84,6 +91,21 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+
+        AppTextField(
+          borderColor: HomeColors.outline,
+          focusColor: HomeColors.accent,
+          label: '관계',
+          description: '이름 옆에 붙여 불러요. 이 휴대폰에만 저장돼요.',
+          controller: _relationship,
+          hintText: '예) 아버지, 어머니',
+          errorText: _draft.relationshipTooLong
+              ? '관계는 ${SetupDraft.maxRelationshipLength}자까지 적을 수 있어요.'
+              : null,
+          onChanged: (value) =>
+              widget.onChanged(_draft.copyWith(relationship: value)),
         ),
         const SizedBox(height: AppSpacing.xxl),
 
