@@ -276,7 +276,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 - 직전 이력을 복사해 보낸 항목만 바꾼 새 이력 행을 추가한다. 약관 버전은 직전 이력의 값을 쓴다.
 - `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 푸시 기기 등록(1-7)을 모두 지운다.
 - `photoAnalysis`(AI 사진 분석)도 같은 방식으로 바꾼다. 거두면 사진 분석 worker가 그 계정의 사진을 더 가져가지 않는다. 이미 가져간 사진도 ML 업체에 보내기 전이면 보내지 않고, 보낸 뒤면 결과를 저장하지 않는다. 두 경우 모두 사진은 `pending`으로 돌아간다.
-- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 저장된 AI 설명을 지우고 `analysisStatus`를 `pending`으로 되돌린다(2026-11-09 PM 결정). 보호자가 쓴 설명(3-3)은 남아 2-3, 3-2의 `description`(`descriptionSource: caregiver`)과 카드 입력에 그대로 쓴다. 지운 AI 설명을 입력으로 쓴 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이어도 동의 변경은 거절하지 않으며, 만드는 중인 묶음은 완료할 때 `needsRefresh`가 `true`가 된다. 다시 `true`로 바꾸면 `pending`인 사진을 다시 분석한다.
+- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 저장된 AI 설명을 지우고 `analysisStatus`를 `pending`으로 되돌린다(2026-11-09 PM 결정). 보호자가 쓴 설명(3-3)은 남아 2-3, 3-2의 `description`(`descriptionSource: caregiver`)과 카드 입력에 그대로 쓴다. 보호자 설명이 없는 사진의 AI 설명을 지운 프로필은 아직 면회에 안 쓴 완료 묶음의 `needsRefresh`가 `true`가 된다(4절). 3-4 사진 삭제처럼 그 묶음이 지운 설명을 실제로 입력에 썼는지는 따지지 않는다. 카드를 만드는 중이어도 동의 변경은 거절하지 않으며, 만드는 중인 묶음은 지운 설명을 입력에 썼으면 완료할 때 `needsRefresh`가 `true`가 된다. 다시 `true`로 바꾸면 `pending`인 사진을 다시 분석한다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |

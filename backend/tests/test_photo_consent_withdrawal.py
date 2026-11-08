@@ -12,6 +12,7 @@ from uuid import UUID
 from photo_analysis import PhotoDescription
 
 from app.core.database import connect
+from app.services.accounts import PostgresAccountRepository
 from app.services.card_generation_jobs import CardGenerationQueue
 from app.services.card_sets import CardGenerationProcessor, build_context
 from app.services.photo_analysis_jobs import PhotoAnalysisQueue
@@ -249,6 +250,39 @@ async def _until_lock_waits(watcher, count: int, *, unless=None) -> None:
             return
         await asyncio.sleep(0.05)
     raise AssertionError("잠금 대기를 확인하지 못했다")
+
+
+def test_check_before_vendor_call_waits_for_a_withdrawal_in_progress(migrated_database_url):
+    # 철회 트랜잭션이 프로필을 잠근 채 아직 커밋하지 않았을 때 worker가 사진을 가져가면,
+    # 업체 호출 전 확인은 프로필 잠금에서 기다렸다가 철회를 보고 업체를 부르지 않는다.
+    # 프로필을 잠그지 않으면 커밋 전이라 동의가 켜진 것으로 읽고 업체를 부른다.
+    url = migrated_database_url
+    api, _, profile, photo = setup(url)
+    user_id = api.query("SELECT user_id FROM profiles WHERE profile_id = %s", (profile,))[0][
+        "user_id"
+    ]
+    calls = []
+
+    def analyze(photo_url):
+        calls.append(photo_url)
+        return PhotoDescription(description="철회와 겹친 합성 설명")
+
+    async def scenario():
+        async with connect(url) as withdrawal, connect(url) as watcher:
+            async with withdrawal.transaction():
+                accounts = PostgresAccountRepository(withdrawal, default_display_name="보호자")
+                changed = await accounts.change_optional_consents(
+                    str(user_id), {"photoAnalysis": False}
+                )
+                assert changed is not None
+                analysis = asyncio.create_task(worker(url, analyze, timeout=30).run_once())
+                await _until_lock_waits(watcher, 1, unless=analysis)
+            assert await analysis
+
+    run(scenario())
+
+    assert calls == []
+    assert _photo(api, photo) == PENDING_WITHOUT_AI
 
 
 def test_withdrawal_waits_for_an_analysis_result_being_saved(migrated_database_url):
