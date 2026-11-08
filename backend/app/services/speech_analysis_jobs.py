@@ -19,6 +19,8 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 # 완료 시 즉시 지우며, 실패 시에는 남은 기한 동안만 재처리에 쓴다(2026-11-03 PM 승인).
 # 만료분의 실제 삭제는 expire_transcripts 또는 상태 전이에서 실행된다. worker가
 # 중단되거나 다른 작업을 처리 중이면 정리가 늦어질 수 있어 별도 삭제 지연 감시가 필요하다.
+# 리포트 생성(외부 ML 전송)은 남은 기한이 생성 단계 임대 시간 이상일 때만 시작한다. 임대는
+# 생성 제한 시간보다 60초 이상 길어야 worker가 시작하므로 생성이 기한을 넘겨 이어지지 않는다.
 TRANSCRIPT_RETENTION_SECONDS = 24 * 60 * 60
 
 
@@ -88,7 +90,10 @@ class SpeechAnalysisJobRepository(Protocol):
     async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None: ...
 
     async def mark_generating_report(self, *, analysis_id: str) -> bool:
-        """끝나지 않은 작업을 `generatingReport`로 바꾼다. 바꿨으면 `True`."""
+        """끝나지 않은 작업을 `generatingReport`로 바꾼다. 바꿨으면 `True`.
+
+        PostgreSQL 저장소는 남은 전사 기한이 임대 시간보다 짧으면 바꾸지 않는다.
+        """
         ...
 
     async def mark_stt_completed(
@@ -106,7 +111,11 @@ class SpeechAnalysisJobRepository(Protocol):
     async def queue_audio_deletion(self, *, analysis_id: str) -> None: ...
 
     async def expire_transcripts(self) -> int:
-        """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다."""
+        """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다.
+
+        리포트 생성을 기다리는 `sttCompleted` 작업은 남은 기한이 임대 시간보다 짧아
+        생성을 시작할 수 없게 되면 같은 방식으로 끝낸다.
+        """
         ...
 
     async def expire_leases(self) -> int:
@@ -221,7 +230,8 @@ class InMemorySpeechAnalysisJobRepository:
         return job
 
     async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None:
-        del lease_seconds
+        # 리포트 생성은 임대가 끝나기 전에 전사 기한이 오지 않을 때만 시작한다.
+        report_start_limit = datetime.now(UTC) + timedelta(seconds=lease_seconds)
         async with self._lock:
             job = next(
                 (
@@ -231,7 +241,7 @@ class InMemorySpeechAnalysisJobRepository:
                         include_reports and item.status == SpeechAnalysisStatus.STT_COMPLETED
                         and item.analysis_id in self._report_retries
                         and item.transcript_expires_at is not None
-                        and item.transcript_expires_at > datetime.now(UTC)
+                        and item.transcript_expires_at > report_start_limit
                     )
                 ),
                 None,
@@ -518,6 +528,8 @@ class PostgresSpeechAnalysisJobRepository:
         )
 
     async def claim_next(self, *, lease_seconds: int, include_reports: bool = False) -> SpeechAnalysisJob | None:
+        # 리포트 재요청은 임대(생성 제한 시간 + 저장 여유 이상)가 끝나기 전에 전사 기한이
+        # 오지 않을 때만 가져간다. 시작할 수 없게 된 작업은 expire_transcripts가 끝낸다.
         cursor = await self._connection.execute(
             """
             WITH candidate AS (
@@ -525,7 +537,7 @@ class PostgresSpeechAnalysisJobRepository:
                   FROM speech_analysis_jobs
                  WHERE status = 'queued' OR (
                      %s AND status = 'sttCompleted' AND retry_of_analysis_id IS NOT NULL
-                     AND transcript_expires_at > clock_timestamp()
+                     AND transcript_expires_at > clock_timestamp() + (%s * interval '1 second')
                  )
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
@@ -540,7 +552,7 @@ class PostgresSpeechAnalysisJobRepository:
              WHERE job.analysis_id = candidate.analysis_id
             RETURNING job.*
             """,
-            (include_reports, lease_seconds),
+            (include_reports, lease_seconds, lease_seconds),
         )
         row = await cursor.fetchone()
         return self._from_row(row) if row is not None else None
@@ -627,6 +639,8 @@ class PostgresSpeechAnalysisJobRepository:
     async def expire_transcripts(self) -> int:
         # 이미 failed인 작업도 포함한다. 재시도하지 않고 남겨 둔 전사가 누락되면 안 된다.
         # worker가 작업을 가져오기 전에 호출한다. DB 자체 TTL이나 상시 타이머는 아니다.
+        # 생성을 기다리는 sttCompleted 작업은 남은 기한이 임대보다 짧으면 claim_next와
+        # mark_generating_report가 시작하지 않으므로, 처리 중으로 남기지 않고 여기서 끝낸다.
         cursor = await self._connection.execute(
             """
             UPDATE speech_analysis_jobs
@@ -634,8 +648,13 @@ class PostgresSpeechAnalysisJobRepository:
                    transcript = NULL, transcript_deleted_at = now(),
                    lease_expires_at = NULL, completed_at = now(),
                    updated_at = now()
-             WHERE transcript IS NOT NULL AND transcript_expires_at <= now()
-            """
+             WHERE transcript IS NOT NULL AND (
+                   transcript_expires_at <= now()
+                   OR (status = 'sttCompleted'
+                       AND transcript_expires_at <= now() + (%s * interval '1 second'))
+             )
+            """,
+            (self._lease_seconds,),
         )
         return cursor.rowcount
 
@@ -722,6 +741,7 @@ async def _update_status(
     # 회차 상태는 저장하지 않고 작업 상태로 계산하므로 회차는 바꾸지 않는다.
     # 완료한 리포트의 전사는 지운다. 생성 실패 시 기존 보관 기한까지만 남긴다.
     # `completed`는 `generatingReport`에서만, 끝난 작업(`completed`, `failed`)은 바꾸지 않는다.
+    # `generatingReport`는 새 임대가 끝나기 전에 전사 기한이 오지 않을 때만 시작한다.
     cursor = await connection.execute(
         """
         UPDATE speech_analysis_jobs
@@ -748,7 +768,9 @@ async def _update_status(
            AND status NOT IN ('completed', 'failed')
            AND (%(status)s::text <> 'completed' OR status = 'generatingReport')
            AND (%(status)s::text <> 'generatingReport' OR (
-               status='sttCompleted' AND transcript_expires_at > clock_timestamp()
+               status='sttCompleted'
+               AND transcript_expires_at
+                   > clock_timestamp() + (%(lease_seconds)s * interval '1 second')
            ))
         """,
         {

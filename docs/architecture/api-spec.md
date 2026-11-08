@@ -1154,6 +1154,9 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 
 응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
 이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
+worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 900초) 이상일 때만 새 작업의
+생성을 시작한다. 그보다 적게 남았으면 생성하지 않고 전사를 지워 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로
+끝내므로, 이 작업 ID로 다시 요청하면 `RECORDING_REQUIRED`다.
 
 | HTTP | errorCode | 처리 |
 | --- | --- | --- |
@@ -1283,7 +1286,7 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 
 백엔드 worker가 동기 호출한다. 앱은 호출하지 않는다. 원본 파일은 수명이 짧은 S3 Presigned GET URL로만 전달한다. 피보호자의 이름, 성별, 생년월일은 어떤 요청에도 넣지 않는다.
 
-AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다.
+AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `errorCode`를 남긴다: `AI_SERVER_TIMEOUT`, `AI_SERVER_UNAVAILABLE`, `AI_SERVER_ERROR`, `INVALID_AI_RESPONSE`. worker가 임대 시간 안에 작업을 끝내지 못하면 `WORKER_LEASE_EXPIRED`다. 자동으로 다시 시도하지 않는다. 8-3(함수 호출)에서는 리포트 생성 전체 제한 시간을 넘으면 `AI_SERVER_TIMEOUT`이고, 생성 중 임대가 끝나면 늦게 온 결과를 저장하지 않고 `WORKER_LEASE_EXPIRED`다. 남은 전사 기한이 생성 단계 임대 시간보다 짧아 생성을 시작할 수 없거나, 변경 제안 호출 직전에 전사 기한이 지났으면 `TRANSCRIPT_EXPIRED`다.
 
 8-3, 8-4 응답의 `model`, `promptVersion`은 결과와 함께 저장한다. 카드 생성은 AI 서버를 거치지 않으며 4-1에 적는다(8-2 삭제).
 
@@ -1336,6 +1339,7 @@ worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본
 S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리포트 생성을 계속한다. `audio_deleted_at`은 삭제 성공 뒤에만 기록하며, 분석 완료와 원본 삭제 완료를 구분한다.
 
 - 전사문은 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록 작업(`speech_analysis_jobs.transcript`)에 임시 저장한다. 최초 STT 저장 시각부터 24시간을 `transcript_expires_at`으로 정하며, 리포트 저장이 먼저 완료되면 지운다. 실패 전사는 남은 기한 동안 유지하며 재시도로 기한을 늘리지 않는다(2026-11-03 PM 승인). 만료 전사의 재사용은 거절하고 worker 정리 시 전사를 삭제하며 `failed`와 `TRANSCRIPT_EXPIRED`로 기록한다. worker 중단이나 긴 처리 중에는 실제 정리가 늦어질 수 있다([보관 대조](../../backend/docs/speech-recovery.md#실패-전사와-기기-녹음의-보관-대조)).
+- 8-3(전사문의 외부 ML 전송)은 남은 전사 기한이 생성 단계 임대 시간(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초) 이상일 때만 시작한다. 임대는 생성 제한 시간보다 60초 이상 길어 시작한 생성이 기한을 넘겨 새 외부 호출을 하지 않는다. 기한이 그보다 적게 남은 `sttCompleted` 작업은 시작하지 않고 worker 정리 시 `failed`와 `TRANSCRIPT_EXPIRED`로 끝낸다([외부 ML 전송과 기한](../../backend/docs/speech-recovery.md#외부-ml-전송과-기한)).
 - 전사문은 화면에 표시하지 않고 8-3 요청에만 사용한다.
 
 8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다.
@@ -1354,7 +1358,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 ### 8-3. `POST /internal/v1/visit-reports` — 신규
 
-전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
+전송 방식([PR #123](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/123)): AI 서버의 HTTP 경로가 아니라 음성 worker가 `ai/`의 `report_generation.generate_report`와 `proposal_generation.generate_proposals`를 차례로 부르고 `common.visit_report.combine`으로 합친다. 아래 요청과 응답 JSON, BE 검증, 오류 코드는 그대로다. 생성 함수 안에서 전사문을 포함한 요청이 외부 ML API로 전송된다. 생성 함수의 `LLM_UNAVAILABLE`은 `AI_SERVER_UNAVAILABLE`, `GENERATION_FAILED`와 `INVALID_REQUEST`는 `AI_SERVER_ERROR`, 결과 형식 오류는 `INVALID_AI_RESPONSE`로 남긴다. 요청 조립부터 검증까지 전체 제한 시간(`SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`, 기본 600초, 작업 임대보다 60초 이상 짧게)을 넘으면 `AI_SERVER_TIMEOUT`이다. 변경 제안 호출(전사문의 두 번째 외부 전송) 직전에는 작업 행을 다시 읽어, 행이 없거나(계정, 프로필, 회차 삭제) 임대가 남은 `generatingReport`가 아니면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 호출하지 않는다. 리포트 저장과 작업 `completed`는 한 트랜잭션이며, 임대가 남은 `generatingReport` 작업일 때만 저장한다.
 
 요청
 
