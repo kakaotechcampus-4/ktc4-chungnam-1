@@ -17,7 +17,7 @@ uv run python -m app.ops.storage_audit --s3
 
 DB와 S3 목록은 같은 순간의 스냅샷이 아니다. 업로드 중이거나 다른 경로의 자료일 수 있으므로 `unreferenced`는 검토 대상 수다. 자동 삭제 근거로 쓰지 않는다.
 
-`unreferenced_queued`는 DB 참조가 없는 객체 중 이미 삭제 대기열에 있는 수다. 그중 `not_before`가 지나지 않아 [삭제 실행기](storage-deletion.md)가 아직 건너뛰는 요청은 `unreferenced_queued_not_due`로 따로 센다. 업로드 중인 사진의 사전 등록, 업로드 뒤 행을 넣지 못한 사진, 처리 중인 짧은 음성 전사가 여기에 해당한다. `unreferenced`에서 `unreferenced_queued`를 뺀 수가 대기열에도 없는 객체다.
+`unreferenced_queued`는 DB 참조가 없는 객체 중 이미 삭제 대기열에 있는 수다. 업로드 중인 사진의 사전 등록, 업로드 뒤 행을 넣지 못한 사진, 짧은 음성 전사의 원본이 여기에 해당한다. 그중 `not_before`가 지나지 않아 [삭제 실행기](storage-deletion.md)가 아직 건너뛰는 요청은 `unreferenced_queued_not_due`로 따로 센다. 업로드 중인 사진과 처리 중인 짧은 음성 전사, 정리 코드까지 가지 못하고 멈춘 사진 업로드가 기한 전으로 남는다. `unreferenced`에서 `unreferenced_queued`를 뺀 수가 대기열에도 없는 객체다.
 
 ## 기한이 지난 원본을 기존 삭제 대기열에 넣기
 

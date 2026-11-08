@@ -132,7 +132,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 대기열은 삭제 실행기(#204)가 처리하며 운영 배포와 주기 실행은 남아 있다.
 - 남은 일은 탈퇴 이유다. 본문이 있으면 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣는다. 계정 ID는 넣지 않는다.
 - DB CHECK가 `reasons` 값, 1개 이상, `other`와 `other_text`의 짝을 막지만 요청 검증으로 먼저 422 `INVALID_REQUEST`를 낸다.
 
@@ -347,7 +347,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열은 삭제 실행기(#204)가 처리한다. 운영 배포와 주기 실행은 남아 있다.
 - 카드와 주제가 있는 프로필을 지우는 테스트를 더한다. `conversation_cards`의 `profile_topics` 참조에는 `ON DELETE`가 없어 같은 삭제 안의 CASCADE 순서에 기대며, 1-5에도 아직 이 경우의 테스트가 없다.
 
 <br>

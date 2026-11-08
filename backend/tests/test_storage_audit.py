@@ -3,8 +3,9 @@ from datetime import UTC, datetime, timedelta
 from botocore.exceptions import ClientError
 import pytest
 
+from app.core.config import Settings
 from app.core.database import connect
-from app.ops.storage_audit import expired_audio, inspect_bucket
+from app.ops.storage_audit import expired_audio, inspect_bucket, run_once
 from tests.support import run
 from tests.test_speech_job_repository import TRANSCRIPT, _accept, _Db
 
@@ -105,6 +106,29 @@ def test_inventory_separates_unreferenced_objects_already_queued():
     assert result["unreferenced"] == 3
     assert result["unreferenced_queued"] == 2 and result["unreferenced_queued_not_due"] == 1
     assert "photos/" not in str(result)
+
+
+def test_s3_inventory_reads_the_queue_deadline_from_the_database(migrated_database_url):
+    db = _Db(migrated_database_url)
+    # a는 업로드 중 사전 등록(기한 전), b는 바로 처리할 요청, c는 대기열 밖이다.
+    db.execute(
+        "INSERT INTO storage_deletion_request_queue (s3_object_key, not_before) VALUES "
+        "('photos/a.jpg', now() + interval '1 hour'), ('photos/b.jpg', now())"
+    )
+    now = datetime.now(UTC)
+    client = FakeS3([{"Contents": [
+        {"Key": key, "Size": 5, "LastModified": now}
+        for key in ("photos/a.jpg", "photos/b.jpg", "photos/c.jpg")
+    ]}])
+    settings = Settings(_env_file=None, database_url=migrated_database_url,
+                        image_s3_bucket="synthetic-photos")
+
+    result = run(run_once(settings, include_s3=True, client_factory=lambda region: client))
+
+    [bucket] = result["buckets"]
+    assert bucket["unreferenced"] == 3
+    assert bucket["unreferenced_queued"] == 2 and bucket["unreferenced_queued_not_due"] == 1
+    assert len(db.execute("SELECT * FROM storage_deletion_request_queue")) == 2
 
 
 def test_inventory_limit_reports_incomplete():
