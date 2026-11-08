@@ -800,7 +800,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
 | `CARD_GENERATION_NOT_STARTED` | 정해진 시간 안에 worker가 작업을 가져가지 않음(4절) |
-| `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함. 그 뒤에 온 결과는 저장하지 않음 |
+| `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함 |
 
 
 ### 4-2. `GET /api/v1/profiles/{profileId}/card-generations/status` — 신규
