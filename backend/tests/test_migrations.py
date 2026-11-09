@@ -557,3 +557,111 @@ def test_card_generation_log_is_rewritten_to_ids(alembic_config, test_database_u
         assert again == after
     finally:
         engine.dispose()
+
+
+def test_story_proposal_category_and_sensitive_columns(alembic_config, test_database_url):
+    """이야기 후보의 분류와 아픈 기억 표시, 카드의 아픈 경험 표시(9c4e2b7a1f63).
+
+    기존 행은 `other`, `false`로 채우고, 분류는 일곱 값만 받는다. downgrade는 세 열을 지우고 다시
+    upgrade할 수 있다.
+    """
+    command.upgrade(alembic_config, "685f243e9f1f")
+    engine = sa.create_engine(test_database_url)
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            session_id = _insert_visit_session(conn, profile_id)
+            proposal_id = conn.execute(
+                sa.text(
+                    "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, reason) "
+                    "VALUES (:session_id, :profile_id, '합성 제목', '합성 내용', '합성 이유') "
+                    "RETURNING proposal_id"
+                ),
+                {"session_id": session_id, "profile_id": profile_id},
+            ).scalar_one()
+            topic_id = conn.execute(
+                sa.text(
+                    "INSERT INTO profile_topics (profile_id, title, description) "
+                    "VALUES (:profile_id, '합성 주제', '합성 주제 설명') RETURNING topic_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+            set_id = conn.execute(
+                sa.text(
+                    "INSERT INTO card_sets "
+                    "(profile_id, status, model, prompt_version, generation_log) "
+                    "VALUES (:profile_id, 'completed', 'synthetic-model', '1', "
+                    " '{\"input\": {}}') RETURNING set_id"
+                ),
+                {"profile_id": profile_id},
+            ).scalar_one()
+            card_id = conn.execute(
+                sa.text(
+                    "INSERT INTO conversation_cards "
+                    "(set_id, profile_id, topic_id, card_title, position, description, "
+                    " primary_question, follow_up_questions, evidence_source) "
+                    "VALUES (:set_id, :profile_id, :topic_id, '합성 카드', 1, "
+                    " '합성 카드 설명', '합성 질문?', ARRAY['하나?', '둘?', '셋?'], 'none') "
+                    "RETURNING card_id"
+                ),
+                {"set_id": set_id, "profile_id": profile_id, "topic_id": topic_id},
+            ).scalar_one()
+
+        command.upgrade(alembic_config, "head")
+
+        with engine.begin() as conn:
+            proposal = conn.execute(
+                sa.text(
+                    "SELECT story_category, sensitive FROM life_fact_proposals "
+                    "WHERE proposal_id = :proposal_id"
+                ),
+                {"proposal_id": proposal_id},
+            ).one()
+            card = conn.execute(
+                sa.text("SELECT sensitive FROM conversation_cards WHERE card_id = :card_id"),
+                {"card_id": card_id},
+            ).one()
+        assert (proposal.story_category, proposal.sensitive) == ("other", False)
+        assert card.sensitive is False
+
+        for category in ("family", "hobby", "work", "hometown", "friend", "travel", "other"):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text(
+                        "UPDATE life_fact_proposals SET story_category = :category, sensitive = true "
+                        "WHERE proposal_id = :proposal_id"
+                    ),
+                    {"category": category, "proposal_id": proposal_id},
+                )
+        for column, bad in (("story_category", "occupation"), ("story_category", None), ("sensitive", None)):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    sa.text(
+                        f"UPDATE life_fact_proposals SET {column} = :bad "
+                        "WHERE proposal_id = :proposal_id"
+                    ),
+                    {"bad": bad, "proposal_id": proposal_id},
+                )
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(
+                sa.text("UPDATE conversation_cards SET sensitive = NULL WHERE card_id = :card_id"),
+                {"card_id": card_id},
+            )
+
+        command.downgrade(alembic_config, "685f243e9f1f")
+        with engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            proposal_columns = {c["name"] for c in inspector.get_columns("life_fact_proposals")}
+            card_columns = {c["name"] for c in inspector.get_columns("conversation_cards")}
+            assert conn.execute(sa.text("SELECT count(*) FROM life_fact_proposals")).scalar_one() == 1
+        assert {"story_category", "sensitive"}.isdisjoint(proposal_columns)
+        assert "sensitive" not in card_columns
+
+        command.upgrade(alembic_config, "head")
+        with engine.begin() as conn:
+            again = conn.execute(
+                sa.text("SELECT story_category, sensitive FROM life_fact_proposals")
+            ).one()
+        assert (again.story_category, again.sensitive) == ("other", False)
+    finally:
+        engine.dispose()

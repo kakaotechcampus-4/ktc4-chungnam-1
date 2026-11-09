@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import logging
 import re
 from types import SimpleNamespace
 
@@ -20,6 +21,7 @@ from psycopg.types.json import Jsonb
 
 from app.core.config import Settings
 from app.core.database import connect, psycopg_dsn
+from app.core.logging import SafeJsonFormatter
 from app.schemas.card_generation import (
     CardContext,
     CardGenerationRequest,
@@ -46,6 +48,7 @@ from tests.support import run
 
 EXTRA = {"kind": "general", "pickReason": "합성 이유"}
 HANGUL = re.compile(r"[가-힣]")
+SENSITIVE_POSITIONS = {2, 7}
 
 
 def assert_no_text(generation_log) -> None:
@@ -71,7 +74,10 @@ def sent_ids(context: CardContext) -> dict:
 
 
 def fake_result(request, *, reuse_topic=None, positions=range(1, 13)) -> CardGenerationResult:
-    """2번 카드는 세부 정보(취미) 근거. 1번 카드는 `reuse_topic`이 있으면 기존 주제."""
+    """2번 카드는 세부 정보(취미) 근거. 1번 카드는 `reuse_topic`이 있으면 기존 주제.
+
+    `SENSITIVE_POSITIONS`의 카드는 아픈 경험을 다루는 카드로 표시한다.
+    """
     cards = []
     for position in positions:
         evidence = [{"profileField": "hobby"}] if position == 2 else []
@@ -91,6 +97,7 @@ def fake_result(request, *, reuse_topic=None, positions=range(1, 13)) -> CardGen
                 follow_up_questions=["하나?", "둘?", "셋?"],
                 evidence_source="profile" if position == 2 else "none",
                 evidence=evidence,
+                sensitive=position in SENSITIVE_POSITIONS,
                 extra=EXTRA,
             )
         )
@@ -552,6 +559,26 @@ def test_generated_cards_and_new_topics_are_saved(migrated_database_url):
         "profile",
         [{"profileField": "hobby"}],
     )
+    assert {card["position"] for card in cards if card["sensitive"]} == SENSITIVE_POSITIONS
+
+
+def test_completed_generation_logs_card_counts_without_text(migrated_database_url, caplog):
+    """처리 기록(2026-11-09 PM 결정)은 카드 수와 아픈 경험 카드 수만 남기고 문구는 남기지 않음."""
+    caplog.set_level(logging.INFO, logger="saerok.card_generation")
+
+    card_set, _ = _process(migrated_database_url, fake_result)
+
+    records = [r for r in caplog.records if r.getMessage() == "card_generation_completed"]
+    assert len(records) == 1
+    formatted = SafeJsonFormatter().format(records[0])
+    assert not HANGUL.search(formatted), formatted
+    logged = json.loads(formatted)
+    assert {key: logged[key] for key in ("set_id", "cards", "sensitive_cards", "prompt_version")} == {
+        "set_id": str(card_set["set_id"]),
+        "cards": 12,
+        "sensitive_cards": len(SENSITIVE_POSITIONS),
+        "prompt_version": 2,
+    }
 
 
 def test_saved_generation_log_keeps_ids_not_text(migrated_database_url):
@@ -910,6 +937,15 @@ def test_card_generator_keeps_the_ai_failure_code(migrated_database_url, monkeyp
 
     assert (card_set["status"], card_set["error_code"]) == ("failed", "NOT_ENOUGH_TOPICS")
     assert cards == []
+
+
+def test_default_card_prompt_version_is_the_latest_the_ai_package_knows():
+    """2판부터 아픈 경험 카드에 `sensitive`가 붙는다(2026-11-09 PM 결정). 기본값이 이전 판이면
+    표시가 늘 false로 저장된다."""
+    from card_generation._versions import LATEST, VERSIONS
+
+    version = Settings(_env_file=None).card_generation_prompt_version
+    assert version in VERSIONS and version == LATEST.number
 
 
 def test_card_generator_refuses_to_start_with_a_model_the_ai_package_cannot_call():

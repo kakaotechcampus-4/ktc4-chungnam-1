@@ -21,6 +21,7 @@ from app.services.speech_analysis_jobs import (
     SpeechAnalysisJobRepository,
     SpeechAnalysisStatus,
 )
+from app.services.speech_analysis_stats import Outcome, SpeechAnalysisStats
 from app.services.transcript_filters import drop_known_hallucinations
 from app.workers.base import OpenConnection, Worker
 
@@ -39,10 +40,12 @@ class ReportGenerator(Protocol):
         *,
         session_id: str,
         speech: SpeechAnalysisResult,
+        stats: SpeechAnalysisStats,
     ) -> None:
         """리포트를 생성하고 저장한 뒤 반환한다.
 
         8-3 AI 호출은 트랜잭션 밖에서 하고, 리포트와 변경 제안 저장만 트랜잭션으로 묶는다.
+        받은 결과의 숫자는 `stats`에 적는다(`SpeechAnalysisStats.record_report`).
         """
 
         ...
@@ -231,6 +234,28 @@ class SpeechAnalysisProcessor:
         self._report_notifier = report_notifier
 
     async def __call__(self, connection: DbConnection, job: SpeechAnalysisJob) -> None:
+        """작업 하나를 처리하고, 끝나거나 실패하면 처리 기록을 한 줄 남긴다(`speech_analysis_stats`).
+
+        예외는 그대로 올려 worker 골격이 작업을 실패로 남기게 한다. 실패 코드는 골격과 같은 규칙
+        (`AppError`면 그 코드, 아니면 대기열의 기본 코드)으로 적는다.
+        """
+        stats = SpeechAnalysisStats(analysis_id=job.analysis_id)
+        try:
+            outcome = await self._process(connection, job, stats)
+        except AppError as error:
+            usage = getattr(error, "token_usage", None)
+            if usage:
+                stats.token_usage = dict(usage)
+            stats.emit("failed", error_code=error.error_code)
+            raise
+        except Exception:
+            stats.emit("failed", error_code=SpeechAnalysisQueue.unexpected_error_code)
+            raise
+        stats.emit(outcome)
+
+    async def _process(
+        self, connection: DbConnection, job: SpeechAnalysisJob, stats: SpeechAnalysisStats
+    ) -> Outcome:
         jobs = self._jobs_for(connection)
         if job.status == SpeechAnalysisStatus.GENERATING_REPORT:
             if self._report_generator is None:
@@ -245,6 +270,7 @@ class SpeechAnalysisProcessor:
                     {**segment, "words": []} for segment in transcript.get("segments", [])
                 ],
             })
+            stats.record_transcript(speech)
             if not any(segment.text.strip() for segment in speech.segments):
                 raise AppError(status_code=422, error_code="EMPTY_TRANSCRIPT",
                                message="다시 분석할 발화를 확인하지 못했습니다.")
@@ -255,10 +281,12 @@ class SpeechAnalysisProcessor:
                 await jobs.queue_audio_deletion(
                     analysis_id=job.analysis_id, object_key=job.object_key
                 )
-            await self._report_generator.generate(connection, session_id=job.session_id, speech=speech)
+            await self._report_generator.generate(
+                connection, session_id=job.session_id, speech=speech, stats=stats
+            )
             await self._complete(connection, jobs, job)
-            return
-        speech = await self._transcribe(job)
+            return "completed"
+        speech = await self._transcribe(job, stats)
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
         # 전사문은 저장하지 않고 리포트 생성(외부 전송)도 시작하지 않는다.
         # 리포트까지 이어 갈 때만 인계 임대를 둔다. 아래 리포트 시작 전에 worker가 멈추면
@@ -274,16 +302,17 @@ class SpeechAnalysisProcessor:
         await _delete_audio_or_queue(jobs, self._audio_storage, job)
         if not stored:
             _log_stopped(job, stage=SpeechAnalysisStatus.STT_COMPLETED)
-            return
+            return "stopped"
         if self._report_generator is None:
-            return
+            return "sttCompleted"
         if not await jobs.mark_generating_report(analysis_id=job.analysis_id):
             _log_stopped(job, stage=SpeechAnalysisStatus.GENERATING_REPORT)
-            return
+            return "stopped"
         await self._report_generator.generate(
-            connection, session_id=job.session_id, speech=speech
+            connection, session_id=job.session_id, speech=speech, stats=stats
         )
         await self._complete(connection, jobs, job)
+        return "completed"
 
     async def _complete(
         self,
@@ -299,7 +328,9 @@ class SpeechAnalysisProcessor:
                 connection, analysis_id=job.analysis_id
             )
 
-    async def _transcribe(self, job: SpeechAnalysisJob) -> SpeechAnalysisResult:
+    async def _transcribe(
+        self, job: SpeechAnalysisJob, stats: SpeechAnalysisStats
+    ) -> SpeechAnalysisResult:
         if job.size_bytes is None or job.sha256 is None:
             raise AppError(
                 status_code=500,
@@ -324,9 +355,14 @@ class SpeechAnalysisProcessor:
             },
             dataExpiresAt=job.data_expires_at,
         )
-        result = await self._ai_server.analyze_speech(payload)
+        try:
+            result = await self._ai_server.analyze_speech(payload)
+        except AppError as error:
+            stats.stt_server = getattr(error, "stt_server", None)
+            raise
         # 무음에서 STT가 지어내는 알려진 문장("다음 영상에서 만나요" 등)은 대화가 아니다.
         result = drop_known_hallucinations(result)
+        stats.record_transcript(result)
         # 리포트는 전체 text가 아니라 segments만 받는다. 빈 구간 목록이나 공백뿐인
         # 전사로 보호자 소감만 사용해 녹음 분석 결과를 만들어서는 안 된다.
         if not any(segment.text.strip() for segment in result.segments):

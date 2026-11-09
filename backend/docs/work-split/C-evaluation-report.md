@@ -395,7 +395,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 서버 처리
 
 - 모든 제안을 `settled`로 바꾼다.
-- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
+- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 분류는 요청의 `storyCategory`(선택)이고, 없으면 제안의 `storyCategory`다(2026-11-09 PM 결정). 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`, `story_category`, `sensitive`는 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(8-2)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
 - `accepted` 주제 항목이 하나라도 있으면 카드를 만드는 중일 때 `CARD_GENERATION_IN_PROGRESS`로 거절하고, 아니면 아직 면회에 안 쓴 완료 묶음이 `needsRefresh`가 된다. 생애 정보만 승인했거나 모두 `rejected`이면 둘 다 하지 않는다([API 명세 4절](../../../docs/architecture/api-spec.md#사실-정정-후-카드-갱신-기준)).
@@ -407,11 +407,11 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 | 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중 |
 | 409 | `LIFE_FACT_LIMIT_EXCEEDED` | 승인한 생애 정보를 더하면 프로필의 이야기가 300개를 넘음. 아무것도 저장하지 않는다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
-| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음. `storyCategory`가 `null`이거나 7개 값이 아님 |
 
 **구현 메모**
 
-- 한 트랜잭션에서 모든 제안을 `settled`로 바꾼 뒤, `accepted`인 생애 정보 제안은 `create_life_fact(..., title=요청 title, content=요청 content, source_proposal_id=제안 ID)`로, `accepted`인 주제 제안은 `topic_feedback(profile_id, topic_id, proposal_id, action = 요청 action)`으로 넣는다. `life_fact_proposals`와 `topic_proposals.suggested_action`은 고치지 않는다.
+- 한 트랜잭션에서 모든 제안을 `settled`로 바꾼 뒤, `accepted`인 생애 정보 제안은 `create_life_fact(..., title=요청 title, content=요청 content, source_proposal_id=제안 ID, story_category=요청 storyCategory 또는 제안 분류)`로, `accepted`인 주제 제안은 `topic_feedback(profile_id, topic_id, proposal_id, action = 요청 action)`으로 넣는다. `life_fact_proposals`와 `topic_proposals.suggested_action`은 고치지 않는다.
 - `reviewStatus`와 최종 값의 짝은 요청 검증에서 확인해 422 `INVALID_REQUEST`로 막는다. `title`, `content` 검증은 2-6과 같다.
 - 다음 카드 생성(4-1)은 앱이 호출한다.
 - 프로필 행을 먼저 잠그고(`card_sets.lock_profile`) 회차 행을 잠근다. `accepted` 주제 항목이 있으면 제안을 고치기 전에 `card_sets.mark_stale`을 부른다.
@@ -545,7 +545,9 @@ S3 삭제만 실패하면 삭제 대기열에 요청을 남기고 리포트 생�
     {
       "title": "한복",
       "content": "한복을 주로 만드셨어요.",
-      "reason": "이번 면회에서 확인되었어요."
+      "reason": "이번 면회에서 확인되었어요.",
+      "storyCategory": "work",
+      "sensitive": false
     }
   ],
   "topicProposals": [
@@ -560,13 +562,14 @@ S3 삭제만 실패하면 삭제 대기열에 요청을 남기고 리포트 생�
 
 - `cardSummaries`는 `reaction`이 `positive`, `neutral`, `negative`인 카드만 담는다.
 - `topicProposals`는 요청의 `cards` 안에서 카드당 최대 1개다. `suggestedAction`: `more`, `less`, `exclude`
+- `lifeFactProposals`는 30개까지다(2026-11-09 PM 결정, AI 쪽이 먼저 자름). 항목마다 일대기 분류 `storyCategory`(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있는지 `sensitive`가 있어야 한다. 어기면 `INVALID_AI_RESPONSE`다.
 - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
 - `mood`는 AI가 만들지 않는다. 백엔드가 `conversationSatisfaction`으로 계산한다(1~2 `hard`, 3 `normal`, 4~5 `good`).
 - `proposalId`는 백엔드가 부여한다.
 
 **구현 메모**
 
-- `ReportGenerator`(`app/services/speech_analysis_pipeline.py`)를 구현해 `app/workers/speech_analysis.py`의 `report_generator=None` 자리에 넣는다. 형태는 `async def generate(connection, *, session_id, speech)`다. worker는 `sttCompleted` 뒤 `generatingReport`로 바꾸고 생성기를 부르며, 생성기가 끝나면 작업을 `completed`로 바꾸고 전사문을 지운다.
+- `ReportGenerator`(`app/services/speech_analysis_pipeline.py`)를 구현해 `app/workers/speech_analysis.py`의 `report_generator=None` 자리에 넣는다. 형태는 `async def generate(connection, *, session_id, speech, stats)`다(`stats`는 처리 기록 한 줄에 쓸 숫자를 모은다, 2026-11-09). worker는 `sttCompleted` 뒤 `generatingReport`로 바꾸고 생성기를 부르며, 생성기가 끝나면 작업을 `completed`로 바꾸고 전사문을 지운다.
 - 생성기 안에서 8-3 호출은 트랜잭션 밖에서 하고, 리포트와 변경 제안 저장만 `async with connection.transaction():`으로 묶는다. 실패는 `AppError`로 올리면 대기열이 작업을 실패로 기록한다.
 - (PR #123) 8-3은 HTTP가 아니라 `ai/`의 리포트·변경 제안 생성 함수를 직접 부른다. 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본 600초, 임대보다 60초 이상 짧게)를 넘으면 `AI_SERVER_TIMEOUT`이다. 저장 트랜잭션은 작업 행을 잠가 `generatingReport`이고 임대가 남았을 때만 저장하며, 아니면 `WORKER_LEASE_EXPIRED`로 아무것도 저장하지 않는다. 자세한 내용은 [README 평가와 리포트 API](../../README.md#평가와-리포트-api).
 - 요청 조립: `visitDate`, `evaluation`(만족도, 반응, 메모), `cards`(선택 카드의 `cardId`, `cardTitle`, `topic`, `reaction = review_reaction`), `profileFacts`, `lifeFacts`, `transcript`. 이름, 성별, 생년월일은 넣지 않는다.
@@ -662,6 +665,8 @@ S3 삭제만 실패하면 삭제 대기열에 요청을 남기고 리포트 생�
       "title": "한복",
       "content": "한복을 주로 만드셨어요.",
       "reason": "이번 면회에서 확인되었어요.",
+      "storyCategory": "work",
+      "sensitive": false,
       "reviewStatus": "pending"
     }
   ],
@@ -685,7 +690,8 @@ S3 삭제만 실패하면 삭제 대기열에 요청을 남기고 리포트 생�
 - `topic.description`: 주제 설명이다. 카드 묶음(CardSet)의 `topic.description`, 8-2의 `topics[].description`과 같은 값이다.
 - `suggestedAction`: `more`, `less`, `exclude`
 - `reviewStatus`: `pending`, `accepted`, `rejected`. DB에는 `pending`과 `settled`만 저장하므로, `settled`인 제안은 승인 결과(생애 정보 또는 주제 피드백)가 있으면 `accepted`, 없으면 `rejected`로 반환한다.
-- `lifeFactProposals`의 `title`, `content`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
+- `storyCategory`: AI가 고른 일대기 분류. `sensitive`: 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보(앱이 안내를 붙인다). 이전에 만든 제안은 `other`, `false`다.
+- `lifeFactProposals`의 `title`, `content`, `storyCategory`, `sensitive`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
 
 ## 미정 사항
 

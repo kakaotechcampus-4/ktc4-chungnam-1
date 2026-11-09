@@ -5,16 +5,21 @@
 DB 오류로 실패하지 않고 형식 오류(`INVALID_AI_RESPONSE`)로 걸러지게 한다.
 """
 
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, PrivateAttr
 
 from app.schemas.common import ApiModel
 from app.schemas.evaluation import CareRecipientReaction
+from app.schemas.profiles import StoryCategory
 
 CardReaction = Literal["positive", "neutral", "negative", "notUsed"]
+# 한 리포트의 이야기 후보 상한(PM 결정, 2026-11-09). AI 쪽이 넘는 후보를 잘라 이만큼만 보내고
+# (`ai/proposal_generation/generate.py`의 `_FACT_MAX`), 넘게 오면 형식 오류로 본다.
+LIFE_FACT_PROPOSAL_LIMIT = 30
 
 
 def _not_blank(value: str) -> str:
@@ -95,6 +100,10 @@ class GeneratedLifeFactProposal(ApiModel):
     title: Annotated[NonBlank, Field(max_length=100)]
     content: NonBlank
     reason: NonBlank
+    # AI가 고른 일대기 분류. 7-4 승인 때 보호자가 바꾸지 않으면 이 분류로 이야기를 만든다.
+    story_category: StoryCategory = Field(alias="storyCategory")
+    # 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보.
+    sensitive: bool
 
 
 class GeneratedTopicProposal(ApiModel):
@@ -105,8 +114,24 @@ class GeneratedTopicProposal(ApiModel):
     reason: NonBlank
 
 
+@dataclass(frozen=True)
+class GenerationCounts:
+    """생성 함수가 처리 기록(로그)에 쓰라고 따로 알려 주는 숫자. 8-3 응답 JSON에는 없다.
+
+    `*_returned`는 모델이 낸 개수(AI 쪽에서 거르고 자르기 전), `token_usage`는 모델 호출의 토큰 수다.
+    글은 담지 않는다.
+    """
+
+    life_fact_proposals_returned: int | None = None
+    topic_proposals_returned: int | None = None
+    token_usage: dict[str, int] = field(default_factory=dict)
+
+
 class VisitReportResult(ApiModel):
     """AI 서버에서 받은 리포트. 카드와 제안의 규칙은 생성기가 따로 검증한다."""
+
+    # 처리 기록용 숫자. JSON으로 읽고 쓰지 않으며 ai 패키지를 감싼 생성 함수만 채운다.
+    _counts: GenerationCounts = PrivateAttr(default_factory=GenerationCounts)
 
     schema_version: Literal[1] = Field(alias="schemaVersion")
     analysis_id: str = Field(alias="analysisId")
@@ -118,6 +143,15 @@ class VisitReportResult(ApiModel):
     body: NonBlank
     card_summaries: list[GeneratedCardSummary] = Field(alias="cardSummaries")
     life_fact_proposals: list[GeneratedLifeFactProposal] = Field(
-        alias="lifeFactProposals"
+        alias="lifeFactProposals", max_length=LIFE_FACT_PROPOSAL_LIMIT
     )
     topic_proposals: list[GeneratedTopicProposal] = Field(alias="topicProposals")
+
+    @property
+    def counts(self) -> GenerationCounts:
+        return self._counts
+
+    def with_counts(self, counts: GenerationCounts) -> "VisitReportResult":
+        """처리 기록용 숫자를 붙여 자신을 돌려준다."""
+        self._counts = counts
+        return self

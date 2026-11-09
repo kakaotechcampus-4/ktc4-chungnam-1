@@ -113,6 +113,7 @@ class SecondVisitFlow:
                         ],
                         evidence_source="lifeFact" if evidence else "none",
                         evidence=evidence,
+                        sensitive=False,
                     )
                 )
             return CardGenerationResult(

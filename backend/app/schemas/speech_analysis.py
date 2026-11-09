@@ -2,9 +2,12 @@ from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import AwareDatetime, Field, field_validator, model_validator
+from pydantic import AwareDatetime, Field, PrivateAttr, field_validator, model_validator
 
 from app.schemas.common import ApiModel
+
+# 결과를 돌려준 STT 서버. 기본 서버에 연결하지 못해 예비 서버로 보낸 경우가 `backup`이다.
+SttServer = Literal["primary", "backup"]
 
 
 class S3AudioSource(ApiModel):
@@ -75,6 +78,19 @@ class SpeechAnalysisResult(ApiModel):
     duration_ms: int = Field(alias="durationMs", ge=0)
     text: str
     segments: list[SpeechAnalysisSegment]
+
+    # 처리 기록용. JSON으로 읽고 쓰지 않으며 `AiServerClient`가 채운다. `model_copy`로 만든 결과도
+    # 이어받는다. 저장된 전사로 다시 만든 결과는 `None`이다.
+    _stt_server: SttServer | None = PrivateAttr(default=None)
+
+    @property
+    def stt_server(self) -> SttServer | None:
+        return self._stt_server
+
+    def served_by(self, server: SttServer) -> "SpeechAnalysisResult":
+        """결과를 돌려준 STT 서버를 적고 자신을 돌려준다."""
+        self._stt_server = server
+        return self
 
 
 SpeechAnalysisPublicStatus = Literal[

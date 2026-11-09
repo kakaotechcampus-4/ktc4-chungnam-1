@@ -5,9 +5,9 @@
 
 __all__ = ["VERSIONS", "LATEST", "SelectionRules", "Version"]
 
-from card_generation._versions import v1
+from card_generation._versions import v1, v2
 from card_generation._versions.base import SelectionRules, Version
 
-VERSIONS: dict[int, Version] = {v.number: v for v in (v1.VERSION,)}
+VERSIONS: dict[int, Version] = {v.number: v for v in (v1.VERSION, v2.VERSION)}
 LATEST = VERSIONS[max(VERSIONS)]
 

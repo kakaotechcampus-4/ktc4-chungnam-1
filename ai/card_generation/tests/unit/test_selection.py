@@ -13,7 +13,8 @@ RULES = LATEST.selection
 
 def _cand(title: str, link: str | None = None, new: str | None = None, kind: str = "general") -> CardCandidate:
     return CardCandidate(linked_topic_id=link, new_topic_title=new, new_topic_description="설명" if new else None,
-                         card_title=title, angle="장면", kind=kind, evidence=[], discover_field=None, reason="이유")
+                         card_title=title, angle="장면", kind=kind, evidence=[], discover_field=None, sensitive=False,
+                         reason="이유")
 
 
 def _topic(tid: str, score: float = 0.0) -> TopicView:
