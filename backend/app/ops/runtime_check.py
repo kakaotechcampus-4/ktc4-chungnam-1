@@ -47,7 +47,8 @@ async def database_snapshot(database_url: str, expected_revision: str | None) ->
                          AND lease_expires_at <= now()) AS expired_card_leases,
                       (SELECT count(*) FROM speech_analysis_jobs
                        WHERE audio_deleted_at IS NULL AND data_expires_at <= now()) AS overdue_audio,
-                      (SELECT count(*) FROM storage_deletion_request_queue) AS deletion_queue,
+                      (SELECT count(*) FROM storage_deletion_request_queue
+                       WHERE not_before <= now()) AS deletion_queue,
                       (SELECT count(*) FROM life_fact_proposals) AS story_candidates_present
         """)
         attention = await cursor.fetchone()

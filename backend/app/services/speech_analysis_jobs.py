@@ -112,7 +112,13 @@ class SpeechAnalysisJobRepository(Protocol):
 
     async def mark_audio_deleted(self, *, analysis_id: str) -> None: ...
 
-    async def queue_audio_deletion(self, *, analysis_id: str) -> None: ...
+    async def queue_audio_deletion(self, *, analysis_id: str, object_key: str) -> None:
+        """원본 키를 S3 삭제 대기열에 남긴다. 이미 있으면 그대로 둔다.
+
+        키는 부르는 쪽이 아는 값을 받는다. 계정이나 프로필 삭제, 업로드 중 임대 만료로 작업
+        행이 먼저 지워졌어도 남겨야 하기 때문이다. 행이 남아 원본 삭제를 기록한 경우만 건너뛴다.
+        """
+        ...
 
     async def expire_transcripts(self) -> int:
         """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다.
@@ -300,10 +306,10 @@ class InMemorySpeechAnalysisJobRepository:
         )
         self.pending_audio_deletions.discard(self._jobs[analysis_id].object_key)
 
-    async def queue_audio_deletion(self, *, analysis_id: str) -> None:
+    async def queue_audio_deletion(self, *, analysis_id: str, object_key: str) -> None:
         job = self._jobs.get(analysis_id)
-        if job is not None and job.audio_deleted_at is None:
-            self.pending_audio_deletions.add(job.object_key)
+        if job is None or job.audio_deleted_at is None:
+            self.pending_audio_deletions.add(object_key)
 
     async def expire_transcripts(self) -> int:
         return 0
@@ -643,15 +649,20 @@ class PostgresSpeechAnalysisJobRepository:
                 (UUID(analysis_id),),
             )
 
-    async def queue_audio_deletion(self, *, analysis_id: str) -> None:
+    async def queue_audio_deletion(self, *, analysis_id: str, object_key: str) -> None:
+        # 키를 작업 행에서 읽지 않는다. 행이 이미 지워졌다면(계정이나 프로필 삭제, 업로드 중
+        # 임대 만료) 아무것도 넣지 못해, 뒤늦게 끝난 업로드의 원본이 대기열 밖에 남는다.
         await self._connection.execute(
             """
             INSERT INTO storage_deletion_request_queue (s3_object_key)
-            SELECT s3_object_key FROM speech_analysis_jobs
-             WHERE analysis_id = %s AND audio_deleted_at IS NULL
+            SELECT %s
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM speech_analysis_jobs
+                  WHERE analysis_id = %s AND audio_deleted_at IS NOT NULL
+             )
             ON CONFLICT (s3_object_key) DO NOTHING
             """,
-            (UUID(analysis_id),),
+            (object_key, UUID(analysis_id)),
         )
 
     async def expire_transcripts(self) -> int:

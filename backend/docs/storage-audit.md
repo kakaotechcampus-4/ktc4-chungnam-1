@@ -17,6 +17,8 @@ uv run python -m app.ops.storage_audit --s3
 
 DB와 S3 목록은 같은 순간의 스냅샷이 아니다. 업로드 중이거나 다른 경로의 자료일 수 있으므로 `unreferenced`는 검토 대상 수다. 자동 삭제 근거로 쓰지 않는다.
 
+`unreferenced_queued`는 DB 참조가 없는 객체 중 이미 삭제 대기열에 있는 수다. 업로드 중인 사진의 사전 등록, 업로드 뒤 행을 넣지 못한 사진, 짧은 음성 전사의 원본이 여기에 해당한다. 그중 `not_before`가 지나지 않아 [삭제 실행기](storage-deletion.md)가 아직 건너뛰는 요청은 `unreferenced_queued_not_due`로 따로 센다. 업로드 중인 사진과 처리 중인 짧은 음성 전사, 정리 코드까지 가지 못하고 멈춘 사진 업로드가 기한 전으로 남는다. `unreferenced`에서 `unreferenced_queued`를 뺀 수가 대기열에도 없는 객체다.
+
 ## 기한이 지난 원본을 기존 삭제 대기열에 넣기
 
 ```sh
@@ -38,4 +40,4 @@ uv run python -m app.ops.storage_audit --enqueue-safe-expired --limit 100
 
 근거: [AWS 객체 만료 안내](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html), [Lifecycle 접두사 필터 예시](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html). 2026-11-03 확인.
 
-테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS 권한과 Lifecycle 실행 결과는 검증하지 않았다.
+테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 대기열에 있는 비참조 객체 구분, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS 권한과 Lifecycle 실행 결과는 검증하지 않았다.

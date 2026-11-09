@@ -9,8 +9,8 @@
 빈 문자열은 받지 않으며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
 
 프로필을 지우면 `ON DELETE CASCADE`로 그 아래 기록이 모두 지워지고, 사진과 음성의 객체
-키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. 대기열을 처리해
-S3 원본을 실제로 지우는 코드는 아직 없다.
+키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. 대기열은 삭제
+실행기(`app.services.storage_deletion`)가 처리한다.
 """
 
 from collections.abc import Mapping

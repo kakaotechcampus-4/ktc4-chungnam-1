@@ -252,7 +252,9 @@ class SpeechAnalysisProcessor:
                 # STT 직후 멈춘 작업을 이어받았다면 원본 삭제 요청이 빠졌을 수 있다. 리포트만
                 # 만드는 경로에서는 S3를 부르지 않고 삭제 대기열에만 남긴다. 요청이 이미 있으면
                 # 그대로 둔다.
-                await jobs.queue_audio_deletion(analysis_id=job.analysis_id)
+                await jobs.queue_audio_deletion(
+                    analysis_id=job.analysis_id, object_key=job.object_key
+                )
             await self._report_generator.generate(connection, session_id=job.session_id, speech=speech)
             await self._complete(connection, jobs, job)
             return
@@ -370,8 +372,11 @@ async def _delete_audio_or_queue(
     if job.audio_deleted_at is not None:
         return
     # DB 기록 실패는 삼키지 않는다. 삭제 대기열에 남겼다고 확인하지 못한 상태를
-    # 정상적인 삭제 재처리 접수로 취급할 수 없다.
-    await jobs.queue_audio_deletion(analysis_id=job.analysis_id)
+    # 정상적인 삭제 재처리 접수로 취급할 수 없다. 작업 행이 이미 지워졌어도(업로드 중
+    # 임대 만료, 계정이나 프로필 삭제) 남도록 알고 있는 원본 키를 넘긴다.
+    await jobs.queue_audio_deletion(
+        analysis_id=job.analysis_id, object_key=job.object_key
+    )
     try:
         await audio_storage.delete(object_key=job.object_key)
     except Exception:

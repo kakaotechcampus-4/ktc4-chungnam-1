@@ -528,7 +528,7 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 - `multipart/form-data`의 `image` 한 장을 받아 `201`과 `VisitPhoto`를 돌려준다. 회차당 한 장(`uq_photos_session`)이며, 다시 올리면 기존 행을 지우고 새 행을 넣는다. 지운 행의 객체 키는 trigger가 S3 삭제 대기열에 넣는다.
 - 평가 전 회차만 받는다(`INVALID_SESSION_STATE`, 409). 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 확인하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. S3 업로드 동안에는 잠그지 않는다.
-- 행을 넣지 못하면(그 사이 평가 저장이나 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- 행을 넣지 못하면(그 사이 평가 저장이나 프로필 삭제, DB 오류, S3 업로드 실패) 올린 객체를 정리한다. 올리기 전 삭제 대기열 사전 등록과 정리 방식은 3-1과 같다([공통 처리 순서](#공통-처리-순서)).
 - 이미지 분석을 하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만 사진 분석 대기열은 `session_id IS NULL`인 행만 가져간다.
 
 ### 프로필 사진
@@ -546,7 +546,7 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 이 API 배포 전 migration `c62e19a4b308` 적용이 필요하다. 부모는 정리 대기열 `not_before` migration `e84b1c6da032`(#214)이므로 #204, #214 다음에 병합한다. 새 응답 필드는 추가 필드이며, 운영의 기존 앱과 실제 호환 검사는 별도로 진행한다. 로컬 검사는 합성 사진과 임시 DB를 사용했으며 실제 사진이나 운영 DB를 변경하지 않았다.
 
 - 프로필당 5장이다(`PHOTO_LIMIT_EXCEEDED`, 409). 면회 사진은 세지 않는다. 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 세고, 행을 넣을 때 프로필 행을 `FOR UPDATE`로 잠근 뒤 다시 센다. S3 업로드 동안에는 잠그지 않는다.
-- 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류) 올린 객체를 `storage.delete`로 지운다. 지우지도 못하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다. 행이 없어 trigger가 넣어 주지 않기 때문이다.
+- 올리기 전에 객체 키를 `storage_deletion_request_queue`에 1시간 뒤 `not_before`로 먼저 넣고, 행을 넣는 트랜잭션에서 지운다. 행이 없으면 trigger가 넣어 주지 않으므로, 업로드 뒤 행을 넣기 전에 프로세스가 끝나도 객체가 대기열 밖에 남지 않게 하기 위해서다. 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류, S3 업로드 실패) 그 요청의 `not_before`를 지금으로 앞당기고 올린 객체를 `storage.delete`로 지운다. 지웠어도 요청은 남겨 삭제 실행기가 확인한다.
 - 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져간다. [합성 사진 분석 실행과 운영 적용 조건](docs/photo-analysis.md)을 따른다. 현재 운영 환경 실행은 거절하며 실제 ML API 품질 검사는 별도다.
 - 면회 사진과 다른 계정의 사진은 3-2에서 없는 사진과 같은 `PROFILE_PHOTO_NOT_FOUND`(404)다.
 
@@ -562,8 +562,10 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
     → 본문을 받은 뒤 세션 폐기, 계정과 소유권 확인
     → validate_image(파일, max_size_bytes=설정값)     # 413 IMAGE_TOO_LARGE, 422 INVALID_IMAGE_FORMAT
     → storage.object_key(photo_id=..., image=...)     # photos/{photoId}.jpg, 개인정보 없음
+    → 삭제 대기열에 객체 키 사전 등록               # not_before = 지금 + 1시간, photo_uploads.py
     → storage.upload(object_key=..., file=..., image=...)
-    → photos 행 저장 (실패하면 storage.delete로 올린 객체를 지운다)
+    → photos 행 저장과 사전 등록 삭제를 한 트랜잭션으로
+      (실패하면 not_before를 지금으로 앞당기고 storage.delete로 올린 객체를 지운다)
     → 응답의 imageUrl, imageUrlExpiresAt은 storage.create_download(object_key=...)
 
 - 형식은 앱이 보낸 Content-Type이 아니라 파일 시그니처로 판단하며 JPEG와 PNG만 받는다.
@@ -571,7 +573,8 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 - 버킷이 설정되지 않았으면 사진이 필요한 순간에만 `IMAGE_STORAGE_NOT_CONFIGURED`(503)로 거절한다. 사진이 없는 프로필 조회는 그대로 동작한다.
 - AI 서버에 넘기는 8-4의 `downloadUrl`도 같은 `create_download`로 만든다.
 - 사진 메타데이터는 AI 분석과 주제 추천 입력에서 제외한다. 사진 파일 자체에서 EXIF를 제거하는 처리와 저장 정책은 별도 사항이며, 이 미결 항목을 메타데이터 입력 재허용으로 해석하지 않는다.
-- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣지만, 대기열을 처리해 S3 객체를 지우는 코드는 아직 없다.
+- 사전 등록은 업로드 중이거나 행을 넣기 전에 프로세스가 끝난 경우를 위한 것이다. 기한 전에는 [삭제 실행기](docs/storage-deletion.md)가 건너뛰고, 기한이 지나면 행이 없는 객체로 보고 지운다. 요청 취소로 업로드가 아직 진행 중일 수 있으면 앞당기지 않고 기한까지 둔다. 업로드가 1시간보다 오래 걸리면 실행기가 먼저 지울 수 있다.
+- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣는다. 대기열은 삭제 실행기(#204)가 처리하며 운영 배포와 주기 실행은 남아 있다.
 
 ### 보관 기준과 후속 작업
 
