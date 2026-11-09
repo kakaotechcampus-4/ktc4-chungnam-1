@@ -309,6 +309,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - 저장은 한 트랜잭션이다: 새 주제를 `profile_topics`에 만들고 `conversation_cards` 12장을 넣은 뒤 `card_sets`를 `completed`로 바꾸고 `generation_log`(`{"input": context, ...}`)를 넣는다.
 - `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다. 오래 기다린 작업은 시작 대기 시간 동안 worker가 가져간 작업(`claimed_at`)도 임대가 남은 작업도 없을 때만 정리한다. worker가 다른 계정의 작업을 처리하는 중이면 기다리게 둔다.
 - 결과를 저장할 때 `status = 'completed'`와 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
+- 저장 트랜잭션은 프로필과 작업 행을 잠근 뒤 `lease_expires_at > clock_timestamp()`인 `running` 작업일 때만 저장한다. 생성하는 동안 임대 시각이 지났으면 만료 정리 전이라도 결과를 버리고 `queue.fail`로 `WORKER_LEASE_EXPIRED`를 남긴다. `queue.fail`은 임대 시각이 지난 작업에는 넘겨받은 코드 대신 `WORKER_LEASE_EXPIRED`를 남기고, 이미 끝난 작업은 바꾸지 않는다.
 - **실패해도 `generation_log`가 있어야 한다**(CHECK). AI에 보낸 입력을 남기며 실패시키려면 `queue.fail(connection, job, error_code=..., generation_input=context)`을 부르고 처리 함수에서 정상 반환한다. 그냥 `AppError`를 올리면 `{"input": null}`로 기록된다.
 - 실행 진입점은 `app/workers/speech_analysis.py`처럼 `run_worker_main`으로 만든다(예: `app/workers/card_generation.py`).
 

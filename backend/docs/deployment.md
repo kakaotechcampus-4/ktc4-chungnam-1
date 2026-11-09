@@ -24,6 +24,8 @@
 
 카드 생성 요청을 worker가 가져가지 않은 채 기본 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)가 지났고 같은 시간 동안 worker가 다른 작업도 가져가지 않았으면, 다음 생성 요청(4-1)이나 상태 조회(4-2)에서 `failed`와 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 가져간 시각은 `card_sets.claimed_at`에 남는다. 그 시간 안에 가져간 작업이나 임대가 남은 작업이 있으면 worker가 다른 작업을 처리하는 중으로 보고 기다리는 작업을 `running`으로 둔다. 작업 하나가 임대 시간(`SAEROK_CARD_GENERATION_LEASE_SECONDS`, 기본 300초)까지 걸릴 수 있어 이 값은 임대 시간보다 길게 둔다. worker가 가져간 뒤 임대가 만료된 작업은 같은 요청이나 조회, 또는 worker의 다음 정리에서 `WORKER_LEASE_EXPIRED`로 처리한다. 생성 요청과 상태 조회가 없고 worker도 실행되지 않으면 DB 상태는 바로 바뀌지 않는다. 자동 재시도가 아니라 앱에서 다시 생성을 요청할 수 있도록 실패 상태를 알리는 처리다.
 
+임대가 끝난 뒤 카드 생성 결과가 늦게 와도 저장하지 않는다. 결과를 받은 worker가 정리를 기다리지 않고 그 자리에서 작업을 `WORKER_LEASE_EXPIRED`로 끝낸다.
+
 ## 로컬에서 PostgreSQL만 컨테이너로 띄우기
 
 [로컬 PostgreSQL 설정](../database/로컬설정법.md)의 설치를 대신한다. 앱은 지금처럼 `uv`로 실행한다. 로컬에 이미 5432 포트를 쓰는 PostgreSQL이 있으면 먼저 끈다.

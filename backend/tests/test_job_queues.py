@@ -112,6 +112,52 @@ def test_card_generation_job_whose_lease_expired_fails(migrated_database_url):
     assert row["generation_log"] == {"input": None}
 
 
+@pytest.mark.parametrize(
+    "before_fail, expected",
+    [
+        ("lease_passed", ("failed", "WORKER_LEASE_EXPIRED", {"input": {"ageRange": "80s"}})),
+        ("lease_expired", ("failed", "WORKER_LEASE_EXPIRED", {"input": None})),
+        ("completed", ("completed", None, {"input": {}})),
+    ],
+    ids=["lease-passed", "already-expired", "already-completed"],
+)
+def test_late_card_generation_failure_does_not_replace_lease_expiry(
+    migrated_database_url, before_fail, expected
+):
+    """임대 시각이 지난 뒤 온 실패는 만료 정리 전이라도 그 실패 코드 대신 임대 만료로 남긴다.
+    이미 끝난 작업(만료 정리로 실패, 완료)은 바꾸지 않는다."""
+    queue = CardGenerationQueue()
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            set_id = await _running_card_set(connection)
+            job = await queue.claim(connection, lease_seconds=600)
+            await connection.execute(
+                "UPDATE card_sets SET lease_expires_at = now() - interval '1 second'"
+            )
+            if before_fail == "lease_expired":
+                await queue.expire_leases(connection)
+            elif before_fail == "completed":
+                await connection.execute(
+                    "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
+                    " generation_log = '{\"input\": {}}'"
+                )
+            await queue.fail(
+                connection,
+                job,
+                error_code="INVALID_AI_RESPONSE",
+                generation_input={"ageRange": "80s"},
+            )
+            return await _row(
+                connection, "SELECT * FROM card_sets WHERE set_id = %s", (set_id,)
+            )
+
+    row = run(scenario())
+
+    assert (row["status"], row["error_code"], row["generation_log"]) == expected
+    assert row["lease_expires_at"] is None
+
+
 def test_stuck_card_generation_jobs_of_the_profile_fail(migrated_database_url):
     """시작 대기 시간 동안 worker가 아무 작업도 가져가지 않았으면 worker가 없거나 멈췄다."""
     queue = CardGenerationQueue()

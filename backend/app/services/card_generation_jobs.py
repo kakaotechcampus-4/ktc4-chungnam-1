@@ -4,6 +4,12 @@
 실패를 기록하는 일만 한다. 8-2 요청 조립, AI 호출, 응답 검증과 결과 저장은 처리
 함수(작업 B)가 한다. 결과를 저장할 때는 `status = 'completed'`와 함께
 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
+
+임대가 남았는지는 결과 저장(`card_sets.save_result`)과 실패 기록(`fail`) 모두
+`clock_timestamp()`로 본다. 저장은 프로필 잠금을 기다린 뒤에 확인하는데, 트랜잭션 안의
+`now()`는 트랜잭션 시작 시각이라 잠금을 기다리는 동안 임대가 끝나도 남은 것으로 보기
+때문이다. worker의 만료 정리(`expire_leases`, `lease_expires_at <= now()`)는 트랜잭션
+없이 한 문장으로 돌아 두 시각이 사실상 같다.
 """
 
 from __future__ import annotations
@@ -131,13 +137,20 @@ class CardGenerationQueue:
 
         실패한 작업에도 `generation_log`가 있어야 한다(CHECK). 처리 함수가 AI에 보낸
         요청을 남기려면 `generation_input`으로 넘기고 처리 함수에서 정상 반환한다.
+
+        이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 임대 시각이 지난 작업은
+        만료 정리 전이라도 `error_code` 대신 `WORKER_LEASE_EXPIRED`로 남긴다. 그래서
+        늦게 온 실패와 만료 정리 중 어느 쪽이 먼저 와도 같은 코드가 남는다.
         """
         await connection.execute(
             """
             UPDATE card_sets
-               SET status = 'failed', error_code = %s, lease_expires_at = NULL,
+               SET status = 'failed',
+                   error_code = CASE WHEN lease_expires_at <= clock_timestamp()
+                                     THEN %s ELSE %s END,
+                   lease_expires_at = NULL,
                    generation_log = %s
              WHERE set_id = %s AND status = 'running'
             """,
-            (error_code, Jsonb({"input": generation_input}), job.set_id),
+            (LEASE_EXPIRED_ERROR, error_code, Jsonb({"input": generation_input}), job.set_id),
         )
