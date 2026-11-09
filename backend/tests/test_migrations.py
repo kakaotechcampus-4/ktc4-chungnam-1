@@ -455,7 +455,7 @@ def test_card_set_stale_at_is_only_for_unused_completed_sets(
 def test_card_generation_log_is_rewritten_to_ids(alembic_config, test_database_url):
     """카드 생성 기록(685f243e9f1f). 글이 든 기존 기록은 ID만 남긴 형태로 고치고, 이미 고친 기록,
     `{"input": null}`과 진행 중인 작업(NULL)은 건드리지 않음. 다시 적용해도 결과가 같음."""
-    command.upgrade(alembic_config, "e7c3a1f94d20")
+    command.upgrade(alembic_config, "202cdc671d82")
     engine = sa.create_engine(test_database_url)
     insert_set = sa.text(
         "INSERT INTO card_sets"

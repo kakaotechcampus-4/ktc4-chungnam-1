@@ -93,7 +93,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 - **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
-- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 사진에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
+- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 입력에 넣을 수 있는 사진(설명이 있는 사진)에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
 ## DB 변경
 
@@ -146,7 +146,8 @@ ALTER TABLE life_facts
 
 - `storyCategory`: 필수. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
 - `title`: 필수. 100자 이하, 비울 수 없다.
-- `content`: 필수. 비울 수 없다.
+- `content`: 필수. 5,000자 이하, 비울 수 없다(2026-11-09 PM 결정).
+- 프로필 하나의 이야기는 7-4 승인으로 만든 것을 포함해 300개까지다(2026-11-09 PM 결정).
 - `imageNumber`: 필수. 1~5 정수. 앱이 처음에 하나를 무작위로 골라 두고 보호자가 바꿀 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
@@ -154,7 +155,8 @@ ALTER TABLE life_facts
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` | |
-| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖 |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED` | 프로필에 이야기가 이미 300개 있음 |
+| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖이거나, 제목 100자 또는 내용 5,000자를 넘음 |
 
 **구현 메모**
 

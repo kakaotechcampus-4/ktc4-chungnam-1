@@ -12,7 +12,7 @@ PM 결정(2026-11-08): 카드 생성 기록(`card_sets.generation_log`)에는 �
 - downgrade는 아무것도 하지 않는다. 지운 글은 되살리지 않는다.
 
 Revision ID: 685f243e9f1f
-Revises: e7c3a1f94d20
+Revises: 202cdc671d82
 Create Date: 2026-11-09 12:00:00.000000
 
 """
@@ -26,7 +26,7 @@ from app.services.card_generation_log import reference_log
 
 # revision identifiers, used by Alembic.
 revision: str = "685f243e9f1f"
-down_revision: Union[str, Sequence[str], None] = "e7c3a1f94d20"
+down_revision: Union[str, Sequence[str], None] = "202cdc671d82"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

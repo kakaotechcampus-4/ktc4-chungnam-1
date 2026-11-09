@@ -133,6 +133,8 @@ CREATE TABLE card_sets (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
     lease_expires_at TIMESTAMPTZ,
     attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    -- worker가 작업을 가져간 시각. 작업이 끝나도 남겨 worker가 일하고 있는지 판단하는 데 쓴다.
+    claimed_at       TIMESTAMPTZ,
     -- 카드 묶음을 받은 뒤 프로필이나 일대기를 고친 시각. 값이 있으면 이 묶음으로 면회를 시작할 수 없다.
     stale_at         TIMESTAMPTZ,
     FOREIGN KEY (session_id, profile_id)
@@ -370,6 +372,7 @@ CREATE TABLE withdrawal_feedback (
 );
 
 -- 로그아웃과 탈퇴로 폐기한 세션의 `jti`. 그 세션의 만료 시각까지만 둔다.
+-- 가입 동의(API 1-2)에 쓴 등록 토큰의 `jti` 도 그 토큰의 만료 시각까지 두어 한 번만 쓰게 한다.
 -- 계정을 참조하지 않으므로 탈퇴로 계정이 지워져도 만료까지 남는다.
 CREATE TABLE session_revocations (
     token_id   VARCHAR(64) PRIMARY KEY CHECK (length(btrim(token_id)) > 0),

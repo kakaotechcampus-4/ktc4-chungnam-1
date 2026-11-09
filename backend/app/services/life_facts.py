@@ -5,8 +5,10 @@
 작업 C) 그 제안을 출처로 만든다. 두 경로 모두 `create_life_fact`를 쓴다. 보호자는 일대기에서
 고치고(2-7) 지운다(2-9).
 
-`title`은 100자 이하이며 `title`과 `content`는 비울 수 없다. 요청 검증이 먼저 막고,
-DB CHECK(`length(btrim(x)) > 0`)도 막는다.
+`title`은 100자, `content`는 5,000자 이하이며 둘 다 비울 수 없다(2026-11-09 PM 결정으로 내용
+상한 추가). 요청 검증(`app.schemas.profiles`)이 먼저 막고, 빈 값은 DB CHECK
+(`length(btrim(x)) > 0`)도 막는다. 프로필 하나의 이야기는 `LIFE_FACT_LIMIT`개까지이며 두 경로가 함께
+쓰는 `create_life_fact`가 센다. DB 제약은 없다.
 
 일대기의 분류(`story_category`)와 기본 그림 번호(`image_number`, 1~5)도 저장한다. 그림 파일은
 앱에 있다. 필드 이름은 임시다(작업 D 문서 미정 D1, D2).
@@ -38,6 +40,8 @@ class LifeFact:
 _COLUMNS = "fact_id, profile_id, title, content, created_at, story_category, image_number"
 # 분류마다 있는 기본 그림 수. 앱의 `lifeStoryImageCount`, DB CHECK와 같다.
 IMAGE_COUNT = 5
+# 프로필 하나에 둘 수 있는 이야기 수(2026-11-09 PM 결정). 2-6과 7-4 승인으로 만든 것을 함께 센다.
+LIFE_FACT_LIMIT = 300
 # 2-7이 고칠 수 있는 열. `SET` 절의 열 이름은 이 목록에서만 고른다.
 _UPDATABLE = ("title", "content", "story_category", "image_number")
 # 카드 생성(`card_sets.build_context`)에 쓰는 열. 분류와 그림 번호는 쓰지 않는다.
@@ -60,9 +64,23 @@ async def create_life_fact(
     트랜잭션에서 부른다). 소유 확인도 하지 않으므로 부르는 쪽이 `profile_id`를 먼저
     확인한다. `source_proposal_id`는 승인한 생애 정보 제안이며 응답에는 담지 않는다.
 
+    프로필에 이야기가 이미 `LIFE_FACT_LIMIT`개 있으면 409 `LIFE_FACT_LIMIT_EXCEEDED`로 거절한다.
+    같은 프로필의 동시 요청이 함께 세어 넘지 않도록 부르는 쪽이 트랜잭션 안에서 프로필 행을
+    먼저 잠근다(`card_sets.lock_profile`). 7-4처럼 한 트랜잭션에서 여러 번 부르면 앞에서 만든
+    이야기도 함께 세므로, 하나라도 넘으면 트랜잭션 전체가 저장되지 않는다.
+
     7-4는 분류와 그림 번호를 보내지 않으므로 기본값을 쓴다. 분류는 `other`(기타)이고 그림
     번호는 1~5 중 하나를 고른다(작업 D 문서 미정 D2, D5).
     """
+    cursor = await connection.execute(
+        "SELECT count(*) AS n FROM life_facts WHERE profile_id = %s", (profile_id,)
+    )
+    if (await cursor.fetchone())["n"] >= LIFE_FACT_LIMIT:
+        raise AppError(
+            status_code=409,
+            error_code="LIFE_FACT_LIMIT_EXCEEDED",
+            message=f"이야기는 한 프로필에 {LIFE_FACT_LIMIT}개까지 저장할 수 있습니다.",
+        )
     if image_number is None:
         image_number = secrets.randbelow(IMAGE_COUNT) + 1
     cursor = await connection.execute(
@@ -95,18 +113,24 @@ async def add_life_fact(
     story_category: str,
     image_number: int,
 ) -> LifeFact:
-    """일대기에서 보호자가 생애 정보를 추가한다(API 2-6)."""
+    """일대기에서 보호자가 생애 정보를 추가한다(API 2-6).
+
+    개수 상한(`LIFE_FACT_LIMIT`)을 동시 요청에도 넘지 않도록 프로필 행을 잠근 트랜잭션에서
+    만든다. 2-8, 4-1, 5-1처럼 프로필을 먼저 잠근다.
+    """
     await ownership.require_owned(
         connection, ownership.PROFILE, profile_id, account_id=account_id
     )
-    return await create_life_fact(
-        connection,
-        profile_id=profile_id,
-        title=title,
-        content=content,
-        story_category=story_category,
-        image_number=image_number,
-    )
+    async with connection.transaction():
+        await card_sets.lock_profile(connection, profile_id)
+        return await create_life_fact(
+            connection,
+            profile_id=profile_id,
+            title=title,
+            content=content,
+            story_category=story_category,
+            image_number=image_number,
+        )
 
 
 async def update_life_fact(

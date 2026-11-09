@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import shlex
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,10 +16,13 @@ spec.loader.exec_module(prune)
 NOW = datetime(2026, 11, 4, tzinfo=UTC)
 
 
-def _backup(directory: Path, name: str, days_ago: int, verified: bool = True) -> None:
+UNIT = Path(__file__).resolve().parents[1] / "ops" / "backup-prune" / "saerok-backup-prune.service"
+
+
+def _backup(directory: Path, name: str, days_ago: int, verified: bool = True, now: datetime = NOW) -> None:
     (directory / f"saelog-{name}.dump").write_bytes(b"synthetic")
     (directory / f"saelog-{name}.json").write_text(json.dumps({
-        "createdAtUtc": (NOW - timedelta(days=days_ago)).isoformat(),
+        "createdAtUtc": (now - timedelta(days=days_ago)).isoformat(),
         "restoreVerified": verified,
     }), encoding="utf-8")
 
@@ -65,3 +69,101 @@ def test_dry_run_lists_and_apply_removes_both_files(tmp_path, capsys):
 def test_rejects_unsafe_retention(tmp_path, capsys):
     assert prune.main(["--backup-dir", str(tmp_path), "--keep", "0"]) == 2
     assert "INVALID_RETENTION" in capsys.readouterr().out
+
+
+def test_default_rule_drops_backups_older_than_fourteen_days(tmp_path, capsys):
+    # 2026-11-09 PM 결정: 14일 보관. main은 실제 시계를 쓰므로 지금 기준으로 만든다.
+    now = datetime.now(UTC)
+    for name, days in [("d1", 1), ("d13", 13), ("d15", 15), ("d30", 30)]:
+        _backup(tmp_path, name, days, now=now)
+    assert prune.main(["--backup-dir", str(tmp_path)]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["applied"] is False
+    assert (listed["keep"], listed["olderThanDays"]) == (1, 14)
+    assert sorted(b["name"] for b in listed["wouldRemove"]) == ["saelog-d15", "saelog-d30"]
+
+
+def test_newest_verified_backup_survives_past_fourteen_days(tmp_path):
+    # 배포가 14일 넘게 없어도 복원 확인된 가장 최근 백업 1개는 남는다. 실패한 새 백업은 세지 않는다.
+    _backup(tmp_path, "new-bad", 2, verified=False)
+    _backup(tmp_path, "old-ok", 20)
+    _backup(tmp_path, "older-ok", 25)
+    _backup(tmp_path, "old-bad", 16, verified=False)
+    doomed = prune.plan(prune.scan(tmp_path), keep=1, older_than=timedelta(days=14), now=NOW)
+    assert sorted(b.stem for b in doomed) == ["saelog-old-bad", "saelog-older-ok"]
+
+
+def test_missing_backup_dir_fails_instead_of_reporting_nothing(tmp_path, capsys):
+    # 경로를 잘못 넣은 timer가 "지울 것 없음"으로 계속 성공하지 않게 한다.
+    assert prune.main(["--backup-dir", str(tmp_path / "missing")]) == 2
+    assert "BACKUP_DIR_NOT_FOUND" in capsys.readouterr().out
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    assert prune.main(["--backup-dir", str(tmp_path / "file")]) == 2
+    assert "BACKUP_DIR_NOT_FOUND" in capsys.readouterr().out
+
+
+def test_unreadable_backup_dir_fails_instead_of_reporting_nothing(tmp_path, monkeypatch, capsys):
+    # service는 capability를 모두 빼고 돌므로 root 소유가 아닌 폴더는 읽지 못한다.
+    # Path.glob은 이 권한 오류를 빈 폴더로 넘기므로, 그대로면 매일 "지울 것 없음"으로 성공한다.
+    # 시험 컨테이너는 root라 실제 권한으로는 재현되지 않아 폴더 열기만 거절한다.
+    _backup(tmp_path, "old", 30, now=datetime.now(UTC))
+    real_scandir = prune.os.scandir
+
+    def deny(path="."):
+        if Path(path) == tmp_path:
+            raise PermissionError(13, "Permission denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr(prune.os, "scandir", deny)
+    assert prune.main(["--backup-dir", str(tmp_path), "--apply"]) == 2
+    assert json.loads(capsys.readouterr().out) == {"error": "BACKUP_UNREADABLE"}
+    assert (tmp_path / "saelog-old.dump").exists()
+
+
+def test_unreadable_record_fails_instead_of_counting_backup_as_unverified(tmp_path, monkeypatch, capsys):
+    # 가장 최근 복원 확인 백업의 기록을 못 읽을 때 "복원 확인 안 됨"으로 추측하면,
+    # 그 백업 대신 더 오래된 백업을 지키고 이 백업을 지울 수 있다.
+    now = datetime.now(UTC)
+    _backup(tmp_path, "new-ok", 20, now=now)
+    _backup(tmp_path, "old-ok", 25, now=now)
+    locked = tmp_path / "saelog-new-ok.json"
+    real_read_text = Path.read_text
+
+    def deny(self, *args, **kwargs):
+        if self == locked:
+            raise PermissionError(13, "Permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    assert prune.main(["--backup-dir", str(tmp_path), "--apply"]) == 2
+    assert json.loads(capsys.readouterr().out) == {"error": "BACKUP_UNREADABLE"}
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "saelog-new-ok.dump", "saelog-new-ok.json", "saelog-old-ok.dump", "saelog-old-ok.json",
+    ]
+
+
+def _unit_exec_args() -> list[str]:
+    lines = [line for line in UNIT.read_text(encoding="utf-8").splitlines() if line.startswith("ExecStart=")]
+    assert len(lines) == 1
+    return shlex.split(lines[0].removeprefix("ExecStart="))
+
+
+def test_systemd_unit_applies_the_fourteen_day_rule(tmp_path):
+    args = _unit_exec_args()
+    assert args[:3] == ["/usr/bin/python3", "-I", "/opt/saerok-backup-prune/prune_database_backups.py"]
+    options = args[3:]
+    assert options[options.index("--keep") + 1] == "1"
+    assert options[options.index("--older-than-days") + 1] == "14"
+    assert "--apply" in options
+    # 쓰기는 정리 대상 폴더에만 허용한다.
+    backup_dir = options[options.index("--backup-dir") + 1]
+    assert f"ReadWritePaths={backup_dir}" in UNIT.read_text(encoding="utf-8").splitlines()
+
+    # 같은 인수를 합성 폴더에 그대로 실행한다.
+    now = datetime.now(UTC)
+    _backup(tmp_path, "d13", 13, now=now)
+    _backup(tmp_path, "d15", 15, now=now)
+    _backup(tmp_path, "d40", 40, now=now)
+    options[options.index("--backup-dir") + 1] = str(tmp_path)
+    assert prune.main(options) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["saelog-d13.dump", "saelog-d13.json"]

@@ -3,12 +3,15 @@
 임시 DB에 최신 migration을 적용해 실행한다(`conftest.py`). 값은 모두 합성 데이터다.
 """
 
+import asyncio
 from uuid import UUID
 
 from psycopg import Rollback
 
 from app.core.database import connect
-from app.services.life_facts import create_life_fact
+from app.core.errors import AppError
+from app.services import life_facts
+from app.services.life_facts import LIFE_FACT_LIMIT, create_life_fact
 from tests.db_api import DbApi
 from tests.support import run
 
@@ -39,6 +42,15 @@ def add_story(caregiver, profile_id, **overrides):
     )
     assert response.status_code == 201
     return response.json()
+
+
+def fill_stories(api, profile_id, count):
+    """이야기 `count`개를 DB에 바로 넣는다. 값은 합성이다."""
+    api.query(
+        "INSERT INTO life_facts (profile_id, title, content) "
+        "SELECT %s::uuid, '합성 제목 ' || n, '합성 내용' FROM generate_series(1, %s) AS n",
+        (profile_id, count),
+    )
 
 
 async def _life_fact_proposal(connection, profile_id):
@@ -126,6 +138,92 @@ def test_invalid_life_facts_are_rejected(migrated_database_url):
     accepted = caregiver.call("POST", path, json=story(title="가" * 100))
     assert accepted.status_code == 201
     assert len(caregiver.call("GET", f"/api/v1/profiles/{profile_id}").json()["lifeFacts"]) == 1
+
+
+def test_content_is_limited_to_5000_characters(migrated_database_url):
+    """2026-11-09 PM 결정. 2-6과 2-7이 같은 상한을 쓴다."""
+    caregiver = DbApi(migrated_database_url).create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    path = f"/api/v1/profiles/{profile_id}/life-facts"
+
+    too_long = caregiver.call("POST", path, json=story(content="가" * 5001))
+    longest = caregiver.call("POST", path, json=story(content="가" * 5000))
+    fact_path = f"/api/v1/life-facts/{longest.json()['factId']}"
+    patched_too_long = caregiver.call("PATCH", fact_path, json={"content": "나" * 5001})
+    patched_longest = caregiver.call("PATCH", fact_path, json={"content": "나" * 5000})
+
+    assert [too_long.status_code, patched_too_long.status_code] == [422, 422]
+    assert {too_long.json()["errorCode"], patched_too_long.json()["errorCode"]} == {
+        "INVALID_REQUEST"
+    }
+    assert longest.status_code == 201
+    assert patched_longest.status_code == 200
+    stored = caregiver.call("GET", f"/api/v1/profiles/{profile_id}").json()["lifeFacts"]
+    assert [fact["content"] for fact in stored] == ["나" * 5000]
+
+
+def test_profile_keeps_at_most_300_stories(migrated_database_url):
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    other_profile_id = caregiver.create_profile()["profileId"]
+    fill_stories(api, profile_id, LIFE_FACT_LIMIT - 1)
+    path = f"/api/v1/profiles/{profile_id}/life-facts"
+
+    last = caregiver.call("POST", path, json=story(title="마지막 이야기"))
+    over = caregiver.call("POST", path, json=story(title="넘는 이야기"))
+    other = caregiver.call(
+        "POST", f"/api/v1/profiles/{other_profile_id}/life-facts", json=story()
+    )
+
+    assert LIFE_FACT_LIMIT == 300
+    assert last.status_code == 201
+    assert over.status_code == 409
+    assert over.json()["errorCode"] == "LIFE_FACT_LIMIT_EXCEEDED"
+    # 상한은 프로필마다 센다.
+    assert other.status_code == 201
+    counts = api.query(
+        "SELECT profile_id::text AS profile_id, count(*) AS n FROM life_facts "
+        "GROUP BY profile_id ORDER BY n DESC"
+    )
+    assert counts == [
+        {"profile_id": profile_id, "n": LIFE_FACT_LIMIT},
+        {"profile_id": other_profile_id, "n": 1},
+    ]
+    # 하나를 지우면 다시 추가할 수 있다.
+    assert caregiver.call("DELETE", f"/api/v1/life-facts/{last.json()['factId']}").status_code == 204
+    assert caregiver.call("POST", path, json=story(title="다시 넣은 이야기")).status_code == 201
+
+
+def test_concurrent_additions_do_not_exceed_the_story_limit(migrated_database_url):
+    api = DbApi(migrated_database_url)
+    caregiver = api.create_account()
+    profile_id = UUID(caregiver.create_profile()["profileId"])
+    fill_stories(api, profile_id, LIFE_FACT_LIMIT - 2)
+
+    async def add_one(n: int) -> str:
+        async with connect(migrated_database_url) as connection:
+            try:
+                await life_facts.add_life_fact(
+                    connection,
+                    profile_id,
+                    account_id=caregiver.account_id,
+                    title=f"동시 이야기 {n}",
+                    content="합성 내용",
+                    story_category="other",
+                    image_number=1,
+                )
+            except AppError as error:
+                return error.error_code
+            return "created"
+
+    async def scenario() -> list[str]:
+        return await asyncio.gather(*(add_one(n) for n in range(5)))
+
+    results = run(scenario())
+
+    assert sorted(results) == ["LIFE_FACT_LIMIT_EXCEEDED"] * 3 + ["created"] * 2
+    assert api.query("SELECT count(*) AS n FROM life_facts")[0]["n"] == LIFE_FACT_LIMIT
 
 
 def test_life_fact_cannot_be_added_to_another_accounts_profile(migrated_database_url):

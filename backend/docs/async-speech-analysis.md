@@ -588,6 +588,7 @@ error_code = null
 | 보호자 평가 전 | 409 `EVALUATION_REQUIRED`, 업로드 없음 |
 | 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
+| 업로드가 끝나기 전에 업로드 임대 만료나 계정, 프로필 삭제로 작업 행이 지워짐 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함. 올라간 원본 키는 행이 없어도 삭제 대기열에 기록 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
 | AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |

@@ -53,6 +53,11 @@ async def review_proposals(
     주제 제안 승인이 하나라도 있으면 카드를 만드는 중일 때 409 `CARD_GENERATION_IN_PROGRESS`로
     거절하고 아무것도 저장하지 않는다. 생애 정보만 승인한 확인은 2-6처럼 거절하지 않는다. 확인 여부(409 `PROPOSAL_ALREADY_REVIEWED`)와
     요청 검사(422 `INVALID_PROPOSAL_REVIEW`)가 먼저다.
+
+    승인한 생애 정보를 더해 프로필의 이야기가 `life_facts.LIFE_FACT_LIMIT`개를 넘으면
+    `create_life_fact`가 409 `LIFE_FACT_LIMIT_EXCEEDED`로 거절하고, 같은 트랜잭션이라 제안 정리와
+    주제 피드백도 저장하지 않는다. 내용 길이(5,000자)는 요청 검증(`LifeFactReview`)이 2-6과 같이
+    422 `INVALID_REQUEST`로 막는다.
     """
     profile_id = await ownership.require_owned(
         connection, ownership.VISIT_SESSION, session_id, account_id=account_id

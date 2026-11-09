@@ -4,6 +4,12 @@
 실패를 기록하는 일만 한다. 8-2 요청 조립, AI 호출, 응답 검증과 결과 저장은 처리
 함수(작업 B)가 한다. 결과를 저장할 때는 `status = 'completed'`와 함께
 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
+
+임대가 남았는지는 결과 저장(`card_sets.save_result`)과 실패 기록(`fail`) 모두
+`clock_timestamp()`로 본다. 저장은 프로필 잠금을 기다린 뒤에 확인하는데, 트랜잭션 안의
+`now()`는 트랜잭션 시작 시각이라 잠금을 기다리는 동안 임대가 끝나도 남은 것으로 보기
+때문이다. worker의 만료 정리(`expire_leases`, `lease_expires_at <= now()`)는 트랜잭션
+없이 한 문장으로 돌아 두 시각이 사실상 같다.
 """
 
 from __future__ import annotations
@@ -18,7 +24,8 @@ from app.core.database import DbConnection
 from app.services.card_generation_log import reference_input
 from app.workers.base import LEASE_EXPIRED_ERROR
 
-# 정해진 시간 안에 worker가 가져가지 않은 작업의 실패 코드. worker가 없거나 멈췄다.
+# 정해진 시간이 지나도 worker가 가져가지 않았고, 그동안 worker가 다른 작업도 가져가지 않은
+# 작업의 실패 코드. worker가 없거나 멈췄다.
 NOT_STARTED_ERROR = "CARD_GENERATION_NOT_STARTED"
 
 
@@ -53,8 +60,14 @@ class CardGenerationQueue:
         `expire_leases`는 worker 루프 안에서만 돌아서, worker가 없으면 작업이 계속
         `running`으로 남는다. 4-1과 4-2가 상태를 보기 전에 불러 다음 두 작업을 정리한다.
 
-        - 임대 없이 `start_timeout_seconds`가 지난 작업: 가져갈 worker가 없다
+        - 임대 없이 `start_timeout_seconds`가 지났고, 그 시간 동안 worker가 어떤 작업도
+          가져가지 않았으며 임대가 남은 작업도 없다: 가져갈 worker가 없거나 멈췄다
         - 임대가 만료된 작업: 가져간 worker가 멈췄다
+
+        worker 하나가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 기다린 작업도 실패시키지
+        않는다. worker는 작업 하나를 임대 시간 안에 끝내고 바로 다음 작업을 가져가므로, 임대
+        시간보다 긴 `start_timeout_seconds` 안에 가져간 작업(`claimed_at`)이 있거나 임대가 남은
+        작업이 있으면 worker가 일하고 있다.
 
         worker가 먼저 가져간 작업은 임대가 남아 있어 건드리지 않는다. 여기서 실패로 바꾼
         작업은 `claim`이 `running`만 고르므로 worker가 가져가지 않는다.
@@ -63,17 +76,28 @@ class CardGenerationQueue:
             """
             UPDATE card_sets
                SET status = 'failed',
-                   error_code = CASE WHEN lease_expires_at IS NULL THEN %s ELSE %s END,
+                   error_code = CASE WHEN lease_expires_at IS NULL THEN %(not_started)s
+                                     ELSE %(lease_expired)s END,
                    lease_expires_at = NULL,
                    generation_log = jsonb_build_object('input', NULL)
-             WHERE profile_id = %s AND status = 'running'
+             WHERE profile_id = %(profile_id)s AND status = 'running'
                AND (
                     (lease_expires_at IS NULL
-                     AND created_at <= now() - (%s * interval '1 second'))
+                     AND created_at <= now() - (%(timeout)s * interval '1 second')
+                     AND NOT EXISTS (
+                         SELECT 1 FROM card_sets AS progress
+                          WHERE progress.claimed_at > now() - (%(timeout)s * interval '1 second')
+                             OR progress.lease_expires_at > now()
+                     ))
                     OR lease_expires_at <= now()
                )
             """,
-            (NOT_STARTED_ERROR, LEASE_EXPIRED_ERROR, profile_id, start_timeout_seconds),
+            {
+                "not_started": NOT_STARTED_ERROR,
+                "lease_expired": LEASE_EXPIRED_ERROR,
+                "profile_id": profile_id,
+                "timeout": start_timeout_seconds,
+            },
         )
         return cursor.rowcount
 
@@ -91,6 +115,7 @@ class CardGenerationQueue:
             )
             UPDATE card_sets AS card_set
                SET lease_expires_at = now() + (%s * interval '1 second'),
+                   claimed_at = now(),
                    attempt_count = attempt_count + 1
               FROM candidate
              WHERE card_set.set_id = candidate.set_id
@@ -114,13 +139,25 @@ class CardGenerationQueue:
         실패한 작업에도 `generation_log`가 있어야 한다(CHECK). 처리 함수가 AI에 보낸
         요청을 남기려면 context를 `generation_input`으로 넘기고 처리 함수에서 정상 반환한다.
         글은 남기지 않고 ID만 남긴다(`card_generation_log.reference_input`).
+
+        이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 임대 시각이 지난 작업은
+        만료 정리 전이라도 `error_code` 대신 `WORKER_LEASE_EXPIRED`로 남긴다. 그래서
+        늦게 온 실패와 만료 정리 중 어느 쪽이 먼저 와도 같은 코드가 남는다.
         """
         await connection.execute(
             """
             UPDATE card_sets
-               SET status = 'failed', error_code = %s, lease_expires_at = NULL,
+               SET status = 'failed',
+                   error_code = CASE WHEN lease_expires_at <= clock_timestamp()
+                                     THEN %s ELSE %s END,
+                   lease_expires_at = NULL,
                    generation_log = %s
              WHERE set_id = %s AND status = 'running'
             """,
-            (error_code, Jsonb({"input": reference_input(generation_input)}), job.set_id),
+            (
+                LEASE_EXPIRED_ERROR,
+                error_code,
+                Jsonb({"input": reference_input(generation_input)}),
+                job.set_id,
+            ),
         )

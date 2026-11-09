@@ -21,7 +21,10 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.main import create_app
 from app.services.accounts import InMemoryAccountRepository
-from app.services.google_identity import GoogleIdTokenVerifier
+from app.services.google_identity import (
+    UNKNOWN_KEY_REFRESH_SECONDS,
+    GoogleIdTokenVerifier,
+)
 from app.services.session_revocations import InMemorySessionRevocationStore
 from app.services.session_tokens import SessionClaims
 from tests import google_tokens
@@ -240,6 +243,49 @@ def test_consent_version_mismatch_is_rejected() -> None:
     assert harness.stored_account() is None
 
 
+@pytest.mark.parametrize("field", ["serviceData", "photoAnalysis"])
+@pytest.mark.parametrize("value", ["yes", "on", "true", 1])
+def test_signup_consents_accept_only_json_booleans(field: str, value: Any) -> None:
+    # 선택 동의 변경(1-6)과 같이 `true`/`false`만 동의로 읽는다.
+    harness = _harness()
+    login = harness.login(google_tokens.id_token())
+
+    response = harness.consent(
+        registrationToken=login.json()["registrationToken"],
+        consentVersion=CONSENT_VERSION,
+        consents={**ALL_GRANTED, field: value},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["errorCode"] == "INVALID_REQUEST"
+    assert harness.stored_account() is None
+
+
+def test_rejected_submissions_leave_the_registration_token_usable() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+
+    def submit(consent_version: str, consents: dict[str, Any]) -> Any:
+        return harness.consent(
+            registrationToken=token,
+            consentVersion=consent_version,
+            consents=consents,
+        )
+
+    lax = submit(CONSENT_VERSION, {**ALL_GRANTED, "serviceData": "yes"})
+    refused = submit(CONSENT_VERSION, {**ALL_GRANTED, "sensitiveData": False})
+    mismatch = submit("1999-01-01", ALL_GRANTED)
+    accepted = submit(CONSENT_VERSION, ALL_GRANTED)
+
+    assert [lax.status_code, refused.status_code, mismatch.status_code] == [
+        422,
+        422,
+        409,
+    ]
+    assert accepted.status_code == 200
+    assert harness.stored_account() is not None
+
+
 @pytest.mark.parametrize(
     ("token", "error_code"),
     [
@@ -285,25 +331,42 @@ def test_jwks_failure_never_passes_verification() -> None:
 
 def _counting_verifier(
     documents: list[dict[str, Any]],
+    *,
+    clock: dict[str, float] | None = None,
+    delay: float = 0.0,
 ) -> tuple[GoogleIdTokenVerifier, dict[str, int]]:
     """호출마다 다음 JWKS 문서를 돌려주며 호출 횟수를 센다.
 
     키 교체처럼 문서가 요청마다 달라지는 상황과, 조회 횟수 자체(중복 refresh 여부)를
-    같이 검증하기 위한 헬퍼다.
+    같이 검증하기 위한 헬퍼다. `clock` 을 주면 검증기는 `clock["now"]` 를 현재 시각으로
+    쓴다. `delay` 는 조회 한 번이 걸리는 시간이다.
     """
     calls = {"count": 0}
     queue = iter(documents)
 
     async def fetcher() -> dict[str, Any]:
         calls["count"] += 1
+        if delay:
+            await asyncio.sleep(delay)
         return next(queue)
 
+    options: dict[str, Any] = {}
+    if clock is not None:
+        options["clock"] = lambda: clock["now"]
     verifier = GoogleIdTokenVerifier(
         allowed_audiences=(google_tokens.CLIENT_ID,),
         jwks_fetcher=fetcher,
         cache_seconds=3600,
+        **options,
     )
     return verifier, calls
+
+
+def _error_codes_of(results: list[Any]) -> list[str | None]:
+    return [
+        result.error_code if isinstance(result, AppError) else None
+        for result in results
+    ]
 
 
 def test_cached_kid_does_not_trigger_a_refresh() -> None:
@@ -329,17 +392,137 @@ def test_unknown_kid_refreshes_the_key_set_at_most_once() -> None:
 
 def test_key_found_after_a_single_refresh_verifies_normally() -> None:
     # 캐시를 kid 가 없는 문서(키 교체 이전 상태)로 미리 채워두면, 토큰의 kid 는
-    # refresh 를 한 번 거쳐야 발견되는 상황이 된다.
+    # refresh 를 한 번 거쳐야 발견되는 상황이 된다. 모르는 kid 로 다시 받는 최소 간격이
+    # 지난 뒤라면 키 교체를 따라간다.
+    clock = {"now": 1000.0}
     verifier, calls = _counting_verifier(
-        [google_tokens.stale_jwks_document(), google_tokens.jwks_document()]
+        [google_tokens.stale_jwks_document(), google_tokens.jwks_document()],
+        clock=clock,
     )
     asyncio.run(verifier._refresh())
+    clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS
     token = google_tokens.id_token()
 
     identity = asyncio.run(verifier.verify(token))
 
     assert identity.subject == "google-sub-0001"
     assert calls["count"] == 2
+
+
+def test_concurrent_unknown_kids_share_a_single_refresh() -> None:
+    # 서명하지 않은 토큰으로도 kid 는 마음대로 바꿀 수 있다. 동시에 몰려도 한 번만 받는다.
+    verifier, calls = _counting_verifier(
+        [google_tokens.jwks_document()] * 10, delay=0.02
+    )
+    tokens = [google_tokens.id_token(key_id=f"unknown-{index}") for index in range(10)]
+
+    async def verify_all() -> list[Any]:
+        return await asyncio.gather(
+            *(verifier.verify(token) for token in tokens), return_exceptions=True
+        )
+
+    results = asyncio.run(verify_all())
+
+    assert _error_codes_of(results) == ["INVALID_ID_TOKEN"] * 10
+    assert calls["count"] == 1
+
+
+def test_concurrent_logins_on_a_cold_cache_share_a_single_refresh() -> None:
+    verifier, calls = _counting_verifier(
+        [google_tokens.jwks_document()] * 5, delay=0.02
+    )
+    token = google_tokens.id_token()
+
+    async def verify_all() -> list[Any]:
+        return await asyncio.gather(*(verifier.verify(token) for _ in range(5)))
+
+    identities = asyncio.run(verify_all())
+
+    assert [identity.subject for identity in identities] == ["google-sub-0001"] * 5
+    assert calls["count"] == 1
+
+
+def test_unknown_kids_refresh_at_most_once_per_interval() -> None:
+    clock = {"now": 1000.0}
+    verifier, calls = _counting_verifier(
+        [google_tokens.jwks_document()] * 3, clock=clock
+    )
+
+    async def unknown(count: int, start: int) -> list[str | None]:
+        results = []
+        for index in range(start, start + count):
+            try:
+                await verifier.verify(google_tokens.id_token(key_id=f"x-{index}"))
+            except AppError as error:
+                results.append(error.error_code)
+            else:
+                results.append(None)
+        return results
+
+    async def scenario() -> None:
+        await verifier.verify(google_tokens.id_token())
+        assert calls["count"] == 1
+
+        # 방금 받은 키 묶음에 없는 kid 는 간격 안에서 몇 번이 와도 다시 받지 않는다.
+        within = await unknown(20, 0)
+        clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS - 1
+        within += await unknown(1, 20)
+        assert within == ["INVALID_ID_TOKEN"] * 21
+        assert calls["count"] == 1
+
+        # 간격이 지나면 한 번만 다시 받고, 그 뒤 간격 안에서는 다시 받지 않는다.
+        clock["now"] += 1
+        assert await unknown(10, 21) == ["INVALID_ID_TOKEN"] * 10
+        assert calls["count"] == 2
+
+        # 이미 알고 있는 kid 의 정상 토큰은 그동안에도 그대로 통과한다.
+        identity = await verifier.verify(google_tokens.id_token())
+        assert identity.subject == "google-sub-0001"
+        assert calls["count"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_failed_refresh_is_shared_and_not_retried_within_the_interval() -> None:
+    clock = {"now": 1000.0}
+    state = {"calls": 0, "failing": False}
+
+    async def fetcher() -> dict[str, Any]:
+        state["calls"] += 1
+        if state["failing"]:
+            await asyncio.sleep(0.02)
+            raise RuntimeError("jwks unavailable")
+        return google_tokens.jwks_document()
+
+    verifier = GoogleIdTokenVerifier(
+        allowed_audiences=(google_tokens.CLIENT_ID,),
+        jwks_fetcher=fetcher,
+        cache_seconds=3600,
+        clock=lambda: clock["now"],
+    )
+    tokens = [google_tokens.id_token(key_id=f"x-{index}") for index in range(5)]
+
+    async def scenario() -> None:
+        await verifier.verify(google_tokens.id_token())
+        # 이후 조회는 모두 실패한다. 캐시는 아직 유효하다.
+        state["failing"] = True
+        clock["now"] += UNKNOWN_KEY_REFRESH_SECONDS
+
+        concurrent = await asyncio.gather(
+            *(verifier.verify(token) for token in tokens), return_exceptions=True
+        )
+        with pytest.raises(AppError) as again:
+            await verifier.verify(google_tokens.id_token(key_id="x-again"))
+
+        # 동시에 온 요청은 실패한 한 번의 조회 결과를 같이 받고, 간격 안에서는 다시 받지 않는다.
+        assert _error_codes_of(concurrent) == ["IDENTITY_PROVIDER_UNAVAILABLE"] * 5
+        assert again.value.error_code == "IDENTITY_PROVIDER_UNAVAILABLE"
+        assert state["calls"] == 2
+        # 캐시에 있는 kid 는 조회 실패와 상관없이 통과한다.
+        identity = await verifier.verify(google_tokens.id_token())
+        assert identity.subject == "google-sub-0001"
+
+    asyncio.run(scenario())
 
 
 def test_login_is_refused_when_no_client_id_is_configured() -> None:
@@ -422,6 +605,133 @@ def test_display_name_longer_than_fifty_characters_is_rejected() -> None:
     assert response.status_code == 422
     assert response.json()["errorCode"] == "INVALID_REQUEST"
     assert harness.stored_account() is None
+
+
+def _submit_all_granted(harness: _Harness, registration_token: str) -> Any:
+    return harness.consent(
+        registrationToken=registration_token,
+        consentVersion=CONSENT_VERSION,
+        consents=ALL_GRANTED,
+    )
+
+
+def _assert_used_token_refused(response: Any) -> None:
+    # 앱은 이 코드를 받으면 로그인(1-1)부터 다시 한다(auth_messages.dart `needsRestart`).
+    assert response.status_code == 401
+    body = response.json()
+    assert body["errorCode"] == "INVALID_REGISTRATION_TOKEN"
+    assert "accessToken" not in body
+
+
+def test_registration_token_is_single_use() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    assert _submit_all_granted(harness, token).status_code == 200
+
+    again = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(again)
+
+
+def test_used_registration_token_gives_no_session_after_logout() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    session = _submit_all_granted(harness, token).json()["accessToken"]
+    assert harness.logout(session).status_code == 204
+
+    replay = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(replay)
+
+
+def test_used_registration_token_does_not_recreate_a_withdrawn_account() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    session = _submit_all_granted(harness, token).json()["accessToken"]
+    assert harness.delete_me(session).status_code == 204
+
+    replay = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(replay)
+    assert harness.stored_account() is None
+
+
+def test_signup_retry_after_a_lost_response_recovers_by_signing_in_again() -> None:
+    # 계정은 만들어졌지만 앱이 응답을 받지 못해 같은 토큰으로 다시 보낸 경우다.
+    harness = _harness()
+    id_token = google_tokens.id_token()
+    token = harness.login(id_token).json()["registrationToken"]
+    created = _submit_all_granted(harness, token).json()["account"]["accountId"]
+
+    retry = _submit_all_granted(harness, token)
+    signed_in = harness.login(id_token)
+
+    _assert_used_token_refused(retry)
+    assert signed_in.status_code == 200
+    assert signed_in.json()["status"] == "authenticated"
+    assert signed_in.json()["account"]["accountId"] == created
+
+
+def test_unused_registration_token_signs_in_once_after_another_signup() -> None:
+    # 계정이 없을 때 두 번 로그인해 받은 두 토큰 가운데 하나로 가입을 마친 경우다.
+    harness = _harness()
+    first = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    second = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    assert first != second
+    created = _submit_all_granted(harness, first).json()["account"]["accountId"]
+
+    late = _submit_all_granted(harness, second)
+    replay = _submit_all_granted(harness, second)
+
+    assert late.status_code == 200
+    assert late.json()["account"]["accountId"] == created
+    _assert_used_token_refused(replay)
+
+
+def test_registration_token_without_a_token_id_is_rejected() -> None:
+    # 이미 썼는지 확인할 수 없는 등록 토큰은 받지 않는다.
+    harness = _harness()
+    issued_at = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": "google-sub-0001",
+            "typ": "registration",
+            "provider": "google",
+            "iss": Settings(_env_file=None).service_name,
+            "iat": issued_at,
+            "exp": issued_at + timedelta(minutes=10),
+        },
+        SESSION_SECRET,
+        algorithm="HS256",
+    )
+
+    response = _submit_all_granted(harness, token)
+
+    assert response.status_code == 401
+    assert response.json()["errorCode"] == "INVALID_REGISTRATION_TOKEN"
+    assert harness.stored_account() is None
+
+
+def test_postgres_registration_token_is_used_once_across_restarts(
+    migrated_database_url: str,
+) -> None:
+    harness = _harness(database_url=migrated_database_url)
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+
+    refused = harness.consent(
+        registrationToken=token,
+        consentVersion=CONSENT_VERSION,
+        consents={**ALL_GRANTED, "sensitiveData": False},
+    )
+    accepted = _submit_all_granted(harness, token)
+    # 서버를 다시 띄운 것처럼 앱과 의존성을 새로 만든다. 같은 DB 만 이어서 쓴다.
+    restarted = _harness(database_url=migrated_database_url)
+    replay = _submit_all_granted(restarted, token)
+
+    # 계정을 만들지 못한 제출은 토큰을 쓰지 않은 것으로 되돌린다.
+    assert refused.status_code == 422
+    assert accepted.status_code == 200
+    _assert_used_token_refused(replay)
 
 
 def test_postgres_account_survives_the_whole_login_flow(

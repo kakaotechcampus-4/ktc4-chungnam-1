@@ -9,6 +9,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app.api.deps import get_current_account
+from tests.card_fixtures import completed_card_set, with_db
 from tests.support import request
 from tests.visit_records import MISSING_ID, Records, Visit
 
@@ -196,6 +197,46 @@ def test_other_accounts_report_looks_missing(migrated_database_url):
     assert [r.json()["errorCode"] for r in responses] == ["VISIT_SESSION_NOT_FOUND"] * 4 + [
         "PROFILE_NOT_FOUND"
     ]
+
+
+def test_other_account_cannot_review_proposals(migrated_database_url):
+    records = Records(migrated_database_url)
+    owner, profile_id = records.account()
+    other_user, _ = records.account()
+    visit = _reported(records, profile_id)
+    fact = records.life_fact_proposal(visit)
+    topic = records.topic_proposal(visit, 0, "exclude")
+    # 주제 제안을 승인하면 갱신 대상으로 표시될, 아직 면회에 안 쓴 다음 묶음.
+    next_set, _ = with_db(migrated_database_url, lambda c: completed_card_set(c, profile_id))
+    body = {
+        "lifeFacts": [
+            {
+                "proposalId": str(fact),
+                "reviewStatus": "accepted",
+                "title": "합성 제목",
+                "content": "합성 내용",
+            }
+        ],
+        "topics": [{"proposalId": str(topic), "reviewStatus": "accepted", "action": "exclude"}],
+    }
+
+    responses = [
+        records.call(other_user, "POST", _review_path(visit), json=body),
+        records.call(
+            other_user, "POST", f"/api/v1/visit-sessions/{MISSING_ID}/proposals/review", json=body
+        ),
+    ]
+
+    assert [(r.status_code, r.json()["errorCode"]) for r in responses] == [
+        (404, "VISIT_SESSION_NOT_FOUND")
+    ] * 2
+    assert records.scalar("SELECT count(*) FROM life_fact_proposals WHERE status <> 'pending'") == 0
+    assert records.scalar("SELECT count(*) FROM topic_proposals WHERE status <> 'pending'") == 0
+    assert records.scalar("SELECT count(*) FROM life_facts") == 0
+    assert records.scalar("SELECT count(*) FROM topic_feedback") == 0
+    assert records.scalar("SELECT stale_at FROM card_sets WHERE set_id = %s", (next_set,)) is None
+    # 같은 요청을 소유 계정이 보내면 받아들인다. 위 404는 요청 내용이 아니라 소유 확인 때문이다.
+    assert records.call(owner, "POST", _review_path(visit), json=body).status_code == 200
 
 
 def test_requests_without_login_are_unauthenticated(migrated_database_url):

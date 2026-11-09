@@ -62,7 +62,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 1. 본문을 읽기 전에 앱 버전(`426 APP_UPDATE_REQUIRED`)과 세션 토큰의 형식, 서명, 만료(`401 UNAUTHENTICATED`, `401 SESSION_EXPIRED`)를 확인한다.
 2. 본문 상한(`413`)을 `Content-Length`로 먼저 보고, 받는 동안 다시 센다.
-3. 본문을 다 받은 뒤 앱 버전, 세션(업로드가 아닌 경로는 이때 형식, 서명, 만료도 확인한다)과 폐기 여부, 계정, 소유권과 동의를 확인한다. 로그아웃이나 탈퇴로 폐기한 세션은 이 단계에서 `401 UNAUTHENTICATED`다.
+3. 본문을 다 받은 뒤 앱 버전, 세션(업로드가 아닌 경로는 이때 형식, 서명, 만료도 확인한다)과 폐기 여부, 계정, 소유권과 동의를 확인한다. 형식, 서명, 만료에서 거절한 요청은 DB 연결을 열지 않는다. 그래서 서버의 DB 설정이 없어도 이런 요청은 `503 DATABASE_NOT_CONFIGURED`가 아닌 `401`이다. 로그아웃이나 탈퇴로 폐기한 세션은 이 단계에서 `401 UNAUTHENTICATED`다.
 4. 라우트가 파일 형식과 크기를 검사한다.
 
 HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 정상 설정에서는 위 경로별 상한이 더 작아 API가 먼저 응답하고, Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이다. 그때 Caddy의 `413`에는 위 오류 형식의 본문이 없다.
@@ -194,6 +194,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 401 | `INVALID_ID_TOKEN`, `ID_TOKEN_EXPIRED`, `ID_TOKEN_AUDIENCE_MISMATCH`, `ID_TOKEN_ISSUER_MISMATCH` |
 | 503 | `AUTH_NOT_CONFIGURED`, `IDENTITY_PROVIDER_UNAVAILABLE`, `DATABASE_NOT_CONFIGURED` |
 
+ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토큰은 DB 설정과 관계없이 위 `401`이나 `IDENTITY_PROVIDER_UNAVAILABLE`이다. 토큰의 `kid`가 서버가 받아 둔 구글 공개키에 없으면 공개키를 다시 받는다. 다만 받아 둔 공개키의 캐시 기간 안이면 마지막 조회 뒤 60초 안에는 다시 받지 않고, 그 조회가 성공이었으면 `401 INVALID_ID_TOKEN`, 실패였으면 `503 IDENTITY_PROVIDER_UNAVAILABLE`(`retryable: true`)로 거절한다.
+
 ### 1-2. `POST /auth/consent` — 완료
 
 필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션을 발급한다.
@@ -215,15 +217,24 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 ```
 
 - `displayName`: 선택, 50자 이하
+- `consents`의 값은 JSON `true`, `false`만 받는다. `"yes"`, `"on"`, `1` 같은 값은 동의로 읽지 않고 `422 INVALID_REQUEST`로 거절하며 계정을 만들지 않는다. 1-6과 같은 기준이다.
+- 등록 토큰은 한 번만 쓴다. 계정을 만들거나 세션을 주면 그 토큰을 쓴 것으로 남기고, 같은 토큰을 다시 보내면 로그아웃이나 탈퇴 뒤에도 `401 INVALID_REGISTRATION_TOKEN`이다. 계정을 만들지 못한 `409`, `422`는 토큰을 쓴 것으로 치지 않으므로 고쳐서 다시 보낼 수 있다.
+- 응답을 받지 못해 같은 토큰으로 다시 보낸 앱도 `401 INVALID_REGISTRATION_TOKEN`을 받는다. 앱은 1-1부터 다시 하고, 그사이 계정이 만들어졌으면 1-1이 `authenticated`를 준다.
+- 계정이 없을 때 받은 다른 등록 토큰으로 이미 가입을 마쳤다면, 아직 쓰지 않은 토큰은 계정을 덧만들지 않고 그 계정의 세션을 한 번 준다.
 
 응답 `200` — 1-1의 `authenticated` 응답
 
-| HTTP | `errorCode` |
-| --- | --- |
-| 401 | `INVALID_REGISTRATION_TOKEN`, `REGISTRATION_TOKEN_EXPIRED` |
-| 409 | `CONSENT_VERSION_MISMATCH` |
-| 422 | `REQUIRED_CONSENT_MISSING` |
-| 503 | `DATABASE_NOT_CONFIGURED` |
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 401 | `INVALID_REGISTRATION_TOKEN` | 등록 토큰이 유효하지 않거나 이미 사용함 |
+| 401 | `REGISTRATION_TOKEN_EXPIRED` | 등록 토큰 수명(기본 600초)이 지남 |
+| 409 | `CONSENT_VERSION_MISMATCH` | 약관 버전이 서버와 다름 |
+| 422 | `REQUIRED_CONSENT_MISSING` | 필수 동의를 거부함 |
+| 422 | `INVALID_REQUEST` | 요청 형식 오류. `consents` 값이 `true`, `false`가 아니거나 `displayName`이 50자를 넘는 경우 포함 |
+| 503 | `AUTH_NOT_CONFIGURED` | 서버의 세션 서명 키가 설정되지 않음 |
+| 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
+
+등록 토큰은 DB 연결을 열기 전에 확인하므로, 유효하지 않거나 만료된 등록 토큰은 DB 설정과 관계없이 `401`이다.
 
 ### 1-3. `GET /auth/me` — 완료
 
@@ -275,7 +286,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 - 직전 이력을 복사해 보낸 항목만 바꾼 새 이력 행을 추가한다. 약관 버전은 직전 이력의 값을 쓴다.
 - `pushNotification: false`를 보내면 같은 트랜잭션에서 그 계정의 푸시 기기 등록(1-7)을 모두 지운다.
-- `photoAnalysis`(AI 사진 분석)도 같은 방식으로 바꾼다. 거두면 사진 분석 worker가 그 계정의 사진을 더 가져가지 않고, 분석 중이던 결과도 저장하지 않는다.
+- `photoAnalysis`(AI 사진 분석)도 같은 방식으로 바꾼다. 거두면 사진 분석 worker가 그 계정의 사진을 더 가져가지 않는다. 이미 가져간 사진도 ML 업체에 보내기 전이면 보내지 않고, 보낸 뒤면 결과를 저장하지 않는다. 두 경우 모두 사진은 `pending`으로 돌아간다.
+- `photoAnalysis: false`를 보내면 같은 트랜잭션에서 그 계정 프로필 사진의 저장된 AI 설명을 지우고 `analysisStatus`를 `pending`으로 되돌린다(2026-11-09 PM 결정). 보호자가 쓴 설명(3-3)은 남아 2-3, 3-2의 `description`(`descriptionSource: caregiver`)과 카드 입력에 그대로 쓴다. 보호자 설명이 없는 사진의 AI 설명을 지운 프로필은 아직 면회에 안 쓴 완료 묶음의 `needsRefresh`가 `true`가 된다(4절). 3-4 사진 삭제처럼 그 묶음이 지운 설명을 실제로 입력에 썼는지는 따지지 않는다. 카드를 만드는 중이어도 동의 변경은 거절하지 않으며, 만드는 중인 묶음은 지운 설명을 입력에 썼으면 완료할 때 `needsRefresh`가 `true`가 된다. 보호자 설명이 없어 AI 설명이 지워진 사진은 다음 4-1 입력에서 빠지고, 근거가 그런 사진뿐인 주제도 빠진다(4-1의 `topics`). 카드 생성 기록(`generation_log`)에는 사진 ID만 남으므로 지울 설명 사본이 없다. 다시 `true`로 바꾸면 `pending`인 사진을 다시 분석한다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
@@ -290,6 +302,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 - 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
 - 다른 계정에 등록된 FID면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한 경우이며, 앞 계정의 알림이 이 기기로 가지 않게 된다.
 - 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
+- 계정당 5대(서버 설정 `SAEROK_PUSH_DEVICES_PER_ACCOUNT`)까지 둔다. 새 기기로 한도를 넘으면 등록 시각이 가장 오래된 기기, 곧 가장 오래 앱을 켜지 않은 기기의 등록을 지우고 `204`로 답한다. 오류로 알리지 않으며 방금 등록한 기기는 지우지 않는다. 지워진 기기는 앱을 다시 켜서 1-7을 보내면 다시 등록된다(2026-11-09 PM 결정).
 - 탈퇴(1-5)하면 계정과 함께 지운다.
 - 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. `data` 항목은 FE와 합의 전인 테스트 가정이다. 리포트 생성 실패는 알리지 않는다.
 
@@ -367,6 +380,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 - `name`: 50자 이하
 - `gender`: `male`, `female`
+- `birthDate`: `YYYY-MM-DD`. 만 10세 이상인 날짜만 받는다. 기준일은 서버의 UTC 날짜이고, 기준일에 없는 2월 29일은 2월 28일로 본다. 카드 생성 입력의 연령대(4-1 `ageRange`)가 `10s` 이상이어야 하기 때문이며, 그 밖의 나이 제한은 두지 않는다.
 - `condition.stage`: `mildCognitiveImpairment`, `mildDementia`, `unknown`
 - `condition.symptomNote`: 선택
 
@@ -377,6 +391,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 409 | `PROFILE_LIMIT_EXCEEDED` | 계정에 이미 프로필이 3개 있음 |
+| 422 | `INVALID_REQUEST` | `birthDate`가 미래이거나 만 10세가 안 된 날짜. 그 밖의 형식 오류 포함 |
 
 ### 2-3. `GET /api/v1/profiles/{profileId}` — 신규
 
@@ -406,6 +421,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
 - `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
+- `birthDate`는 2-2와 같이 만 10세 이상인 날짜만 받는다. 걸리면 함께 보낸 다른 필드도 저장하지 않는다.
 - `birthDate`, `occupation`, `hometown`, `hobby`, `family`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 값들은 고칠 수 없다.
 
 응답 `200` — [Profile](#profile)
@@ -414,6 +430,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
 | 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
+| 422 | `INVALID_REQUEST`(`birthDate`가 미래이거나 만 10세가 안 된 날짜, 그 밖의 형식 오류) |
 
 ### 2-5. 프로필 입력 마치기 — 삭제
 
@@ -435,15 +452,18 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 ```
 
 - `storyCategory`: 일대기의 분류. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
-- `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `title`: 100자 이하. `content`: 5,000자 이하(2026-11-09 PM 결정). `title`과 `content`는 비울 수 없다. 글자 수는 유니코드 코드 포인트 수로 센다.
 - `imageNumber`: 분류별 기본 그림 번호. 1~5 정수. 그림 파일은 앱에 있고 서버는 번호만 저장한다.
 - 네 필드 모두 필수다. `storyCategory`, `imageNumber`의 필드 이름은 임시다([미정 사항](#미정-사항) 11).
+- 프로필 하나의 이야기는 300개까지다(2026-11-09 PM 결정). 변경 제안 승인(7-4)으로 만든 이야기도 함께 센다. 이미 300개면 저장하지 않고 `409 LIFE_FACT_LIMIT_EXCEEDED`이며, 이야기를 지우면(2-9) 다시 추가할 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED`(프로필에 이야기가 이미 300개 있음) |
+| 422 | `INVALID_REQUEST`(`title` 100자 또는 `content` 5,000자 초과, 빈 값, 그 밖의 형식 오류) |
 
 ### 2-7. `PATCH /api/v1/life-facts/{factId}` — 신규
 
@@ -455,7 +475,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 { "content": "수선집에 오래 다닌 단골손님이 많았고 시장 상인들과도 친하셨어요." }
 ```
 
-- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고 `null`로 지울 수 없다.
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고(`title` 100자, `content` 5,000자 이하) `null`로 지울 수 없다. 이야기 수는 바뀌지 않으므로 300개 상한은 보지 않는다.
 - 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
 - `title`, `content`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 두 값은 고칠 수 없다.
 
@@ -465,6 +485,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | --- | --- |
 | 404 | `LIFE_FACT_NOT_FOUND` |
 | 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
+| 422 | `INVALID_REQUEST`(`title` 100자 또는 `content` 5,000자 초과, 빈 값이나 `null`, 그 밖의 형식 오류) |
 
 ### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
 
@@ -506,7 +527,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 2026-10-14 PM 결정: 사진 서버 보관과 AI 분석은 가입 화면에서 각각 선택 동의로 받고 기존 계정 동의 이력에 저장한다. 유효한 동의는 재요청하지 않으며, 미동의, 철회 또는 기록이 없는 계정이 해당 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 유지한다. 가입 시 수집과 계정별 저장 방향은 결정됐고 필드명 및 API는 후속 구현이다. 상세 기준은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
 
-위 자동 분석은 기존 API 제안이며 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다. 계정별 분석 동의의 필드와 API, 분석하지 않는 사진의 상태와 철회 경로는 후속 계약에서 정한다. 아래 요청 필드와 응답 enum은 이번 문서 수정에서 바꾸지 않으며 실제 사용자 사진 처리에 적용하기 전 이 차이를 해소해야 한다.
+위 자동 분석은 기존 API 제안이며 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)은 사진 보관과 AI 분석 동의를 구분한다. 별도 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들면 안 된다. AI 분석 동의는 계정별 선택 동의 `photoAnalysis`(1-1~1-3, 1-6)로 받는다. 동의하지 않은 계정의 사진은 분석하지 않고, 동의를 거두면 저장된 AI 설명을 지운다([1-6](#1-6-patch-authmeconsents--신규), 2026-11-09 PM 결정). 사진 보관 동의를 따로 받는 필드와 API는 아직 없다.
 
 ### 3-1. `POST /api/v1/profiles/{profileId}/photos` — 신규
 
@@ -597,6 +618,7 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 - 2-4, 2-7, 2-9로 카드 생성에 쓰는 값을 바꾸면 아직 면회에 안 쓴 완료 묶음에 고친 시각(`card_sets.stale_at`)을 남긴다. 2-4는 생년월일, 직업, 고향, 취미, 가족이고 2-7은 제목과 내용이다. 이름, 성별, 인지 상태, 이야기 분류와 그림 번호는 카드 생성에 쓰지 않아서 남기지 않는다. 2-9는 항상 남긴다.
 - 7-4(변경 사항 확인)는 주제 제안을 하나라도 승인하면 남긴다. 승인한 주제 피드백(`more`, `less`, `exclude`)이 다음 카드 생성에서 주제를 고르는 기준을 바꾸기 때문이다. 생애 정보 제안 승인은 이야기 추가(2-6)와 같아서 남기지 않고 다음 생성부터 반영한다. 모두 거절한 확인도 남기지 않는다.
+- 1-6에서 AI 사진 분석 동의를 거둬 보호자 설명이 없는 사진의 AI 설명이 지워진 프로필도 남긴다. 동의 변경은 카드를 만드는 중이어도 거절하지 않는다. 만드는 중인 묶음은 저장할 때 입력 뒤 사진 설명이 바뀐 것을 보고 남긴다.
 - 면회에 쓴 묶음은 지난 기록이라 남기지 않는다.
 - `stale_at`이 있는 묶음은 4-2, 4-3에서 `status`가 그대로 `ready`이고 `needsRefresh`가 `true`다. 4-1은 이 묶음을 거절하지 않고 새로 만들며, 5-1은 `CARD_SET_NEEDS_REFRESH`로 거절한다.
 - 카드를 만드는 중(`running`)에 이 값들을 고치면 2-4, 2-7, 2-9가 `CARD_GENERATION_IN_PROGRESS`로 거절한다. 주제 제안 승인이 있는 7-4도 같다. worker가 고치기 전 내용으로 만든 묶음이 `needsRefresh` 표시 없이 나올 수 있어서다. 예를 들어 방금 제외한 주제가 그 묶음에 다시 들어갈 수 있다.
@@ -618,7 +640,12 @@ BE 구현(#158)은 묶음 단위로 처리한다.
 
 `ready`인데 `needsRefresh`가 `true`이면 카드를 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했다는 뜻이다(7-4). 카드는 4-3으로 볼 수 있지만 면회는 시작할 수 없고, 버튼을 누르면 4-1로 다시 만든다. 4-1을 부르면 상태가 `running`이 되므로 새 묶음이 나올 때까지 4-3은 `CARD_GENERATION_NOT_FOUND`이고, 다시 만들기가 실패하면 `failed`가 되어 예전 카드도 볼 수 없다.
 
-4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지난 작업은 `CARD_GENERATION_NOT_STARTED`, 임대가 만료된 작업은 `WORKER_LEASE_EXPIRED`다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
+4-1과 4-2는 상태를 보기 전에 더는 끝나지 않을 `running` 작업을 `failed`로 바꾼다. 임대 만료 정리는 원래 worker가 하므로, worker가 없거나 멈추면 작업이 `running`으로 남아 앱이 다시 요청할 수 없기 때문이다.
+
+- `CARD_GENERATION_NOT_STARTED`: worker가 가져가지 않은 채 `SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`(기본 360초)가 지났고, 같은 시간 동안 worker가 다른 작업도 가져가지 않았으며 처리 중인 작업도 없다. worker가 없거나 멈춘 경우다.
+- `WORKER_LEASE_EXPIRED`: worker가 가져간 작업의 임대가 만료됐다.
+
+worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 기다린 작업도 실패시키지 않는다. 앞에 기다리는 작업이 많으면 `running`이 360초보다 길게 이어질 수 있다. 판단에는 worker가 작업을 가져간 시각(`card_sets.claimed_at`)을 쓰며 응답 형식은 바뀌지 않는다.
 
 ### 4-1. `POST /api/v1/profiles/{profileId}/card-generations` — 신규
 
@@ -721,10 +748,10 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - `model`, `promptVersion`: BE 설정값(`SAEROK_CARD_GENERATION_MODEL`, `SAEROK_CARD_GENERATION_PROMPT_VERSION`). 4-1에서 `card_sets`를 `running`으로 만들 때 저장하고 그 값을 그대로 넘긴다. `promptVersion`은 카드 생성 방식의 번호(정수)이며 카드 생성은 아는 번호만 받는다.
 - `schemaVersion`: 요청과 결과 JSON 형식의 버전. 받는 쪽은 모르는 버전을 거절한다.
-- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다.
+- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다. 카드 생성은 `10s` 이상만 받으므로 2-2, 2-4가 만 10세가 안 된 생년월일을 저장하지 않는다. 그 검사 전에 저장된 프로필은 고치기 전까지 `INVALID_CONTEXT`로 실패한다.
 - `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
 - `photos`: 분석이 끝난 프로필 사진(`session_id`가 없음)의 설명. 별도 내용 승인 없이 사용하고, 사용자가 원하면 앨범에서 수정한다(3-3). 사진 분석 동의 확인은 별도로 유지한다.
-- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다. 근거(`evidence`)에서는 입력에 없는 이야기와 사진(지운 것, 제외한 주제의 근거)을 뺀다. 빼고 나서 근거가 하나도 남지 않은 주제는 넣지 않는다(PM 결정 2026-11-08). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 `exclude`를 고른 주제는 근거 이야기와 사진이 제외 규칙으로 늘 입력에서 빠지므로, 보낸 입력이 아니라 DB에 남은 이야기와 사진으로 정한다. 하나라도 남아 있으면 같은 이야기로 새 주제를 만들지 않도록 근거만 빼고 넣는다. 보호자가 모두 지웠으면 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있으므로 넣지 않는다(PM 결정 2026-11-09). 세부 정보 칸 근거가 있는 제외 주제는 이야기와 사진을 모두 지워도 다른 주제처럼 넣는다. 저장된 주제와 근거는 지우지 않는다.
+- `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다. 근거(`evidence`)에서는 입력에 없는 이야기와 사진(지운 것, 설명이 없어 `photos`에 넣지 않는 사진, 제외한 주제의 근거)을 뺀다. 빼고 나서 근거가 하나도 남지 않은 주제는 넣지 않는다(PM 결정 2026-11-08). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 `exclude`를 고른 주제는 근거 이야기와 사진이 제외 규칙으로 늘 입력에서 빠지므로, 보낸 입력이 아니라 DB에 남은 이야기와 `photos`에 넣을 수 있는 사진으로 정한다. 하나라도 남아 있으면 같은 이야기로 새 주제를 만들지 않도록 근거만 빼고 넣는다. 보호자가 모두 지웠으면 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있으므로 넣지 않는다(PM 결정 2026-11-09). 세부 정보 칸 근거가 있는 제외 주제는 이야기와 사진을 모두 지워도 다른 주제처럼 넣는다. AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음, 1-6)도 `photos`에 넣지 않으므로, 근거가 그런 사진뿐인 주제는 제외 여부와 상관없이 넣지 않고 다시 분석이 끝나면 넣는다. 저장된 주제와 근거는 지우지 않는다.
 - `visits`: 평가까지 끝난 회차(`evaluated_at` 있음)만, 시간순. 녹음을 시작했다가 그만둔 회차는 넣지 않는다.
 - `pastCards`: 그 회차에 쓰인 카드 묶음의 카드. 직전에 보여 준 주제를 미루고, 지난번과 다른 장면을 고르는 데 쓴다. 회차에 쓰이지 않은 묶음은 넣지 않는다. 위에서 뺀 주제를 가리키는 카드도 그대로 넣는다. 받는 쪽은 `pastCards[].topicId`가 `topics`에 있다고 가정하지 않는다.
 - 면회 평가 메모, 리포트 본문, 전사문은 넣지 않는다.
@@ -787,6 +814,8 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - BE는 저장 전에 확인한다: 12장, `position` 1~12가 한 번씩, 꼬리 질문 3개, 카드 제목·설명·첫 질문·꼬리 질문이 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`와 근거 ID가 context에 있음, 보호자가 `exclude`를 고른 주제는 쓰지 않음, `profileField`는 context에 값이 있는 항목, 근거 항목 형식, 카드의 근거 항목이 `evidenceSource`와 같은 종류(`none`이면 빈 배열). 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제, 카드 12장, `card_sets`를 `completed`로(임대도 지움), `generation_log`(`input`, `log`, `cards`).
+- 저장 트랜잭션은 프로필과 작업 행을 잠근 뒤 임대가 남은 `running` 작업일 때만 저장한다. 생성하는 동안 임대 시각이 지났으면 임대 만료 정리가 아직 돌지 않았어도 결과를 버리고 새 주제와 카드를 하나도 저장하지 않으며, 작업을 `WORKER_LEASE_EXPIRED`로 실패시킨다.
+- 임대 시각이 지난 뒤 온 생성 실패와 검증 실패도 그 코드 대신 `WORKER_LEASE_EXPIRED`로 남긴다. 이미 `failed`나 `completed`가 된 작업은 늦게 온 결과나 실패가 바꾸지 않는다.
 
 카드 생성 기록 (`generation_log`)
 
@@ -811,7 +840,7 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 - `input`: 보낸 이야기, 사진, 주제, 회차, 지난 카드의 ID와 `ageRange`, 값이 있던 세부 정보 칸의 이름(`profileFields`). 세부 정보 값, 이야기 제목과 내용, 사진 설명, 주제 제목과 설명, 지난 카드 문구는 남기지 않는다.
 - `log`: 결과 `log`에서 숫자와 참거짓은 그대로, 목록은 개수로 남기고 글과 객체는 버린다. 다시 찾기 요청 글, 빠진 후보의 카드 제목과 이유, 문안 검사에 걸린 질문에 이야기 내용이 들어갈 수 있어서다.
 - `cards`: 카드별 `extra`에서 `kind`, `bucket`만 남긴다. `angle`, `pickReason`, `agentReason`, `matchReason`은 남기지 않는다.
-- 생성 함수가 실패 코드를 돌려줬거나 결과 검증에서 실패한 작업은 `input`만 남긴다. 그 밖의 예상하지 못한 오류, 임대 만료, worker가 가져가지 않은 작업은 `{"input": null}`이다. 진행 중(`running`)인 작업은 `NULL`이다.
+- 생성 함수가 실패 코드를 돌려줬거나 결과 검증에서 실패한 작업은 `input`만 남긴다. 임대 시각이 지난 뒤 결과나 이 두 실패가 와서 worker가 `WORKER_LEASE_EXPIRED`로 끝낸 작업도 `input`만 남긴다. 만료 정리(worker의 정리, 4-1과 4-2의 정리)가 먼저 `WORKER_LEASE_EXPIRED`로 끝낸 작업, worker가 가져가지 않은 작업(`CARD_GENERATION_NOT_STARTED`)과 그 밖의 예상하지 못한 오류는 `{"input": null}`이다. 진행 중(`running`)인 작업은 `NULL`이다.
 - 이 형태 전에 저장된 기록은 migration `685f243e9f1f`가 같은 형태로 고친다.
 
 실패
@@ -824,7 +853,7 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 | `LLM_UNAVAILABLE` | 엘리스 API 연결 실패, 시간 초과, 호출 한도 |
 | `CARD_GENERATION_FAILED` | 그 밖의 실패 |
 | `INVALID_GENERATION_RESULT` | 결과가 위 검증에 맞지 않음(BE가 판단) |
-| `CARD_GENERATION_NOT_STARTED` | 정해진 시간 안에 worker가 작업을 가져가지 않음(4절) |
+| `CARD_GENERATION_NOT_STARTED` | 정해진 시간이 지나도 worker가 작업을 가져가지 않았고, 그동안 다른 작업도 가져가지 않음. worker가 없거나 멈춤(4절) |
 | `WORKER_LEASE_EXPIRED` | worker가 임대 시간 안에 작업을 끝내지 못함 |
 
 
@@ -1102,7 +1131,7 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 변경 사항
 
 - 보호자 평가를 제출한 회차만 받는다. 평가 전이면 `EVALUATION_REQUIRED`
-- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다.
+- 업로드 실패 또는 접수 후 분석 실패라도 유효한 전사가 남아 있지 않으면 새 작업을 만든다. 6-5 재요청 횟수를 모두 쓴 회차도 같으며, 이 제출은 재요청 횟수에 넣지 않는다.
 - 유효한 전사가 남은 실패 작업은 `REPORT_RETRY_AVAILABLE`로 6-5 사용을 안내한다.
 - 접수된 작업이 처리 중이면 그 작업을 `202`로 반환한다.
 - 완료한 회차는 다시 받지 않는다.
@@ -1158,10 +1187,21 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 응답은 `200`과
 `{"schemaVersion": 1, "text": "..."}`이며 인식 결과가 비었으면 `text`도 빈 문자열이다.
 
-동의 누락은 `SPEECH_PROCESSING_CONSENT_REQUIRED` 403, 크기와 5분 초과는
-`AUDIO_TOO_LARGE` 413, 형식과 손상은 `INVALID_AUDIO_FORMAT` 또는 `INVALID_AUDIO` 422다.
-STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
+입력 오류와 동시 요청 거절은 아래 표와 같다. STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이언트는 `retryable`을 읽는다.
 세션 서명과 본문 크기는 본문을 받기 전에 확인한다([본문 크기와 확인 순서](#본문-크기와-확인-순서)).
+
+같은 계정의 6-6은 동시에 2건(서버 설정 `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT`)까지
+처리한다. 앱은 전사 중에도 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있으므로, 앞 전사 하나가 남아
+있어도 다음 녹음은 받는다. 이미 2건이 처리 중일 때 온 요청은 S3 저장과 STT 호출 없이
+`SPEECH_TRANSCRIPTION_IN_PROGRESS` 429(`retryable: true`)로 거절한다. 앞 요청이 끝나면 다시 보낼
+수 있다. 다른 계정의 요청은 기다리지 않는다(2026-11-09 PM 결정).
+
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 필수 동의 누락 |
+| 413 | `AUDIO_TOO_LARGE` | 크기 또는 5분 초과 |
+| 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` | 형식이 다르거나 손상됨 |
+| 429 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 같은 계정의 6-6이 이미 2건 처리 중 |
 
 원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
 먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
@@ -1178,21 +1218,36 @@ STT와 저장소 오류는 6-2와 같은 오류 코드를 사용하며 클라이
 실패한 작업에 유효한 전사가 남아 있으면 STT를 다시 호출하지 않고 리포트만 요청한다.
 기존 작업을 되살리지 않고 새 `analysisId`를 발급한다. 전사 만료 시각은 연장하지 않는다.
 동시에 여러 요청이 와도 회차당 작업 하나만 접수한다. 자동 반복 요청은 하지 않는다.
+재요청은 면회 회차당 3회(서버 설정 `SAEROK_REPORT_RETRIES_PER_SESSION`)까지 접수한다. 횟수는 남은
+전사를 다시 쓸 때만 적용한다. 횟수를 모두 썼고 전사가 남아 있으면 새 작업을 만들지 않고
+`REPORT_RETRY_LIMIT_EXCEEDED`로 거절한다. 전사가 없거나 기한이 지났으면 횟수와 관계없이
+`RECORDING_REQUIRED`이므로, 앱이 기기 녹음을 6-2로 다시 보내 그 회차의 리포트를 받을 수 있다.
+6-2로 다시 낸 녹음과, 처리 중인 재요청을 다시 보내 같은 작업을 돌려받는 경우는 횟수에 넣지
+않는다(2026-11-09 PM 결정).
 
 응답 `202`: 6-2와 같은 객체. 새 작업의 초기 `status`는 `sttCompleted`다.
 이미 접수된 재시도가 처리 중이면 해당 ID와 현재 상태를 반환한다.
 worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 900초) 이상일 때만 새 작업의
 생성을 시작한다. 그보다 적게 남았으면 생성하지 않고 전사를 지워 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로
-끝내므로, 이 작업 ID로 다시 요청하면 `RECORDING_REQUIRED`다.
+끝내므로, 이 작업 ID로 다시 요청하면 회차의 재요청 횟수와 관계없이 `RECORDING_REQUIRED`다.
+
+서버는 아래 순서로 확인하고 처음 걸린 오류를 돌려준다.
+
+1. 필수 동의가 없으면 `SPEECH_PROCESSING_CONSENT_REQUIRED`, 이 계정의 작업이 아니면 `SPEECH_ANALYSIS_NOT_FOUND`.
+2. 회차에 끝나지 않은 작업이 있으면 업로드 중은 `ANALYSIS_SUBMISSION_IN_PROGRESS`, 완료는 `ANALYSIS_ALREADY_COMPLETED`, 처리 중은 그 작업을 `202`로 반환.
+3. 이 작업 ID로 이미 재요청했으면 `ANALYSIS_ALREADY_FAILED`.
+4. 다시 쓸 전사가 없거나 기한이 지났으면 `RECORDING_REQUIRED`.
+5. 회차의 재요청 횟수를 모두 썼으면 `REPORT_RETRY_LIMIT_EXCEEDED`.
 
 | HTTP | errorCode | 처리 |
 | --- | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 재전송으로 우회하지 않고 동의 상태 확인 |
 | 404 | `SPEECH_ANALYSIS_NOT_FOUND` | 다른 계정 또는 없는 작업 |
-| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출 |
+| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
 | 409 | `ANALYSIS_ALREADY_COMPLETED` | 완료한 리포트 조회 |
 | 409 | `ANALYSIS_ALREADY_FAILED` | 해당 ID의 재요청도 이미 실패함. 5-4에서 최신 ID를 확인 |
-| 409 | `ANALYSIS_SUBMISSION_IN_PROGRESS` | 녹음 업로드가 아직 끝나지 않음 |
+| 409 | `RECORDING_REQUIRED` | 유효한 전사가 없으므로 기기 녹음을 6-2로 제출. 재요청 횟수를 모두 쓴 회차도 같음 |
+| 409 | `REPORT_RETRY_LIMIT_EXCEEDED` | 횟수를 모두 썼고 전사가 남아 있음. 바로 다시 요청하지 않음. 전사 기한(최초 STT부터 24시간)이 지나면 같은 요청이 `RECORDING_REQUIRED`가 되어 녹음을 다시 보낼 수 있음 |
 
 전사와 기기 녹음이 모두 없으면 해당 회차의 리포트를 새로 만들지 않는다. 면회 기록과 소감은 유지한다.
 
@@ -1281,7 +1336,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
-  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자 이하이고 둘 다 비울 수 없다.
+  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다. 제안 값이 이 길이를 넘으면 보호자가 줄여서 보내야 한다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
@@ -1296,14 +1351,16 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - `rejected` 항목은 반영하지 않는다.
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
 - 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
+- `accepted`인 생애 정보 제안을 더해 프로필의 이야기가 300개(2-6과 같은 상한)를 넘으면 `LIFE_FACT_LIMIT_EXCEEDED`로 거절하고 제안 정리와 주제 피드백을 포함해 아무것도 저장하지 않는다. 일대기에서 이야기를 지우거나 일부 제안을 `rejected`로 바꿔 다시 보낸다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
 | 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중(4-2 `running`). 404, `PROPOSAL_ALREADY_REVIEWED`, 422 검사가 먼저다 |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED` | `accepted` 생애 정보 제안을 더하면 프로필의 이야기가 300개를 넘음. 404, 위 두 409, 422 검사가 먼저다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
-| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음. 최종 `title`이 100자, `content`가 5,000자를 넘음 |
 
 <br>
 
@@ -1779,7 +1836,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | --- | --- | --- | --- |
 | 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음 | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 7-4가 없어 확인했는지 알 수 없음. 앱은 리포트와 제안을 모두 읽으면 확인한 것으로 보고 홈 알림을 지우며, 앱을 다시 켜면 다시 뜬다(#235). 서버 저장은 #236 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
-| 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. 남은 것은 동의 필드 및 가입, 조회, 변경 API와 화면 연결, 분석하지 않는 사진의 상태 및 철회 처리 | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
+| 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. AI 분석 동의는 `photoAnalysis` 항목으로 가입, 조회, 변경 API(1-1~1-3, 1-6)와 화면에 반영했고, 미동의 계정의 사진은 분석하지 않으며, 동의를 거두면 저장된 AI 설명을 지운다(2026-11-09). 남은 것은 사진 보관 동의를 따로 받는 필드와 API | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
 | 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. DB 삭제 대기열 등록 이후 S3 실제 삭제와 결과 확인은 미구현 | 3절 | FE, BE, PM |
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |

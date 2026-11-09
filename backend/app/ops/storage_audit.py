@@ -51,10 +51,16 @@ async def expired_audio(connection, *, enqueue: bool = False, limit: int = 100):
 
 
 def inspect_bucket(client, bucket: str, *, references: set[str], deadlines: dict,
-                   now: datetime, limit: int = 10000):
-    """한 버킷의 현재 객체 목록만 읽는다. 조회 한도를 넘기면 incomplete로 알린다."""
+                   now: datetime, limit: int = 10000, queued: dict | None = None):
+    """한 버킷의 현재 객체 목록만 읽는다. 조회 한도를 넘기면 incomplete로 알린다.
+
+    `queued`는 삭제 대기열의 키와 `not_before`가 아직 지나지 않았는지 여부다. DB 참조가 없는
+    객체 중 대기열에 있는 것은 따로 센다. 기한 전인 요청은 삭제 실행기가 건너뛴다(사진 업로드
+    중 사전 등록, 짧은 음성 전사 처리 중).
+    """
     if not 1 <= limit <= 100000:
         raise ValueError("invalid object limit")
+    queued = queued or {}
     try:
         rules = client.get_bucket_lifecycle_configuration(Bucket=bucket).get("Rules", [])
     except ClientError as exc:
@@ -63,6 +69,7 @@ def inspect_bucket(client, bucket: str, *, references: set[str], deadlines: dict
         rules = []
     versioning = client.get_bucket_versioning(Bucket=bucket).get("Status", "unversioned")
     result = {"listed": 0, "bytes": 0, "referenced": 0, "unreferenced": 0,
+              "unreferenced_queued": 0, "unreferenced_queued_not_due": 0,
               "bucket_root_objects": 0, "past_audio_deadline": 0,
               "lifecycle_rule_count": len(rules), "versioning": versioning,
               "complete": False, "oldest_object_at": None}
@@ -81,6 +88,9 @@ def inspect_bucket(client, bucket: str, *, references: set[str], deadlines: dict
             result["listed"] += 1
             result["bytes"] += obj["Size"]
             result["referenced" if key in references else "unreferenced"] += 1
+            if key not in references and key in queued:
+                result["unreferenced_queued"] += 1
+                result["unreferenced_queued_not_due"] += int(queued[key])
             result["bucket_root_objects"] += int("/" not in key)
             deadline = deadlines.get(key)
             result["past_audio_deadline"] += int(deadline is not None and deadline <= now)
@@ -113,6 +123,12 @@ async def run_once(settings, *, enqueue=False, limit=100, object_limit=10000,
         audio = await (await conn.execute(
             "SELECT s3_object_key, data_expires_at FROM speech_analysis_jobs"
         )).fetchall()
+        # 삭제 실행기와 같은 기준(`not_before`)으로 기한 전 요청을 구분한다.
+        queue = await (await conn.execute(
+            "SELECT s3_object_key, not_before > clock_timestamp() AS not_due "
+            "FROM storage_deletion_request_queue"
+        )).fetchall()
+    queued = {row["s3_object_key"]: row["not_due"] for row in queue}
     # S3를 기다리는 동안 DB 트랜잭션을 유지하지 않는다.
     buckets = {}
     for name, region, rows, is_audio in (
@@ -131,7 +147,7 @@ async def run_once(settings, *, enqueue=False, limit=100, object_limit=10000,
         result["buckets"].append(await asyncio.to_thread(
             inspect_bucket, factory(entry["region"]), bucket,
             references=entry["references"], deadlines=entry["deadlines"],
-            now=datetime.now(UTC), limit=object_limit,
+            now=datetime.now(UTC), limit=object_limit, queued=queued,
         ))
     return result
 

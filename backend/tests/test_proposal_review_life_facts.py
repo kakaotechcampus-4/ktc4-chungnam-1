@@ -5,6 +5,7 @@
 데이터다.
 """
 
+from app.services.life_facts import LIFE_FACT_LIMIT
 from tests.visit_records import Records
 
 
@@ -91,3 +92,88 @@ def test_accepted_life_fact_is_rolled_back_with_a_failed_review(migrated_databas
     assert records.scalar(
         "SELECT count(*) FROM life_fact_proposals WHERE status = 'settled'"
     ) == 0
+
+
+def _review_path(visit) -> str:
+    return f"/api/v1/visit-sessions/{visit.session_id}/proposals/review"
+
+
+def _accept(proposal, content="합성 최종 내용"):
+    return {
+        "proposalId": str(proposal),
+        "reviewStatus": "accepted",
+        "title": "합성 최종 제목",
+        "content": content,
+    }
+
+
+def test_accepted_life_fact_content_is_limited_like_2_6(migrated_database_url):
+    records = Records(migrated_database_url)
+    user_id, _, visit = _reported(records)
+    fact = records.life_fact_proposal(visit)
+
+    too_long = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={"lifeFacts": [_accept(fact, "가" * 5001)], "topics": []},
+    )
+    longest = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={"lifeFacts": [_accept(fact, "가" * 5000)], "topics": []},
+    )
+
+    assert too_long.status_code == 422
+    assert too_long.json()["errorCode"] == "INVALID_REQUEST"
+    assert longest.status_code == 200
+    assert records.query("SELECT content FROM life_facts") == [{"content": "가" * 5000}]
+
+
+def test_review_over_the_story_limit_saves_nothing(migrated_database_url):
+    """승인한 생애 정보를 더해 300개를 넘으면 제안 정리와 주제 피드백까지 모두 저장하지 않는다."""
+    records = Records(migrated_database_url)
+    user_id, profile_id, visit = _reported(records)
+    records.execute(
+        "INSERT INTO life_facts (profile_id, title, content) "
+        "SELECT %s, '합성 제목 ' || n, '합성 내용' FROM generate_series(1, %s) AS n",
+        (profile_id, LIFE_FACT_LIMIT - 1),
+    )
+    first = records.life_fact_proposal(visit, title="합성 제안 1")
+    second = records.life_fact_proposal(visit, title="합성 제안 2")
+    topic = records.topic_proposal(visit, 0, "more")
+    accepted_topic = [{"proposalId": str(topic), "reviewStatus": "accepted", "action": "more"}]
+
+    over = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={"lifeFacts": [_accept(first), _accept(second)], "topics": accepted_topic},
+    )
+
+    assert over.status_code == 409
+    assert over.json()["errorCode"] == "LIFE_FACT_LIMIT_EXCEEDED"
+    assert records.scalar("SELECT count(*) FROM life_facts") == LIFE_FACT_LIMIT - 1
+    assert records.scalar(
+        "SELECT count(*) FROM life_fact_proposals WHERE status = 'settled'"
+    ) == 0
+    assert records.scalar(
+        "SELECT count(*) FROM topic_proposals WHERE status = 'settled'"
+    ) == 0
+    assert records.scalar("SELECT count(*) FROM topic_feedback") == 0
+
+    # 하나만 승인하면 300개에 맞아 저장된다.
+    fits = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={
+            "lifeFacts": [_accept(first), {"proposalId": str(second), "reviewStatus": "rejected"}],
+            "topics": accepted_topic,
+        },
+    )
+
+    assert fits.status_code == 200
+    assert records.scalar("SELECT count(*) FROM life_facts") == LIFE_FACT_LIMIT
+    assert records.scalar("SELECT count(*) FROM topic_feedback") == 1
