@@ -5,6 +5,13 @@
 트랜잭션 블록에서 한다. 정리 단계는 응답을 보낸 뒤에 실행될 수 있어, 커밋이 실패해도
 앱은 성공 응답을 받을 수 있기 때문이다. 테스트는 `dependency_overrides` 로 구글 JWKS
 조회와 저장소를 바꿔 끼운다.
+
+토큰은 DB 연결을 열기 전에 확인한다. FastAPI 는 의존성을 선언한 순서대로 풀고, 앞의
+의존성이 예외(401 등)를 던지면 뒤의 의존성은 풀지 않는다. 그래서 `get_current_session` 은
+서명과 만료를 보는 `read_signed_session` 을 폐기 기록 저장소보다 먼저 선언하고, 인증이
+필요한 라우트와 의존성은 `CurrentAccountDep`, `CurrentSessionDep` 을 DB 를 쓰는 다른
+의존성보다 먼저 선언한다. 구글 로그인과 동의 제출도 같은 방식으로 토큰을 먼저 본다
+(routes/auth.py). `tests/test_token_check_before_db.py` 가 이 순서를 확인한다.
 """
 
 import re
@@ -211,12 +218,15 @@ def _unauthenticated() -> AppError:
 
 
 def read_signed_session(
-    credentials: HTTPAuthorizationCredentials | None, issuer: TokenIssuer
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ],
+    issuer: Annotated[TokenIssuer, Depends(get_token_issuer)],
 ) -> SessionClaims:
-    """Bearer 형식과 세션 토큰의 서명, 만료만 확인한다.
+    """Bearer 형식과 세션 토큰의 서명, 만료, 종류(`typ`)만 확인한다. DB 연결을 열지 않는다.
 
-    폐기 여부는 DB를 봐야 하므로 여기서 확인하지 않는다. `get_current_session` 과
-    업로드 경로에서 본문을 읽기 전에 확인하는 미들웨어(body_limits.py)가 같이 쓴다.
+    폐기 여부는 DB를 봐야 하므로 여기서 확인하지 않는다. `get_current_session` 이 의존성으로
+    쓰고, 업로드 경로에서 본문을 읽기 전에 확인하는 미들웨어(body_limits.py)가 직접 부른다.
     """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthenticated()
@@ -224,15 +234,12 @@ def read_signed_session(
 
 
 async def get_current_session(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
-    ],
-    issuer: Annotated[TokenIssuer, Depends(get_token_issuer)],
+    # 서명과 만료를 먼저 본다. 여기서 거절하면 아래 폐기 기록 저장소의 DB 연결은 열지 않는다.
+    session: Annotated[SessionClaims, Depends(read_signed_session)],
     revocations: Annotated[
         SessionRevocationStore, Depends(get_session_revocations)
     ],
 ) -> SessionClaims:
-    session = read_signed_session(credentials, issuer)
     # 로그아웃하거나 탈퇴한 세션이다. 만료 전이라도 받지 않는다.
     if await revocations.is_revoked(session.token_id):
         raise _unauthenticated()

@@ -164,7 +164,10 @@ async def _check_before_body(
     require_supported_app_version(settings, request.headers.get(APP_VERSION_CODE_HEADER))
     # 테스트가 인증 의존성을 바꿔 끼운 앱은 라우트도 토큰을 보지 않는다. 같은 기준으로
     # 건너뛴다. 운영 앱은 dependency_overrides를 쓰지 않는다.
-    if get_current_session in overrides or get_current_account in overrides:
+    if any(
+        dependency in overrides
+        for dependency in (read_signed_session, get_current_session, get_current_account)
+    ):
         return
     read_signed_session(await bearer_scheme(request), get_token_issuer(settings))
 

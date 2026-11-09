@@ -62,7 +62,7 @@ STT 외 생성 기능은 ML API를 활용하는 방향이다. 8-3과 8-4의 내�
 
 1. 본문을 읽기 전에 앱 버전(`426 APP_UPDATE_REQUIRED`)과 세션 토큰의 형식, 서명, 만료(`401 UNAUTHENTICATED`, `401 SESSION_EXPIRED`)를 확인한다.
 2. 본문 상한(`413`)을 `Content-Length`로 먼저 보고, 받는 동안 다시 센다.
-3. 본문을 다 받은 뒤 앱 버전, 세션(업로드가 아닌 경로는 이때 형식, 서명, 만료도 확인한다)과 폐기 여부, 계정, 소유권과 동의를 확인한다. 로그아웃이나 탈퇴로 폐기한 세션은 이 단계에서 `401 UNAUTHENTICATED`다.
+3. 본문을 다 받은 뒤 앱 버전, 세션(업로드가 아닌 경로는 이때 형식, 서명, 만료도 확인한다)과 폐기 여부, 계정, 소유권과 동의를 확인한다. 형식, 서명, 만료에서 거절한 요청은 DB 연결을 열지 않는다. 그래서 서버의 DB 설정이 없어도 이런 요청은 `503 DATABASE_NOT_CONFIGURED`가 아닌 `401`이다. 로그아웃이나 탈퇴로 폐기한 세션은 이 단계에서 `401 UNAUTHENTICATED`다.
 4. 라우트가 파일 형식과 크기를 검사한다.
 
 HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 정상 설정에서는 위 경로별 상한이 더 작아 API가 먼저 응답하고, Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이다. 그때 Caddy의 `413`에는 위 오류 형식의 본문이 없다.
@@ -194,6 +194,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 401 | `INVALID_ID_TOKEN`, `ID_TOKEN_EXPIRED`, `ID_TOKEN_AUDIENCE_MISMATCH`, `ID_TOKEN_ISSUER_MISMATCH` |
 | 503 | `AUTH_NOT_CONFIGURED`, `IDENTITY_PROVIDER_UNAVAILABLE`, `DATABASE_NOT_CONFIGURED` |
 
+ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토큰은 DB 설정과 관계없이 위 `401`이나 `IDENTITY_PROVIDER_UNAVAILABLE`이다. 토큰의 `kid`가 서버가 받아 둔 구글 공개키에 없으면 공개키를 다시 받는다. 다만 받아 둔 공개키의 캐시 기간 안이면 마지막 조회 뒤 60초 안에는 다시 받지 않고, 그 조회가 성공이었으면 `401 INVALID_ID_TOKEN`, 실패였으면 `503 IDENTITY_PROVIDER_UNAVAILABLE`(`retryable: true`)로 거절한다.
+
 ### 1-2. `POST /auth/consent` — 완료
 
 필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션을 발급한다.
@@ -231,6 +233,8 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | 422 | `INVALID_REQUEST` | 요청 형식 오류. `consents` 값이 `true`, `false`가 아니거나 `displayName`이 50자를 넘는 경우 포함 |
 | 503 | `AUTH_NOT_CONFIGURED` | 서버의 세션 서명 키가 설정되지 않음 |
 | 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
+
+등록 토큰은 DB 연결을 열기 전에 확인하므로, 유효하지 않거나 만료된 등록 토큰은 DB 설정과 관계없이 `401`이다.
 
 ### 1-3. `GET /auth/me` — 완료
 

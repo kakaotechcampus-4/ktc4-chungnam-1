@@ -102,6 +102,7 @@ API를 나눠 구현할 때 모두 같은 방식으로 DB를 쓴다.
 | 쿼리 | psycopg로 SQL을 직접 쓴다. SQLAlchemy는 Alembic에만 쓴다 |
 | 연결 | 비동기 연결(`psycopg.AsyncConnection`)만 쓴다. 저장소는 연결을 직접 열지 않고, [deps.py](app/api/deps.py)의 `DbConnectionDep`이 요청마다 여는 연결을 받는다. 연결은 autocommit이다 |
 | 트랜잭션 | 여러 문장을 함께 반영해야 하면 서비스나 저장소 코드에서 `async with connection.transaction():`으로 묶는다. 의존성의 정리 단계에서 커밋하지 않는다. worker는 상태가 바뀔 때마다 짧게 커밋하고 AI 서버 호출 중에는 트랜잭션을 열어 두지 않는다 |
+| 인증 순서 | 인증이 필요한 라우트와 의존성은 `CurrentAccountDep`이나 `CurrentSessionDep`을 DB를 쓰는 다른 의존성보다 먼저 선언한다. FastAPI는 선언 순서대로 의존성을 풀기 때문에, 순서가 바뀌면 잘못된 토큰에도 DB 연결을 먼저 연다. [test_token_check_before_db.py](tests/test_token_check_before_db.py)가 모든 인증 경로를 확인한다 |
 | 소유 확인 | 경로의 ID는 `UUID`로 받고 [ownership.py](app/services/ownership.py)의 `require_owned`로 확인한다. 다른 계정의 자원과 없는 자원은 같은 404를 받는다. 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 다음 조회에서 행이 없으면 500이 아니라 같은 404(`not_found`)를 낸다 |
 | 테스트 | 저장소 SQL은 `SAEROK_TEST_DATABASE_URL`을 설정하고 임시 DB fixture(`migrated_database_url`, [conftest.py](tests/conftest.py))로 확인한다. 값이 없으면 건너뛴다. 비동기 코드는 [support.py](tests/support.py)의 `run`으로 실행한다 |
 
@@ -268,7 +269,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기나 동의 제출 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기나 동의 제출 때 지운다. 인증이 필요한 요청은 세션의 형식, 서명, 만료와 종류(`typ`)를 먼저 확인하고, 통과한 요청만 폐기 여부를 확인하려고 DB 연결을 연다([deps.py](app/api/deps.py)의 `read_signed_session`, `get_current_session`). 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 - 등록 토큰에도 무작위 `jti` 를 넣고 한 번만 쓴다. 동의 제출이 계정을 만들거나 세션을 줄 때 그 `jti` 를 토큰 만료 시각까지 `session_revocations` 에 남긴다. 기록과 계정 생성은 같은 트랜잭션이라, 계정을 만들지 못하면 기록도 되돌린다. 같은 토큰을 동시에 두 번 보내면 뒤 요청은 앞 트랜잭션이 끝나기를 기다렸다가 401 을 받는다. `jti` 가 없는 등록 토큰(이 변경 전에 발급한 토큰)은 `INVALID_REGISTRATION_TOKEN` 이므로, 배포 시점에 동의 화면에 있던 사용자는 다시 로그인한다.
@@ -281,11 +282,11 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | --- | --- | --- |
 | `INVALID_REQUEST` | 422 | 요청 형식이 계약과 다름 |
 | `AUTH_NOT_CONFIGURED` | 503 | 클라이언트 ID 또는 세션 서명 키가 설정되지 않음 |
-| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패 |
+| `INVALID_ID_TOKEN` | 401 | 서명, 형식 또는 `kid` 확인 실패. 캐시 기간 안의 구글 공개키에 없는 `kid`는 마지막 JWKS 조회 뒤 60초 안이면 다시 조회하지 않고 이 오류로 거부 |
 | `ID_TOKEN_EXPIRED` | 401 | ID 토큰 만료 |
 | `ID_TOKEN_AUDIENCE_MISMATCH` | 401 | `aud` 가 허용 목록에 없음 |
 | `ID_TOKEN_ISSUER_MISMATCH` | 401 | `iss` 가 구글이 아님 |
-| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패 (`retryable: true`) |
+| `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패. 조회가 실패한 뒤 60초 안에 캐시 기간 안의 공개키에 없는 `kid`가 와도 다시 조회하지 않고 이 오류로 거부 (`retryable: true`) |
 | `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름. 이미 사용한 등록 토큰 포함 |
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
@@ -297,6 +298,15 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `DATABASE_NOT_CONFIGURED` | 503 | `SAEROK_DATABASE_URL`이 설정되지 않아 계정 저장소를 쓸 수 없음 |
 
 JWKS 조회에 실패하면 검증을 건너뛰지 않고 503 으로 거부한다. 검증하지 못한 토큰이 통과하는 경로는 없다.
+
+ID 토큰의 `kid`는 서명을 확인하기 전에 읽으므로 로그인하지 않은 요청도 마음대로 정할 수 있다. 그래서 JWKS를 다시 받는 횟수를 묶는다([google_identity.py](app/services/google_identity.py)).
+
+- 받아 둔 공개키는 `SAEROK_GOOGLE_JWKS_CACHE_SECONDS`(기본 3600초) 동안 쓰고, 그 안에서 공개키에 있는 `kid`는 다시 조회하지 않는다.
+- 캐시 기간 안에 공개키에 없는 `kid`가 오면 다시 조회하되, 마지막 조회(성공과 실패 모두) 뒤 60초 안에는 조회하지 않고 거부한다. 마지막 조회가 성공이었으면 `INVALID_ID_TOKEN`(401), 실패였으면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이다. 구글이 키를 바꿔 새 `kid`가 오면 간격이 지난 뒤 한 번 다시 받아 찾는다. 마지막 조회 뒤 60초 안에 처음 보는 새 키의 토큰이 오면 그 사이에는 거부되므로, 앱은 잠시 뒤 다시 로그인하면 된다.
+- 캐시가 비었거나 기간이 지났으면 60초 간격과 관계없이 다시 조회한다. 이때 조회가 실패하면 `IDENTITY_PROVIDER_UNAVAILABLE`(503)이고, 실패 뒤 쉬는 간격은 없다.
+- 동시에 여러 요청이 다시 조회해야 하면 한 요청만 조회하고 나머지는 그 결과(실패 포함)를 같이 쓴다.
+
+`POST /auth/google`의 ID 토큰과 `POST /auth/consent`의 등록 토큰은 DB 연결을 열기 전에 확인한다. 검증하지 못한 토큰은 DB 연결 없이 거절하고, JWKS를 받는 동안에도 DB 연결을 쥐지 않는다. 요청 본문이 형식 검사(422)에 걸린 경우는 FastAPI가 오류를 모아 두었다가 다른 의존성을 푼 뒤에 내므로, 이때는 DB 연결을 잠깐 열었다 닫는다.
 
 ### 설정
 
@@ -358,11 +368,11 @@ FastAPI는 앱 버전, 인증, 소유권과 파일 크기를 확인하는 의존
 
 - 상한은 라우트가 쓰는 설정값과 상수에서 계산한다. 더한 1 MiB는 multipart 경계와 파일이 아닌 필드의 여유다. 파일 자체의 크기 검사(`validate_image`, `validate_visit_audio`)는 그대로 라우트가 한다.
 - `Content-Length`가 상한을 넘으면 본문을 읽지 않고 거절한다. 길이가 없거나(chunked) 실제로 더 보내면 받은 양을 세다가 상한을 넘는 조각에서 끊는다. 이때 만들던 multipart 임시 파일은 Starlette가 닫는다.
-- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
+- 업로드 네 경로는 본문을 읽기 전에 앱 버전(`require_supported_app_version`, 426)과 세션 토큰의 형식, 서명과 만료(`read_signed_session`, 401)를 확인한다. `get_current_session`이 의존성으로 쓰는 것과 같은 함수다. 폐기 여부, 계정, 소유권과 동의는 본문을 받은 뒤 기존 의존성이 확인한다. 그래서 폐기한 세션은 본문 상한까지는 받은 뒤 401이 된다.
 - 상한을 넘거나 본문 전 확인에서 거절한 업로드는 본문을 끝까지 받지 않고 응답한다. 앞단(Caddy)은 읽지 않은 본문이 많으면 응답 뒤 연결을 닫을 수 있어, 아직 본문을 보내던 클라이언트는 413이나 401 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
 - 업로드 경로의 413은 라우트의 파일 검사와 같은 오류 코드와 문구를 쓴다. JSON 요청이 상한을 넘으면 `413 REQUEST_TOO_LARGE`다([API 명세의 본문 크기와 확인 순서](../docs/architecture/api-spec.md#본문-크기와-확인-순서)).
 - 본문을 읽기 전에 거절한 요청은 경로를 찾기 전이라 요청 로그의 `route`가 `unmatched`로 남는다. 요청 ID와 상태 코드는 그대로 남는다.
-- 테스트가 `dependency_overrides`로 `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
+- 테스트가 `dependency_overrides`로 `read_signed_session`, `get_current_session`이나 `get_current_account`를 바꿔 끼운 앱은 라우트도 토큰을 보지 않으므로, 미들웨어도 토큰 확인을 건너뛴다. 설정(`get_settings`)의 덮어쓰기도 따른다. 운영 앱은 덮어쓰기를 쓰지 않는다.
 - 기본 설정에서 면회 음성 경로는 로그인한 계정이 요청마다 513 MiB까지 보낼 수 있다. 음성 상한을 낮추거나 받는 동안 검증하는 것은 별도 결정이다.
 
 HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 가장 큰 경로별 상한보다 조금 큰 바깥 상한을 둔다. 정상 설정에서는 경로별 상한(최대 513 MiB)이 더 작아 API가 먼저 공통 형식의 `413`이나 `401`을 돌려준다. Caddy 상한은 API 상한을 잘못 키웠을 때의 바깥 방어선이며, 그때 Caddy가 돌려주는 `413`에는 공통 오류 본문이 없다. `SAEROK_MAX_AUDIO_BYTES`를 513 MiB보다 크게 올리면 Caddyfile도 함께 올린다. Caddyfile 변경을 서버에 적용하는 절차는 [배포 문서](docs/deployment.md#갱신)에 있다.
