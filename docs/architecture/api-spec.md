@@ -69,7 +69,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 상한을 넘거나 1단계에서 거절한 업로드는 본문을 끝까지 받지 않고 응답하므로, 아직 본문을 보내던 클라이언트는 `413`이나 `401` 본문 대신 연결 오류를 받을 수 있다. 앱은 올리기 전에 파일 크기를 확인한다.
 
-현재 구현 (2026-11-09 기준): 이 절의 API 본문 상한, 본문 전 토큰 확인과 `REQUEST_TOO_LARGE`는 [#278](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/278)이며, 11/9 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490), develop `59190ba7`)부터 운영에 있다. 형식, 서명, 만료에서 거절한 토큰이 DB 연결을 열지 않는 것은 [#290](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/290)이며 같은 배포로 들어갔다. 배포 workflow는 caddy를 교체하지 않으므로 Caddy 상한은 배포 뒤 caddy를 따로 다시 만들어야 적용된다([배포 문서의 갱신](../../backend/docs/deployment.md#갱신)). 11/9 배포 뒤 caddy를 다시 만든 기록은 팀 운영 기록에 없다.
+현재 구현 (2026-11-09 기준): 이 절의 API 본문 상한, 본문 전 토큰 확인과 `REQUEST_TOO_LARGE`는 [#278](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/278)이며, 11/9 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490), develop `59190ba7`)부터 운영에 있다. 형식, 서명, 만료에서 거절한 토큰이 DB 연결을 열지 않는 것은 [#290](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/290)이며 같은 배포로 들어갔다. 배포 workflow는 caddy를 교체하지 않으므로 Caddy 상한은 배포 뒤 caddy를 따로 다시 만들어야 적용된다([배포 문서의 갱신](../../backend/docs/deployment.md#갱신)). 11/9 배포 뒤 caddy를 다시 만든 기록은 팀 운영 기록에 없고, 11/10 배포에서 다시 띄운 서비스도 `api`, `card-worker`, `speech-worker`, `photo-worker`다.
 
 <br>
 
@@ -77,9 +77,14 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 상태: `완료` 구현됨, `미병합` 구현됐으나 develop에 병합 전, `수정` 기존 API 변경, `신규` 새로 구현, `미정` 결정 전
 
-2026-11-09 develop `59190ba7` 기준 아래 공개 API는 모두 구현돼 있다. `신규`는 v0.2 이후 새로 만든 API라는 뜻이며 구현 전이라는 뜻이 아니다. 8-3, 8-4는 HTTP 경로 대신 worker가 `ai/`의 함수를 직접 부른다.
+2026-11-10 develop `83695093` 기준 아래 공개 API는 모두 구현돼 있다. `신규`는 v0.2 이후 새로 만든 API라는 뜻이며 구현 전이라는 뜻이 아니다. 8-3, 8-4는 HTTP 경로 대신 worker가 `ai/`의 함수를 직접 부른다.
 
-현재 구현 (2026-11-09 기준): 이 문서는 develop `59190ba7` 코드를 따르며, 운영 서버의 BE도 같은 커밋이다. 11/9 14:42 KST 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490)의 두 번째 시도)로 올렸고, migration은 `e7c3a1f94d20`에서 `202cdc671d82`(#286), `685f243e9f1f`(#291)까지 적용했다. 그 전 운영은 11/8 승인 배포([Deploy run 42485750502](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42485750502), develop `9c2b8276`)였고, 그 뒤 develop에 병합된 다음 BE 변경이 이 배포로 운영에 들어갔다.
+현재 구현 (2026-11-10 기준): 이 문서는 develop `83695093` 코드를 따르며, 운영 서버의 BE도 같은 커밋이다. 11/10 01:41 KST 승인 배포([Release build run 42653146404](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42653146404), [Deploy run 42656825849](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42656825849), PM 승인)로 올렸고, migration은 `685f243e9f1f`에서 `9c4e2b7a1f63`(#295)까지 적용했다. 배포 뒤 `api`, `card-worker`, `speech-worker`, `photo-worker`가 다시 떠 정상이고 `/health/ready`는 200이다. 그 전 운영은 아래 11/9 배포(develop `59190ba7`)였고, 그 뒤 develop에 병합된 다음 두 변경이 이 배포로 운영에 들어갔다.
+
+- [#293](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/293): 개인정보 처리방침과 엘리스 ML API 처리위탁 문서. API와 상관없다.
+- [#295](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/295): 이야기 후보를 대화 전체에서 빠짐없이 찾도록 지시해 30개까지 받고(`proposals-8`) 후보마다 AI가 고른 분류(`storyCategory`)와 아픈 기억 표시(`sensitive`)를 저장한다(7-3, 7-4, 8-3). 리포트 본문은 화제마다 문단으로 쓴다(`report-6`). 카드 생성 2판은 아픈 경험 카드에 `sensitive`를 붙인다([CardSet](#cardset)). 음성 분석이 끝나면 처리 규모를 개수로만 로그에 남긴다. 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION`이 없어 코드 기본값 2가 적용되므로 배포 뒤 4-1로 요청한 운영 카드는 2판이다.
+
+11/9 14:42 KST 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490)의 두 번째 시도, develop `59190ba7`)는 migration을 `e7c3a1f94d20`에서 `202cdc671d82`(#286), `685f243e9f1f`(#291)까지 적용했다. 그 전 운영은 11/8 승인 배포([Deploy run 42485750502](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42485750502), develop `9c2b8276`)였고, 그 뒤 develop에 병합된 다음 BE 변경이 11/9 배포로 운영에 들어갔다.
 
 - [#275](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/275): 사진 분석이 끝나도 받아 둔 카드 묶음을 `needsRefresh`로 바꾸지 않는다([4절](#사실-정정-후-카드-갱신-기준)).
 - [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277): 7-4의 주제 결정 승인에 카드 묶음 잠금과 갱신 표시를 적용한다.
@@ -329,7 +334,7 @@ ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토
 
 ### 1-7. `PUT /auth/me/push-devices/{fid}` — 신규
 
-리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음. [PR #248](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/248)로 develop에 병합됐고 11/6 운영 서버 갱신(develop `da606cb0`, 운영 배포 기록)부터 운영에 있으며 지금 운영(develop `59190ba7`)에도 들어 있다. 계정당 5대 한도는 [#285](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/285)로 11/9 배포부터 운영에 있다.
+리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음. [PR #248](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/248)로 develop에 병합됐고 11/6 운영 서버 갱신(develop `da606cb0`, 운영 배포 기록)부터 운영에 있으며 지금 운영(develop `83695093`)에도 들어 있다. 계정당 5대 한도는 [#285](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/285)로 11/9 배포부터 운영에 있다.
 
 - `fid`: 앱이 FCM에 등록하고 받은 Firebase Installation ID(FID). FCM은 기기 토큰(`getToken`) 대신 FID를 쓰도록 바꿨고, 서버는 HTTP v1 발송의 `fid`에 이 값을 넣는다. 영문 대소문자, 숫자, `-`, `_`로 된 1~64자다(지금 FID는 22자).
 - 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
@@ -1350,7 +1355,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 
 응답 `200` — [ChangeProposal](#changeproposal)
 
-- 생애 정보 제안마다 AI가 고른 일대기 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있다는 표시(`sensitive`)를 담는다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+- 생애 정보 제안마다 AI가 고른 일대기 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있다는 표시(`sensitive`)를 담는다(2026-11-09 PM 결정, #139). 11/10 배포(develop `83695093`)부터 운영에 있다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
@@ -1387,7 +1392,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
   - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다. 제안 값이 이 길이를 넘으면 보호자가 줄여서 보내야 한다.
-  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류이며 값은 2-6과 같다. 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`이나 7개 밖의 값은 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류이며 값은 2-6과 같다. 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`이나 7개 밖의 값은 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). 서버는 11/10 배포(develop `83695093`)부터 운영에 있다. 앱의 분류 고르기는 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
@@ -1586,7 +1591,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `cardSummaries`는 `reaction`이 `positive`, `neutral`, `negative`인 카드만 담는다.
 - `topicProposals`는 요청의 `cards` 안에서 카드당 최대 1개다. `suggestedAction`: `more`, `less`, `exclude`
-- `lifeFactProposals`는 30개까지다(2026-11-09 PM 결정, AI 쪽이 먼저 자름). 항목마다 AI가 고른 일대기 분류 `storyCategory`(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있는지 `sensitive`가 있어야 하며, 어기면 `INVALID_AI_RESPONSE`다. 두 값은 `life_fact_proposals`에 저장하고 7-3에 담는다. develop 반영분이며 운영에는 아직 배포하지 않았다.
+- `lifeFactProposals`는 30개까지다(2026-11-09 PM 결정, AI 쪽이 먼저 자름). 항목마다 AI가 고른 일대기 분류 `storyCategory`(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있는지 `sensitive`가 있어야 하며, 어기면 `INVALID_AI_RESPONSE`다. 두 값은 `life_fact_proposals`에 저장하고 7-3에 담는다. 11/10 배포(develop `83695093`)부터 운영에 있다.
 - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
 - `mood`는 AI가 만들지 않는다. 백엔드가 `conversationSatisfaction`으로 계산한다(1~2 `hard`, 3 `normal`, 4~5 `good`).
 - `proposalId`는 백엔드가 부여한다.
@@ -1763,7 +1768,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기, 프로필 사진 설명을 고쳤거나 사진을 지웠거나 AI 사진 분석 동의를 거둬 AI 설명이 지워졌거나(1-6) 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
-- `sensitive`: 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`. 앱이 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. develop 반영분이며 운영에는 아직 배포하지 않았다. 운영에서 채우려면 운영 설정 `SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 필요하다.
+- `sensitive`: 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`. 앱이 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. 서버는 11/10 배포(develop `83695093`)부터 운영에 있고, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION`이 없어 코드 기본값 2가 적용되므로 배포 뒤 4-1로 요청한 묶음은 2판이다. 앱의 표시는 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
 ### VisitSession
@@ -1903,10 +1908,10 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음. 해결: 3-3으로 구현했고 늦게 온 AI 결과는 보호자 설명을 덮지 않는다([PR #205](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/205)) | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 7-4가 없어 확인했는지 알 수 없음. 앱은 리포트와 제안을 모두 읽으면 확인한 것으로 보고 홈 알림을 지우며, 앱을 다시 켜면 다시 뜬다(#235). 서버 저장은 #236 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
 | 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. AI 분석 동의(`photoAnalysis`)의 필드, 가입, 조회, 변경 API(1-1~1-3, 1-6)와 화면, 미동의 사진의 `pending` 유지와 철회 시 분석 중단은 [PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)로 구현했고, 동의를 거두면 저장된 AI 설명을 지운다([#288](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/288), 2026-11-09 PM 결정). 남은 것은 사진 서버 보관 동의를 따로 받는 필드, API와 화면, 그 철회 처리 | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
-| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. 사진 한 장 삭제 API는 3-4로 구현했다([PR #240](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/240)). 앱에는 올라간 사진을 지우는 버튼이 아직 없어 3-4를 부르지 않는다. 보관 동의가 없어 그 철회 동선은 정하지 않았다. 삭제 대기열의 S3 삭제 실행기([PR #204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204)) 코드는 운영 이미지(develop `59190ba7`)에 들어 있지만 compose 서비스가 아니라 손으로 실행하는 명령이다. 실행기의 정기 실행과 실행기를 통한 실제 원본 삭제는 11/6 PM 결정으로 보류 중이다(팀 운영 기록) | 3절 | FE, BE, PM |
+| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. 사진 한 장 삭제 API는 3-4로 구현했다([PR #240](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/240)). 앱에는 올라간 사진을 지우는 버튼이 아직 없어 3-4를 부르지 않는다. 보관 동의가 없어 그 철회 동선은 정하지 않았다. 삭제 대기열의 S3 삭제 실행기([PR #204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204)) 코드는 운영 이미지(develop `83695093`)에 들어 있지만 compose 서비스가 아니라 손으로 실행하는 명령이다. 실행기의 정기 실행과 실행기를 통한 실제 원본 삭제는 11/6 PM 결정으로 보류 중이다(팀 운영 기록) | 3절 | FE, BE, PM |
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |
 | 11 | 일대기 분류와 그림 번호의 필드 이름(`storyCategory`, `imageNumber`는 임시) | 2-3, 2-6, 2-7 | FE, BE. [작업 D 문서](../../backend/docs/work-split/D-life-story.md) D1, D2 |
 | 12 | 지운 이야기를 근거로 만든 저장된 카드와 주제의 처리, 지운 이야기의 내용이 담긴 지난 카드 문구를 다음 생성 입력(`pastCards`)에 넣을지, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제. 카드 생성 기록은 ID만 남기고, 이야기나 사진 근거가 모두 사라진 주제는 다음 생성 입력에서 빼기로 정했다(PM 결정 2026-11-08, 제외한 주제는 2026-11-09) | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
-| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지. 해결(PM 결정 2026-11-09, #139): AI가 이야기 후보마다 분류를 붙이고(8-3, 7-3의 `storyCategory`) 보호자가 승인 때 바꿀 수 있다(7-4의 선택 `storyCategory`). 만든 뒤에도 일대기에서 2-7로 바꾼다. develop 반영분이며 운영 배포 전 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |
+| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지. 해결(PM 결정 2026-11-09, #139): AI가 이야기 후보마다 분류를 붙이고(8-3, 7-3의 `storyCategory`) 보호자가 승인 때 바꿀 수 있다(7-4의 선택 `storyCategory`). 만든 뒤에도 일대기에서 2-7로 바꾼다. 서버는 11/10 배포(develop `83695093`)부터 운영에 있고, 승인 때 분류를 고르는 앱 화면은 새 APK를 만들어야 휴대폰에 들어가며 설치된 앱(Play와 11/8 Releases APK)에는 없다 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |

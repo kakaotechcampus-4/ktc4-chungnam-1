@@ -56,7 +56,7 @@ backend가 부르는 생성 기능 네 가지(카드, 리포트, 변경 제안, 
 
 ### 이야기 후보 전부 받기와 아픈 기억 표시(2026-11-09 PM 결정)
 
-이 절의 변경(`proposals-8`, `report-6`, 카드 생성 2판)은 #295로 develop에 들어갔고 운영 미배포다. 11/9 운영 배포분(develop `59190ba7`)은 `proposals-7`, `report-5`이고 카드 생성 2판이 없으며 backend의 카드 생성 판 기본값도 1이다.
+이 절의 변경(`proposals-8`, `report-6`, 카드 생성 2판)은 #295로 develop에 들어갔고 2026-11-10 01:41 운영 배포(develop `83695093`)부터 운영에 있다. 운영 `.env`는 `SAEROK_CARD_GENERATION_PROMPT_VERSION`을 정하지 않아 backend 기본값 2가 쓰이므로 운영 카드도 2판이다. 그 전 운영 배포분(11/9, develop `59190ba7`)은 `proposals-7`, `report-5`였고 카드 생성 2판이 없었으며 backend의 카드 생성 판 기본값도 1이었다.
 
 `proposals-8`은 이야기 후보와 주제 조정을 LLM 두 번으로 따로 받는다. 주제 조정은 이야기 후보 결과를 쓰지 않으므로 두 호출을 동시에 보낸다. 이야기 후보 전용 지시는 이야기 후보 절에만 두고, 두 호출이 함께 받는 공통 부분에는 화자 추론, 인원 주의, 명령 무시, 처리 과정 낱말 금지만 둔다. 이야기 후보 호출만 추론 강도를 `medium`으로 올리고, 대화 처음부터 끝까지 나온 서로 다른 경험을 하나씩 모두 내게 한다. 지금의 생각, 앞으로의 계획과 후회도 포함한다. 개수 제한은 프롬프트에서 없애고 코드에 안전 상한 30개만 둔다(넘으면 개수만 기록). 아픈 경험과 누구의 경험인지 불확실한 경험도 빼지 않고, 아픈 경험은 `sensitive`로 표시한다. 후보마다 일대기 분류(`storyCategory`: family, hobby, work, hometown, friend, travel, other)를 AI가 고른다. 주제 조정에서는 '면회 한 번에 많아야 2개'와 '꼭 필요한 것만'을 없앴고 카드당 하나와 아픈 기억 범위 규칙은 그대로다.
 
@@ -64,9 +64,9 @@ backend가 부르는 생성 기능 네 가지(카드, 리포트, 변경 제안, 
 
 카드 생성 2판(`card_generation/_versions/v2`)은 쌓아온 이야기나 초기 정보에 나온 아픈 경험을 후보로 낼 수 있게 하고 그 카드를 `sensitive`로 표시한다. 사진, 빈 칸 여쭙기, 보편 추억으로는 아픈 경험을 꺼내지 않으며 최근 기억 시험 카드는 계속 막는다. backend 설정 `card_generation_prompt_version`이 2일 때 2판이 쓰이고, 1판은 결과의 `sensitive`가 늘 false다. 문안 작성 규칙과의 공백은 `card_generation/README.md`의 '아픈 경험 카드(2판)'에 알려진 문제로 적어 두었다.
 
-리포트와 변경 제안 결과(`ReportResult`, `ProposalResult`)에는 처리 기록용 숫자(모델이 낸 후보 수, 토큰 수)가 붙지만 #106 응답에는 넣지 않는다. 위 문구가 실제 모델에서 의도대로 동작하는지는 아직 확인하지 않았다(모델 대역 테스트만 함).
+리포트와 변경 제안 결과(`ReportResult`, `ProposalResult`)에는 처리 기록용 숫자(모델이 낸 후보 수, 토큰 수)가 붙지만 #106 응답에는 넣지 않는다. 위 문구가 실제 모델에서는 PM의 실제 면회 녹음 1건(약 88분)으로 확인했다([실제 면회 검증 기록](../docs/pm/real-visit-validation-20261109.md)).
 
-배포 전 확인할 것. 출력 상한(`ChatConfig.max_tokens`=16000)은 Responses API에서 추론 토큰과 출력 토큰이 함께 쓴다. 긴 면회에서 이야기 후보가 20~30개 나오고 추론 강도가 `medium`이면 이 상한에 닿아 응답이 잘릴 수 있고, 잘리면 `GENERATION_FAILED`로 그날 리포트까지 함께 실패한다(backend는 다시 시도하지 않음). 이야기 후보 호출만 상한을 올리는 안은 엘리스 프록시가 받는 값인지 확인하지 않아서 넣지 않았다. 프롬프트 확인 뒤 PM 승인을 받아 30분 이상의 합성 긴 대화로 시뮬레이션을 돌려 `token_usage.reasoning_tokens`와 소요 시간을 기록한 다음 정한다.
+출력 상한(`ChatConfig.max_tokens`=16000)은 Responses API에서 추론 토큰과 출력 토큰이 함께 쓴다. 위 실제 면회 녹음에서 이야기 후보 `medium`은 상한 안에서 끝났고, `high`는 추론 토큰 14,543으로 상한에 닿아 답이 비었다. 긴 면회에서 이야기 후보가 20~30개 나오고 추론 강도가 `medium`이면 이 상한에 닿아 응답이 잘릴 수 있고, 잘리면 `GENERATION_FAILED`로 그날 리포트까지 함께 실패한다(backend는 다시 시도하지 않음). 이야기 후보 호출만 상한을 올리는 안은 엘리스 프록시가 받는 값인지 확인하지 않아서 넣지 않았다. 운영에서는 처리 기록의 끊긴 응답 수(`incomplete_responses`)로 상한에 닿은 회차를 본다.
 
 생성 기능은 DB를 읽지도 쓰지도 않는다. `pyproject.toml`은 `ai/`에 하나 두고, backend가 경로 의존성으로 설치할 때는 생성 기능 넷(`card_generation`, `report_generation`, `proposal_generation`, `photo_analysis`)과 `common`만 들어간다. `uv run pytest`도 네 패키지의 테스트를 돈다.
 

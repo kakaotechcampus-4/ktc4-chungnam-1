@@ -15,7 +15,7 @@
 > | D2 | 기본 그림 번호의 **필드 이름**과 면회 승인 이야기의 번호 | `imageNumber`(1~5). 2-6에서는 필수, 7-4로 만드는 이야기는 서버가 1~5 중 하나를 고름 | 번호 저장은 decmoon05, Sogeum100g 모두 찬성. 필드 이름과 서버가 고를지는 정하지 않았다 | FE, BE |
 > | D3 | **이야기 삭제 때 대화 카드와 주제 처리** | 생애 정보 행만 지운다. 다음 카드 생성부터 빠지고, 이미 만든 카드와 주제는 기록으로 남긴다. 카드 생성 입력에서 지운 이야기를 가리키는 근거 항목은 뺀다. **일부 결정, 구현함(PM 결정 2026-11-08, 2026-11-09)**: 근거가 지운 이야기나 사진뿐이던 주제는 다음 카드 생성 입력에서 뺀다. 여러 근거 가운데 일부만 지웠으면 남은 근거로 넣는다. 보호자가 제외한 주제도 근거 이야기와 사진을 모두 지우면 뺀다(2026-11-09). 저장된 카드와 주제를 지울지, 지운 이야기의 내용이 담긴 지난 카드 문구를 입력(`pastCards`)에 계속 넣을지는 정하지 않았다 | decmoon05: 삭제한 이야기는 추천에 쓰지 않고 그 이야기만 근거로 한 주제 카드도 지우는 방향. 여러 이야기를 근거로 한 카드는 확인 요청 | PM, BE(작업 B), AI |
 > | D4 | **삭제한 이야기의 내용이 다른 저장소에 남는 문제** | **결정, 구현함(PM 결정 2026-11-08)**: 카드 생성 기록(`card_sets.generation_log`)에는 글 대신 ID만 남긴다. 기존 기록은 migration `685f243e9f1f`가 고친다. 이미 만든 카드 문구와 주제 제목, 설명에는 지운 이야기의 내용이 반영돼 있을 수 있으며 이 부분은 D3에 남는다 | PR에서 다루지 않음 | PM(개인정보), BE |
-> | D5 | **면회 제안을 승인해 만드는 이야기(7-4)의 분류** | **결정, 구현함(PM 결정 2026-11-09, #139)**: AI가 이야기 후보마다 분류(`storyCategory`)를 붙여 `life_fact_proposals`에 저장하고 7-3에 담는다. 7-4 승인 항목은 `storyCategory`를 선택으로 받으며, 빼면 제안의 분류로 이야기를 만든다. 보호자는 승인 때 분류를 바꿀 수 있고, 만든 뒤에도 일대기에서 2-7로 바꾼다. 원래 제안의 분류는 바꾸지 않는다. #295로 develop에 반영했고 운영 미배포다. 결정 전 임시 안은 모두 `other`였다 | MoonYoung02: 대화에서 주제를 뽑아 7개 분류로 매핑(`topic_id` 저장 필요, 생성 데이터로 시험 필요). decmoon05: AI가 이야기 후보 응답에 분류를 함께 주고 보호자가 확인, 수정. Sogeum100g: 보호자가 직접 고르는 편이 간단하고 정확. **의견이 갈림** | PM, AI, FE, BE(작업 C) |
+> | D5 | **면회 제안을 승인해 만드는 이야기(7-4)의 분류** | **결정, 구현함(PM 결정 2026-11-09, #139)**: AI가 이야기 후보마다 분류(`storyCategory`)를 붙여 `life_fact_proposals`에 저장하고 7-3에 담는다. 7-4 승인 항목은 `storyCategory`를 선택으로 받으며, 빼면 제안의 분류로 이야기를 만든다. 보호자는 승인 때 분류를 바꿀 수 있고, 만든 뒤에도 일대기에서 2-7로 바꾼다. 원래 제안의 분류는 바꾸지 않는다. #295로 구현해 2026-11-10 01:41 KST 운영 배포(develop `83695093`)부터 운영에 있다. 승인 때 분류를 고르는 앱 화면이 사용자에게 닿는 시점은 아래 7-4에 적었다. 결정 전 임시 안은 모두 `other`였다 | MoonYoung02: 대화에서 주제를 뽑아 7개 분류로 매핑(`topic_id` 저장 필요, 생성 데이터로 시험 필요). decmoon05: AI가 이야기 후보 응답에 분류를 함께 주고 보호자가 확인, 수정. Sogeum100g: 보호자가 직접 고르는 편이 간단하고 정확. **의견이 갈림** | PM, AI, FE, BE(작업 C) |
 > | D6 | 삭제한 이야기의 **변경 제안 상태** | 임시 안 없음. 지금 7-3은 제안에서 만든 생애 정보가 있으면 `accepted`, 없으면 `rejected`로 계산하므로, 승인한 이야기를 지우면 그 제안이 `rejected`로 보인다 | PR에서 다루지 않음 | BE(작업 C), FE |
 > | D7 | **정렬** | 출시 범위는 담은 날짜(`createdAt`)순. 정렬은 앱이 하며 API에 정렬 인자를 두지 않는다 | MoonYoung02, decmoon05: 출시는 날짜순, 생애 시기순은 출시 후. Sogeum100g: 생애 시기순 필요, `최신순`, `입력순` 필터도 제안 | PM, AI, FE |
 > | D8 | **이야기에 사용자 사진 붙이기** | 이 문서의 범위에서 뺀다. 출시 후 후보로 [사진 연결 메모](#출시-후-후보-사진-연결)만 남긴다 | decmoon05: 등록한 프로필 사진을 골라 연결하고 없으면 새로 올리는 방식, 일정에 영향이 있으면 출시 후. Sogeum100g: 필요 | PM, FE, BE(작업 A) |
@@ -69,7 +69,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 | 2-6 | `POST` | `/api/v1/profiles/{profileId}/life-facts` | 구현됨(#135로 병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
 | 2-7 | `PATCH` | `/api/v1/life-facts/{factId}` | 구현됨(#135로 병합) | 요청과 응답에 `storyCategory`, `imageNumber` 추가 |
 | 2-9 | `DELETE` | `/api/v1/life-facts/{factId}` | 구현됨(#135로 병합) | 행만 삭제. 카드와 주제 처리는 D3 결정을 따름 |
-| 7-4 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 구현됨(작업 C). 분류 선택은 #295로 develop 반영, 운영 미배포 | 승인 항목에 선택 `storyCategory`를 더함. 빼면 제안의 분류(D5 결정). 그림 번호는 서버가 고름 |
+| 7-4 | `POST` | `/api/v1/visit-sessions/{sessionId}/proposals/review` | 구현됨(작업 C). 분류 선택은 #295, 11/10 운영 배포부터 운영 | 승인 항목에 선택 `storyCategory`를 더함. 빼면 제안의 분류(D5 결정). 그림 번호는 서버가 고름 |
 
 번호 2-9는 2절의 다음 번호로 붙여 API 명세에 넣었다. 구현은 `feature/backend-app-life-story` 브랜치에서 했고, 이 문서를 쓸 때는 develop에 병합 전이었다. 2026-10-17 #135로 develop에 병합됐다.
 
@@ -93,7 +93,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 ## 다른 담당과 맞출 함수
 
-- **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. D5 결정(2026-11-09) 뒤 7-4는 보호자가 고른 분류나 제안의 분류를 `story_category`로 넘긴다(#295, develop 반영, 운영 미배포). `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
+- **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. D5 결정(2026-11-09) 뒤 7-4는 보호자가 고른 분류나 제안의 분류를 `story_category`로 넘긴다(#295, 11/10 운영 배포부터 운영). `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
 - **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 입력에 넣을 수 있는 사진(설명이 있는 사진)에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
@@ -237,7 +237,7 @@ ALTER TABLE life_facts
 - 7-4 `lifeFacts[]`의 `accepted` 항목은 `storyCategory`를 선택으로 받는다. 보호자가 바꿨을 때만 보내고, 빼면 제안의 분류로 이야기를 만든다. `null`, 모르는 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다. 그림 번호는 서버가 고른다.
 - 원래 제안의 분류와 표시는 확인 뒤에도 바꾸지 않는다(기존 7-4 규칙과 같음).
 - 승인으로 만든 이야기의 분류는 그 뒤에도 일대기에서 2-7로 바꿀 수 있다.
-- 위 분류와 표시는 #295로 develop에 반영했고 운영 미배포다(migration `9c4e2b7a1f63` 포함). 배포 전까지 운영의 7-4는 요청과 응답 형식이 그대로이고, 승인한 이야기를 `create_life_fact`의 기본값(분류 `other`, 그림 번호는 서버가 고름)으로 만든다. 보호자는 일대기의 `기타`에서 찾아 2-7로 옮긴다.
+- 위 분류와 표시는 #295로 들어와 2026-11-10 01:41 KST 운영 배포(Deploy run 42656825849, develop `83695093`)부터 운영에 있다. 배포 뒤 운영 DB의 alembic 버전은 `9c4e2b7a1f63`이며, 이 migration은 기존 제안을 분류 `other`, 표시 `false`로 채운다. 그 전 운영(11/9 배포, develop `59190ba7`)의 7-4는 요청과 응답에 분류가 없었고, 승인한 이야기를 `create_life_fact`의 기본값(분류 `other`, 그림 번호는 서버가 고름)으로 만들었다. 승인 때 분류를 고르는 앱 화면은 새 APK 빌드가 설치돼야 반영된다. 지금 설치된 앱(Play 빌드, 11/8 GitHub Releases APK)에는 이 화면이 없어 `storyCategory`를 보내지 않으므로, 그 앱으로 승인한 이야기는 제안의 분류(배포 전에 만든 제안이면 `other`)로 만들어진다. 분류가 맞지 않으면 보호자가 일대기에서 찾아 2-7로 옮긴다.
 
 <br>
 

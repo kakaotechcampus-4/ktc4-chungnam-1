@@ -1,6 +1,6 @@
 # 공통 데이터 계약
 
-- 상태: v0.2, [API 명세](api-spec.md)의 요청과 응답 기준. 2026-11-09 develop `59190ba7` 기준 서버 저장과 모델 연동은 구현됐고(같은 커밋이 11/9 운영 배포본이다) 남은 미결 항목은 [결정 대기 항목](#결정-대기-항목)에 둔다
+- 상태: v0.2, [API 명세](api-spec.md)의 요청과 응답 기준. 2026-11-10 develop `83695093` 기준 서버 저장과 모델 연동은 구현됐고(같은 커밋이 11/10 운영 배포본이다) 남은 미결 항목은 [결정 대기 항목](#결정-대기-항목)에 둔다
 - 아래 예시는 모두 합성 데이터다. 구현 과정에서 변경할 수 있지만 필드와 enum 변경은 세 영역이 공동 검토한다.
 
 ## 현재 적용 범위
@@ -451,7 +451,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - `evidenceSource` 값은 `lifeFact`, `photo`, `profile`, `none`이다. `none`이면 `evidence`는 빈 배열이고, 나머지는 같은 종류의 근거 항목이 하나 이상이다. 항목은 `lifeFact`면 `{"factId": ...}`, `photo`면 `{"photoId": ...}`, `profile`이면 `{"profileField": "occupation" | "hometown" | "hobby" | "family"}`다.
 - `selected`는 회차를 만들 때 고른 카드와 면회 중 보충 화면에서 추가한 카드가 `true`다. 선택하지 않은 카드도 삭제하지 않는다.
 - `liked`는 보호자가 원하는 카드에만 남기는 "좋았어요" 표시다([API 4-5](api-spec.md#4-5-put-apiv1cardscardidlike--신규), [4-6](api-spec.md#4-6-delete-apiv1cardscardidlike--신규)). 보호자 평가(6-1)의 카드 반응과 따로 저장하고, 평가를 마친 뒤에도 켜고 끌 수 있다. 다음 카드 생성 입력에는 아직 넣지 않는다.
-- `sensitive`는 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다. 앱은 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. develop 반영분이며 운영에는 아직 배포하지 않았다. 운영에서 채우려면 운영 설정 `SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 필요하다.
+- `sensitive`는 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다. 앱은 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. 서버는 11/10 배포(develop `83695093`)부터 운영에 있고, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION`이 없어 코드 기본값 2가 적용되므로 배포 뒤 요청한 묶음은 2판이다. 앱의 표시는 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다.
 
 **없어도 되는 값** — `usedBySessionId`
 
@@ -525,9 +525,9 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 
 ## 비동기 음성 분석 작업 (SpeechAnalysisJob)
 
-> **상태: ADR-008 제안(proposed).** BE 구현은 develop에 있고 11/9 운영 배포(develop `59190ba7`)에서 동작한다.
+> **상태: ADR-008 제안(proposed).** BE 구현은 develop에 있고 11/10 운영 배포(develop `83695093`)에서 동작한다.
 > `sttCompleted` 작업 이어받기([#280](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/280))와 전사 기한에 따른 리포트 생성 제한
-> ([#279](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/279))도 이 배포로 운영에 들어갔다. FE, AI, PM
+> ([#279](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/279))은 11/9 배포(develop `59190ba7`)로 운영에 들어갔다. FE, AI, PM
 > 공동 확인 전에는 이것이 실제 사용자 자료 전송 승인을 뜻하지 않는다.
 
 앱은 보호자 평가를 제출한 뒤 WAV와 `participantCount`를 multipart 요청으로 제출한다.
@@ -811,7 +811,7 @@ AI 성공 응답은 다음과 같다.
 
 - 변경 제안은 생애 정보 제안과 주제 제안 두 가지이며 회차마다 0개 이상이다. AI가 리포트와 함께 만들고 `proposalId`는 BE가 부여한다.
 - 기존 생애 사실의 수정은 제안하지 않으며 사용자가 일대기에서 직접 수정한다.
-- 생애 정보 제안의 `storyCategory`는 AI가 고른 일대기 분류([LifeFact](#확인된-생애-사실-lifefact)와 같은 7개 값)이고, `sensitive`는 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보면 `true`다. 앱은 `sensitive` 후보에 안내를 붙인다. 두 필드를 더하기 전에 만든 제안은 `other`, `false`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+- 생애 정보 제안의 `storyCategory`는 AI가 고른 일대기 분류([LifeFact](#확인된-생애-사실-lifefact)와 같은 7개 값)이고, `sensitive`는 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보면 `true`다. 앱은 `sensitive` 후보에 안내를 붙인다. 두 필드를 더하기 전에 만든 제안은 `other`, `false`다(2026-11-09 PM 결정, #139). 서버는 11/10 배포(develop `83695093`)부터 운영에 있다. 앱의 안내는 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다.
 - 주제 제안은 다음 카드 생성에서 이 주제를 더 다룰지, 덜 다룰지, 제외할지에 대한 제안이며 주제 단위로 적용한다. 회차에서 고른 카드당 최대 1개다.
   - `topic.description`은 [CardSet](#대화-카드-묶음-cardset)의 `topic.description`과 같은 주제 설명이다.
   - `suggestedAction` 값은 `more`, `less`, `exclude`이다.
@@ -823,7 +823,7 @@ AI 성공 응답은 다음과 같다.
 - 승인한 제안을 되돌리는 기능은 없다. 승인으로 만든 생애 사실은 일대기에서 직접 고친다.
 - 거절한 이야기 후보의 30일 보관과 복구는 [별도 복구 기준](card-generation-flow.md#이야기-후보의-승인-거절과-복구)을 따른다. 복구 시 다시 확인할 후보가 되며 자동 승인하지 않는다. 복구 API와 상태 전환은 후속 설계 대상이다. 현재 `reviewStatus`에 `reverted`를 추가하거나 승인 취소를 뜻하도록 바꾸지 않는다.
 - 제안이 없는 회차의 확인 처리와, 검토 뒤 응답에 보호자가 고친 값을 담을지는 아직 정하지 않았다.
-- 변경 사항 확인 화면은 주제 제안마다 `suggestedAction`을 처음에 골라 두고 보호자가 다른 행동을 고를 수 있게 한다. 다만 `exclude` 제안은 되돌리기 어려워 미리 고르지 않고 보호자가 직접 고른다(develop, 운영 미배포). 주제 제목 아래에 `topic.description`을 보여주며, 없으면 제목만 보여준다. 생애 정보 제안은 제목, 내용과 분류를 고칠 수 있다.
+- 변경 사항 확인 화면은 주제 제안마다 `suggestedAction`을 처음에 골라 두고 보호자가 다른 행동을 고를 수 있게 한다. 다만 `exclude` 제안은 되돌리기 어려워 미리 고르지 않고 보호자가 직접 고른다. 주제 제목 아래에 `topic.description`을 보여주며, 없으면 제목만 보여준다. 생애 정보 제안은 제목, 내용과 분류를 고칠 수 있다. `exclude`를 미리 고르지 않는 것과 분류 고치기는 #295의 앱 변경이라 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다.
 - 화면은 `pending` 제안만 보여주고 검토 요청에 담는다. 이미 `accepted`나 `rejected`인 제안과 `reviewStatus`를 읽지 못한 제안은 다시 보내지 않는다. 검토할 제안이 없으면 요청을 보내지 않는다.
 - 승인 요청 예시는 다음과 같다. `rejected` 항목에는 `action`, `title`, `content`, `storyCategory`를 담지 않는다. 예시의 생애 정보 항목은 분류를 바꾸지 않아 `storyCategory`가 없으므로 제안의 분류로 만든다. `storyCategory`의 `null`이나 7개 밖의 값은 `422 INVALID_REQUEST`다.
 

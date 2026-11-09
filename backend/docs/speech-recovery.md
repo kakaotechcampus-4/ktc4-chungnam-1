@@ -71,7 +71,7 @@
 
 재시도 이력 또는 실패 전사가 있으면 downgrade가 중단된다. 데이터를 삭제해서 강제로 되돌리지 않는다. 백업을 먼저 확보하고 코드와 DB를 함께 되돌릴 범위를 검토한다. 작성 당시에는 운영에서 migration을 실행하지 않았다.
 
-실제로 #204, #214, #205, #213 순서로 병합됐고(2026-11-05), 11/5 운영 배포에서 이 migration을 실행했다([#187의 11/5 운영 배포 기록](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/187#issuecomment-6652039046), `b7e2c4a9d153` → `a4f6c1d83b29` 6단계에 포함). 지금 운영 DB revision은 그 뒤의 `685f243e9f1f`이다(11/9 Deploy run 42568179490의 migration 단계와 사후 점검).
+실제로 #204, #214, #205, #213 순서로 병합됐고(2026-11-05), 11/5 운영 배포에서 이 migration을 실행했다([#187의 11/5 운영 배포 기록](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/187#issuecomment-6652039046), `b7e2c4a9d153` → `a4f6c1d83b29` 6단계에 포함). 운영 DB revision은 11/9 Deploy run 42568179490 뒤 `685f243e9f1f`였고(그 배포의 migration 단계와 사후 점검), 지금은 2026-11-10 01:41 KST Deploy run 42656825849(develop `83695093`)가 올린 `9c4e2b7a1f63`이다(#295의 migration, 배포 뒤 팀의 서버 확인).
 
 #279와 #280은 migration이 없다(두 PR을 병합한 develop `d9643466`의 migration head도 그 전과 같은 `e7c3a1f94d20`). 다만 #280 PR은 배포 뒤 할 일을 적었다. 배포 전부터 `sttCompleted`로 멈춰 있던 작업은 인계 임대가 없어 이어받지 않으므로, 배포 직후 운영 DB에서 `status = 'sttCompleted' AND retry_of_analysis_id IS NULL AND lease_expires_at IS NULL`인 행 수를 세고, 남은 행이 있으면 그 행의 `lease_expires_at`을 `now()`로 한 번 바꾼다. 운영에 `--stt-only` worker가 없다는 전제다. #280은 11/9 배포(run 42568179490)로 운영에 들어갔지만, 이 단계를 했다는 기록은 팀 운영 기록의 11/9 승인 배포 항목에 없다. 실행 여부는 따로 확인해야 한다.
 

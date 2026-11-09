@@ -4,13 +4,14 @@
 GPU 실행 설정(#188), BE 전환 코드(#189)와 이 SSH 운영 연결(#190)은 develop에 병합됐다.
 정식 이미지 교체와 임시 override 해제는 아래 운영 전 확인 항목에 따라 따로 진행한다.
 
-현재 상태 (2026-11-09 기준): 11/5 운영 배포에서 speech-worker의 임시 이미지와 설정을 걷어내고
+현재 상태 (2026-11-10 기준): 11/5 운영 배포에서 speech-worker의 임시 이미지와 설정을 걷어내고
 예비 STT 설정을 `.env`로 옮겼다. 그 뒤로 api(짧은 음성 전사)와 speech-worker가 모두 예비
 서버로 전환한다(#187의 11/5 운영 배포 기록). 운영 BE는 이제 승인 배포 workflow로 교체하며
-2026-11-09 14:42 KST Deploy run 42568179490부터 develop `59190ba7`이다. 이 workflow의 기본
+2026-11-10 01:41 KST Deploy run 42656825849부터 develop `83695093`이다(그 전은 11/9 14:42 KST
+Deploy run 42568179490의 develop `59190ba7`). 이 workflow의 기본
 교체 대상은 api와 worker 셋(card-worker, speech-worker, photo-worker)이고, BE 호스트의
 `saerok-stt-backup.service`와 ck STT 서버는 바꾸지 않는다. ck STT에는 11/9 오전 #276의
-전사 기본값을 손으로 반영했고 기본 STT 서버는 아직 갱신하지 않았다(팀 운영 기록).
+전사 기본값을 손으로 반영했고, 기본 STT 서버는 11/9 기록 시점까지 갱신하지 않았다(팀 운영 기록).
 
 기본 개인 GPU의 Tailscale 연결을 유지한다. 기본 서버에 연결하지 못할 때만 ck로 한 번
 전환한다. ck를 기본으로 바꾸거나 개인 PC를 중계 서버로 사용하지 않는다.
@@ -35,7 +36,8 @@ Tailscale 통일 여부는 이문영과 김민혁 확인 후 결정한다.
 
 worker는 두 시도가 끝날 때까지 같은 S3 원본을 유지하고, STT 성공 또는 최종 실패 후
 기존 삭제 처리를 수행한다. 전환으로 원본의 삭제 기한을 늘리지 않는다. 전환 로그에는
-`speech_analysis_backup_used reason=connect_failure`만 기록하며 음성, 전사문과 URL은 남기지 않는다.
+`speech_analysis_backup_used analysis_id=<분석 ID> reason=connect_failure`만 기록하며 음성, 전사문과 URL은 남기지 않는다.
+분석 ID는 #295에서 더해졌고 11/10 배포부터 운영에 있다. 그 전 운영 로그에는 `reason`만 있었다.
 
 ## SSH 예비 연결의 제한
 

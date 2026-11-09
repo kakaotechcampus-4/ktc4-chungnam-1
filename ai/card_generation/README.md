@@ -120,11 +120,11 @@ LangChain `create_agent`의 `response_format`으로 이 형식을 강제한다. 
 
 ## 아픈 경험 카드(2판)
 
-2판은 #295로 develop에 들어갔고 운영 미배포다. 11/9 운영 배포분(develop `59190ba7`)에는 2판이 없어 운영 카드는 1판으로 만든다. develop의 backend 기본값은 2다.
+2판은 #295로 develop에 들어갔고 2026-11-10 01:41 운영 배포(develop `83695093`)부터 운영에 있다. backend 기본값은 2이고 운영 `.env`는 `SAEROK_CARD_GENERATION_PROMPT_VERSION`을 정하지 않으므로, 이 배포 뒤 운영에서 새로 만드는 카드 생성 작업은 2판으로 만든다(판은 4-1 작업을 만들 때 저장된다). 그 전 운영 배포분(11/9, develop `59190ba7`)에는 2판이 없어 운영 카드는 1판이었다.
 
-2026-11-09 PM 결정으로 2판부터는 쌓아온 이야기나 초기 정보에 나온 아픈 경험(병, 사별, 사고, 전쟁 등)을 카드 후보로 낼 수 있다. 에이전트가 그런 후보에 `sensitive`를 true로 적고, 결과 카드(`CardOut.sensitive`)까지 그대로 간다. 앱은 이 카드에 표시를 달아 보호자가 고르게 한다. 제출 검사는 `sensitive` 후보가 personal(이야기나 초기 정보 근거)이 아니거나, personal이라도 근거가 없거나 사진(photo_id)이 섞여 있으면 다시 내게 한다. 사진 설명은 확인된 사실이 아니라서, 빈 칸 여쭙기와 보편 추억은 근거가 없어서 아픈 경험을 꺼내지 않는다. 최근 일을 기억하는지 시험하는 카드는 1판처럼 막는다. 아픈 경험인지는 모델이 판단하며 코드가 내용을 보고 정하지 않는다. 문안 작성(④)은 `sensitive`를 받지 않고 1판과 같은 규칙으로 쓴다.
+2026-11-09 PM 결정으로 2판부터는 쌓아온 이야기나 초기 정보에 나온 아픈 경험(병, 사별, 사고, 전쟁 등)을 카드 후보로 낼 수 있다. 에이전트가 그런 후보에 `sensitive`를 true로 적고, 결과 카드(`CardOut.sensitive`)까지 그대로 간다. 앱은 이 카드에 표시를 달아 보호자가 고르게 한다(#295의 앱 변경이라 새 APK를 빌드해야 휴대폰에 들어가며, 설치된 앱인 Play판과 11/8 Releases APK에는 이 표시가 없다). 제출 검사는 `sensitive` 후보가 personal(이야기나 초기 정보 근거)이 아니거나, personal이라도 근거가 없거나 사진(photo_id)이 섞여 있으면 다시 내게 한다. 사진 설명은 확인된 사실이 아니라서, 빈 칸 여쭙기와 보편 추억은 근거가 없어서 아픈 경험을 꺼내지 않는다. 최근 일을 기억하는지 시험하는 카드는 1판처럼 막는다. 아픈 경험인지는 모델이 판단하며 코드가 내용을 보고 정하지 않는다. 문안 작성(④)은 `sensitive`를 받지 않고 1판과 같은 규칙으로 쓴다.
 
-어느 판이 아픈 경험 카드를 내는지는 판의 `sensitive_cards` 값으로 정한다(2판만 켬). 1판은 제출 검사가 `sensitive`를 보지 않고, 결과 카드의 `sensitive`도 모델이 무엇을 적든 늘 false다. backend 설정 `card_generation_prompt_version`(`SAEROK_CARD_GENERATION_PROMPT_VERSION`)이 2일 때 2판이 쓰인다. 운영 환경 변수에 1이 적혀 있으면 1판이 그대로 쓰이므로 배포 때 함께 바꿔야 한다.
+어느 판이 아픈 경험 카드를 내는지는 판의 `sensitive_cards` 값으로 정한다(2판만 켬). 1판은 제출 검사가 `sensitive`를 보지 않고, 결과 카드의 `sensitive`도 모델이 무엇을 적든 늘 false다. backend 설정 `card_generation_prompt_version`(`SAEROK_CARD_GENERATION_PROMPT_VERSION`)이 2일 때 2판이 쓰인다. 환경 변수에 1을 적으면 1판이 쓰인다(운영 `.env`의 상태는 이 절 첫 문단).
 
 알려진 문제(PM 결정 대기). 아래 두 가지는 정해지면 `_steps/write.py`가 카드 입력에 `sensitive`를 넣게 하고 2판 `writing_topics.md` 규칙을 더한다.
 
