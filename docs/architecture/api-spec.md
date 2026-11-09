@@ -367,6 +367,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 - `name`: 50자 이하
 - `gender`: `male`, `female`
+- `birthDate`: `YYYY-MM-DD`. 만 10세 이상인 날짜만 받는다. 기준일은 서버의 UTC 날짜이고, 기준일에 없는 2월 29일은 2월 28일로 본다. 카드 생성 입력의 연령대(4-1 `ageRange`)가 `10s` 이상이어야 하기 때문이며, 그 밖의 나이 제한은 두지 않는다.
 - `condition.stage`: `mildCognitiveImpairment`, `mildDementia`, `unknown`
 - `condition.symptomNote`: 선택
 
@@ -377,6 +378,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 409 | `PROFILE_LIMIT_EXCEEDED` | 계정에 이미 프로필이 3개 있음 |
+| 422 | `INVALID_REQUEST` | `birthDate`가 미래이거나 만 10세가 안 된 날짜. 그 밖의 형식 오류 포함 |
 
 ### 2-3. `GET /api/v1/profiles/{profileId}` — 신규
 
@@ -406,6 +408,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
 - `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
+- `birthDate`는 2-2와 같이 만 10세 이상인 날짜만 받는다. 걸리면 함께 보낸 다른 필드도 저장하지 않는다.
 - `birthDate`, `occupation`, `hometown`, `hobby`, `family`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 값들은 고칠 수 없다.
 
 응답 `200` — [Profile](#profile)
@@ -414,6 +417,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
 | 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
+| 422 | `INVALID_REQUEST`(`birthDate`가 미래이거나 만 10세가 안 된 날짜, 그 밖의 형식 오류) |
 
 ### 2-5. 프로필 입력 마치기 — 삭제
 
@@ -435,15 +439,18 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 ```
 
 - `storyCategory`: 일대기의 분류. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
-- `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `title`: 100자 이하. `content`: 5,000자 이하(2026-11-09 PM 결정). `title`과 `content`는 비울 수 없다. 글자 수는 유니코드 코드 포인트 수로 센다.
 - `imageNumber`: 분류별 기본 그림 번호. 1~5 정수. 그림 파일은 앱에 있고 서버는 번호만 저장한다.
 - 네 필드 모두 필수다. `storyCategory`, `imageNumber`의 필드 이름은 임시다([미정 사항](#미정-사항) 11).
+- 프로필 하나의 이야기는 300개까지다(2026-11-09 PM 결정). 변경 제안 승인(7-4)으로 만든 이야기도 함께 센다. 이미 300개면 저장하지 않고 `409 LIFE_FACT_LIMIT_EXCEEDED`이며, 이야기를 지우면(2-9) 다시 추가할 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED`(프로필에 이야기가 이미 300개 있음) |
+| 422 | `INVALID_REQUEST`(`title` 100자 또는 `content` 5,000자 초과, 빈 값, 그 밖의 형식 오류) |
 
 ### 2-7. `PATCH /api/v1/life-facts/{factId}` — 신규
 
@@ -455,7 +462,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 { "content": "수선집에 오래 다닌 단골손님이 많았고 시장 상인들과도 친하셨어요." }
 ```
 
-- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고 `null`로 지울 수 없다.
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고(`title` 100자, `content` 5,000자 이하) `null`로 지울 수 없다. 이야기 수는 바뀌지 않으므로 300개 상한은 보지 않는다.
 - 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
 - `title`, `content`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 두 값은 고칠 수 없다.
 
@@ -465,6 +472,7 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 | --- | --- |
 | 404 | `LIFE_FACT_NOT_FOUND` |
 | 409 | `CARD_GENERATION_IN_PROGRESS`(카드를 만드는 중) |
+| 422 | `INVALID_REQUEST`(`title` 100자 또는 `content` 5,000자 초과, 빈 값이나 `null`, 그 밖의 형식 오류) |
 
 ### 2-8. `DELETE /api/v1/profiles/{profileId}` — 신규
 
@@ -720,7 +728,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 실제 생성 함수 연�
 
 - `model`, `promptVersion`: BE 설정값(`SAEROK_CARD_GENERATION_MODEL`, `SAEROK_CARD_GENERATION_PROMPT_VERSION`). 4-1에서 `card_sets`를 `running`으로 만들 때 저장하고 그 값을 그대로 넘긴다. `promptVersion`은 카드 생성 방식의 번호(정수)이며 카드 생성은 아는 번호만 받는다.
 - `schemaVersion`: 요청과 결과 JSON 형식의 버전. 받는 쪽은 모르는 버전을 거절한다.
-- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다.
+- `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다. 카드 생성은 `10s` 이상만 받으므로 2-2, 2-4가 만 10세가 안 된 생년월일을 저장하지 않는다. 그 검사 전에 저장된 프로필은 고치기 전까지 `INVALID_CONTEXT`로 실패한다.
 - `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
 - `photos`: 분석이 끝난 프로필 사진(`session_id`가 없음)의 설명. 별도 내용 승인 없이 사용하고, 사용자가 원하면 앨범에서 수정한다(3-3). 사진 분석 동의 확인은 별도로 유지한다.
 - `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다.
@@ -1254,7 +1262,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
-  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자 이하이고 둘 다 비울 수 없다.
+  - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다. 제안 값이 이 길이를 넘으면 보호자가 줄여서 보내야 한다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
@@ -1269,14 +1277,16 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - `rejected` 항목은 반영하지 않는다.
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
 - 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
+- `accepted`인 생애 정보 제안을 더해 프로필의 이야기가 300개(2-6과 같은 상한)를 넘으면 `LIFE_FACT_LIMIT_EXCEEDED`로 거절하고 제안 정리와 주제 피드백을 포함해 아무것도 저장하지 않는다. 일대기에서 이야기를 지우거나 일부 제안을 `rejected`로 바꿔 다시 보낸다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND`, `REPORT_NOT_FOUND` | |
 | 409 | `PROPOSAL_ALREADY_REVIEWED` | 이미 `settled`인 제안이 있음 |
 | 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중(4-2 `running`). 404, `PROPOSAL_ALREADY_REVIEWED`, 422 검사가 먼저다 |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED` | `accepted` 생애 정보 제안을 더하면 프로필의 이야기가 300개를 넘음. 404, 위 두 409, 422 검사가 먼저다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
-| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음. 최종 `title`이 100자, `content`가 5,000자를 넘음 |
 
 <br>
 

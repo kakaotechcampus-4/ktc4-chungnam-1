@@ -181,8 +181,9 @@ async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-7, 2-9,
-    3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-6, 2-7,
+    2-9, 3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함. 2-6과 7-4는 이야기 개수 상한도
+    이 잠금 안에서 셈(`life_facts.create_life_fact`).
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """

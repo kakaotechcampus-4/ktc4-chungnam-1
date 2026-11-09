@@ -1,12 +1,13 @@
 """회차 목록, 리포트와 변경 제안 (API 5-4, 7-1 ~ 7-4) 형식."""
 
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import Field, model_validator
 
 from app.schemas.common import ApiModel
+from app.schemas.profiles import LifeFactContent, LifeFactTitle
 from app.schemas.visit_session import VisitSession
 
 Mood = Literal["hard", "normal", "good"]
@@ -94,18 +95,10 @@ class ChangeProposal(ApiModel):
     topic_proposals: list[TopicProposal] = Field(alias="topicProposals")
 
 
-def _not_blank(value: str) -> str:
-    if not value.strip():
-        raise ValueError("빈 값은 받지 않습니다.")
-    return value
-
-
-# 2-6 생애 정보 추가와 같은 규칙이다(제목 100자 이하, 둘 다 비울 수 없음).
-LifeFactTitle = Annotated[str, AfterValidator(_not_blank), Field(max_length=100)]
-LifeFactContent = Annotated[str, AfterValidator(_not_blank)]
-
-
 class LifeFactReview(ApiModel):
+    """7-4의 생애 정보 확인 항목. 최종 제목과 내용은 2-6과 같은 형식이다(제목 100자, 내용
+    5,000자 이하, 둘 다 비울 수 없음). 프로필당 개수 상한은 `create_life_fact`가 확인한다."""
+
     proposal_id: UUID = Field(alias="proposalId")
     review_status: Literal["accepted", "rejected"] = Field(alias="reviewStatus")
     title: LifeFactTitle | None = None
