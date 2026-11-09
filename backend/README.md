@@ -220,6 +220,9 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 `POST /auth/consent` 는 `registrationToken`, `consentVersion`, `consents`(네 항목 모두 boolean)와 선택값 `displayName` 을 받고 `status=authenticated` 응답을 준다.
 
+- `consents` 의 값은 `PATCH /auth/me/consents` 와 같이 JSON `true`, `false`만 받는다(`StrictBool`). `"yes"`, `"on"`, `1` 은 `INVALID_REQUEST`(422)이며 계정을 만들지 않는다.
+- 등록 토큰은 한 번만 쓴다. 같은 토큰을 다시 보내면 로그아웃이나 탈퇴 뒤에도 `INVALID_REGISTRATION_TOKEN`(401)이며, 구글 인증 없이 세션을 받거나 지운 계정을 다시 만들지 못한다. 계정을 만들지 못한 `409`, `422` 는 토큰을 쓴 것으로 치지 않는다. 응답을 받지 못해 같은 토큰으로 다시 보낸 앱은 401 을 받고 `POST /auth/google` 부터 다시 하며, 계정이 이미 있으면 그때 세션을 받는다([API 1-2](../docs/architecture/api-spec.md#1-2-post-authconsent--완료)).
+
 `POST /auth/logout` 은 요청 본문을 받지 않고 `Authorization` 헤더의 세션만 본다. `DELETE /auth/me` 는 탈퇴 이유를 선택 본문(`reasons`, `otherText`)으로 받으며, 고르지 않았으면 본문 없이 보낸다.
 
 `PATCH /auth/me/consents` 는 선택 동의(`serviceImprovement`, `pushNotification`) 중 보낸 항목만 바꾼다([API 1-6](../docs/architecture/api-spec.md#1-6-patch-authmeconsents--신규)).
@@ -259,9 +262,10 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
-- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
+- 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기나 동의 제출 때 지운다. 인증이 필요한 요청은 폐기 여부를 확인하려고 DB 연결을 연다. 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
 - 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
+- 등록 토큰에도 무작위 `jti` 를 넣고 한 번만 쓴다. 동의 제출이 계정을 만들거나 세션을 줄 때 그 `jti` 를 토큰 만료 시각까지 `session_revocations` 에 남긴다. 기록과 계정 생성은 같은 트랜잭션이라, 계정을 만들지 못하면 기록도 되돌린다. 같은 토큰을 동시에 두 번 보내면 뒤 요청은 앞 트랜잭션이 끝나기를 기다렸다가 401 을 받는다. `jti` 가 없는 등록 토큰(이 변경 전에 발급한 토큰)은 `INVALID_REGISTRATION_TOKEN` 이므로, 배포 시점에 동의 화면에 있던 사용자는 다시 로그인한다.
 
 ### 오류
 
@@ -276,7 +280,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | `ID_TOKEN_AUDIENCE_MISMATCH` | 401 | `aud` 가 허용 목록에 없음 |
 | `ID_TOKEN_ISSUER_MISMATCH` | 401 | `iss` 가 구글이 아님 |
 | `IDENTITY_PROVIDER_UNAVAILABLE` | 503 | 구글 JWKS 조회 실패 (`retryable: true`) |
-| `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름 |
+| `INVALID_REGISTRATION_TOKEN` | 401 | 등록 토큰이 유효하지 않거나 용도가 다름. 이미 사용한 등록 토큰 포함 |
 | `REGISTRATION_TOKEN_EXPIRED` | 401 | 동의 제출까지 시간이 지남 |
 | `REQUIRED_CONSENT_MISSING` | 422 | 필수 동의를 거부함. 계정을 만들지 않음 |
 | `REQUIRED_CONSENT_NOT_CHANGEABLE` | 422 | 선택 동의 변경에 필수 동의를 보냄 |

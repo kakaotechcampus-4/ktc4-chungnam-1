@@ -370,6 +370,7 @@ CREATE TABLE withdrawal_feedback (
 );
 
 -- 로그아웃과 탈퇴로 폐기한 세션의 `jti`. 그 세션의 만료 시각까지만 둔다.
+-- 가입 동의(API 1-2)에 쓴 등록 토큰의 `jti` 도 그 토큰의 만료 시각까지 두어 한 번만 쓰게 한다.
 -- 계정을 참조하지 않으므로 탈퇴로 계정이 지워져도 만료까지 남는다.
 CREATE TABLE session_revocations (
     token_id   VARCHAR(64) PRIMARY KEY CHECK (length(btrim(token_id)) > 0),

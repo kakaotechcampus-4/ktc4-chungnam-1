@@ -215,15 +215,22 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 ```
 
 - `displayName`: 선택, 50자 이하
+- `consents`의 값은 JSON `true`, `false`만 받는다. `"yes"`, `"on"`, `1` 같은 값은 동의로 읽지 않고 `422 INVALID_REQUEST`로 거절하며 계정을 만들지 않는다. 1-6과 같은 기준이다.
+- 등록 토큰은 한 번만 쓴다. 계정을 만들거나 세션을 주면 그 토큰을 쓴 것으로 남기고, 같은 토큰을 다시 보내면 로그아웃이나 탈퇴 뒤에도 `401 INVALID_REGISTRATION_TOKEN`이다. 계정을 만들지 못한 `409`, `422`는 토큰을 쓴 것으로 치지 않으므로 고쳐서 다시 보낼 수 있다.
+- 응답을 받지 못해 같은 토큰으로 다시 보낸 앱도 `401 INVALID_REGISTRATION_TOKEN`을 받는다. 앱은 1-1부터 다시 하고, 그사이 계정이 만들어졌으면 1-1이 `authenticated`를 준다.
+- 계정이 없을 때 받은 다른 등록 토큰으로 이미 가입을 마쳤다면, 아직 쓰지 않은 토큰은 계정을 덧만들지 않고 그 계정의 세션을 한 번 준다.
 
 응답 `200` — 1-1의 `authenticated` 응답
 
-| HTTP | `errorCode` |
-| --- | --- |
-| 401 | `INVALID_REGISTRATION_TOKEN`, `REGISTRATION_TOKEN_EXPIRED` |
-| 409 | `CONSENT_VERSION_MISMATCH` |
-| 422 | `REQUIRED_CONSENT_MISSING` |
-| 503 | `DATABASE_NOT_CONFIGURED` |
+| HTTP | `errorCode` | 언제 |
+| --- | --- | --- |
+| 401 | `INVALID_REGISTRATION_TOKEN` | 등록 토큰이 유효하지 않거나 이미 사용함 |
+| 401 | `REGISTRATION_TOKEN_EXPIRED` | 등록 토큰 수명(기본 600초)이 지남 |
+| 409 | `CONSENT_VERSION_MISMATCH` | 약관 버전이 서버와 다름 |
+| 422 | `REQUIRED_CONSENT_MISSING` | 필수 동의를 거부함 |
+| 422 | `INVALID_REQUEST` | 요청 형식 오류. `consents` 값이 `true`, `false`가 아니거나 `displayName`이 50자를 넘는 경우 포함 |
+| 503 | `AUTH_NOT_CONFIGURED` | 서버의 세션 서명 키가 설정되지 않음 |
+| 503 | `DATABASE_NOT_CONFIGURED` | 서버의 DB 연결 설정이 없음 |
 
 ### 1-3. `GET /auth/me` — 완료
 

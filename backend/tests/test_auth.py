@@ -240,6 +240,49 @@ def test_consent_version_mismatch_is_rejected() -> None:
     assert harness.stored_account() is None
 
 
+@pytest.mark.parametrize("field", ["serviceData", "photoAnalysis"])
+@pytest.mark.parametrize("value", ["yes", "on", "true", 1])
+def test_signup_consents_accept_only_json_booleans(field: str, value: Any) -> None:
+    # 선택 동의 변경(1-6)과 같이 `true`/`false`만 동의로 읽는다.
+    harness = _harness()
+    login = harness.login(google_tokens.id_token())
+
+    response = harness.consent(
+        registrationToken=login.json()["registrationToken"],
+        consentVersion=CONSENT_VERSION,
+        consents={**ALL_GRANTED, field: value},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["errorCode"] == "INVALID_REQUEST"
+    assert harness.stored_account() is None
+
+
+def test_rejected_submissions_leave_the_registration_token_usable() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+
+    def submit(consent_version: str, consents: dict[str, Any]) -> Any:
+        return harness.consent(
+            registrationToken=token,
+            consentVersion=consent_version,
+            consents=consents,
+        )
+
+    lax = submit(CONSENT_VERSION, {**ALL_GRANTED, "serviceData": "yes"})
+    refused = submit(CONSENT_VERSION, {**ALL_GRANTED, "sensitiveData": False})
+    mismatch = submit("1999-01-01", ALL_GRANTED)
+    accepted = submit(CONSENT_VERSION, ALL_GRANTED)
+
+    assert [lax.status_code, refused.status_code, mismatch.status_code] == [
+        422,
+        422,
+        409,
+    ]
+    assert accepted.status_code == 200
+    assert harness.stored_account() is not None
+
+
 @pytest.mark.parametrize(
     ("token", "error_code"),
     [
@@ -422,6 +465,133 @@ def test_display_name_longer_than_fifty_characters_is_rejected() -> None:
     assert response.status_code == 422
     assert response.json()["errorCode"] == "INVALID_REQUEST"
     assert harness.stored_account() is None
+
+
+def _submit_all_granted(harness: _Harness, registration_token: str) -> Any:
+    return harness.consent(
+        registrationToken=registration_token,
+        consentVersion=CONSENT_VERSION,
+        consents=ALL_GRANTED,
+    )
+
+
+def _assert_used_token_refused(response: Any) -> None:
+    # 앱은 이 코드를 받으면 로그인(1-1)부터 다시 한다(auth_messages.dart `needsRestart`).
+    assert response.status_code == 401
+    body = response.json()
+    assert body["errorCode"] == "INVALID_REGISTRATION_TOKEN"
+    assert "accessToken" not in body
+
+
+def test_registration_token_is_single_use() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    assert _submit_all_granted(harness, token).status_code == 200
+
+    again = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(again)
+
+
+def test_used_registration_token_gives_no_session_after_logout() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    session = _submit_all_granted(harness, token).json()["accessToken"]
+    assert harness.logout(session).status_code == 204
+
+    replay = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(replay)
+
+
+def test_used_registration_token_does_not_recreate_a_withdrawn_account() -> None:
+    harness = _harness()
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    session = _submit_all_granted(harness, token).json()["accessToken"]
+    assert harness.delete_me(session).status_code == 204
+
+    replay = _submit_all_granted(harness, token)
+
+    _assert_used_token_refused(replay)
+    assert harness.stored_account() is None
+
+
+def test_signup_retry_after_a_lost_response_recovers_by_signing_in_again() -> None:
+    # 계정은 만들어졌지만 앱이 응답을 받지 못해 같은 토큰으로 다시 보낸 경우다.
+    harness = _harness()
+    id_token = google_tokens.id_token()
+    token = harness.login(id_token).json()["registrationToken"]
+    created = _submit_all_granted(harness, token).json()["account"]["accountId"]
+
+    retry = _submit_all_granted(harness, token)
+    signed_in = harness.login(id_token)
+
+    _assert_used_token_refused(retry)
+    assert signed_in.status_code == 200
+    assert signed_in.json()["status"] == "authenticated"
+    assert signed_in.json()["account"]["accountId"] == created
+
+
+def test_unused_registration_token_signs_in_once_after_another_signup() -> None:
+    # 계정이 없을 때 두 번 로그인해 받은 두 토큰 가운데 하나로 가입을 마친 경우다.
+    harness = _harness()
+    first = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    second = harness.login(google_tokens.id_token()).json()["registrationToken"]
+    assert first != second
+    created = _submit_all_granted(harness, first).json()["account"]["accountId"]
+
+    late = _submit_all_granted(harness, second)
+    replay = _submit_all_granted(harness, second)
+
+    assert late.status_code == 200
+    assert late.json()["account"]["accountId"] == created
+    _assert_used_token_refused(replay)
+
+
+def test_registration_token_without_a_token_id_is_rejected() -> None:
+    # 이미 썼는지 확인할 수 없는 등록 토큰은 받지 않는다.
+    harness = _harness()
+    issued_at = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": "google-sub-0001",
+            "typ": "registration",
+            "provider": "google",
+            "iss": Settings(_env_file=None).service_name,
+            "iat": issued_at,
+            "exp": issued_at + timedelta(minutes=10),
+        },
+        SESSION_SECRET,
+        algorithm="HS256",
+    )
+
+    response = _submit_all_granted(harness, token)
+
+    assert response.status_code == 401
+    assert response.json()["errorCode"] == "INVALID_REGISTRATION_TOKEN"
+    assert harness.stored_account() is None
+
+
+def test_postgres_registration_token_is_used_once_across_restarts(
+    migrated_database_url: str,
+) -> None:
+    harness = _harness(database_url=migrated_database_url)
+    token = harness.login(google_tokens.id_token()).json()["registrationToken"]
+
+    refused = harness.consent(
+        registrationToken=token,
+        consentVersion=CONSENT_VERSION,
+        consents={**ALL_GRANTED, "sensitiveData": False},
+    )
+    accepted = _submit_all_granted(harness, token)
+    # 서버를 다시 띄운 것처럼 앱과 의존성을 새로 만든다. 같은 DB 만 이어서 쓴다.
+    restarted = _harness(database_url=migrated_database_url)
+    replay = _submit_all_granted(restarted, token)
+
+    # 계정을 만들지 못한 제출은 토큰을 쓰지 않은 것으로 되돌린다.
+    assert refused.status_code == 422
+    assert accepted.status_code == 200
+    _assert_used_token_refused(replay)
 
 
 def test_postgres_account_survives_the_whole_login_flow(
