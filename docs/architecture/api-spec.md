@@ -667,6 +667,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
 - 평가 전 회차가 지금 묶음을 쓰는 중(`inVisit`)이면 409로 거절한다. 새 묶음이 생기면 면회 중인 카드를 4-3으로 받을 수 없게 되기 때문이다.
 - 아직 쓰지 않은 묶음이 있으면(`ready`) 409로 거절한다. 그래서 회차에 쓸 수 있는 완료 묶음은 늘 가장 최근 묶음 하나뿐이고, 5-1이 받는 묶음이 4-2, 4-3이 보는 묶음과 같다. `needsRefresh`가 `true`인 묶음은 거절하지 않고 새로 만든다. 그 묶음은 5-1이 받지 않으므로 회차에 쓸 수 있는 묶음은 여전히 하나뿐이다.
 - 카드 생성 worker가 작업을 가져가 카드 12장과 새 주제를 저장한다(아래 처리). 앱은 4-2를 폴링한다.
+- 첫 성공 묶음이 없고 사진 분석 동의가 있으면 요청 당시 등록된 프로필 사진의 준비를 먼저 기다린다. 기다리는 사진 목록은 요청 이후 늘리지 않는다. 4-2와 같은 `photoPreparation`을 추가로 줄 수 있다. 사진이 없거나 동의가 없으면 기존 흐름으로 진행한다. 이미 완료된 첫 카드에는 소급 적용하지 않는다.
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -873,6 +874,28 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 - `status`: `none`, `running`, `ready`, `inVisit`, `failed`(4절 표). 프로필의 가장 최근 작업으로 정한다.
 - `needsRefresh`: `ready`인 묶음을 받은 뒤 프로필이나 일대기를 고쳤거나 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 다른 상태에서는 늘 `false`다.
 - 작업이 없어도 오류가 아니라 `none`이다.
+- 첫 카드가 사진을 기다릴 때만 아래 `photoPreparation`이 추가된다. `waiting`은 폴링하고, `choice`는 자동 재시도 없이 4-7의 선택을 받는다. 대기 시간은 카드 worker 시작 제한에 포함하지 않는다. 준비가 끝난 작업은 앱의 조회 없이도 카드 worker가 가져간다.
+
+```json
+{
+  "schemaVersion": 1,
+  "status": "running",
+  "needsRefresh": false,
+  "photoPreparation": {
+    "setId": "d0b0132a-b18e-4200-9ce2-df4469630388",
+    "state": "choice",
+    "total": 5,
+    "completed": 3,
+    "failed": 1,
+    "pending": 1,
+    "reason": "analysisFailed"
+  }
+}
+```
+
+- `completed`: AI 분석 완료 또는 보호자 설명이 있는 사진 수. 삭제된 사진은 `total`에서 빠진다.
+- `failed`: 실패했거나 분석 임대가 만료된 사진 수. 나머지가 `pending`이다.
+- `reason`: `analysisFailed`, `timedOut`, `consentRequired`. `waiting`일 때는 없다. 선택 사유가 겹치면 동의 철회, 분석 실패, 시간 초과 순으로 표시한다.
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -932,6 +955,27 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `CARD_NOT_FOUND` |
+
+### 4-7. `POST /api/v1/profiles/{profileId}/card-generations/photo-preparation`
+
+첫 카드 사진 대기가 `choice`일 때 보호자의 선택을 받는다. 로그인한 계정 소유의 프로필만 처리한다.
+
+요청:
+
+```json
+{ "setId": "d0b0132a-b18e-4200-9ce2-df4469630388", "action": "retry" }
+```
+
+- `retry`: 실패 또는 임대 만료 사진만 다시 분석 대기로 바꾸고 사진 대기 기한을 갱신한다. 살아 있는 분석은 그대로 둔다. 동의 철회 상태에서는 거절한다.
+- `continue`: 사진 대기를 해제하고 현재 사용 가능한 설명으로 카드를 만든다. 준비된 사진이 없으면 사진 없이 만든다. 아직 처리 중인 사진 분석 자체는 취소하지 않는다.
+- 두 선택 모두 기존 카드 작업 ID를 유지한다. 이전 작업이나 이미 바뀐 상태에 대한 요청은 409다. 앱은 4-2로 상태를 다시 읽는다.
+- 응답 `200`: 4-2와 같은 형식. 카드 생성이 끝났다는 뜻이 아니며 `running`이면 계속 상태를 확인한다.
+
+| HTTP | `errorCode` |
+| --- | --- |
+| 404 | `PROFILE_NOT_FOUND` |
+| 409 | `PHOTO_PREPARATION_CHANGED`, `PHOTO_ANALYSIS_CONSENT_REQUIRED` |
+| 422 | `INVALID_REQUEST` (잘못된 UUID 또는 action) |
 
 <br>
 

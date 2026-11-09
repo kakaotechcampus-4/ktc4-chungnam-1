@@ -1,6 +1,6 @@
 # BE 영역
 
-담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. STT는 연결돼 있다. speech-worker가 [AiServerClient](app/clients/ai_server.py)로 `stt-server`를 HTTP로 부르고, 결과 전사로 같은 작업에서 리포트를 만든다([비동기 면회 음성 STT](docs/async-speech-analysis.md)). 세부 정보의 짧은 음성 전사 API(6-6, #214)도 같은 서버를 부른다([short-speech-transcription](docs/short-speech-transcription.md)). VLM(프로필 사진 설명)은 연결되지 않았다. 사진 분석 대기열(`PhotoAnalysisQueue`)만 있고 처리 함수와 worker는 없으며, 계정별 사진 분석 동의 필드도 없다.
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. STT는 연결돼 있다. speech-worker가 [AiServerClient](app/clients/ai_server.py)로 `stt-server`를 HTTP로 부르고, 결과 전사로 같은 작업에서 리포트를 만든다([비동기 면회 음성 STT](docs/async-speech-analysis.md)). 세부 정보의 짧은 음성 전사 API(6-6, #214)도 같은 서버를 부른다([short-speech-transcription](docs/short-speech-transcription.md)). 프로필 사진 설명은 동의한 계정의 사진을 `photo-worker`가 ML API로 분석한다. 첫 카드의 사진 대기, 실패 시 선택과 적용 조건은 [사진 분석 연결](docs/photo-analysis.md)에 있다.
 
 STT는 Tailscale 사설망으로 연결하는 개인 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 개인 GPU의 처리 성능은 해당 환경에서 검증한 결과로 별도 기록한다.
 
@@ -117,7 +117,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 구성 | 하는 일 | 준비된 것 |
 | --- | --- | --- |
 | 대기열 (`JobQueue`) | 임대 만료 정리, 작업 하나 임대(`claim`), 실패 기록(`fail`). 각 메서드는 짧은 트랜잭션 하나 | 음성 `SpeechAnalysisQueue`, 카드 생성 [CardGenerationQueue](app/services/card_generation_jobs.py), 사진 분석 [PhotoAnalysisQueue](app/services/photo_analysis_jobs.py) |
-| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 분석 처리 함수는 아직 없다 |
+| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 설명 [PhotoAnalysisProcessor](app/services/photo_analysis_pipeline.py) |
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 음성 작업이 전사 저장 뒤 리포트 시작 전에 멈추면 실패시키지 않고 인계 임대가 끝난 뒤 리포트 생성을 이어받는다([AI 음성 분석 연동](#ai-음성-분석-연동)). 실패한 작업의 자동 재시도는 하지 않는다.
@@ -126,7 +126,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 카드 생성은 임대가 남은 `running` 작업에만 결과를 저장한다(`card_sets.save_result`). 생성하는 동안 임대 시각이 지났으면 다음 정리를 기다리지 않고 결과를 버린 뒤 작업을 `WORKER_LEASE_EXPIRED`로 끝낸다. `CardGenerationQueue.fail`도 임대 시각이 지난 작업에는 넘겨받은 코드 대신 `WORKER_LEASE_EXPIRED`를 남기고, 이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 시각은 `clock_timestamp()`로 비교한다. 저장 트랜잭션은 프로필 잠금을 기다린 뒤 임대를 확인하는데, 트랜잭션 안의 `now()`는 시작 시각이라 기다리는 동안 끝난 임대를 남은 것으로 보기 때문이다.
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
 - 카드 생성 대기열은 작업을 가져갈 때 `card_sets.claimed_at`을 남기고 작업이 끝나도 지우지 않는다. 4-1과 4-2는 시작 대기 시간(기본 360초)보다 오래 기다린 작업을, 그 시간 동안 가져간 작업도 임대가 남은 작업도 없을 때만 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 다른 계정의 작업을 처리하는 동안 기다리는 작업은 실패시키지 않는다([API 4절](../docs/architecture/api-spec.md#4-대화-카드)).
-- **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
+- 사진 worker는 `photoAnalysis` 동의가 켜진 계정의 `pending` 사진만 분석한다. 첫 카드의 사진 대기는 worker와 DB 연결을 붙잡지 않고 `card_sets`에 저장하며, 다른 프로필의 카드 생성을 막지 않는다. 동의 철회와 실패 처리의 현재 규칙은 [사진 분석 문서](docs/photo-analysis.md)를 따른다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정

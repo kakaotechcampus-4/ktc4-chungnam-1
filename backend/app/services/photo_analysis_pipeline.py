@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from photo_analysis import PhotoDescription
 from photo_analysis.generate import PROMPT_VERSION
+from psycopg.errors import LockNotAvailable, QueryCanceled
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -52,23 +53,34 @@ class PhotoAnalysisProcessor:
         )).fetchone()
         if active is None:
             return
+        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
         try:
-            async with asyncio.timeout(self.timeout_seconds):
+            async with asyncio.timeout_at(deadline):
                 download = await self.storage.create_download(object_key=job.s3_object_key)
                 if download.expires_at <= datetime.now(UTC):
                     raise AppError(status_code=503, error_code="IMAGE_URL_EXPIRED",
                                    message="사진 조회 주소가 만료됐습니다.")
-                # 업체에 사진을 보내기 바로 전에 동의를 DB에서 다시 읽는다. 가져온 뒤 동의를
-                # 거뒀으면 부르지 않고 대기로 되돌린다. 철회 트랜잭션이 이미 프로필을 잠갔으면
-                # 끝날 때까지 기다린다. 이 트랜잭션은 업체를 부르기 전에 끝낸다.
-                async with connection.transaction():
-                    await lock_profile(connection, job.profile_id)
-                    if await _release_without_consent(connection, job):
-                        return
+            # DB 트랜잭션 진입 중 Task를 취소하면 psycopg의 트랜잭션 정리가 끝나지 않아
+            # 실패 기록까지 잃을 수 있다. DB 대기는 서버의 제한 시간으로 끝내고 롤백한다.
+            remaining_ms = int((deadline - asyncio.get_running_loop().time()) * 1000)
+            if remaining_ms <= 0:
+                raise TimeoutError
+            async with connection.transaction():
+                await connection.execute(
+                    "SELECT set_config('lock_timeout', %s, true), "
+                    "set_config('statement_timeout', %s, true)",
+                    (f"{remaining_ms}ms", f"{remaining_ms}ms"),
+                )
+                await lock_profile(connection, job.profile_id)
+                if await _release_without_consent(connection, job):
+                    return
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError
+            async with asyncio.timeout_at(deadline):
                 # 스레드가 늦게 끝나도 DB를 직접 수정하지 못한다.
                 result = await asyncio.to_thread(self.analyze, download.url)
                 result = PhotoDescription.model_validate(result)
-        except TimeoutError:
+        except (TimeoutError, LockNotAvailable, QueryCanceled):
             raise AppError(status_code=503, error_code="IMAGE_ANALYSIS_TIMEOUT",
                            message="사진 분석 시간이 초과됐습니다.") from None
         async with connection.transaction():

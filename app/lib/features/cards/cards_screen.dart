@@ -21,6 +21,7 @@ import '../visit/visit_controller.dart';
 import '../visit/visit_photos.dart';
 import 'card_generation_controller.dart';
 import 'cards_controller.dart';
+import 'photo_preparation_view.dart';
 import 'sensitive_card_badge.dart';
 
 /// C 오늘의 대화 카드.
@@ -80,10 +81,17 @@ class _GenerationState extends ConsumerState<_Generation> {
   @override
   Widget build(BuildContext context) {
     final generation = ref.watch(cardGenerationProvider(widget.profileId));
+    final photos = ref.watch(cardPhotoPreparationProvider(widget.profileId));
     final controller = ref.read(
       cardGenerationProvider(widget.profileId).notifier,
     );
 
+    if (photos != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: PhotoPreparationView(profileId: widget.profileId),
+      );
+    }
     return generation.when(
       loading: () => const LoadingView(message: '오늘의 대화 카드를 만들고 있어요'),
       error: (error, _) => ErrorStateView(

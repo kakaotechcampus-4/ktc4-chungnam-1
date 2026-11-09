@@ -5,7 +5,8 @@ from fastapi import APIRouter, Path, Response, status
 
 from app.api.deps import CurrentAccountDep, DbConnectionDep, SettingsDep
 from app.core.errors import AppError
-from app.schemas.card_generation import CardGenerationStatus, CardSet
+from app.schemas.card_generation import CardGenerationStatus, CardSet, PhotoPreparationChoice
+from app.services.card_photo_preparation import choose
 from app.services.card_sets import (
     current_card_set,
     generation_status,
@@ -25,6 +26,7 @@ router = APIRouter(tags=["card-generations"])
     status_code=status.HTTP_202_ACCEPTED,
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
 async def create_card_generation(
     account: CurrentAccountDep,
@@ -54,8 +56,11 @@ async def create_card_generation(
         model=settings.card_generation_model,
         prompt_version=settings.card_generation_prompt_version,
         start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+        photo_wait_timeout_seconds=settings.card_photo_wait_timeout_seconds,
     )
-    return CardGenerationStatus(status="running")
+    return await generation_status(
+        connection, profile_id, start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
 
 
 @router.get(
@@ -63,6 +68,7 @@ async def create_card_generation(
     summary="카드 생성 상태 조회",
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
 async def get_card_generation_status(
     account: CurrentAccountDep,
@@ -83,6 +89,25 @@ async def get_card_generation_status(
         connection,
         profile_id,
         start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
+
+
+@router.post(
+    "/api/v1/profiles/{profile_id}/card-generations/photo-preparation",
+    summary="첫 카드 사진 준비 재시도 또는 완료된 사진으로 진행",
+    response_model=CardGenerationStatus,
+    response_model_by_alias=True,
+    response_model_exclude_none=True,
+)
+async def resolve_photo_preparation(
+    account: CurrentAccountDep, connection: DbConnectionDep, settings: SettingsDep,
+    profile_id: Annotated[UUID, Path()], body: PhotoPreparationChoice,
+) -> CardGenerationStatus:
+    await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
+    await choose(connection, profile_id, body.set_id, body.action,
+                 timeout_seconds=settings.card_photo_wait_timeout_seconds)
+    return await generation_status(
+        connection, profile_id, start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
 
 

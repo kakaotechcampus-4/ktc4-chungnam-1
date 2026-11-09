@@ -2,7 +2,7 @@
 // 만드는 요청 본문이 BE 의 pydantic 스키마(`backend/app/schemas/*.py`)와 같은
 // 필드 이름을 쓰는지 확인한다.
 //
-// BE 모델은 `extra="forbid"` 이고 응답은 모든 필드를 내보내므로, 응답은 필드
+// BE 모델은 `extra="forbid"` 이고 응답은 명세에서 생략을 허용한 필드 외에는
 // 이름이 정확히 같아야 하고 요청은 필수 필드를 담되 모르는 필드가 없어야 한다.
 // 타입, 값의 범위와 enum 값은 비교하지 않는다. 파이썬 파일을 글자로 읽는 가벼운
 // 검사라 스키마를 다른 방식으로 선언하면 따라 고쳐야 한다.
@@ -448,6 +448,16 @@ void _expectShape(
   final fields = schema!.allFields(schemas);
   final names = {for (final f in fields) f.alias};
   if (response) {
+    // 카드 상태 API는 exclude_none=True다. 사진 대기가 없거나 선택 사유가 없으면
+    // 이 두 필드를 생략한다. 다른 응답의 필수 필드 검사는 그대로 유지한다.
+    final mayOmit = switch (model) {
+      'CardGenerationStatus' => {'photoPreparation'},
+      'PhotoPreparation' => {'reason'},
+      _ => <String>{},
+    };
+    names.removeWhere(
+      (name) => mayOmit.contains(name) && !map.containsKey(name),
+    );
     expect(map.keys.toSet(), names, reason: '$at 의 필드가 $model 과 다르다');
   } else {
     expect(
