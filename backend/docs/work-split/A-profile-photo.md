@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | `users`, `consent_records` | 1-6 동의 이력 추가, 1-5 계정 삭제 | |
 | `withdrawal_feedback` | 1-5 탈퇴 이유 | |
-| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다 |
+| `session_revocations` | 1-4 로그아웃, 1-5 탈퇴의 세션 폐기 | 모든 인증 요청이 폐기 여부를 읽는다. 1-2 가입 동의는 쓴 등록 토큰의 `jti` 를 남긴다 |
 | `profiles` | 2-2 생성, 2-4 세부 정보 저장과 수정, 2-8 삭제 | B는 4-1 카드 생성 요청에서 저장된 프로필을 읽는다. 2-8의 CASCADE로 B, C 테이블의 행도 지워진다 |
 | `life_facts` | 2-6, 2-7 | C가 7-4에서 A의 `create_life_fact`로 만든다 |
 | `photos` 중 `session_id IS NULL` | 3-1 생성, 8-4 분석 결과 | B가 면회 사진(`session_id` 있음)을 만들고 지운다 |
@@ -132,7 +132,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- 계정 삭제는 구현돼 있다. `DELETE FROM users`의 CASCADE로 계정 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 대기열은 삭제 실행기(#204)가 처리하며 운영 배포와 주기 실행은 남아 있다.
 - 남은 일은 탈퇴 이유다. 본문이 있으면 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣는다. 계정 ID는 넣지 않는다.
 - DB CHECK가 `reasons` 값, 1개 이상, `other`와 `other_text`의 짝을 막지만 요청 검증으로 먼저 422 `INVALID_REQUEST`를 낸다.
 
@@ -219,6 +219,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 - `name`: 50자 이하
 - `gender`: `male`, `female`
+- `birthDate`: 만 10세 이상인 날짜만 받는다(서버의 UTC 날짜 기준). 미래이거나 10년이 안 된 날짜는 422 `INVALID_REQUEST`
 - `condition.stage`: `mildCognitiveImpairment`, `mildDementia`, `unknown`
 - `condition.symptomNote`: 선택
 
@@ -271,6 +272,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 받는 필드: `name`, `gender`, `birthDate`, `condition`, `occupation`, `hometown`, `hobby`, `family`
 - 세부 정보 네 항목은 `null`을 보내면 지운다. 빈 문자열은 받지 않는다.
 - `condition`을 보낼 때 `stage`는 항상 보낸다. `symptomNote`를 빼면 저장된 메모를 그대로 두고, `null`을 보낼 때만 지운다.
+- `birthDate`는 2-2와 같이 만 10세 이상인 날짜만 받는다.
 
 응답 `200` — [Profile](#profile)
 
@@ -298,13 +300,15 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 }
 ```
 
-- `title`: 100자 이하. `title`과 `content`는 비울 수 없다.
+- `title`: 100자 이하. `content`: 5,000자 이하. `title`과 `content`는 비울 수 없다.
+- 프로필 하나의 이야기는 300개까지다. 넘으면 409 `LIFE_FACT_LIMIT_EXCEEDED`
 
 응답 `201` — [LifeFact](#lifefact)
 
 | HTTP | `errorCode` |
 | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED`(프로필에 이야기가 이미 300개 있음) |
 
 <br>
 
@@ -347,7 +351,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리해 S3 원본을 실제로 지우는 코드는 아직 없다(BE 후속).
+- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열은 삭제 실행기(#204)가 처리한다. 운영 배포와 주기 실행은 남아 있다.
 - 카드와 주제가 있는 프로필을 지우는 테스트를 더한다. `conversation_cards`의 `profile_topics` 참조에는 `ON DELETE`가 없어 같은 삭제 안의 CASCADE 순서에 기대며, 1-5에도 아직 이 경우의 테스트가 없다.
 
 <br>
@@ -378,9 +382,9 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 **구현 메모**
 
 - 프로필 사진(`session_id IS NULL`)이 이미 5장이면 409다. 동시 업로드로 5장을 넘지 않게 프로필 행을 `FOR UPDATE`로 잠그고 센다.
-- 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장. 행을 저장하지 못하면 `storage.delete`로 올린 객체를 지운다.
+- 순서: `validate_image` → `photo_id` 생성 → `storage.object_key(photo_id=..., image=...)` → 삭제 대기열에 객체 키 사전 등록(`not_before` 1시간 뒤) → `storage.upload(...)` → `analysis_status = 'pending'`으로 행 저장과 사전 등록 삭제를 한 트랜잭션으로. 행을 저장하지 못하면 사전 등록의 `not_before`를 지금으로 앞당기고 `storage.delete`로 올린 객체를 지운다([services/photo_uploads.py](../../app/services/photo_uploads.py)).
 - 8-4 worker를 연결하면 대기열에서 사진을 가져가 분석한다. 현재 worker는 미연결이라 업로드만으로 분석이 시작되지는 않는다(8-4 구현 메모).
-- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- S3 업로드 동안 프로필 행을 잠그지 않도록 올리기 전에 한 번 세어 일찍 거절하고, 행을 넣을 때 잠근 뒤 다시 센다. 정리할 때 바로 지웠어도 `storage_deletion_request_queue`의 요청은 남겨 삭제 실행기가 확인한다.
 - 구현: [routes/profile_photos.py](../../app/api/routes/profile_photos.py), [services/profile_photos.py](../../app/services/profile_photos.py), 테스트 [test_profile_photos.py](../../tests/test_profile_photos.py)
 - 실제 사용자 사진은 **사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 분석 동의는 별도이며, 분석 동의가 없는 사진은 분석 대상으로 저장하지 않는다. 두 동의는 가입 시 받아 기존 계정 동의 이력에 저장한다. 필드와 분석하지 않는 사진의 상태는 후속 계약으로 맞추되, 테스트 자료를 사용하는 업로드와 분석 구현은 먼저 진행한다. 테스트 가정은 기록하고 실제 사용자 처리에 그대로 적용하지 않는다(후속 3).
 - 현재 3-1 코드에는 사진 보관 동의 검사가 없고 모든 등록 사진을 `pending`으로 저장한다. 위 정책을 구현한 상태가 아니므로 실제 사용자 사진 수집 전 동의 검사와 분석 대상 구분을 추가한다.

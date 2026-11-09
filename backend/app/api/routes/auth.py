@@ -5,7 +5,8 @@
 1. `POST /auth/google` — 앱이 받은 구글 ID 토큰을 검증한다. 이미 계정이 있으면 바로
    세션을 발급하고, 없으면 계정을 만들지 않은 채 동의가 필요하다고 알린다.
 2. `POST /auth/consent` — 필수 동의가 모두 완료되면 계정과 동의 이력을 함께 만들고
-   세션을 발급한다. 필수 동의를 거부하면 계정을 만들지 않는다.
+   세션을 발급한다. 필수 동의를 거부하면 계정을 만들지 않는다. 등록 토큰은 한 번만
+   쓴다.
 
 앱을 다시 실행할 때는 저장한 세션으로 `GET /auth/me` 를 호출해 두 단계를 건너뛴다.
 
@@ -32,6 +33,7 @@ from app.api.deps import (
     SettingsDep,
     TokenIssuerDep,
 )
+from app.core.errors import AppError
 from app.schemas.auth import (
     AccountConsentResponse,
     AccountResponse,
@@ -184,28 +186,42 @@ async def submit_consent(
     claims: Annotated[RegistrationClaims, Depends(read_consent_registration)],
     accounts: AccountServiceDep,
     issuer: TokenIssuerDep,
+    revocations: SessionRevocationsDep,
 ) -> AuthenticatedResponse:
-    """필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션 발급. 같은 등록 토큰으로 다시 보내면 계정을 덧만들지 않고 세션만 줌.
+    """필수 동의를 받으면 계정과 첫 동의 이력을 만들고 세션 발급. 등록 토큰은 한 번만 쓰며 다시 보내면 401 `INVALID_REGISTRATION_TOKEN`.
 
     API 명세 1-2
     """
 
-    existing = await accounts.find(
-        provider=claims.provider, social_id=claims.social_id
-    )
-    if existing is not None:
-        # 같은 등록 토큰으로 다시 제출한 경우다. 계정을 덧만들지 않고 세션만 준다.
-        return _authenticated(existing, issuer)
+    # 계정을 만들거나 세션을 줄 때 등록 토큰을 쓴 것으로 남긴다. 409, 422 처럼 계정을
+    # 만들지 못하면 기록도 되돌려 같은 토큰으로 다시 제출할 수 있다.
+    async with revocations.consume(claims.token_id, claims.expires_at) as first_use:
+        if not first_use:
+            # 이미 쓴 토큰이다. 로그아웃이나 탈퇴 뒤에도 구글 인증 없이 세션을 받거나
+            # 계정을 되살리지 못하게 거절한다. 앱은 로그인(1-1)부터 다시 한다.
+            raise AppError(
+                status_code=401,
+                error_code="INVALID_REGISTRATION_TOKEN",
+                message="이미 사용한 등록 토큰입니다. 다시 로그인해 주세요.",
+            )
 
-    account = await accounts.register(
-        provider=claims.provider,
-        social_id=claims.social_id,
-        consent_version=payload.consent_version,
-        submitted_consents=payload.consents.model_dump(by_alias=True),
-        display_name=payload.display_name,
-        google_email=claims.email,
-        google_name=claims.name,
-    )
+        existing = await accounts.find(
+            provider=claims.provider, social_id=claims.social_id
+        )
+        if existing is not None:
+            # 이 토큰을 받은 뒤 다른 등록 토큰으로 가입을 마친 경우다. 이 토큰은 처음
+            # 쓰므로 1-1 과 같이 세션을 한 번 주고, 계정은 덧만들지 않는다.
+            return _authenticated(existing, issuer)
+
+        account = await accounts.register(
+            provider=claims.provider,
+            social_id=claims.social_id,
+            consent_version=payload.consent_version,
+            submitted_consents=payload.consents.model_dump(by_alias=True),
+            display_name=payload.display_name,
+            google_email=claims.email,
+            google_name=claims.name,
+        )
     logger.info("account_created", extra={"auth_provider": "google"})
     return _authenticated(account, issuer)
 
@@ -320,15 +336,20 @@ async def register_current_push_device(
     fid: PushDeviceId,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
 ) -> Response:
     """리포트 완료 푸시를 받을 이 기기의 FID 를 등록. 같은 요청을 다시 보내면 등록 시각만 새로 함.
 
     다른 계정에 등록된 FID 면 이 계정으로 옮김. 알림 수신에 동의하지 않았으면 거절함.
+    계정당 기기 수(기본 5)를 넘으면 등록 시각이 가장 오래된 기기를 지움. 오류는 아님.
 
     API 명세 1-7
     """
 
-    await register_push_device(connection, account.account_id, fid)
+    await register_push_device(
+        connection, account.account_id, fid,
+        max_devices=settings.push_devices_per_account,
+    )
     logger.info("push_device_registered")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

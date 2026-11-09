@@ -105,15 +105,17 @@ async def require_owned(
     try:
         owner_id = UUID(account_id)
     except ValueError:
-        raise _not_found(resource) from None
+        raise not_found(resource) from None
     cursor = await connection.execute(resource.query, (resource_id, owner_id))
     row = await cursor.fetchone()
     if row is None:
-        raise _not_found(resource)
+        raise not_found(resource)
     return row["profile_id"]
 
 
-def _not_found(resource: OwnedResource) -> AppError:
+def not_found(resource: OwnedResource) -> AppError:
+    """`require_owned`가 내는 404. 소유 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 자원이
+    사라졌을 때도 이 오류를 낸다."""
     return AppError(
         status_code=404,
         error_code=resource.error_code,

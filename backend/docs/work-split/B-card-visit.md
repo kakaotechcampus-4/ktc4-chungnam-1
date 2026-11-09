@@ -307,8 +307,9 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - 요청 조립: `ageRange`는 `birth_date`로 계산한 십 단위 값(`80s`)이다. `profileFacts`는 네 항목, `lifeFacts`는 `life_facts`, `photos`는 분석이 끝난 프로필 사진, `topics`는 `profile_topics`와 `topic_feedback`(`decided_at` 순), `visits`와 `pastCards`는 평가까지 끝난 회차와 그 회차에 쓰인 카드다. 이름, 성별, 생년월일, 인지 상태와 증상 메모는 넣지 않는다.
 - 결과 검증: 카드 12장, `position` 1~12가 한 번씩, `followUpQuestions` 3개, `cardTitle`·`description`·`primaryQuestion`·`followUpQuestions`가 공백만으로 되어 있지 않음, 한 묶음 안 같은 `topicId` 중복 없음, 기존 `topicId`는 이 프로필의 주제이고 `feedback`에 `exclude`가 없음, 근거 항목 형식과 ID가 context에 있음, `profileField`는 context에 값이 있는 항목, `evidenceSource`가 `none`이면 `evidence`는 빈 배열이고 나머지는 같은 종류의 근거 항목이 하나 이상이다. 맞지 않으면 `INVALID_GENERATION_RESULT`로 실패시킨다.
 - 저장은 한 트랜잭션이다: 새 주제를 `profile_topics`에 만들고 `conversation_cards` 12장을 넣은 뒤 `card_sets`를 `completed`로 바꾸고 `generation_log`(`{"input": context, ...}`)를 넣는다.
-- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다.
+- `CardGenerationQueue`가 `running`이고 임대가 없는 작업을 임대해 `CardGenerationJob(set_id, profile_id, attempt_count)`을 넘긴다. 임대 만료(`WORKER_LEASE_EXPIRED`)도 대기열이 한다. worker가 없을 때도 작업이 끝나도록 4-1과 4-2가 상태를 보기 전에 `expire_stuck`으로 그 프로필의 오래 기다린 작업(`CARD_GENERATION_NOT_STARTED`)과 임대가 만료된 작업을 정리한다. 오래 기다린 작업은 시작 대기 시간 동안 worker가 가져간 작업(`claimed_at`)도 임대가 남은 작업도 없을 때만 정리한다. worker가 다른 계정의 작업을 처리하는 중이면 기다리게 둔다.
 - 결과를 저장할 때 `status = 'completed'`와 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `card_sets_lease_check`).
+- 저장 트랜잭션은 프로필과 작업 행을 잠근 뒤 `lease_expires_at > clock_timestamp()`인 `running` 작업일 때만 저장한다. 생성하는 동안 임대 시각이 지났으면 만료 정리 전이라도 결과를 버리고 `queue.fail`로 `WORKER_LEASE_EXPIRED`를 남긴다. `queue.fail`은 임대 시각이 지난 작업에는 넘겨받은 코드 대신 `WORKER_LEASE_EXPIRED`를 남기고, 이미 끝난 작업은 바꾸지 않는다.
 - **실패해도 `generation_log`가 있어야 한다**(CHECK). AI에 보낸 입력을 남기며 실패시키려면 `queue.fail(connection, job, error_code=..., generation_input=context)`을 부르고 처리 함수에서 정상 반환한다. 그냥 `AppError`를 올리면 `{"input": null}`로 기록된다.
 - 실행 진입점은 `app/workers/speech_analysis.py`처럼 `run_worker_main`으로 만든다(예: `app/workers/card_generation.py`).
 
@@ -392,6 +393,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - 4-1과 겹치지 않게 트랜잭션 시작 때 프로필 행을 먼저 잠근다(`SELECT ... FROM profiles ... FOR UPDATE`).
 - 한 트랜잭션에서 `visit_sessions`를 넣고(`started_at` 기본값이 서버 시각), `UPDATE card_sets SET session_id = %s WHERE set_id = %s AND session_id IS NULL`로 묶음을 연결한다. 0행이면 동시 요청이 먼저 쓴 것이므로 409 `CARD_SET_ALREADY_USED`로 롤백한다. 마지막으로 고른 카드를 `selected = true`로 바꾼다.
 - `card_sets(session_id, profile_id)` FK가 회차와 묶음이 같은 프로필인지 DB에서도 확인한다.
+- 소유 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 묶음이 없어졌으면 같은 404 `CARD_GENERATION_NOT_FOUND`다. 응답은 프로필을 잠근 트랜잭션 안에서 만들어, 오류 표에 없는 회차 404가 나지 않게 한다.
 
 <br>
 
@@ -423,9 +425,9 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 있으면 409 `INVALID_SESSION_STATE`다.
 - **실제 사용자의 면회 사진도 사진 보관 동의를 확인한 경우에만 받는다**([ADR-001](../../../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)). 가입 시 받은 동의는 기존 계정 동의 이력에 저장한다. 테스트 자료로 업로드와 조회를 먼저 구현하고, 실제 사용자 사진을 받기 전에는 동의 조회와 미동의 차단을 검증한다(후속 3).
 - 현재 5-2 코드에는 사진 보관 동의 검사가 없다. 위 정책을 구현한 상태가 아니며, 테스트 자료로 먼저 개발하되 실제 사용자 사진 수집 전에 해당 검사를 추가한다.
-- 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → `storage.upload` → 행 저장(실패하면 `storage.delete`).
+- 업로드 순서는 3-1과 같다: `validate_image` → `storage.object_key` → 삭제 대기열에 객체 키 사전 등록 → `storage.upload` → 행 저장과 사전 등록 삭제(실패하면 사전 등록을 앞당기고 `storage.delete`).
 - 다시 올리면 기존 사진 행을 지우고 새로 넣는다(`uq_photos_session`). 지운 행의 키는 trigger가 S3 삭제 대기열에 넣는다.
-- S3 업로드 동안 회차 행을 잠그지 않도록 평가 여부를 올리기 전에 한 번 확인해 일찍 거절하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. `storage.delete`도 실패하면 객체 키를 `storage_deletion_request_queue`에 직접 넣는다.
+- S3 업로드 동안 회차 행을 잠그지 않도록 평가 여부를 올리기 전에 한 번 확인해 일찍 거절하고, 행을 넣을 때 회차 행을 `FOR UPDATE`로 잠근 뒤 다시 확인한다. 정리할 때 바로 지웠어도 `storage_deletion_request_queue`의 요청은 남겨 삭제 실행기가 확인한다.
 - 구현: [routes/visit_sessions.py](../../app/api/routes/visit_sessions.py), [services/visit_photos.py](../../app/services/visit_photos.py), 테스트 [test_visit_photos.py](../../tests/test_visit_photos.py)
 - 면회 사진은 분석하지 않는다. `analysis_status`는 기본값 `pending`으로 남지만, A의 8-4 worker는 `session_id`가 있는 행을 가져가지 않는다.
 
@@ -457,6 +459,7 @@ BE의 카드 생성 함수가 ML API를 호출한다. 생성 함수는 `ai/card_
 **구현 메모**
 
 - `require_owned(connection, VISIT_SESSION, ...)`로 확인한다. `evaluated_at`이 없을 때만 받는다. 같은 묶음의 `position` 10~12 카드만 중복 없이 받고, 이미 `selected`인 카드는 무시한다.
+- 소유 확인 뒤나 카드를 더한 뒤 같은 계정의 다른 요청이 프로필을 지워 회차가 없어졌으면 같은 404 `VISIT_SESSION_NOT_FOUND`다.
 
 <br>
 

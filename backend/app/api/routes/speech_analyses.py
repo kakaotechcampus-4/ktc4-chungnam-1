@@ -27,7 +27,10 @@ async def retry_speech_report(
     SpeechAnalysisSubmissionService._assert_account_consents(account)
     job = await PostgresSpeechAnalysisJobRepository(
         connection, lease_seconds=settings.speech_analysis_lease_seconds,
-    ).retry_report(analysis_id=analysis_id, account_id=account.account_id)
+    ).retry_report(
+        analysis_id=analysis_id, account_id=account.account_id,
+        max_retries=settings.report_retries_per_session,
+    )
     return SpeechAnalysisAccepted(analysisId=job.analysis_id, sessionId=job.session_id,
                                   status=job.status.value)
 

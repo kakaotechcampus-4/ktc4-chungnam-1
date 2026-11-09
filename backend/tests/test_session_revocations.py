@@ -1,10 +1,14 @@
 """`session_revocations` 에 폐기 기록을 남기는 저장소 검사.
 
 실제 PostgreSQL 이 필요하다. 임시 DB fixture 와 실행 조건은 `conftest.py` 에 있다.
-`jti` 와 계정 식별자는 모두 합성 값이다.
+`jti` 와 계정 식별자는 모두 합성 값이다. 세션 폐기와 함께, 등록 토큰을 한 번만 쓰게
+하는 `consume` 도 검사한다.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from app.core.database import connect
 from app.services.session_revocations import PostgresSessionRevocationStore
@@ -83,3 +87,82 @@ def test_revoking_the_same_session_twice_keeps_it_revoked(migrated_database_url)
 
     assert revoked is True
     assert count == 1
+
+
+REGISTRATION_EXPIRES_AT = NOW + timedelta(minutes=10)
+
+
+def test_consumed_registration_token_is_refused_from_a_new_connection(
+    migrated_database_url,
+):
+    async def scenario() -> tuple[bool, bool, bool]:
+        async with connect(migrated_database_url) as connection:
+            store = PostgresSessionRevocationStore(connection, clock=lambda: NOW)
+            async with store.consume(
+                "registration-jti", REGISTRATION_EXPIRES_AT
+            ) as first:
+                pass
+        # 다른 연결은 다른 API 프로세스나 다시 띄운 서버와 같다.
+        async with connect(migrated_database_url) as connection:
+            store = PostgresSessionRevocationStore(connection, clock=lambda: NOW)
+            async with store.consume(
+                "registration-jti", REGISTRATION_EXPIRES_AT
+            ) as again:
+                pass
+            async with store.consume("other-jti", REGISTRATION_EXPIRES_AT) as other:
+                pass
+        return first, again, other
+
+    assert run(scenario()) == (True, False, True)
+
+
+def test_consume_is_undone_when_the_block_fails(migrated_database_url):
+    async def scenario() -> bool:
+        async with connect(migrated_database_url) as connection:
+            store = PostgresSessionRevocationStore(connection, clock=lambda: NOW)
+            # 필수 동의 누락처럼 계정을 만들지 못한 제출이다.
+            with pytest.raises(RuntimeError):
+                async with store.consume(
+                    "retry-jti", REGISTRATION_EXPIRES_AT
+                ) as first:
+                    assert first is True
+                    raise RuntimeError("계정을 만들지 못함")
+            async with store.consume(
+                "retry-jti", REGISTRATION_EXPIRES_AT
+            ) as again:
+                return again
+
+    assert run(scenario()) is True
+
+
+def test_second_consume_of_the_same_token_waits_then_is_refused(
+    migrated_database_url,
+):
+    async def scenario() -> tuple[bool, bool, bool]:
+        async with (
+            connect(migrated_database_url) as first_connection,
+            connect(migrated_database_url) as second_connection,
+        ):
+            first_store = PostgresSessionRevocationStore(
+                first_connection, clock=lambda: NOW
+            )
+            second_store = PostgresSessionRevocationStore(
+                second_connection, clock=lambda: NOW
+            )
+
+            async def submit_again() -> bool:
+                async with second_store.consume(
+                    "same-registration-jti", REGISTRATION_EXPIRES_AT
+                ) as fresh:
+                    return fresh
+
+            async with first_store.consume(
+                "same-registration-jti", REGISTRATION_EXPIRES_AT
+            ) as first:
+                second = asyncio.create_task(submit_again())
+                await asyncio.sleep(0.5)
+                # 앞 제출의 트랜잭션이 끝나기 전에는 뒤 제출이 결과를 받지 않는다.
+                waiting = not second.done()
+            return first, waiting, await second
+
+    assert run(scenario()) == (True, True, False)

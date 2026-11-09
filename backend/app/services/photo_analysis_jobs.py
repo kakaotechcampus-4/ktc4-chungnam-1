@@ -7,8 +7,8 @@ A)가 한다. 결과를 저장할 때는 `analysis_status = 'completed'`, `descr
 `prompt_version`과 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `photos_lease_check`).
 
 계정의 현재 동의에서 AI 이미지 분석(`photo_analysis`)이 켜진 사진만 가져온다. 동의하지 않은
-계정의 사진은 `pending`으로 남고, 나중에 동의하면 그때 가져간다. 저장 직전에 처리 함수가
-동의를 다시 확인한다(`photo_analysis_pipeline.py`).
+계정의 사진은 `pending`으로 남고, 나중에 동의하면 그때 가져간다. 처리 함수가 ML 업체를
+부르기 바로 전과 결과를 저장하기 직전에 동의를 다시 확인한다(`photo_analysis_pipeline.py`).
 """
 
 from __future__ import annotations

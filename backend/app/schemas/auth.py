@@ -12,12 +12,18 @@ class GoogleLoginRequest(ApiModel):
 
 
 class ConsentSubmission(ApiModel):
-    service_data: bool = Field(alias="serviceData")
-    sensitive_data: bool = Field(alias="sensitiveData")
-    push_notification: bool = Field(alias="pushNotification")
-    service_improvement: bool = Field(alias="serviceImprovement")
+    """가입 동의 (API 1-2).
+
+    선택 동의 변경(`ConsentChangeRequest`)과 같이 명시적인 `true`/`false`만 받는다.
+    `"yes"`, `"on"`, `1`을 동의로 바꿔 읽으면 필수 동의를 받지 않고 계정을 만들게 된다.
+    """
+
+    service_data: StrictBool = Field(alias="serviceData")
+    sensitive_data: StrictBool = Field(alias="sensitiveData")
+    push_notification: StrictBool = Field(alias="pushNotification")
+    service_improvement: StrictBool = Field(alias="serviceImprovement")
     # 11/7 추가한 선택 동의. 이전 앱은 보내지 않으므로 기본은 거부다.
-    photo_analysis: bool = Field(default=False, alias="photoAnalysis")
+    photo_analysis: StrictBool = Field(default=False, alias="photoAnalysis")
 
 
 class ConsentRequest(ApiModel):

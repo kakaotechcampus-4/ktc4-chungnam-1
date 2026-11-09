@@ -22,7 +22,9 @@
 
 이미지에는 카드 생성 패키지(`ai/`의 생성 기능 셋과 `common`)도 `/ai`에 들어간다. compose가 `additional_contexts`로 `../ai`를 넘기므로 `docker build`를 직접 쓸 때는 `--build-context ai=../ai`를 붙인다.
 
-카드 생성 요청을 worker가 가져가지 않은 채 기본 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)가 지나면, 다음 생성 요청(4-1)이나 상태 조회(4-2)에서 `failed`와 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 가져간 뒤 임대가 만료된 작업은 같은 요청이나 조회, 또는 worker의 다음 정리에서 `WORKER_LEASE_EXPIRED`로 처리한다. 생성 요청과 상태 조회가 없고 worker도 실행되지 않으면 DB 상태는 바로 바뀌지 않는다. 자동 재시도가 아니라 앱에서 다시 생성을 요청할 수 있도록 실패 상태를 알리는 처리다.
+카드 생성 요청을 worker가 가져가지 않은 채 기본 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)가 지났고 같은 시간 동안 worker가 다른 작업도 가져가지 않았으면, 다음 생성 요청(4-1)이나 상태 조회(4-2)에서 `failed`와 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 가져간 시각은 `card_sets.claimed_at`에 남는다. 그 시간 안에 가져간 작업이나 임대가 남은 작업이 있으면 worker가 다른 작업을 처리하는 중으로 보고 기다리는 작업을 `running`으로 둔다. 작업 하나가 임대 시간(`SAEROK_CARD_GENERATION_LEASE_SECONDS`, 기본 300초)까지 걸릴 수 있어 이 값은 임대 시간보다 길게 둔다. worker가 가져간 뒤 임대가 만료된 작업은 같은 요청이나 조회, 또는 worker의 다음 정리에서 `WORKER_LEASE_EXPIRED`로 처리한다. 생성 요청과 상태 조회가 없고 worker도 실행되지 않으면 DB 상태는 바로 바뀌지 않는다. 자동 재시도가 아니라 앱에서 다시 생성을 요청할 수 있도록 실패 상태를 알리는 처리다.
+
+임대가 끝난 뒤 카드 생성 결과가 늦게 와도 저장하지 않는다. 결과를 받은 worker가 정리를 기다리지 않고 그 자리에서 작업을 `WORKER_LEASE_EXPIRED`로 끝낸다.
 
 ## 로컬에서 PostgreSQL만 컨테이너로 띄우기
 
@@ -146,5 +148,5 @@ docker compose --profile https up -d --no-deps --force-recreate caddy
 - **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS이며, 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
 - **sslip.io와 인증서 발급처.** sslip.io는 이름을 IP로 바꿔 주는 DNS만 제공하고, 요청과 응답은 거치지 않고 EC2로 바로 간다. 인증서 발급처는 호스트 이름만 받는다. 둘 다 외부 무료 서비스라 장애나 발급 한도의 영향을 받을 수 있으므로 최종 배포 주소로 쓸지는 따로 정한다.
 - **AI 서버 연결.** 현재 STT는 개인 GPU에 임시 연결한다([ADR-006의 현재 경로](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#개인-gpu와-tailscale-임시-연결-2026-10-31-보완)). EC2와 GPU 서버를 Tailscale 사설망에 연결하고, GPU는 자신의 Tailscale IP에 STT를 바인딩한다. BE의 `SAEROK_AI_SERVER_URL`을 `http://<GPU 서버의 Tailscale IP>:8001`로 설정한 뒤 API와 worker 컨테이너를 재생성한다. 현재 설명된 접근 범위는 관리자가 승인한 tailnet 기기이며 BE 한 대만 허용한 것으로 보고하지 않는다. 실제 Grants/ACL과 기존 공개 경로를 확인하고 이슈의 BE 전용 완료 조건과 조정 여부를 맞춘다. GPU 측 확인은 이문영, BE 호출 확인은 김민혁이 맡는다. worker의 AWS 인증을 확인한 뒤 BE 컨테이너에서 상태 확인과 합성 음성 POST를 검증하고, 정상·차단 결과와 적용 환경을 주소·인증값 없이 이슈에 남긴다. 이 문서 변경에서는 현재 경로의 정상 분석, 차단 동작과 처리 성능을 검증하지 않았다. 상세 확인 항목은 [STT 운영 안내](../../stt-server/README.md#개인-gpu와-tailscale-운영)를 따른다.
-- **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지, 백업 여부는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다.
+- **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다. 운영 서버의 DB 백업은 [배포 workflow](../../docs/deploy-workflows.md#백업-파일-정리)의 백업 단계가 만들고, 2026-11-09 PM 결정에 따라 14일 보관한다. 지난 백업은 서버의 systemd timer(`ops/backup-prune/`)가 지우며, 설치와 확인은 [오래된 백업 정리](release-safety.md#오래된-백업-정리14일-보관)를 따른다.
 - **배포 자동화.** 지금은 위의 수동 절차다. GitHub Actions로 옮길 때 `.github/workflows/`는 카테캠 운영진이 제공하는 디렉터리이므로 먼저 확인한다.
