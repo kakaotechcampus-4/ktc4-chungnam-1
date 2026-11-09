@@ -1,0 +1,17 @@
+# 배포 DB 백업 정리. 2026-11-09 PM 결정: 14일 보관, 복원 확인된 가장 최근 백업 1개는 남긴다.
+# 설치, 확인과 되돌리기는 backend/docs/release-safety.md의 "오래된 백업 정리"를 따른다.
+# --backup-dir와 ReadWritePaths는 Deploy의 DEPLOY_BACKUP_DIR와 같아야 한다.
+[Unit]
+Description=Saerok database backup prune (older than 14 days, keep newest verified)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /opt/saerok-backup-prune/prune_database_backups.py --backup-dir /opt/saerok-backups --keep 1 --older-than-days 14 --apply
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/saerok-backups
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+CapabilityBoundingSet=
+UMask=0077
