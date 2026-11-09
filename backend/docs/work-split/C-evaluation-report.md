@@ -52,7 +52,7 @@
 ## 다른 담당과 맞출 함수
 
 - **제공** `load_visit_session(connection, session_id)`: `VisitSession` 응답과 `sessionStatus` 계산. B의 5-1, 5-3과 C의 5-4가 쓴다. 가장 먼저 만들어 공유한다.
-- **사용** A의 `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None)`: 7-4에서 쓴다.
+- **사용** A의 `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 7-4에서 쓴다. 7-4는 제안의 분류(보호자가 바꾸면 그 값)를 `story_category`로 넘긴다.
 - **사용** `ImageStorageDep`(7-1, 7-2 면회 사진의 `imageUrl`)
 
 `sessionStatus` 계산(5절 표를 DB 값으로 옮긴 것):
@@ -370,7 +370,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
       "proposalId": "00000000-0000-4000-8000-000000000801",
       "reviewStatus": "accepted",
       "title": "한복",
-      "content": "한복과 두루마기를 주로 만드셨어요."
+      "content": "한복과 두루마기를 주로 만드셨어요.",
+      "storyCategory": "hobby"
     }
   ],
   "topics": [
@@ -386,6 +387,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
   - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다.
+  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`). 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`, 7개 밖의 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)

@@ -205,7 +205,7 @@ PR #37의 문서 정리는 기존 JSON과 enum을 유지했고, PR #38에서 Acc
 - `title`은 100자, `content`는 5,000자 이하이며 `title`과 `content`는 비울 수 없다. 글자 수는 유니코드 코드 포인트 수로 센다.
 - 프로필 하나의 생애 사실은 300개까지다. 일대기에서 추가한 것과 변경 제안 승인으로 만든 것을 함께 센다. 넘으면 저장하지 않고 `409 LIFE_FACT_LIMIT_EXCEEDED`다. 내용 길이와 개수 상한은 2026-11-09 PM 결정이다.
 - 생애 사실은 일대기에서 확인하고 직접 추가한다. 마이페이지(프로필 설정)에는 세부 정보 네 항목만 둔다.
-- 두 경로로 만든다. 보호자가 일대기에서 추가하거나([API 2-6](api-spec.md#2-6-post-apiv1profilesprofileidlife-facts--신규)), 보호자가 변경 제안의 생애 정보 제안을 승인하면([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) BE가 만든다. 승인할 때 보호자가 제목과 내용을 고칠 수 있으며, BE는 고친 값으로 만들고 원래 제안은 바꾸지 않는다. 승인으로 만든 사실은 그 제안을 출처로 저장하며 응답에는 출처를 담지 않는다. 승인은 이야기 추가(2-6)와 같아서 아직 면회에 안 쓴 카드 묶음을 다시 만들 대상(`needsRefresh`)으로 바꾸지 않고, 카드를 만드는 중에도 받는다. 다음 카드 생성부터 반영된다.
+- 두 경로로 만든다. 보호자가 일대기에서 추가하거나([API 2-6](api-spec.md#2-6-post-apiv1profilesprofileidlife-facts--신규)), 보호자가 변경 제안의 생애 정보 제안을 승인하면([API 7-4](api-spec.md#7-4-post-apiv1visit-sessionssessionidproposalsreview--신규)) BE가 만든다. 승인할 때 보호자가 제목, 내용과 분류를 고칠 수 있으며, BE는 고친 값으로 만들고 원래 제안은 바꾸지 않는다. 분류를 고르지 않으면 AI가 제안에 붙인 분류로 만든다(2026-11-09 PM 결정). 승인으로 만든 사실은 그 제안을 출처로 저장하며 응답에는 출처를 담지 않는다. 승인은 이야기 추가(2-6)와 같아서 아직 면회에 안 쓴 카드 묶음을 다시 만들 대상(`needsRefresh`)으로 바꾸지 않고, 카드를 만드는 중에도 받는다. 다음 카드 생성부터 반영된다.
 - 출처 면회가 삭제되면 보호자가 승인한 사실은 유지하고 해당 출처 연결만 해제한다. 생성 시 출처 연결과 삭제 후 연결 해제를 구분하며, 출처 연결을 이유로 회차 삭제를 막지 않는다.
 - 이 규칙은 [2026-09-19 PM 결정](../pm/README.md#2026-09-19-pm-결정)에 따른 면회 기록 삭제 범위다. 계정 탈퇴와 프로필 삭제 범위를 정하거나, 삭제 행동을 부정적 감정 및 비선호로 해석하지 않는다. DB 삭제 동작과 연결이 없는 사실의 화면 표시는 후속 검증이 필요하다.
 - 일대기에서 내용을 고칠 수 있다([API 2-7](api-spec.md#2-7-patch-apiv1life-factsfactid--신규)).
@@ -428,7 +428,8 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
       "selected": false,
-      "liked": false
+      "liked": false,
+      "sensitive": false
     }
   ]
 }
@@ -446,6 +447,7 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 - `evidenceSource` 값은 `lifeFact`, `photo`, `profile`, `none`이다. `none`이면 `evidence`는 빈 배열이고, 나머지는 같은 종류의 근거 항목이 하나 이상이다. 항목은 `lifeFact`면 `{"factId": ...}`, `photo`면 `{"photoId": ...}`, `profile`이면 `{"profileField": "occupation" | "hometown" | "hobby" | "family"}`다.
 - `selected`는 회차를 만들 때 고른 카드와 면회 중 보충 화면에서 추가한 카드가 `true`다. 선택하지 않은 카드도 삭제하지 않는다.
 - `liked`는 보호자가 원하는 카드에만 남기는 "좋았어요" 표시다([API 4-5](api-spec.md#4-5-put-apiv1cardscardidlike--신규), [4-6](api-spec.md#4-6-delete-apiv1cardscardidlike--신규)). 보호자 평가(6-1)의 카드 반응과 따로 저장하고, 평가를 마친 뒤에도 켜고 끌 수 있다. 다음 카드 생성 입력에는 아직 넣지 않는다.
+- `sensitive`는 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다. 앱은 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. develop 반영분이며 운영에는 아직 배포하지 않았다. 운영에서 채우려면 운영 설정 `SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 필요하다.
 
 **없어도 되는 값** — `usedBySessionId`
 
@@ -779,6 +781,8 @@ AI 성공 응답은 다음과 같다.
       "title": "한복",
       "content": "한복을 주로 만드셨어요.",
       "reason": "이번 면회에서 확인되었어요.",
+      "storyCategory": "work",
+      "sensitive": false,
       "reviewStatus": "pending"
     }
   ],
@@ -801,20 +805,21 @@ AI 성공 응답은 다음과 같다.
 
 - 변경 제안은 생애 정보 제안과 주제 제안 두 가지이며 회차마다 0개 이상이다. AI가 리포트와 함께 만들고 `proposalId`는 BE가 부여한다.
 - 기존 생애 사실의 수정은 제안하지 않으며 사용자가 일대기에서 직접 수정한다.
+- 생애 정보 제안의 `storyCategory`는 AI가 고른 일대기 분류([LifeFact](#확인된-생애-사실-lifefact)와 같은 7개 값)이고, `sensitive`는 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보면 `true`다. 앱은 `sensitive` 후보에 안내를 붙인다. 두 필드를 더하기 전에 만든 제안은 `other`, `false`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
 - 주제 제안은 다음 카드 생성에서 이 주제를 더 다룰지, 덜 다룰지, 제외할지에 대한 제안이며 주제 단위로 적용한다. 회차에서 고른 카드당 최대 1개다.
   - `topic.description`은 [CardSet](#대화-카드-묶음-cardset)의 `topic.description`과 같은 주제 설명이다.
   - `suggestedAction` 값은 `more`, `less`, `exclude`이다.
   - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
 - `reviewStatus` 값은 `pending`, `accepted`, `rejected`이다. 제안은 승인 전까지 프로필에 반영하지 않는다.
 - 검토는 회차의 `pending` 제안을 모두 한 번에 보낸다. 화면에 남긴 항목은 `accepted`, 제외한 항목은 `rejected`다. `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
-- `accepted`인 항목에는 보호자가 확인한 최종 값을 함께 보낸다. 생애 정보 제안은 최종 제목과 내용, 주제 제안은 보호자가 고른 행동(`more`, `less`, `exclude`)이며 제안과 달라도 된다. 고치지 않았으면 제안 값을 그대로 보낸다. 최종 제목과 내용은 [LifeFact](#확인된-생애-사실-lifefact)와 같이 100자와 5,000자 이하이고, 승인한 생애 정보 제안을 더해 300개를 넘으면 검토 전체를 저장하지 않는다.
-- `accepted`인 생애 정보 제안은 BE가 보호자가 확인한 제목과 내용으로, 그 제안을 출처로 하는 [LifeFact](#확인된-생애-사실-lifefact)를 만든다. `accepted`인 주제 제안은 보호자가 고른 행동을 주제 피드백으로 기록하고 다음 [CardGenerationRequest](#카드-생성-요청-cardgenerationrequest)의 `topics`에 넣는다. 원래 제안의 값은 바꾸지 않는다.
+- `accepted`인 항목에는 보호자가 확인한 최종 값을 함께 보낸다. 생애 정보 제안은 최종 제목과 내용(분류를 바꿨으면 `storyCategory`도), 주제 제안은 보호자가 고른 행동(`more`, `less`, `exclude`)이며 제안과 달라도 된다. 고치지 않았으면 제안 값을 그대로 보낸다. 최종 제목과 내용은 [LifeFact](#확인된-생애-사실-lifefact)와 같이 100자와 5,000자 이하이고, 승인한 생애 정보 제안을 더해 300개를 넘으면 검토 전체를 저장하지 않는다.
+- `accepted`인 생애 정보 제안은 BE가 보호자가 확인한 제목과 내용, 분류(보내지 않았으면 제안의 `storyCategory`)로, 그 제안을 출처로 하는 [LifeFact](#확인된-생애-사실-lifefact)를 만든다. `accepted`인 주제 제안은 보호자가 고른 행동을 주제 피드백으로 기록하고 다음 [CardGenerationRequest](#카드-생성-요청-cardgenerationrequest)의 `topics`에 넣는다. 원래 제안의 값은 바꾸지 않는다.
 - 승인한 제안을 되돌리는 기능은 없다. 승인으로 만든 생애 사실은 일대기에서 직접 고친다.
 - 거절한 이야기 후보의 30일 보관과 복구는 [별도 복구 기준](card-generation-flow.md#이야기-후보의-승인-거절과-복구)을 따른다. 복구 시 다시 확인할 후보가 되며 자동 승인하지 않는다. 복구 API와 상태 전환은 후속 설계 대상이다. 현재 `reviewStatus`에 `reverted`를 추가하거나 승인 취소를 뜻하도록 바꾸지 않는다.
 - 제안이 없는 회차의 확인 처리와, 검토 뒤 응답에 보호자가 고친 값을 담을지는 아직 정하지 않았다.
-- 변경 사항 확인 화면은 주제 제안마다 `suggestedAction`을 처음에 골라 두고 보호자가 다른 행동을 고를 수 있게 한다. 주제 제목 아래에 `topic.description`을 보여주며, 없으면 제목만 보여준다. 생애 정보 제안은 제목과 내용을 고칠 수 있다.
+- 변경 사항 확인 화면은 주제 제안마다 `suggestedAction`을 처음에 골라 두고 보호자가 다른 행동을 고를 수 있게 한다. 다만 `exclude` 제안은 되돌리기 어려워 미리 고르지 않고 보호자가 직접 고른다(develop, 운영 미배포). 주제 제목 아래에 `topic.description`을 보여주며, 없으면 제목만 보여준다. 생애 정보 제안은 제목, 내용과 분류를 고칠 수 있다.
 - 화면은 `pending` 제안만 보여주고 검토 요청에 담는다. 이미 `accepted`나 `rejected`인 제안과 `reviewStatus`를 읽지 못한 제안은 다시 보내지 않는다. 검토할 제안이 없으면 요청을 보내지 않는다.
-- 승인 요청 예시는 다음과 같다. `rejected` 항목에는 `action`, `title`, `content`를 담지 않는다.
+- 승인 요청 예시는 다음과 같다. `rejected` 항목에는 `action`, `title`, `content`, `storyCategory`를 담지 않는다. 예시의 생애 정보 항목은 분류를 바꾸지 않아 `storyCategory`가 없으므로 제안의 분류로 만든다. `storyCategory`의 `null`이나 7개 밖의 값은 `422 INVALID_REQUEST`다.
 
 ```json
 {
