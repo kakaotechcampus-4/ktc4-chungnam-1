@@ -11,7 +11,7 @@
 
 STT와 화자 분리의 실행 서버는 [`stt-server/`](../stt-server/README.md)에 둔다. 이 폴더는 생성 모델과 VLM을 포함한 AI 검증 자료를 관리한다.
 
-처리 위치, 원본 전송과 삭제 조건은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)을 따른다. 외부 STT와 LLM 도입은 업체, 처리 국가, 보유기간과 자체 학습 여부 검토가 필요하다.
+처리 위치, 원본 전송과 삭제 조건은 [ADR-006](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md)을 따른다. ML API(엘리스)의 처리위탁, 국외 이전, 보관과 학습 조건은 [법률 문서](../docs/legal/README.md#엘리스-ml-api-처리위탁과-국외-이전)를 따른다. 모델 제공사명, 처리 국가와 위탁 계약 문서는 실제 사용자 자료를 보내기 전에 확인해야 한다.
 
 ## 남은 작업과 역할
 
