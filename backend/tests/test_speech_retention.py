@@ -71,6 +71,65 @@ def test_worker_lease_failure_uses_the_same_retention_deadline(migrated_database
     assert (row["transcript_deleted_at"] is not None) is expired
 
 
+# 전사 기한 경계. 이 시험 DB에만 `clock_timestamp()`를 대신하는 함수를 두고, 처음 부르면
+# 기한 1마이크로초 전을, 그 뒤로는 기한 시각을 돌려준다. 한 문장이 시각을 식마다 따로 읽으면
+# 전사는 남기고 삭제 시각만 채워 CHECK (transcript_deleted_at IS NULL OR transcript IS NULL)에 걸린다.
+_BOUNDARY = "2030-01-01 00:00:00+00"
+
+
+def _install_boundary_clock(db: _Db) -> None:
+    db.execute("CREATE SCHEMA boundary_clock")
+    db.execute("CREATE SEQUENCE boundary_clock.calls")
+    db.execute(
+        "CREATE FUNCTION boundary_clock.clock_timestamp() RETURNS timestamptz "
+        "LANGUAGE plpgsql AS $$ BEGIN "
+        "IF nextval('boundary_clock.calls') = 1 THEN "
+        f"RETURN timestamptz '{_BOUNDARY}' - interval '1 microsecond'; END IF; "
+        f"RETURN timestamptz '{_BOUNDARY}'; END $$"
+    )
+
+
+def _clock_reads(db: _Db) -> int:
+    row = db.execute("SELECT last_value, is_called FROM boundary_clock.calls")[0]
+    return row["last_value"] if row["is_called"] else 0
+
+
+def _on_boundary_clock(db: _Db, method: str, **kwargs):
+    async def call():
+        async with connect(db.dsn) as connection:
+            # pg_catalog보다 앞에 두어야 기본 clock_timestamp() 대신 쓰인다.
+            await connection.execute("SET search_path TO boundary_clock, pg_catalog, public")
+            repository = PostgresSpeechAnalysisJobRepository(connection, lease_seconds=900)
+            return await getattr(repository, method)(**kwargs)
+
+    return run(call())
+
+
+@pytest.mark.parametrize("cleanup", ["mark_failed", "expire_leases"])
+def test_failure_at_the_transcript_deadline_reads_the_clock_once(migrated_database_url, cleanup):
+    db = _Db(migrated_database_url)
+    _, session = db.seed_session()
+    job = _generating(db, session)
+    db.execute(
+        "UPDATE speech_analysis_jobs SET transcript_expires_at = %s, "
+        "lease_expires_at = now() - interval '1 second' WHERE analysis_id = %s",
+        (_BOUNDARY, job.analysis_id),
+    )
+    _install_boundary_clock(db)
+
+    if cleanup == "mark_failed":
+        _on_boundary_clock(db, cleanup, analysis_id=job.analysis_id, error_code="AI_SERVER_ERROR")
+    else:
+        assert _on_boundary_clock(db, cleanup) == 1
+
+    row = db.job_row(job.analysis_id)
+    assert row["status"] == "failed"
+    # 처음 읽은 시각(기한 1마이크로초 전) 하나로 전사 유지와 삭제 시각을 함께 정한다.
+    assert row["transcript"] == TRANSCRIPT
+    assert row["transcript_deleted_at"] is None
+    assert _clock_reads(db) == 1
+
+
 def test_failed_transcript_is_deleted_without_any_new_job(migrated_database_url):
     db = _Db(migrated_database_url)
     owner, session = db.seed_session()

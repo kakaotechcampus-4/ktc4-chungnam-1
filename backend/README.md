@@ -101,7 +101,7 @@ API를 나눠 구현할 때 모두 같은 방식으로 DB를 쓴다.
 | 쿼리 | psycopg로 SQL을 직접 쓴다. SQLAlchemy는 Alembic에만 쓴다 |
 | 연결 | 비동기 연결(`psycopg.AsyncConnection`)만 쓴다. 저장소는 연결을 직접 열지 않고, [deps.py](app/api/deps.py)의 `DbConnectionDep`이 요청마다 여는 연결을 받는다. 연결은 autocommit이다 |
 | 트랜잭션 | 여러 문장을 함께 반영해야 하면 서비스나 저장소 코드에서 `async with connection.transaction():`으로 묶는다. 의존성의 정리 단계에서 커밋하지 않는다. worker는 상태가 바뀔 때마다 짧게 커밋하고 AI 서버 호출 중에는 트랜잭션을 열어 두지 않는다 |
-| 소유 확인 | 경로의 ID는 `UUID`로 받고 [ownership.py](app/services/ownership.py)의 `require_owned`로 확인한다. 다른 계정의 자원과 없는 자원은 같은 404를 받는다 |
+| 소유 확인 | 경로의 ID는 `UUID`로 받고 [ownership.py](app/services/ownership.py)의 `require_owned`로 확인한다. 다른 계정의 자원과 없는 자원은 같은 404를 받는다. 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 다음 조회에서 행이 없으면 500이 아니라 같은 404(`not_found`)를 낸다 |
 | 테스트 | 저장소 SQL은 `SAEROK_TEST_DATABASE_URL`을 설정하고 임시 DB fixture(`migrated_database_url`, [conftest.py](tests/conftest.py))로 확인한다. 값이 없으면 건너뛴다. 비동기 코드는 [support.py](tests/support.py)의 `run`으로 실행한다 |
 
 `SAEROK_DATABASE_URL`이 없으면 DB를 쓰는 API는 메모리 저장소 같은 대체 경로 없이 `DATABASE_NOT_CONFIGURED`(503)로 거절한다.
