@@ -21,6 +21,7 @@ import '../visit/visit_controller.dart';
 import '../visit/visit_photos.dart';
 import 'card_generation_controller.dart';
 import 'cards_controller.dart';
+import 'sensitive_card_badge.dart';
 
 /// C 오늘의 대화 카드.
 ///
@@ -517,6 +518,11 @@ class _CardTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 아픈 경험을 다루는 카드는 제목 위에 표시해 고르기 전에 보이게 한다.
+          if (card.sensitive) ...[
+            const SensitiveCardBadge(),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Text(card.cardTitle, style: AppTypography.bodyStrong),
           const SizedBox(height: AppSpacing.sm),
           // 이 카드로 무엇을 나누는지 알려주는 설명이다. 주제는 여러 면회에

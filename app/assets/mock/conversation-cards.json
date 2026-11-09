@@ -26,7 +26,8 @@
             "profileField": "occupation"
           }
         ],
-        "selected": true
+        "selected": true,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_002",
@@ -50,7 +51,8 @@
             "profileField": "occupation"
           }
         ],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_003",
@@ -74,7 +76,8 @@
             "profileField": "occupation"
           }
         ],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_004",
@@ -98,7 +101,8 @@
             "profileField": "hobby"
           }
         ],
-        "selected": true
+        "selected": true,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_005",
@@ -122,7 +126,8 @@
             "profileField": "hobby"
           }
         ],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_006",
@@ -146,7 +151,8 @@
             "profileField": "family"
           }
         ],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_007",
@@ -166,7 +172,8 @@
         ],
         "evidenceSource": "none",
         "evidence": [],
-        "selected": true
+        "selected": true,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_008",
@@ -190,7 +197,8 @@
             "profileField": "family"
           }
         ],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_009",
@@ -210,7 +218,8 @@
         ],
         "evidenceSource": "none",
         "evidence": [],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_010",
@@ -234,7 +243,8 @@
             "profileField": "family"
           }
         ],
-        "selected": true
+        "selected": true,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_011",
@@ -254,7 +264,8 @@
         ],
         "evidenceSource": "none",
         "evidence": [],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       },
       {
         "cardId": "card_demo_012",
@@ -274,7 +285,8 @@
         ],
         "evidenceSource": "none",
         "evidence": [],
-        "selected": false
+        "selected": false,
+        "sensitive": false
       }
     ]
   }

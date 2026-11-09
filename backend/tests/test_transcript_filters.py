@@ -156,8 +156,8 @@ class _Reports:
     def __init__(self):
         self.texts = []
 
-    async def generate(self, connection, *, session_id, speech):
-        del connection, session_id
+    async def generate(self, connection, *, session_id, speech, stats):
+        del connection, session_id, stats
         self.texts.append(speech.text)
 
 

@@ -12,9 +12,9 @@
   동기 함수라 스레드는 멈추지 않지만 그 결과는 아무도 읽지 않고, 생성 함수는 DB를
   쓰지 않는다. 시간 초과를 확정하면 마감에 취소를 표시해, 남은 스레드는 다음 외부 호출
   직전 `deadline.check()`에서 멈춘다.
-- 전사문을 두 번째로 보내기 직전(변경 제안 호출)에는 `deadline.check_job()`이 마감과 함께
-  DB의 작업 행을 다시 읽는다. 행이 없거나(계정, 프로필, 회차 삭제) `generatingReport`가
-  아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면
+- 전사문을 다시 보내기 직전(변경 제안의 이야기 후보 호출과 주제 조정 호출 각각)에는
+  `deadline.check_job()`이 마감과 함께 DB의 작업 행을 다시 읽는다. 행이 없거나(계정,
+  프로필, 회차 삭제) `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면
   `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다.
 - 결과가 와도 저장 직전에 마감을 다시 확인한다.
 - 저장 트랜잭션은 먼저 작업 행을 잠그고 `generatingReport`이며 임대가 남았는지
@@ -26,6 +26,8 @@
 - `cardSummaries`는 요청 카드 중 `reaction`이 `positive`, `neutral`, `negative`인
   카드만, 카드당 하나다.
 - `topicProposals`는 요청 카드 안에서 카드당 최대 1개다.
+- `lifeFactProposals`는 `LIFE_FACT_PROPOSAL_LIMIT`(30)개까지이고 항목마다 분류(`storyCategory`)와
+  아픈 기억 표시(`sensitive`)가 있어야 한다(형식 검사). AI 쪽이 넘는 후보를 먼저 자른다.
 - 보수적인 임시 정책(AI 담당자와 합의 필요): PM 결정(2026-09-19)은 카드를 쓰지 않았거나
   답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는 것이다. 백엔드는 AI가
   어떤 근거로 제안했는지 알 수 없으므로, `reaction`이 `notUsed`이거나 `null`인 카드의
@@ -49,6 +51,7 @@ from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.schemas.speech_analysis import SpeechAnalysisResult
 from app.services.speech_analysis_jobs import complete_job
+from app.services.speech_analysis_stats import SpeechAnalysisStats
 from app.schemas.visit_report_generation import (
     ReportCard,
     ReportCardTopic,
@@ -105,8 +108,8 @@ class ReportDeadline:
 
 
 # 8-3 요청과 마감을 받아 응답을 돌려주는 동기 함수. 실패는 `AppError`로 올린다.
-# 외부 호출 직전마다 `deadline.check()`로 마감을 확인하고, 전사문을 두 번째로 보내기
-# 직전에는 `deadline.check_job()`으로 작업이 아직 진행 중인지도 확인한다.
+# 외부 호출 직전마다 `deadline.check()`로 마감을 확인하고, 전사문을 다시 보내기
+# 직전마다 `deadline.check_job()`으로 작업이 아직 진행 중인지도 확인한다.
 GenerateReport = Callable[[VisitReportRequest, ReportDeadline], VisitReportResult]
 
 # 생성 함수의 실패 코드를 기존 8-3 작업 실패 코드로 바꾼다(API 계약 유지).
@@ -130,7 +133,9 @@ class VisitReportGenerator:
         *,
         session_id: str,
         speech: SpeechAnalysisResult,
+        stats: SpeechAnalysisStats | None = None,
     ) -> None:
+        """`stats`가 있으면 받은 결과의 숫자를 검증 전에 적는다. 검증이나 저장에서 실패해도 남는다."""
         deadline = ReportDeadline(self._time_limit_seconds)
         session_uuid = UUID(session_id)
         profile_id, request = await build_request(connection, session_uuid, speech)
@@ -138,6 +143,8 @@ class VisitReportGenerator:
         _require_transcript(request)
         deadline.watch_job(_job_check_from_thread(connection, request.analysis_id, deadline))
         result = await _run_until(deadline, lambda: self._generate(request, deadline))
+        if stats is not None:
+            stats.record_report(result)
         validate_result(request, result)
         # 마감 직후 도착한 결과도 저장하지 않는다.
         deadline.check()
@@ -407,17 +414,21 @@ async def save_report(
                 "UPDATE conversation_cards SET report_summary = %s WHERE card_id = %s",
                 (summary.summary, summary.card_id),
             )
+        # 7-3은 `created_at` 순서로 보여 준다. 한 트랜잭션의 `now()`는 모두 같아서, AI가 낸
+        # 순서(대화에 나온 순서)가 남도록 행마다 `clock_timestamp()`를 넣는다.
         for proposal in result.life_fact_proposals:
             await connection.execute(
-                "INSERT INTO life_fact_proposals "
-                "(session_id, profile_id, title, content, reason) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, "
+                "reason, story_category, sensitive, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, clock_timestamp())",
                 (
                     session_id,
                     profile_id,
                     proposal.title,
                     proposal.content,
                     proposal.reason,
+                    proposal.story_category,
+                    proposal.sensitive,
                 ),
             )
         for proposal in result.topic_proposals:

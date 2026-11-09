@@ -177,3 +177,46 @@ def test_review_over_the_story_limit_saves_nothing(migrated_database_url):
     assert fits.status_code == 200
     assert records.scalar("SELECT count(*) FROM life_facts") == LIFE_FACT_LIMIT
     assert records.scalar("SELECT count(*) FROM topic_feedback") == 1
+
+
+def test_accepted_life_fact_takes_the_proposed_category_unless_the_caregiver_changes_it(
+    migrated_database_url,
+):
+    """2026-11-09 PM 결정: AI가 고른 분류로 이야기를 만들고, 보호자가 고른 분류가 있으면 그것을 쓴다.
+
+    제안의 분류와 아픈 기억 표시는 확인 뒤에도 바뀌지 않는다.
+    """
+    records = Records(migrated_database_url)
+    user_id, profile_id, visit = _reported(records)
+    kept = records.life_fact_proposal(visit, title="합성 제안 1", story_category="hometown")
+    changed = records.life_fact_proposal(
+        visit, title="합성 제안 2", story_category="family", sensitive=True
+    )
+
+    response = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={
+            "lifeFacts": [
+                {**_accept(kept), "title": "합성 최종 1"},
+                {**_accept(changed), "title": "합성 최종 2", "storyCategory": "travel"},
+            ],
+            "topics": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [
+        (p["storyCategory"], p["sensitive"], p["reviewStatus"])
+        for p in response.json()["lifeFactProposals"]
+    ] == [("hometown", False, "accepted"), ("family", True, "accepted")]
+    assert records.query(
+        "SELECT title, story_category, source_proposal_id FROM life_facts ORDER BY title"
+    ) == [
+        {"title": "합성 최종 1", "story_category": "hometown", "source_proposal_id": kept},
+        {"title": "합성 최종 2", "story_category": "travel", "source_proposal_id": changed},
+    ]
+    # 일대기(2-3)에도 그 분류로 보인다.
+    profile = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}").json()
+    assert sorted(f["storyCategory"] for f in profile["lifeFacts"]) == ["hometown", "travel"]

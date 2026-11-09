@@ -203,6 +203,28 @@ void main() {
       expect((await api.current(_profileId)).needsRefresh, isTrue);
     });
 
+    test('카드마다 sensitive 를 읽고 주지 않으면 false 로 둔다', () async {
+      final api = _api(
+        (_) async => _json({
+          'schemaVersion': 1,
+          'setId': 'set-1',
+          'usedBySessionId': null,
+          'cards': [
+            {..._card(1), 'sensitive': true},
+            {..._card(2), 'sensitive': false},
+            // 이 값을 주기 전의 서버다.
+            for (var p = 3; p <= 12; p++) _card(p),
+          ],
+        }, 200),
+      );
+
+      final cards = (await api.current(_profileId)).cards;
+
+      expect(cards[0].sensitive, isTrue);
+      expect(cards[1].sensitive, isFalse);
+      expect(cards.skip(2).every((c) => !c.sensitive), isTrue);
+    });
+
     test('형식이 다른 묶음은 성공으로 넘기지 않는다', () async {
       final api = _api(
         (_) async => _json({'schemaVersion': 1, 'setId': 'set-1'}, 200),

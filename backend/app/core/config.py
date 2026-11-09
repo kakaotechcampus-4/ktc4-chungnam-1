@@ -44,9 +44,9 @@ class Settings(BaseSettings):
     speech_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
 
     # 카드 생성(API 4-1). 모델과 promptVersion은 작업을 만들 때 저장하고 생성 함수에 넘김.
-    # ML API 키가 비어 있으면 4-1은 503.
+    # ML API 키가 비어 있으면 4-1은 503. 2판부터 아픈 경험 카드에 `sensitive`를 붙임(2026-11-09).
     card_generation_model: str = "gpt-6-luna"
-    card_generation_prompt_version: int = Field(default=1, ge=1)
+    card_generation_prompt_version: int = Field(default=2, ge=1)
     ml_api_key: SecretStr = SecretStr("")
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
     card_generation_lease_seconds: int = Field(default=300, ge=60)

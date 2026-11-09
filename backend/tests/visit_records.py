@@ -246,12 +246,20 @@ class Records:
                 (summary, card_id),
             )
 
-    def life_fact_proposal(self, visit: Visit, *, title: str = "합성 제안") -> UUID:
+    def life_fact_proposal(
+        self,
+        visit: Visit,
+        *,
+        title: str = "합성 제안",
+        story_category: str = "other",
+        sensitive: bool = False,
+    ) -> UUID:
         return self.scalar(
             "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, "
-            "reason) VALUES (%s, %s, %s, '합성 제안 내용', '합성 이유') "
+            "reason, story_category, sensitive) "
+            "VALUES (%s, %s, %s, '합성 제안 내용', '합성 이유', %s, %s) "
             "RETURNING proposal_id",
-            (visit.session_id, visit.profile_id, title),
+            (visit.session_id, visit.profile_id, title, story_category, sensitive),
         )
 
     def topic_proposal(self, visit: Visit, card_index: int, action: str = "more") -> UUID:

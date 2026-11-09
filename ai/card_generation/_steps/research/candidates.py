@@ -31,6 +31,7 @@ class CardCandidate(BaseModel):
     kind: Literal["personal", "photo", "discover", "general"]
     evidence: list[Evidence] = Field(description="personal·photo는 1개 이상, 나머지는 빈 목록")
     discover_field: InitialField | None = Field(description="kind가 discover일 때 여쭤 알아갈 빈 칸")
+    sensitive: bool = Field(description="사별, 사고, 전쟁, 병처럼 아픈 경험을 다루는 후보면 true")
     reason: str = Field(description="이 카드를 고른 이유")
 
 
@@ -70,6 +71,12 @@ def submission_problems(sub: CardCandidateSubmission, version: Version) -> list[
             problems.append(f"{i}번: {c.kind}는 evidence를 비워야 한다.")
         if (c.kind == "discover") != (c.discover_field is not None):
             problems.append(f"{i}번: discover_field는 kind가 discover일 때만, 그리고 그때는 꼭 쓴다.")
+        if version.sensitive_cards and c.sensitive and (
+                c.kind != "personal" or not c.evidence or any(e.photo_id for e in c.evidence)):
+            # 아픈 경험은 보호자가 저장한 이야기나 초기 정보에 나온 것만 카드로 냄(PM 결정, 2026-11-09).
+            # 사진 설명은 확인된 사실이 아니라서 personal이라도 photo_id 근거로는 내지 않음
+            problems.append(f"{i}번: 아픈 경험(sensitive) 후보는 쌓아온 이야기나 초기 정보에 근거한 personal이어야 한다. "
+                            "사진, 빈 칸 여쭙기, 보편적인 옛 추억으로는 아픈 경험을 꺼내지 않는다.")
         counts[_topic_key(c)] = counts.get(_topic_key(c), 0) + 1
     crowded = [k.split(":", 1)[1] for k, v in counts.items() if v > version.max_per_topic]
     if crowded:

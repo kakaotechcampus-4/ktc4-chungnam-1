@@ -217,8 +217,15 @@ class FakeReportServer {
     'evaluatedAt': '2026-10-13T14:25:00+09:00',
   };
 
-  /// 명세의 ChangeProposal 하나를 만든다. 생애 정보 제안이 하나 있다.
-  static Map<String, Object?> proposal(String sessionId) => {
+  /// 이야기 제안 하나가 있는 변경 제안(ChangeProposal).
+  ///
+  /// [storyCategory] 와 [sensitive] 를 넘기지 않으면 두 값을 주기 전의 서버
+  /// 응답처럼 키를 넣지 않는다.
+  static Map<String, Object?> proposal(
+    String sessionId, {
+    String? storyCategory,
+    bool? sensitive,
+  }) => {
     'schemaVersion': 1,
     'sessionId': sessionId,
     'lifeFactProposals': [
@@ -228,6 +235,8 @@ class FakeReportServer {
         'content': '한복을 주로 만드셨어요.',
         'reason': '이번 면회에서 말씀하셨어요.',
         'reviewStatus': 'pending',
+        'storyCategory': ?storyCategory,
+        'sensitive': ?sensitive,
       },
     ],
     'topicProposals': <Object>[],
