@@ -323,15 +323,20 @@ async def register_current_push_device(
     fid: PushDeviceId,
     account: CurrentAccountDep,
     connection: DbConnectionDep,
+    settings: SettingsDep,
 ) -> Response:
     """리포트 완료 푸시를 받을 이 기기의 FID 를 등록. 같은 요청을 다시 보내면 등록 시각만 새로 함.
 
     다른 계정에 등록된 FID 면 이 계정으로 옮김. 알림 수신에 동의하지 않았으면 거절함.
+    계정당 기기 수(기본 5)를 넘으면 등록 시각이 가장 오래된 기기를 지움. 오류는 아님.
 
     API 명세 1-7
     """
 
-    await register_push_device(connection, account.account_id, fid)
+    await register_push_device(
+        connection, account.account_id, fid,
+        max_devices=settings.push_devices_per_account,
+    )
     logger.info("push_device_registered")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
