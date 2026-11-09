@@ -387,7 +387,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
   - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다.
-  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`). 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`, 7개 밖의 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`). 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`, 7개 밖의 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). #295로 들어와 2026-11-10 01:41 KST 운영 배포(develop `83695093`)부터 운영에 있다. 분류를 고르는 앱 화면은 새 APK 빌드가 설치돼야 반영된다. 지금 설치된 앱(Play 빌드, 11/8 GitHub Releases APK)은 `storyCategory`를 보내지 않으므로, 그 앱으로 승인한 이야기는 제안의 분류로 만들어진다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)

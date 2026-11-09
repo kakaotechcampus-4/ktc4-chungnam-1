@@ -2,6 +2,27 @@
 
 작성 기준: `feature/backend-async-visit-processing`, 2026-09-25
 
+> 현재 구현 (2026-11-10 기준, develop `83695093`): 면회 회차 생성(5-1), 보호자 평가(6-1),
+> 회차 목록(5-4)과 실패 분석 재요청(`POST /api/v1/speech-analyses/{analysisId}/retry`,
+> [수동 복구](speech-recovery.md)) API가 있다. 운영에서는 speech-worker가 STT 뒤 리포트까지
+> 만든다. 아래 본문의 9월 기준 설명 중 바뀐 곳은 6절, 10.2절, 11.1절, 12절과 14절에 표시했다.
+>
+> 지금 운영 BE는 2026-11-10 01:41 KST Deploy run 42656825849가 배포한 develop `83695093`이다.
+> 11/9 배포분(`59190ba7`)에 더해진 BE 코드 변경은 #295뿐이다(#293은 문서). speech-worker가 쓰는
+> 이야기 후보와 리포트 프롬프트가 `proposals-8`, `report-6`으로 바뀌었고, 이야기 후보의 분류와
+> 아픈 기억 표시를 저장하며(migration `9c4e2b7a1f63`), 작업이 끝나거나 실패할 때 처리 기록 한 줄을
+> 남긴다(10.6절).
+>
+> 다음 변경은 2026-11-09 develop에 병합됐고 같은 날 Deploy run 42568179490(develop `59190ba7`)으로
+> 운영에 들어갔다. 그 전 운영 BE는 11/8 Deploy run 42485750502가 배포한 develop `9c2b8276`이었다.
+>
+> - #278: 본문을 읽기 전 앱 버전과 세션 토큰 확인, 요청 본문 상한(2절, 12절)
+> - #280: 전사 저장 뒤 리포트 시작 전에 멈춘 작업의 이어받기(3절, 7절, 12절, 14절)
+> - #279: 남은 전사 기한이 임대 시간 이상일 때만 리포트 생성 시작, 변경 제안 호출 직전 작업
+>   재확인(3절, 11.4절, 12절, 14절)
+> - #283: 업로드가 끝나기 전에 작업 행이 지워져도 올라간 원본 키를 삭제 대기열에 기록(12절)
+> - #285: 리포트 재요청(6-5)의 회차당 3회 한도(14절, [수동 복구](speech-recovery.md))
+
 이 문서는 Flutter가 면회 녹음 WAV와 참여자 수를 백엔드로 보내고, 백엔드가 음성을
 S3에 임시 저장한 뒤 별도 worker에서 AI 서버의 STT 파이프라인을 호출하는 구현과
 테스트 방법을 설명한다.
@@ -34,7 +55,7 @@ BE API
   ├─ 본문을 읽기 전: 앱 버전, 세션 서명과 만료, 본문 상한(음성 상한 + 1 MiB)
   ├─ 세션 폐기 여부와 계정 확인
   ├─ 계정 필수 동의 확인
-  ├─ 면회 소유권·보호자 평가 제출 확인
+  ├─ 면회 소유권과 보호자 평가 제출 확인
   ├─ WAV/PCM 16-bit/16kHz/mono 검증
   ├─ 파일 크기와 SHA-256 계산
   ├─ 비공개 S3 업로드
@@ -57,6 +78,10 @@ Flutter
 
 API 요청은 S3 업로드와 작업 저장까지만 기다린다. GPU 처리 중에는 Flutter의 요청
 연결을 유지하지 않는다. BE worker와 AI 서버 사이는 기존 동기 HTTP 계약을 재사용한다.
+
+위 그림의 "본문을 읽기 전" 단계는 #278(2026-11-09 develop 병합)에서 생겼고 11/9 배포부터 운영에
+있다. 그 전 운영(develop `9c2b8276`)에는 요청 본문 바이트 상한이 없었고, 파일 크기는 본문을
+다 받은 뒤 라우트 안에서 검사했다(#278 PR 설명).
 
 ## 3. 상태 전이
 
@@ -111,6 +136,13 @@ worker가 전사문을 지우고 작업을 `failed`(`TRANSCRIPT_EXPIRED`)로 바
 없어졌거나, 작업이 `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`,
 전사가 지워졌거나 기한이 지났으면 `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다. 이미 보낸
 리포트 호출은 되돌리지 못한다.
+
+현재 구현 (2026-11-09 기준): 위 두 문단의 인계 임대와 이어받기(#280), 남은 전사 기한 확인과
+변경 제안 호출 직전 확인(#279)은 11/9 배포(run 42568179490)부터 운영에 있다. 그 전 운영(develop
+`9c2b8276`)의 worker는 `sttCompleted`에서 리포트 재요청 작업만 가져갔으므로, 전사 저장 뒤 리포트
+시작 전에 멈춘 작업은 STT 완료 후 24시간이 지나 `TRANSCRIPT_EXPIRED`로 끝날 때까지
+`sttCompleted`에 남았다. 리포트 생성도 전사 기한 전이기만 하면 시작했다. 배포 전부터 멈춰 있던
+작업에 필요한 한 번의 조치는 [수동 복구](speech-recovery.md#적용과-되돌리기)에 적었다.
 
 ## 4. 공개 API
 
@@ -196,14 +228,14 @@ Content-Type: application/json
 }
 ```
 
-BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검증한다. AI 오류 본문은
+BE는 성공 응답 스키마와, 요청과 응답의 `analysisId`가 같은지 검증한다. AI 오류 본문은
 앱에 그대로 노출하거나 로그에 기록하지 않는다.
 
 ## 6. 주요 구현 파일
 
 | 파일 | 역할 |
 | --- | --- |
-| `app/api/routes/speech_analyses.py` | multipart 제출 및 상태 조회 API |
+| `app/api/routes/speech_analyses.py` | multipart 제출, 상태 조회와 실패 분석 재요청 API |
 | `app/services/audio_validation.py` | 크기, SHA-256, WAV 규격과 음성 데이터 누락 검사 |
 | `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
@@ -283,7 +315,7 @@ AWS 자격증명은 실행 환경의 IAM 역할 또는 표준 AWS SDK 자격증�
 - 퍼블릭 액세스 차단
 - 객체 ACL 비공개
 - 서버 측 암호화 적용
-- BE 역할에 필요한 버킷 및 접두사 범위의 업로드·조회 URL 발급·삭제 권한만 부여
+- BE 역할에는 필요한 버킷과 접두사 범위의 업로드, 조회 URL 발급, 삭제 권한만 부여
 - `temporary/speech/` 객체의 `data_expires_at` 기한 삭제와 실패 대기열 실행을 별도 운영
 - Lifecycle은 누락 방지용 보조 규칙. 일 단위 만료만으로 업로드 후 24시간 이내 삭제를 보장하지 않음
 - 정상 처리에서는 Lifecycle을 기다리지 않고 STT 응답 직후 삭제
@@ -377,11 +409,11 @@ uv run alembic upgrade head
 
 ### 10.2 AI 서버 실행
 
-`feature/ai-stt-pipeline`의 AI 서버를 별도 작업 디렉터리 또는 장비에서 실행한다. AI
+저장소의 `stt-server/`(처음 작성할 때는 `feature/ai-stt-pipeline` 브랜치)를 별도 작업 디렉터리 또는 장비에서 실행한다. AI
 서버에는 모델, GPU 환경, 허용 S3 호스트와 최대 음성 크기 설정이 필요하다.
 
-현재 AI 구현의 Whisper 실행 장치는 CUDA로 고정되어 있다. GPU가 없는 BE 개발 PC에 AI
-브랜치를 체크아웃하고 `uv sync`하는 것만으로는 실제 STT를 실행할 수 없다. 실제 통합
+현재 AI 구현의 Whisper 실행 장치는 CUDA로 고정되어 있다. GPU가 없는 BE 개발 PC에서
+`stt-server/`를 `uv sync`하는 것만으로는 실제 STT를 실행할 수 없다. 실제 통합
 테스트에서는 AI 담당자가 GPU 장비에서 서버를 실행하고 BE가 접근할 수 있는 GPU 서버의 Tailscale 기본 주소를
 공유한다. 원격 GPU 서버를 사용할 때 BE 개발 PC에는 AI 의존성을 설치할 필요가 없다.
 
@@ -478,8 +510,12 @@ worker는 작업 하나가 끝나거나 실패할 때 `speech_analysis_finished`
 
 ### 11.1 테스트 사전 데이터
 
-계정은 로그인 API가 PostgreSQL에 만들지만 면회 회차(5-1)와 보호자 평가(6-1) API는 아직
-없다. 따라서 실제 API 통합 테스트에는 다음 조건을 만족하는 합성 개발 데이터가 필요하다.
+처음 작성할 때(9월)는 면회 회차(5-1)와 보호자 평가(6-1) API가 없어 아래 행을 직접 만들어야
+했다. 지금은 두 API가 있으므로 합성 개발 계정으로 로그인한 뒤 프로필 생성, 카드 생성(4-1),
+회차 생성(`POST /api/v1/visit-sessions`), 평가 제출(`POST /api/v1/visit-sessions/{sessionId}/evaluation`)
+순서로 API만으로 준비한다. 같은 순서를 `scripts/run_app_server_e2e.py`(#258, PR마다 실행하는
+Product tests의 E2E 작업)와 `scripts/verify_api_cycle.py`([API 연결 검사](api-cycle-runner.md))가 쓴다.
+API로 준비하면 다음 조건이 채워진다.
 
 - 합성 개발 계정으로 로그인해 만든 `users` 행과 동의 이력
 - 해당 사용자의 `profiles` 행
@@ -487,8 +523,8 @@ worker는 작업 하나가 끝나거나 실패할 때 `speech_analysis_finished`
 - 보호자 평가를 마친 회차: `evaluated_at`, `evaluation_satisfaction`,
   `evaluation_reaction`이 채워짐
 
-실제 사용자의 식별자나 면회 자료를 복사해서 테스트 데이터를 만들지 않는다. 면회 회차와
-평가 API가 완성되기 전까지는 합성 개발 계정과 명시적인 테스트 fixture만 사용한다.
+실제 사용자의 식별자나 면회 자료를 복사해서 테스트 데이터를 만들지 않는다. 합성 개발 계정과
+명시적인 테스트 fixture만 사용한다.
 
 ### 11.2 합성 WAV 만들기
 
@@ -608,7 +644,7 @@ error_code = null
 | 인증 없음 | 401 `UNAUTHENTICATED`, 본문을 읽기 전에 거절 |
 | 다른 계정의 면회 | 404 `VISIT_SESSION_NOT_FOUND` |
 | 보호자 평가 전 | 409 `EVALUATION_REQUIRED`, 업로드 없음 |
-| 접수 후 실패한 면회를 다시 제출 | 409 `ANALYSIS_ALREADY_FAILED` |
+| 접수 후 실패한 면회를 다시 제출 | 전사가 남아 있으면 409 `REPORT_RETRY_AVAILABLE`(녹음 대신 재요청 API 사용). 전사가 없으면 새 작업으로 접수(202). 같은 실패 작업 ID로 한 재요청도 실패한 뒤 다시 재요청하면 409 `ANALYSIS_ALREADY_FAILED`(5-4에서 최신 ID 확인, #213) |
 | S3 업로드 실패 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함, 재제출 가능 |
 | 업로드가 끝나기 전에 업로드 임대 만료나 계정, 프로필 삭제로 작업 행이 지워짐 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함. 올라간 원본 키는 행이 없어도 삭제 대기열에 기록 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
@@ -630,6 +666,12 @@ error_code = null
 | 리포트 호출과 변경 제안 호출 사이에 계정, 프로필이나 회차 삭제 | 변경 제안 호출 안 함, 저장 없음. 작업 행은 연쇄 삭제됨 |
 | 리포트 호출과 변경 제안 호출 사이에 작업 종료나 임대 만료 | 변경 제안 호출 안 함, 저장 없음, `WORKER_LEASE_EXPIRED`(먼저 남은 실패 코드는 유지) |
 | 리포트 호출과 변경 제안 호출 사이에 전사 기한 경과 | 변경 제안 호출 안 함, 저장 없음, 전사문 삭제, 작업 `failed`, `TRANSCRIPT_EXPIRED` |
+
+위 표에서 크기 상한 초과 줄의 "끝까지 받지 않음"과 인증 없음 줄의 "본문을 읽기 전에 거절"(#278),
+전사 저장 뒤 리포트 시작 전 worker 중단 줄과 그 아래 줄(#280), 남은 전사 기한이 생성 단계 임대
+시간보다 짧은 `sttCompleted` 작업 줄과 리포트 호출과 변경 제안 호출 사이의 세 줄(#279), 업로드가
+끝나기 전에 작업 행이 지워진 줄(#283)은 2026-11-09 develop에 병합됐고 11/9 배포(run 42568179490)부터
+운영에 있다.
 
 오류 응답과 로그에서 WAV 내용, 전사문, Presigned URL, 객체 키, 인증 토큰과 AI 오류
 본문이 노출되지 않는지도 함께 확인한다.
@@ -656,16 +698,26 @@ accessToken         → Authorization Bearer
 ## 14. 현재 제한과 후속 작업
 
 - ADR-008은 아직 `proposed`이며 FE, AI, PM의 공동 확인이 남아 있다.
-- 면회 회차 생성(5-1)과 보호자 평가(6-1) API가 아직 없다.
-- 실제 S3 버킷, IAM과 Lifecycle은 저장소 밖의 운영 환경에서 구성해야 한다.
-- AI 서버 브랜치와 실제 GPU 환경의 통합 실행은 별도로 확인해야 한다.
+- 면회 회차 생성(5-1)과 보호자 평가(6-1) API는 처음 작성할 때 없었고 지금은 있다(11.1절).
+- 실제 S3 버킷, IAM과 Lifecycle은 저장소 밖의 운영 환경에서 구성한다. 운영에서는 버킷과 역할이
+  구성돼 녹음 업로드부터 리포트까지 동작했다([11/8 안정성 시험](stability-test-20261108.md)).
+  S3 Lifecycle 설정은 11/6 점검 때 읽기 권한이 없어 확인하지 못했다(저장소 밖 팀 운영 배포 기록).
+- 운영 설정은 기본 GPU 서버를 먼저 부르고 연결이 안 되면 ck 예비 서버로 한 번 전환한다
+  ([STT 운영 절차](stt-operations.md)). 11/5 배포 확인
+  ([#187 기록](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/187#issuecomment-6652039046))과
+  11/8 시험([안정성 시험](stability-test-20261108.md)의 "한계") 모두 기본 서버에 연결되지 않아
+  예비 서버로 처리됐다.
 - 독립 실행 가능한 Mock AI HTTP 서버는 없으며 테스트의 `FakeAiServer`는 pytest에서만
   사용한다.
 - worker가 멈춘 작업은 임대가 만료되면 정리한다. 업로드 중이던 작업은 지워 다시 제출할
   수 있게 하고, 처리 중이던 작업은 `WORKER_LEASE_EXPIRED`로 실패시킨다. 전사 저장 뒤 리포트
-  시작 전에 멈춘 작업만 인계 임대가 끝난 뒤 리포트 생성을 이어받는다(3절). 실패한 작업의
-  자동 재시도와 취소는 없다. 리포트 생성에 실패한 작업은 전사가 남아 있으면 사용자가 리포트만
-  다시 요청한다([분석 복구](speech-recovery.md)).
+  시작 전에 멈춘 작업만 인계 임대가 끝난 뒤 리포트 생성을 이어받는다(3절, #280). 실패한 작업의
+  자동 재시도와 취소는 없다. 실패한 회차는 사용자가 다시 요청한다(#213,
+  `POST /api/v1/speech-analyses/{analysisId}/retry`, [분석 복구](speech-recovery.md)). 전사가
+  남아 있으면 리포트만 다시 만들며, 이 재요청은 회차당 3회(`SAEROK_REPORT_RETRIES_PER_SESSION`)까지다
+  (#285). develop 앱은 홈의 실패 안내("눌러서 분석 다시 요청하기")에서
+  이 API를 부른다(#213). 앱 배포는 BE 배포와 별개라 그 변경이 든 앱 빌드가 설치돼야 사용자에게
+  보인다.
 - 기본 worker는 STT 뒤 리포트까지 만든다. `--stt-only`(development/test)는 `sttCompleted`에서
   멈춘다. 리포트 생성 제한 시간이 지난 뒤에도 이미 시작한 ML API 호출 하나는 생성 함수 쪽에서
   끊을 수 없어 끝날 때까지 남는다(결과는 저장하지 않음). 끊으려면 `ai/` 생성 함수가 마감을
@@ -673,9 +725,11 @@ accessToken         → Authorization Bearer
 - 전사문은 API 명세 8-1에 따라 리포트 생성을 다시 시도할 때 STT를 반복하지 않도록
   작업에 임시 저장한다. 리포트를 저장하면 지우고, 늦어도 STT 완료 후 24시간이 지나면
   worker가 매 주기에 확인해 지운다. 리포트 생성은 남은 기한이 생성 단계 임대 시간 이상일
-  때만 시작하고, 변경 제안 호출 직전에 작업과 전사가 남아 있는지 다시 확인한다(3절).
-- 앱 재실행 후 홈 타일 전체를 복구할 면회 목록 API는 별도 기능이다. 현재는 앱이
-  `analysisId`를 알고 있을 때 단건 상태 조회가 가능하다.
+  때만 시작하고, 변경 제안 호출 직전에 작업과 전사가 남아 있는지 다시 확인한다(3절, #279).
+- 처음 작성할 때는 면회 목록 API가 없어 앱이 `analysisId`를 알고 있을 때만 단건 상태 조회가
+  가능했다. 지금은 회차 목록 API 5-4(`GET /api/v1/profiles/{profileId}/visit-sessions`)가 회차마다
+  `sessionStatus`와 `analysisId`를 돌려주므로, 앱을 다시 실행해도 서버 기록으로 최근 회차의
+  상태를 다시 읽는다(`report_api.dart`의 `latestSession`).
 
 이 제한들은 STT 연결 성공을 리포트 완성으로 오인하지 않기 위한 경계다. 확인되지 않은
 전사나 리포트를 정상 결과처럼 표시하는 대체 경로를 추가하지 않는다.

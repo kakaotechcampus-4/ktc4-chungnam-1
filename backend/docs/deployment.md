@@ -1,6 +1,6 @@
 # 컨테이너 실행과 개발 서버 배포
 
-[Dockerfile](../Dockerfile)과 [compose.yml](../compose.yml)로 API, worker와 PostgreSQL을 실행한다. 개발 서버는 develop에 병합된 코드만 올리며 합성 데이터와 개발용 계정으로만 쓴다. 이 문서는 개발 서버의 실행 절차이며 운영 배포 구조를 확정하지 않는다. 외부 공개 전에 필요한 결정은 [아직 정하지 않은 것](#아직-정하지-않은-것)에 둔다.
+[Dockerfile](../Dockerfile)과 [compose.yml](../compose.yml)로 API, worker와 PostgreSQL을 실행한다. 아래 "EC2 개발 서버"의 구성(compose의 `db`, `caddy`와 worker)을 쓰는 EC2 한 대가 지금의 운영 서버다. 이 문서는 처음 설정과 workflow 밖 서버의 실행 절차다. 이 문서를 처음 쓴 10/5에는 개발 서버를 develop에 병합된 코드만 올리고 합성 데이터와 개발용 계정으로만 쓰는 서버로 두었다. 운영 서버는 #256(11/7 병합) 이후 [승인 배포 workflow](../../docs/deploy-workflows.md)로만 갱신하며, 아래 [갱신](#갱신)의 수동 갱신 명령을 운영 서버에 쓰지 않는다. Deploy가 교체하지 않는 caddy를 Caddyfile이 바뀐 배포 뒤 다시 만드는 일만 예외다. 외부 공개 전에 필요한 결정은 [아직 정하지 않은 것](#아직-정하지-않은-것)에 둔다.
 
 저장소는 공개 저장소다. 서버 주소, 인스턴스 ID, 키 파일과 `.env` 값을 이 문서, 이슈와 PR에 남기지 않는다.
 
@@ -14,13 +14,14 @@
 | --- | --- | --- |
 | `api` | 기본 | FastAPI. 호스트의 `127.0.0.1:8000`에만 열린다. 개발 서버는 프로세스 하나로 띄운다. 세션 폐기 기록은 DB에 둔다 |
 | `card-worker` | 기본 | 카드 생성(4-1) worker. `SAEROK_ML_API_KEY`와 DB 연결 설정이 필요하며, 설정이 없으면 시작하지 않는다. 카드 생성 요청의 실제 처리는 이 worker가 맡는다 |
-| `speech-worker` | `--profile workers` | 음성 STT worker. Tailscale STT 주소·접근 범위·AWS 인증을 확인한 뒤 켠다 |
+| `speech-worker` | `--profile workers` | 음성 STT worker. Tailscale STT 주소, 접근 범위와 AWS 인증을 확인한 뒤 켠다 |
+| `photo-worker` | `--profile workers` | 프로필 사진 AI 설명 worker. AI 이미지 분석에 동의한 계정의 사진만 처리한다([사진 분석](photo-analysis.md)). DB, 사진 버킷과 `SAEROK_ML_API_KEY`가 없으면 시작하지 않는다 |
 | `db` | `--profile local-db` | PostgreSQL 17. 외부 DB(RDS 등)를 쓰면 켜지 않는다. 데이터는 `postgres-data` 볼륨에 남는다 |
-| `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다. 본문 상한 514MiB를 둔다. 정상 설정에서는 API의 경로별 상한이 먼저 걸린다([요청 본문 크기 상한](../README.md#요청-본문-크기-상한)) |
+| `caddy` | `--profile https` | 개발 서버의 HTTPS 앞단([Caddyfile](../Caddyfile)). 인증서를 자동으로 받고 갱신하며 요청을 `api`로 넘긴다. 본문 상한 514MiB를 둔다. 정상 설정에서는 API의 경로별 상한이 먼저 걸린다([요청 본문 크기 상한](../README.md#요청-본문-크기-상한)). 두 상한은 #278(11/9 병합)로 들어갔다. 현재 구현 (2026-11-09 기준): API의 경로별 상한은 11/9 배포(develop `59190ba7`, Deploy run 42568179490)로 운영에 적용됐다. caddy의 바깥 상한은 caddy를 다시 만들어야 적용되는데, 이 배포에서 caddy는 교체되지 않았고 그 뒤 다시 만든 기록이 없다(아래 [갱신](#갱신)). 그 전 운영(develop `9c2b8276`)에서는 본문을 끝까지 받은 뒤 라우트의 파일 크기 검사(`validate_image`, `validate_visit_audio`)가 413으로 거절했다 |
 
 이미지에는 `.env`를 넣지 않는다([.dockerignore](../.dockerignore)). 컨테이너는 `backend/.env`의 값을 환경 변수로 받는다.
 
-이미지에는 카드 생성 패키지(`ai/`의 생성 기능 셋과 `common`)도 `/ai`에 들어간다. compose가 `additional_contexts`로 `../ai`를 넘기므로 `docker build`를 직접 쓸 때는 `--build-context ai=../ai`를 붙인다.
+이미지에는 카드 생성과 사진 분석 패키지(`ai/`의 생성 기능 셋, `photo_analysis`와 `common`)도 `/ai`에 들어간다. compose가 `additional_contexts`로 `../ai`를 넘기므로 `docker build`를 직접 쓸 때는 `--build-context ai=../ai`를 붙인다.
 
 카드 생성 요청을 worker가 가져가지 않은 채 기본 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)가 지났고 같은 시간 동안 worker가 다른 작업도 가져가지 않았으면, 다음 생성 요청(4-1)이나 상태 조회(4-2)에서 `failed`와 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 가져간 시각은 `card_sets.claimed_at`에 남는다. 그 시간 안에 가져간 작업이나 임대가 남은 작업이 있으면 worker가 다른 작업을 처리하는 중으로 보고 기다리는 작업을 `running`으로 둔다. 작업 하나가 임대 시간(`SAEROK_CARD_GENERATION_LEASE_SECONDS`, 기본 300초)까지 걸릴 수 있어 이 값은 임대 시간보다 길게 둔다. worker가 가져간 뒤 임대가 만료된 작업은 같은 요청이나 조회, 또는 worker의 다음 정리에서 `WORKER_LEASE_EXPIRED`로 처리한다. 생성 요청과 상태 조회가 없고 worker도 실행되지 않으면 DB 상태는 바로 바뀌지 않는다. 자동 재시도가 아니라 앱에서 다시 생성을 요청할 수 있도록 실패 상태를 알리는 처리다.
 
@@ -63,7 +64,7 @@ uv run pytest
    | 80 | 전체 | 인증서 발급과 갱신 확인. 확인 요청의 출발지 IP는 정해져 있지 않다 |
    | 443 | 전체 또는 팀원 IP | 앱의 HTTPS 요청 |
 
-4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다. 컨테이너는 인스턴스 메타데이터(IMDSv2)까지 네트워크를 한 단계 더 거치므로, 인스턴스의 메타데이터 응답 홉 제한이 1이면 `api`와 `speech-worker`가 역할 자격증명을 받지 못해 S3 업로드가 실패한다. 인스턴스 설정의 메타데이터 옵션에서 홉 제한을 2로 둔다(`aws ec2 modify-instance-metadata-options --instance-id <인스턴스 ID> --http-put-response-hop-limit 2 --http-endpoint enabled`).
+4. S3를 쓸 때는 액세스 키 대신 두 버킷에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 허용한 IAM 역할을 인스턴스에 붙인다. 코드는 boto3의 기본 자격증명 조회를 쓰므로 키 설정이 필요 없다. 컨테이너는 인스턴스 메타데이터(IMDSv2)까지 네트워크를 한 단계 더 거치므로, 인스턴스의 메타데이터 응답 홉 제한이 1이면 `api`, `speech-worker`와 `photo-worker`가 역할 자격증명을 받지 못해 S3 업로드와 사진 조회 주소 발급이 실패한다. 인스턴스 설정의 메타데이터 옵션에서 홉 제한을 2로 둔다(`aws ec2 modify-instance-metadata-options --instance-id <인스턴스 ID> --http-put-response-hop-limit 2 --http-endpoint enabled`). 삭제 실행기([S3 삭제 대기열 실행](storage-deletion.md))를 운영에서 돌리려면 해당 버킷의 `GetBucketVersioning`과 제한된 `ListBucket`이 더 필요하고, `storage_audit --s3`는 `GetBucketLifecycleConfiguration`도 읽는다(11/6 운영 실행에서 이 권한이 없어 실패했다, [S3 원본과 DB 참조 점검](storage-audit.md)).
 5. 저장소를 받고 develop을 쓴다.
 
    ```bash
@@ -88,8 +89,8 @@ uv run pytest
    | `SAEROK_PUBLIC_HOST` | Elastic IP의 점을 하이픈으로 바꾼 `<IP>.sslip.io`. 예: `203.0.113.10`이면 `203-0-113-10.sslip.io` |
    | `SAEROK_GOOGLE_CLIENT_IDS` | FE가 쓰는 클라이언트 ID([README](../README.md)의 `aud` 설명). 앱의 `SAEROK_GOOGLE_SERVER_CLIENT_ID`와 같아야 한다 |
    | `SAEROK_AI_SERVER_URL` | 컨테이너 안의 `127.0.0.1`은 컨테이너 자신이다. GPU 서버의 Tailscale 주소인 `http://<GPU 서버의 Tailscale IP>:8001`을 넣는다 |
-   | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다 |
-   | `SAEROK_ML_API_KEY` | 카드 생성에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`가 시작하지 않는다 |
+   | S3 버킷 | 비워 두면 음성 제출과 사진 업로드를 거절한다. 사진 버킷이 없으면 `photo-worker`가 시작하지 않는다 |
+   | `SAEROK_ML_API_KEY` | 카드 생성, 리포트 생성과 사진 분석에 쓰는 ML API 키. 비워 두면 4-1을 거절하고 `card-worker`, `speech-worker`와 `photo-worker`가 시작하지 않는다 |
    | `SAEROK_FCM_KEY_FILE`, `SAEROK_FCM_CREDENTIALS_PATH` | 리포트 완료 푸시. 아래 "리포트 완료 푸시 키"를 따른다. 둘 다 비우면 푸시 없이 리포트만 만든다 |
 
    **리포트 완료 푸시 키**: Firebase 콘솔 → 프로젝트 설정 → 서비스 계정에서 받은 키 파일을 저장소 밖(예: `/opt/saerok/secrets/fcm-service-account.json`)에 두고 `chmod 600`으로 다른 사용자가 읽지 못하게 한다. `SAEROK_FCM_KEY_FILE`에 그 호스트 경로를, `SAEROK_FCM_CREDENTIALS_PATH`에 `/run/secrets/fcm-service-account.json`을 넣는다. compose가 키를 `speech-worker`에만 읽기 전용으로 붙이며 이미지에는 넣지 않는다. 경로를 넣었는데 키를 읽지 못하면 `speech-worker`가 시작하지 않는다. 키 경로와 값은 이 문서, 이슈와 PR에 남기지 않는다.
@@ -107,30 +108,34 @@ uv run pytest
 
    인증서 발급 결과는 `docker compose logs caddy`로 본다. 인스턴스 밖에서 `https://<SAEROK_PUBLIC_HOST>/health/live`가 응답하면 끝이다.
 
+   음성과 사진 worker는 STT 주소, 사진 버킷과 ML API 설정을 확인한 뒤 `docker compose --profile workers up -d speech-worker photo-worker`로 켠다.
+
 ### 갱신
 
-develop에 병합된 뒤 실행한다. migration은 이 단계에서만 적용한다.
+운영 서버는 손으로 갱신하지 않는다(Caddyfile이 바뀐 배포 뒤 caddy를 다시 만드는 일만 예외, 아래). #256(11/7 병합) 이후에는 Release build가 성공한 SHA를 [승인 배포 workflow](../../docs/deploy-workflows.md)(Deploy)로 올린다. Deploy는 사전 점검, DB 백업과 격리 복원 검사, worker 정지, 빌드, migration, api와 worker 셋(card-worker, speech-worker, photo-worker) 교체, 사후 점검과 배포 기록까지 한다. STT 서버는 Deploy가 배포하지 않는다. 운영 서버 저장소는 11/7부터 커밋을 직접 가리키는 detached HEAD라 아래의 `git pull`이 실패하고, 손으로 갱신하면 workflow 기록과 서버 상태가 어긋난다. 11/9 Deploy의 사전 점검에서는 서버 저장소가 workflow 밖에서 브랜치로 체크아웃돼 있었고(실행 중인 이미지와 DB revision은 그대로), 그 Deploy의 4단계가 다시 배포 SHA의 detached HEAD로 돌렸다. 실제 배포 기록은 [배포 workflow 안내의 실제 실행 기록](../../docs/deploy-workflows.md#실제-실행-기록-2026-11-09-기준)에 둔다. 이 문서를 처음 쓸 때는 갱신 방법이 아래 수동 절차뿐이었고, GitHub Actions로 옮길 때 카테캠 운영진이 제공하는 `.github/workflows/`를 먼저 확인하기로 했다.
+
+아래 수동 절차는 workflow를 쓰지 않고 브랜치를 체크아웃해 둔 다른 서버에서만 쓴다. develop에 병합된 뒤 실행한다. migration은 이 단계에서만 적용한다. 음성이나 사진 worker를 켜지 않는 서버는 해당 이름을 뺀다.
 
 ```bash
 git pull
 docker compose build
 docker compose run --rm api alembic upgrade head
-docker compose up -d api card-worker
+docker compose --profile workers up -d api card-worker speech-worker photo-worker
 ```
 
-[Caddyfile](../Caddyfile)이 바뀐 갱신은 caddy도 다시 만든다. 실행 중인 caddy는 시작할 때 읽은 설정을 계속 쓰고, 배포 workflow도 caddy를 교체하지 않는다. 인증서는 `caddy-data` 볼륨에 남아 다시 발급받지 않는다.
+[Caddyfile](../Caddyfile)이 바뀐 갱신은 caddy도 다시 만든다. 실행 중인 caddy는 시작할 때 읽은 설정을 계속 쓰고, 배포 workflow도 caddy를 교체하지 않는다. 인증서는 `caddy-data` 볼륨에 남아 다시 발급받지 않는다. 운영 서버에서는 Caddyfile이 바뀐 SHA를 Deploy로 올린 뒤 아래 명령만 따로 실행한다. compose가 서버 체크아웃의 Caddyfile을 붙이므로 Deploy 전에 실행하면 이전 설정을 다시 읽는다. #278의 Caddyfile 변경은 11/9 14:42 KST Deploy(run 42568179490)로 서버 체크아웃에 들어왔다. 그 실행의 교체 단계 출력에서 caddy는 이전 컨테이너 그대로였고, 2026-11-09 기준 팀 운영 기록에 그 뒤 caddy를 다시 만든 기록은 없다. 다시 만들지 않았다면 아래 명령을 한 번 실행한다.
 
 ```bash
 docker compose --profile https up -d --no-deps --force-recreate caddy
 ```
 
-상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
+상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker speech-worker photo-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
 
 ### 카드 생성 기록 정리
 
 migration `685f243e9f1f`를 처음 적용하는 배포에만 해당한다. 이 migration은 카드 생성 기록(`card_sets.generation_log`)의 기존 행에서 글을 지우고 ID만 남긴다(PM 결정 2026-11-08). 열과 제약은 바꾸지 않아 이전 코드가 실행 중이어도 적용할 수 있다. 다만 migration을 적용한 뒤 api와 card-worker를 새 이미지로 다시 띄우기 전까지, 이전 card-worker가 끝낸 작업의 기록에는 이야기 제목과 내용, 사진 설명 같은 글이 남는다. 이전 api는 글이 든 기록을 쓰지 않는다.
 
-운영 서버의 승인 배포 workflow(`.github/workflows/deploy.yml`)는 migration 전에 worker를 멈추므로 이 틈이 생기지 않는다. 위 "갱신"처럼 직접 배포할 때는 card-worker를 먼저 멈춘다. worker는 처리 중인 작업을 마치고 끝난다(아래 "worker 종료와 유예 시간"). 멈춘 동안 들어온 생성 요청은 새 worker가 가져간다. 다만 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)를 넘게 기다린 요청은 `CARD_GENERATION_NOT_STARTED`로 실패하고 앱에서 다시 요청한다.
+운영 서버의 승인 배포 workflow(`.github/workflows/deploy.yml`)는 migration 전에 worker를 멈추므로 이 틈이 생기지 않는다. 운영에는 11/9 Deploy(run 42568179490)가 이 순서로 적용했다. 3단계에서 card-worker, speech-worker, photo-worker를 멈춘 뒤 5단계에서 `e7c3a1f94d20 → 202cdc671d82 → 685f243e9f1f`를 적용했다. 위 "갱신"처럼 직접 배포할 때는 card-worker를 먼저 멈춘다. worker는 처리 중인 작업을 마치고 끝난다(아래 "worker 종료와 유예 시간"). 멈춘 동안 들어온 생성 요청은 새 worker가 가져간다. 다만 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)를 넘게 기다린 요청은 `CARD_GENERATION_NOT_STARTED`로 실패하고 앱에서 다시 요청한다.
 
 ```bash
 git pull
@@ -156,19 +161,19 @@ docker compose run --rm api alembic upgrade head
 
 ### 이야기 후보 분류와 아픈 기억 표시
 
-migration `9c4e2b7a1f63`(2026-11-09 PM 결정)은 `life_fact_proposals.story_category`, `life_fact_proposals.sensitive`, `conversation_cards.sensitive`를 더하고 기존 행을 `other`, `false`로 채운다. 열만 더하므로 이전 코드가 실행 중이어도 적용할 수 있고, 이전 코드가 쓰는 행도 기본값으로 들어간다. 새 코드는 세 열을 읽고 쓰므로 migration을 먼저 적용한 뒤 api, speech-worker, card-worker를 새 이미지로 띄운다(위 "갱신" 순서와 같다).
+migration `9c4e2b7a1f63`(2026-11-09 PM 결정)은 `life_fact_proposals.story_category`, `life_fact_proposals.sensitive`, `conversation_cards.sensitive`를 더하고 기존 행을 `other`, `false`로 채운다. 열만 더하므로 이전 코드가 실행 중이어도 적용할 수 있고, 이전 코드가 쓰는 행도 기본값으로 들어간다. 새 코드는 세 열을 읽고 쓰므로 migration을 먼저 적용한 뒤 api, speech-worker, card-worker를 새 이미지로 띄운다(위 "갱신" 순서와 같다). 운영에는 11/10 01:41 KST Deploy(run 42656825849, develop `83695093`)로 적용했고, 배포 뒤 서버의 alembic revision은 `9c4e2b7a1f63`이다.
 
-- 카드의 아픈 경험 표시는 카드 생성 2판부터 채워진다. 기본값은 2이며, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION=1`이 적혀 있으면 표시가 늘 `false`다. 값을 바꾸면 이미 만든 묶음은 그대로이고 다음 4-1부터 2판으로 만든다.
+- 카드의 아픈 경험 표시는 카드 생성 2판부터 채워진다. 기본값은 2이며, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION=1`이 적혀 있으면 표시가 늘 `false`다. 값을 바꾸면 이미 만든 묶음은 그대로이고 다음 4-1부터 2판으로 만든다. 11/10 배포 때 확인한 운영 `.env`에는 이 값이 없어 기본값 2가 쓰이고, 운영 카드는 2판이다.
 
 ### worker 종료와 유예 시간
 
 `docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.
 
-- 기본 유예 시간은 카드 360초, 녹음 1860초다. 카드 임대 300초와 저장 여유 60초, 녹음은 전사와 리포트에 각각 부여하는 임대 900초의 합과 여유 60초를 사용한다. 단일 녹음의 38초 실측을 모든 작업의 상한으로 사용하지 않는다.
-- `.env`의 `SAEROK_CARD_STOP_GRACE_SECONDS`, `SAEROK_SPEECH_STOP_GRACE_SECONDS`로 Compose 유예를 조정할 수 있다. 임대 설정이나 override를 바꿨다면 `python scripts/check_shutdown_budget.py --compose-file compose.yml`로 실제 합성 설정을 검사한다. 추가 override를 사용하면 같은 옵션으로 파일을 순서대로 모두 지정한다. 이 명령은 `docker compose config`만 읽고 컨테이너를 바꾸지 않는다. 비밀 값이 포함될 수 있는 config 원문은 출력하지 않는다.
+- 기본 유예 시간은 카드 360초, 녹음 1860초, 사진 180초다. 카드 임대 300초와 저장 여유 60초, 녹음은 전사와 리포트에 각각 부여하는 임대 900초의 합과 여유 60초를 사용한다. 사진은 한 장의 분석 제한 시간(기본 120초)보다 길게 둔다. 단일 녹음의 38초 실측을 모든 작업의 상한으로 사용하지 않는다.
+- `.env`의 `SAEROK_CARD_STOP_GRACE_SECONDS`, `SAEROK_SPEECH_STOP_GRACE_SECONDS`, `SAEROK_PHOTO_STOP_GRACE_SECONDS`로 Compose 유예를 조정할 수 있다. 임대 설정이나 override를 바꿨다면 `python scripts/check_shutdown_budget.py --compose-file compose.yml`로 실제 합성 설정을 검사한다. 이 검사는 카드와 녹음 worker만 보며 사진 worker는 보지 않는다. 추가 override를 사용하면 같은 옵션으로 파일을 순서대로 모두 지정한다. 이 명령은 `docker compose config`만 읽고 컨테이너를 바꾸지 않는다. 비밀 값이 포함될 수 있는 config 원문은 출력하지 않는다.
 - 유예 시간은 작업의 무조건 성공을 보장하지 않는다. 외부 호출이나 DB가 멈추거나 유예를 넘기면 여전히 강제 종료될 수 있다. API 접수를 차단하고 진행 중 작업이 끝났는지 확인한 뒤 교체한다. worker만 멈춰도 API는 새 작업을 받을 수 있다.
 - `docker compose stop -t`처럼 시간을 별도 지정하면 Compose 설정을 덮어쓴다. 배포 중 짧은 `-t`를 붙이지 않는다. 유예 안에 끝나지 않은 작업과 임대 만료는 별도 장애로 기록하며, 유예 시간 증가가 분석 재시도 기능을 구현한 것은 아니다.
-- 녹음 작업이 전사 저장 뒤 리포트 시작 전에 강제 종료되면 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`)가 끝난 뒤 다음 worker가 리포트 생성을 이어받는다. 그래서 재시작 직후에는 그 작업이 `sttCompleted`로 남아 있을 수 있다. 전사나 리포트 생성 도중 강제 종료된 작업은 임대가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다.
+- 녹음 작업이 전사 저장 뒤 리포트 시작 전에 강제 종료되면 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`)가 끝난 뒤 다음 worker가 리포트 생성을 이어받는다. 그래서 재시작 직후에는 그 작업이 `sttCompleted`로 남아 있을 수 있다. 남은 전사 기한이 임대 시간보다 짧으면 이어받지 않고 `TRANSCRIPT_EXPIRED`로 끝난다. 전사나 리포트 생성 도중 강제 종료된 작업은 임대가 끝난 뒤 `WORKER_LEASE_EXPIRED`로 실패한다. 이어받기(#280)와 남은 전사 기한 조건(#279)은 11/9 배포(develop `59190ba7`, Deploy run 42568179490)부터 운영에 있다. 그 전 운영(develop `9c2b8276`)에서는 이렇게 멈춘 작업이 전사 기한 24시간이 지나 `TRANSCRIPT_EXPIRED`가 될 때까지 `sttCompleted`로 남았다. #280 이전부터 멈춰 있던 작업은 인계 임대가 없어 이어받지 않으며, 그 정리 방법은 [배포 workflow 안내](../../docs/deploy-workflows.md#실제-실행-기록-2026-11-09-기준)에 둔다.
 - 기다리지 않고 바로 끝내야 하면 `docker compose kill <서비스>`를 쓴다. 로컬에서 직접 실행한 worker는 Ctrl+C를 두 번 누르면 바로 끝난다.
 
 ### 앱 연결
@@ -179,8 +184,8 @@ migration `9c4e2b7a1f63`(2026-11-09 PM 결정)은 `life_fact_proposals.story_cat
 
 ## 아직 정하지 않은 것
 
-- **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS이며, 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
+- **외부 공개.** 외부에서 접근할 수 있는 배포는 [ADR-004](../../docs/architecture/decisions/ADR-004-python-fastapi-reference-environment.md)의 재검토 조건이다. 지금의 sslip.io와 Caddy 구성은 개발 서버의 임시 HTTPS로 만든 것이고, 이 구성을 쓰는 EC2가 지금의 운영 서버다(문서 첫 단락). 공개 범위, 접근 제한과 정식 도메인 사용 여부는 개발 서버 ADR에서 정한다.
 - **sslip.io와 인증서 발급처.** sslip.io는 이름을 IP로 바꿔 주는 DNS만 제공하고, 요청과 응답은 거치지 않고 EC2로 바로 간다. 인증서 발급처는 호스트 이름만 받는다. 둘 다 외부 무료 서비스라 장애나 발급 한도의 영향을 받을 수 있으므로 최종 배포 주소로 쓸지는 따로 정한다.
-- **AI 서버 연결.** 현재 STT는 개인 GPU에 임시 연결한다([ADR-006의 현재 경로](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#개인-gpu와-tailscale-임시-연결-2026-10-31-보완)). EC2와 GPU 서버를 Tailscale 사설망에 연결하고, GPU는 자신의 Tailscale IP에 STT를 바인딩한다. BE의 `SAEROK_AI_SERVER_URL`을 `http://<GPU 서버의 Tailscale IP>:8001`로 설정한 뒤 API와 worker 컨테이너를 재생성한다. 현재 설명된 접근 범위는 관리자가 승인한 tailnet 기기이며 BE 한 대만 허용한 것으로 보고하지 않는다. 실제 Grants/ACL과 기존 공개 경로를 확인하고 이슈의 BE 전용 완료 조건과 조정 여부를 맞춘다. GPU 측 확인은 이문영, BE 호출 확인은 김민혁이 맡는다. worker의 AWS 인증을 확인한 뒤 BE 컨테이너에서 상태 확인과 합성 음성 POST를 검증하고, 정상·차단 결과와 적용 환경을 주소·인증값 없이 이슈에 남긴다. 이 문서 변경에서는 현재 경로의 정상 분석, 차단 동작과 처리 성능을 검증하지 않았다. 상세 확인 항목은 [STT 운영 안내](../../stt-server/README.md#개인-gpu와-tailscale-운영)를 따른다.
-- **DB 위치와 백업.** 인스턴스의 db 컨테이너와 RDS 중 무엇을 쓸지는 정하지 않았다. 지금 개발 서버의 데이터는 합성 데이터만 둔다. 운영 서버의 DB 백업은 [배포 workflow](../../docs/deploy-workflows.md#백업-파일-정리)의 백업 단계가 만들고, 2026-11-09 PM 결정에 따라 14일 보관한다. 지난 백업은 서버의 systemd timer(`ops/backup-prune/`)가 지우며, 설치와 확인은 [오래된 백업 정리](release-safety.md#오래된-백업-정리14일-보관)를 따른다.
-- **배포 자동화.** 지금은 위의 수동 절차다. GitHub Actions로 옮길 때 `.github/workflows/`는 카테캠 운영진이 제공하는 디렉터리이므로 먼저 확인한다.
+- **AI 서버 연결.** 현재 STT는 개인 GPU에 임시 연결한다([ADR-006의 현재 경로](../../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#개인-gpu와-tailscale-임시-연결-2026-10-31-보완)). EC2와 GPU 서버를 Tailscale 사설망에 연결하고, GPU는 자신의 Tailscale IP에 STT를 바인딩한다. BE의 `SAEROK_AI_SERVER_URL`을 `http://<GPU 서버의 Tailscale IP>:8001`로 설정한 뒤 API와 worker 컨테이너를 재생성한다. 현재 설명된 접근 범위는 관리자가 승인한 tailnet 기기이며 BE 한 대만 허용한 것으로 보고하지 않는다. 실제 Grants/ACL과 기존 공개 경로를 확인하고 이슈의 BE 전용 완료 조건과 조정 여부를 맞춘다. GPU 측 확인은 이문영, BE 호출 확인은 김민혁이 맡는다. worker의 AWS 인증을 확인한 뒤 BE 컨테이너에서 상태 확인과 합성 음성 POST를 검증하고, 정상과 차단 결과, 적용 환경을 주소와 인증값 없이 이슈에 남긴다. 이 문서 변경에서는 현재 경로의 정상 분석, 차단 동작과 처리 성능을 검증하지 않았다. 상세 확인 항목은 [STT 운영 안내](../../stt-server/README.md#개인-gpu와-tailscale-운영)를 따른다.
+  - 현재 구현 (2026-11-09 기준, 운영 배포 기록과 11/9 인계 메모): 기본 STT는 개인 GPU, 예비는 ck다. 11/5 운영 배포 때 기본 STT에 연결되지 않았고(#187의 11/5 운영 배포 기록), 11/8 안정성 시험 때도 접속되지 않아 예비 STT로 처리했다([11/8 안정성 시험](stability-test-20261108.md)). 그 사이 운영 배포 기록에는 기본 STT가 11/6 16:53에 다시 연결됐다가 같은 날 저녁 확인에서 끊기고, 11/7 점검에서 연결됐다가 11/8 배포 직후 다시 끊긴 기록이 있어 연결이 끊겼다 이어지기를 반복했다. 저장소 밖 팀 운영 기록에 따르면 11/9 기록 시점에는 기본 서버 연결이 끊겨 운영 분석은 ck로만 처리되고 있었다([STT 운영 절차](stt-operations.md)). #276(11/9 병합)의 전사 기본값 변경(VAD 켬, 앞 문장 조건 끔)은 11/9 ck 예비 서버에만 손으로 반영했고 기본 STT 서버는 아직 갱신하지 않았다. BE의 Deploy workflow는 STT 서버를 배포하지 않으므로 STT 변경은 서버마다 따로 반영한다.
+- **DB 위치와 백업.** 운영 서버는 compose의 `db` 컨테이너(PostgreSQL 17)를 쓰며, RDS로 옮길지는 정하지 않았다. 운영 DB 백업은 [배포 workflow](../../docs/deploy-workflows.md#백업-파일-정리)의 백업 단계가 check와 deploy 실행마다 만들고 격리 복원을 검사한다([배포 전 백업](release-safety.md#백업과-격리-복원-검사)). 2026-11-09 PM 결정에 따라 14일 보관한다. 지난 백업은 서버의 systemd timer(`ops/backup-prune/`, #287)가 지우며, 설치와 확인은 [오래된 백업 정리](release-safety.md#오래된-백업-정리14일-보관)를 따른다. Deploy는 이 timer를 설치하지 않고, 2026-11-09 기준 운영 서버에 설치한 기록이 없어 백업은 Deploy를 실행할 때마다 쌓인다. AWS 종료 전에 남은 백업을 지우는 절차와 계정 삭제 시 백업 처리는 [법률 검토의 배포 DB 백업 보관](../../docs/legal/README.md#배포-db-백업-보관)에 남아 있고, 실제 사용자 자료를 받기 전 조건도 같은 문서를 따른다.
