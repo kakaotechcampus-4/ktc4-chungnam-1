@@ -126,6 +126,34 @@ docker compose --profile https up -d --no-deps --force-recreate caddy
 
 상태는 `docker compose ps`, 로그는 `docker compose logs -f api card-worker`로 본다. 로그는 서비스마다 10MB 파일 3개까지만 남는다([compose.yml](../compose.yml)의 `x-logging`). `docker compose down -v`는 DB 볼륨까지 지운다.
 
+### 카드 생성 기록 정리
+
+migration `685f243e9f1f`를 처음 적용하는 배포에만 해당한다. 이 migration은 카드 생성 기록(`card_sets.generation_log`)의 기존 행에서 글을 지우고 ID만 남긴다(PM 결정 2026-11-08). 열과 제약은 바꾸지 않아 이전 코드가 실행 중이어도 적용할 수 있다. 다만 migration을 적용한 뒤 api와 card-worker를 새 이미지로 다시 띄우기 전까지, 이전 card-worker가 끝낸 작업의 기록에는 이야기 제목과 내용, 사진 설명 같은 글이 남는다. 이전 api는 글이 든 기록을 쓰지 않는다.
+
+운영 서버의 승인 배포 workflow(`.github/workflows/deploy.yml`)는 migration 전에 worker를 멈추므로 이 틈이 생기지 않는다. 위 "갱신"처럼 직접 배포할 때는 card-worker를 먼저 멈춘다. worker는 처리 중인 작업을 마치고 끝난다(아래 "worker 종료와 유예 시간"). 멈춘 동안 들어온 생성 요청은 새 worker가 가져간다. 다만 360초(`SAEROK_CARD_GENERATION_START_TIMEOUT_SECONDS`)를 넘게 기다린 요청은 `CARD_GENERATION_NOT_STARTED`로 실패하고 앱에서 다시 요청한다.
+
+```bash
+git pull
+docker compose build
+docker compose stop card-worker
+docker compose run --rm api alembic upgrade head
+docker compose up -d api card-worker
+```
+
+card-worker를 멈추지 않고 적용했다면, 새 이미지로 띄운 뒤 글이 남은 행을 센다(db 컨테이너를 쓸 때). 0이면 끝이다.
+
+```bash
+docker compose exec db psql -U saerok -d saerok -tAc "SELECT count(*) FROM card_sets WHERE generation_log->'input' ?| array['profileFacts','lifeFacts','photos','topics','visits','pastCards']"
+```
+
+0이 아니면 이 migration을 다시 적용한다. 이 migration의 downgrade는 데이터를 바꾸지 않으므로 upgrade가 글이 남은 행만 다시 고친다. `alembic current`가 `685f243e9f1f (head)`일 때만 쓴다. 뒤에 다른 migration이 붙은 뒤에는 쓰지 말고 BE 담당과 정한다.
+
+```bash
+docker compose run --rm api alembic current
+docker compose run --rm api alembic downgrade 685f243e9f1f-1
+docker compose run --rm api alembic upgrade head
+```
+
 ### worker 종료와 유예 시간
 
 `docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.

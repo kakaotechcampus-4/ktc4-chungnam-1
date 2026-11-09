@@ -10,6 +10,7 @@ import threading
 from uuid import UUID
 
 from photo_analysis import PhotoDescription
+from psycopg.types.json import Jsonb
 
 from app.core.database import connect
 from app.services.accounts import PostgresAccountRepository
@@ -20,7 +21,7 @@ from app.services.photo_analysis_pipeline import PhotoAnalysisProcessor
 from app.workers.base import Worker
 from tests.card_fixtures import completed_card_set, visit_with, with_db
 from tests.support import run
-from tests.test_card_generation_worker import fake_result
+from tests.test_card_generation_worker import _exclude, fake_result
 from tests.test_photo_analysis_pipeline import FreshSyntheticStorage, setup, worker
 from tests.test_photo_description import patch
 
@@ -344,3 +345,75 @@ def test_consenting_again_reanalyses_the_photo(migrated_database_url):
 
     row = _photo(api, photo)
     assert (row["analysis_status"], row["description"]) == ("completed", "다시 만든 합성 설명")
+
+
+def test_topic_based_only_on_a_withdrawn_ai_description_is_not_sent(migrated_database_url):
+    """AI 설명을 지운 사진(보호자 설명 없음)은 카드 입력에서 빠지므로, 근거가 그 사진뿐인 주제도
+    제외 여부와 상관없이 다음 카드 생성 입력에서 빠진다(근거가 사라진 주제 규칙, 2026-11-08과
+    2026-11-09 PM 결정). 저장된 주제는 그대로이며, 다시 동의해 분석이 끝나거나 보호자가 설명을
+    쓰면 사진과 함께 다시 들어간다."""
+    url = migrated_database_url
+    api, user, profile, photo = setup(url)
+    _analyse(url)
+
+    async def seed(connection):
+        # 제외한 주제의 근거 사진은 제외 규칙으로 입력에서 빠지므로 다른 주제와 겹치지 않게 따로 둔다.
+        other = await connection.execute(
+            "INSERT INTO photos (profile_id, s3_object_key, description, analysis_status, model,"
+            " prompt_version) VALUES (%s, %s, '다른 합성 AI 설명', 'completed', 'synthetic-model',"
+            " 'photo-1') RETURNING photo_id",
+            (profile, f"synthetic/{profile}/other.jpg"),
+        )
+        other_photo = str((await other.fetchone())["photo_id"])
+        set_id, _ = await completed_card_set(connection, UUID(profile))
+        await visit_with(connection, UUID(profile), set_id, evaluated=True)
+        cursor = await connection.execute(
+            "SELECT position, topic_id FROM conversation_cards WHERE set_id = %s", (set_id,)
+        )
+        topics = {row["position"]: row["topic_id"] for row in await cursor.fetchall()}
+        evidence = {
+            1: [{"photoId": photo}],  # 사진만 근거
+            2: [{"photoId": other_photo}],  # 사진만 근거, 보호자가 제외함
+            3: [{"photoId": photo}, {"profileField": "hobby"}],  # 세부 정보 칸도 근거
+        }
+        for position, items in evidence.items():
+            await connection.execute(
+                "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+                (Jsonb(items), topics[position]),
+            )
+        await _exclude(connection, UUID(profile), set_id, topics[2])
+        return other_photo, topics
+
+    other_photo, topics = with_db(url, seed)
+    every_topic = set(topics.values())
+
+    def sent_topics() -> set:
+        async def build(connection):
+            return await build_context(connection, UUID(profile))
+
+        return {topic.topic_id for topic in with_db(url, build).topics}
+
+    assert sent_topics() == every_topic
+
+    _withdraw(user)
+
+    assert _card_input_photos(url, profile) == []
+    assert sent_topics() == every_topic - {topics[1], topics[2]}
+    assert api.query(
+        "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topics[2],)
+    ) == [{"evidence": [{"photoId": other_photo}]}]
+
+    # 다시 동의해 분석이 끝나면 사진과 주제가 다시 들어간다.
+    granted = user.call("PATCH", "/auth/me/consents", json={"photoAnalysis": True})
+    assert granted.status_code == 200
+    _analyse(url, "다시 만든 합성 AI 설명")
+    _analyse(url, "다시 만든 합성 AI 설명")
+    assert sent_topics() == every_topic
+
+    # 보호자가 쓴 설명이 있으면 철회해도 사진이 입력에 남으므로 주제도 남는다.
+    for target in (photo, other_photo):
+        assert patch(user, target, "보호자가 쓴 합성 설명").status_code == 200
+    _withdraw(user)
+    # 제외한 주제의 근거 사진은 제외 규칙으로 늘 빠지지만, 남아 있으므로 그 주제는 넣는다.
+    assert _card_input_photos(url, profile) == [(photo, "보호자가 쓴 합성 설명")]
+    assert sent_topics() == every_topic

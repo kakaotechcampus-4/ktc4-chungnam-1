@@ -112,10 +112,25 @@ def test_card_generation_job_whose_lease_expired_fails(migrated_database_url):
     assert row["generation_log"] == {"input": None}
 
 
+# 처리 함수가 넘기는 context처럼 글이 든 입력. 기록에는 ID만 남는다(`reference_input`).
+_FACT_ID = "00000000-0000-4000-8000-000000000001"
+_SENT_WITH_TEXT = {
+    "ageRange": "80s",
+    "lifeFacts": [{"factId": _FACT_ID, "title": "합성 이야기", "content": "합성 내용"}],
+}
+
+
 @pytest.mark.parametrize(
     "before_fail, expected",
     [
-        ("lease_passed", ("failed", "WORKER_LEASE_EXPIRED", {"input": {"ageRange": "80s"}})),
+        (
+            "lease_passed",
+            (
+                "failed",
+                "WORKER_LEASE_EXPIRED",
+                {"input": {"ageRange": "80s", "lifeFactIds": [_FACT_ID]}},
+            ),
+        ),
         ("lease_expired", ("failed", "WORKER_LEASE_EXPIRED", {"input": None})),
         ("completed", ("completed", None, {"input": {}})),
     ],
@@ -125,7 +140,8 @@ def test_late_card_generation_failure_does_not_replace_lease_expiry(
     migrated_database_url, before_fail, expected
 ):
     """임대 시각이 지난 뒤 온 실패는 만료 정리 전이라도 그 실패 코드 대신 임대 만료로 남긴다.
-    이미 끝난 작업(만료 정리로 실패, 완료)은 바꾸지 않는다."""
+    이때도 보낸 글은 남기지 않고 ID만 남긴다. 이미 끝난 작업(만료 정리로 실패, 완료)은 바꾸지
+    않는다."""
     queue = CardGenerationQueue()
 
     async def scenario():
@@ -146,7 +162,7 @@ def test_late_card_generation_failure_does_not_replace_lease_expiry(
                 connection,
                 job,
                 error_code="INVALID_AI_RESPONSE",
-                generation_input={"ageRange": "80s"},
+                generation_input=_SENT_WITH_TEXT,
             )
             return await _row(
                 connection, "SELECT * FROM card_sets WHERE set_id = %s", (set_id,)

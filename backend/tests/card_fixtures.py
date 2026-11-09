@@ -13,6 +13,99 @@ from app.main import create_app
 from app.services.accounts import Account
 from tests.support import run
 
+# 예전 코드가 남기던 카드 생성 기록(글이 든 형태)과 같은 기록을 ID만 남긴 형태. 값은 모두 합성
+LOG_FACT, LOG_PHOTO, LOG_TOPIC, LOG_SESSION, LOG_SET, LOG_CARD = (
+    f"00000000-0000-4000-8000-{n:012d}" for n in range(901, 907)
+)
+FULL_TEXT_GENERATION_LOG = {
+    "input": {
+        "ageRange": "80s",
+        "profileFacts": {
+            "occupation": None,
+            "hometown": "합성 고향",
+            "hobby": "합성 취미",
+            "family": "",
+        },
+        "lifeFacts": [
+            {
+                "factId": LOG_FACT,
+                "title": "합성 제목",
+                "content": "합성 이야기",
+                "createdAt": "2026-11-01T00:00:00Z",
+                "source": "caregiver",
+            }
+        ],
+        "photos": [{"photoId": LOG_PHOTO, "description": "합성 사진 설명"}],
+        "topics": [
+            {
+                "topicId": LOG_TOPIC,
+                "title": "합성 주제",
+                "description": "합성 주제 설명",
+                "evidence": [{"factId": LOG_FACT}],
+                "createdAt": "2026-11-01T00:00:00Z",
+                "feedback": [{"action": "more", "decidedAt": "2026-11-02T00:00:00Z"}],
+            }
+        ],
+        "visits": [
+            {"sessionId": LOG_SESSION, "startedAt": "2026-11-02T00:00:00Z", "setId": LOG_SET}
+        ],
+        "pastCards": [
+            {
+                "cardId": LOG_CARD,
+                "setId": LOG_SET,
+                "topicId": LOG_TOPIC,
+                "position": 1,
+                "cardTitle": "합성 카드",
+                "primaryQuestion": "합성 질문이었어요?",
+                "evidence": [{"factId": LOG_FACT}],
+                "selected": True,
+                "reviewReaction": "positive",
+            }
+        ],
+    },
+    "log": {
+        "candidates": 18,
+        "toolCalls": 5,
+        "refills": ["합성 이야기를 더 찾아라"],
+        "dropped": [{"no": 3, "card_title": "합성 카드", "reason": "합성 이유"}],
+        "selectionSeed": 7,
+        "writingFirstProblems": ["3번: 질문이 물음표로 끝나지 않는다: 합성 질문"],
+        "seconds": 1.5,
+    },
+    "cards": [
+        {
+            "position": 1,
+            "kind": "personal",
+            "bucket": "new",
+            "angle": "합성 장면",
+            "pickReason": "새 이야기",
+            "agentReason": "합성 이유",
+            "matchReason": "합성 이유",
+        }
+    ],
+}
+REFERENCE_GENERATION_LOG = {
+    "input": {
+        "ageRange": "80s",
+        "profileFields": ["hometown", "hobby"],
+        "lifeFactIds": [LOG_FACT],
+        "photoIds": [LOG_PHOTO],
+        "topicIds": [LOG_TOPIC],
+        "visitSessionIds": [LOG_SESSION],
+        "pastCardIds": [LOG_CARD],
+    },
+    "log": {
+        "candidates": 18,
+        "toolCalls": 5,
+        "refills": 1,
+        "dropped": 1,
+        "selectionSeed": 7,
+        "writingFirstProblems": 1,
+        "seconds": 1.5,
+    },
+    "cards": [{"position": 1, "kind": "personal", "bucket": "new"}],
+}
+
 
 def make_app(database_url: str, user_id: UUID, **settings: Any) -> FastAPI:
     account = Account(

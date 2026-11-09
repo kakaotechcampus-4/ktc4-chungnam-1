@@ -21,6 +21,7 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from app.core.database import DbConnection
+from app.services.card_generation_log import reference_input
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 정해진 시간이 지나도 worker가 가져가지 않았고, 그동안 worker가 다른 작업도 가져가지 않은
@@ -136,7 +137,8 @@ class CardGenerationQueue:
         """작업을 실패로 끝낸다.
 
         실패한 작업에도 `generation_log`가 있어야 한다(CHECK). 처리 함수가 AI에 보낸
-        요청을 남기려면 `generation_input`으로 넘기고 처리 함수에서 정상 반환한다.
+        요청을 남기려면 context를 `generation_input`으로 넘기고 처리 함수에서 정상 반환한다.
+        글은 남기지 않고 ID만 남긴다(`card_generation_log.reference_input`).
 
         이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 임대 시각이 지난 작업은
         만료 정리 전이라도 `error_code` 대신 `WORKER_LEASE_EXPIRED`로 남긴다. 그래서
@@ -152,5 +154,10 @@ class CardGenerationQueue:
                    generation_log = %s
              WHERE set_id = %s AND status = 'running'
             """,
-            (LEASE_EXPIRED_ERROR, error_code, Jsonb({"input": generation_input}), job.set_id),
+            (
+                LEASE_EXPIRED_ERROR,
+                error_code,
+                Jsonb({"input": reference_input(generation_input)}),
+                job.set_id,
+            ),
         )

@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import re
 from types import SimpleNamespace
 
 import card_generation as ai
@@ -44,6 +45,29 @@ from tests.card_fixtures import (
 from tests.support import run
 
 EXTRA = {"kind": "general", "pickReason": "합성 이유"}
+HANGUL = re.compile(r"[가-힣]")
+
+
+def assert_no_text(generation_log) -> None:
+    """기록에 이야기, 세부 정보, 사진 설명, 주제와 카드 문구가 없음. 합성 글은 모두 한글임."""
+    assert not HANGUL.search(json.dumps(generation_log, ensure_ascii=False)), generation_log
+
+
+def sent_ids(context: CardContext) -> dict:
+    """생성에 보낸 context 가운데 기록(`generation_log.input`)에 남아야 하는 값."""
+    return {
+        "ageRange": context.age_range,
+        "profileFields": [
+            field
+            for field in ("occupation", "hometown", "hobby", "family")
+            if getattr(context.profile_facts, field)
+        ],
+        "lifeFactIds": [str(fact.fact_id) for fact in context.life_facts],
+        "photoIds": [str(photo.photo_id) for photo in context.photos],
+        "topicIds": [str(topic.topic_id) for topic in context.topics],
+        "visitSessionIds": [str(visit.session_id) for visit in context.visits],
+        "pastCardIds": [str(card.card_id) for card in context.past_cards],
+    }
 
 
 def fake_result(request, *, reuse_topic=None, positions=range(1, 13)) -> CardGenerationResult:
@@ -304,6 +328,208 @@ def test_context_drops_stories_and_photos_behind_excluded_topics(migrated_databa
     assert any(problem.startswith("3번") for problem in result_problems(result, context))
 
 
+def test_topic_whose_story_and_photo_evidence_is_gone_is_not_sent(migrated_database_url):
+    """이야기나 사진 근거가 모두 지워졌거나 입력에서 빠진 주제는 다음 생성 입력에서 뺌(PM 결정 2026-11-08).
+
+    남은 이야기나 사진, 세부 정보 칸 근거가 있는 주제와 근거가 없던 주제는 그대로 넣음. 보호자가
+    제외한 주제는 근거 이야기가 DB에 남아 있으므로 입력에서 근거만 빠지고 주제는 남음(근거를 지운
+    경우는 다음 시험). 지난 카드는 바꾸지 않음."""
+
+    async def build(connection):
+        profile_id, _, old_set, excluded = await _seed(connection, ("exclude",))
+        kept = await value(
+            connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
+        )
+        photo = await value(
+            connection,
+            "SELECT photo_id FROM photos WHERE profile_id = %s AND analysis_status = 'completed'",
+            (profile_id,),
+        )
+        deleted, refused = [
+            await value(
+                connection,
+                "INSERT INTO life_facts (profile_id, title, content)"
+                " VALUES (%s, %s, '합성 이야기') RETURNING fact_id",
+                (profile_id, title),
+            )
+            for title in ("지울 제목", "거절한 제목")
+        ]
+        deleted_photo = await value(
+            connection,
+            "INSERT INTO photos (profile_id, s3_object_key, description, analysis_status, model,"
+            " prompt_version) VALUES (%s, %s, '지울 사진 설명', 'completed', 'm', 'p')"
+            " RETURNING photo_id",
+            (profile_id, f"synthetic/{profile_id}/deleted.jpg"),
+        )
+        cursor = await connection.execute(
+            "SELECT position, topic_id FROM conversation_cards WHERE set_id = %s", (old_set,)
+        )
+        topics = {row["position"]: row["topic_id"] for row in await cursor.fetchall()}
+        assert topics[1] == excluded
+        evidence = {
+            1: [{"factId": str(refused)}],  # 제외한 주제. 근거 이야기는 남아 있고 입력에서만 빠짐
+            2: [{"factId": str(deleted)}],  # 지운 이야기만
+            3: [{"photoId": str(deleted_photo)}],  # 지운 사진만
+            4: [{"factId": str(refused)}],  # 제외한 주제와 같은 이야기만
+            5: [{"factId": str(deleted)}, {"factId": str(kept)}],
+            6: [{"profileField": "hobby"}],
+            7: [{"factId": str(deleted)}, {"profileField": "hobby"}],
+            8: [{"photoId": str(deleted_photo)}, {"photoId": str(photo)}],
+        }
+        for position, items in evidence.items():
+            await connection.execute(
+                "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+                (Jsonb(items), topics[position]),
+            )
+        await connection.execute("DELETE FROM life_facts WHERE fact_id = %s", (deleted,))
+        await connection.execute("DELETE FROM photos WHERE photo_id = %s", (deleted_photo,))
+        return await build_context(connection, profile_id), old_set, topics, kept, photo
+
+    context, old_set, topics, kept, photo = with_db(migrated_database_url, build)
+
+    sent = {topic.topic_id: topic for topic in context.topics}
+    assert [f.action for f in sent[topics[1]].feedback] == ["exclude"]
+    assert sent[topics[1]].evidence == []
+    for position in (2, 3, 4):
+        assert topics[position] not in sent, position
+    assert sent[topics[5]].evidence == [{"factId": str(kept)}]
+    assert sent[topics[6]].evidence == [{"profileField": "hobby"}]
+    assert sent[topics[7]].evidence == [{"profileField": "hobby"}]
+    assert sent[topics[8]].evidence == [{"photoId": str(photo)}]
+    assert all(topics[position] in sent for position in range(9, 13))
+    # 지난 카드는 그대로. 빠진 주제를 가리키는 지난 카드가 있어도 결과 검증은 통과
+    assert {c.topic_id for c in context.past_cards if c.set_id == old_set} == set(topics.values())
+    request = SimpleNamespace(model="synthetic-model", prompt_version="2")
+    assert result_problems(fake_result(request), context) == []
+    # 빠진 주제를 다시 쓰면 입력에 없는 주제라 거절
+    reused = fake_result(request, reuse_topic=topics[2])
+    assert any(problem.startswith("1번") for problem in result_problems(reused, context))
+
+
+async def _exclude(connection, profile_id, set_id, topic_id):
+    """`set_id` 묶음을 쓴 회차에서 보호자가 `topic_id` 주제의 제외를 승인함."""
+    cursor = await connection.execute(
+        "SELECT s.session_id, c.card_id FROM card_sets s"
+        "  JOIN conversation_cards c ON c.set_id = s.set_id"
+        " WHERE s.set_id = %s AND c.topic_id = %s",
+        (set_id, topic_id),
+    )
+    row = await cursor.fetchone()
+    proposal_id = await value(
+        connection,
+        "INSERT INTO topic_proposals (session_id, profile_id, card_id, topic_id,"
+        " suggested_action, reason, status) VALUES (%s, %s, %s, %s, 'exclude', '합성 이유', 'settled')"
+        " RETURNING proposal_id",
+        (row["session_id"], profile_id, row["card_id"], topic_id),
+    )
+    await connection.execute(
+        "INSERT INTO topic_feedback (profile_id, topic_id, proposal_id, action)"
+        " VALUES (%s, %s, %s, 'exclude')",
+        (profile_id, topic_id, proposal_id),
+    )
+
+
+def test_excluded_topic_is_not_sent_once_its_stories_and_photos_are_deleted(migrated_database_url):
+    """제외한 주제는 근거 이야기와 사진에 종속됨(PM 결정 2026-11-09).
+
+    근거 이야기와 사진은 제외 규칙으로 늘 입력에서 빠지므로, 넣을지는 보낸 입력이 아니라 DB에 남은
+    이야기와 사진으로 정함. 하나라도 남아 있으면 '이 이야기로 만들지 말 것' 표시로 넣고, 보호자가
+    모두 지웠으면 넣지 않음. 세부 정보 칸 근거가 있거나 근거가 없던 제외 주제는 그대로 넣음."""
+
+    async def build(connection):
+        profile_id, _, old_set, first = await _seed(connection, ("exclude",))
+        kept = await value(
+            connection, "SELECT fact_id FROM life_facts WHERE profile_id = %s", (profile_id,)
+        )
+        gone, gone_with_photo, gone_of_two, half, gone_beside_field, gone_beside_photo = [
+            await value(
+                connection,
+                "INSERT INTO life_facts (profile_id, title, content)"
+                " VALUES (%s, %s, '합성 이야기') RETURNING fact_id",
+                (profile_id, title),
+            )
+            for title in (
+                "지울 제목 1",
+                "지울 제목 2",
+                "지울 제목 3",
+                "남길 제목",
+                "지울 제목 4",
+                "지울 제목 5",
+            )
+        ]
+        gone_photo, kept_photo = [
+            await value(
+                connection,
+                "INSERT INTO photos (profile_id, s3_object_key, description, analysis_status, model,"
+                " prompt_version) VALUES (%s, %s, '합성 사진 설명', 'completed', 'm', 'p')"
+                " RETURNING photo_id",
+                (profile_id, f"synthetic/{profile_id}/{name}.jpg"),
+            )
+            for name in ("deleted", "kept")
+        ]
+        cursor = await connection.execute(
+            "SELECT position, topic_id FROM conversation_cards WHERE set_id = %s", (old_set,)
+        )
+        topics = {row["position"]: row["topic_id"] for row in await cursor.fetchall()}
+        assert topics[1] == first
+        evidence = {
+            1: [{"factId": str(kept)}],  # 근거 이야기가 남아 있음
+            2: [{"factId": str(gone)}],  # 근거 이야기를 지움
+            3: [{"factId": str(gone_with_photo)}, {"photoId": str(gone_photo)}],  # 이야기와 사진을 모두 지움
+            4: [{"factId": str(gone_of_two)}, {"factId": str(half)}],  # 두 이야기 중 하나만 지움
+            5: [{"profileField": "hobby"}],  # 세부 정보 칸만
+            6: [],  # 근거가 없던 주제
+            7: [{"factId": str(gone_beside_field)}, {"profileField": "hobby"}],  # 세부 정보 칸이 남음
+            8: [{"factId": str(gone_beside_photo)}, {"photoId": str(kept_photo)}],  # 사진이 남음
+        }
+        for position, items in evidence.items():
+            await connection.execute(
+                "UPDATE profile_topics SET evidence = %s WHERE topic_id = %s",
+                (Jsonb(items), topics[position]),
+            )
+            if position > 1:
+                await _exclude(connection, profile_id, old_set, topics[position])
+        for fact_id in (gone, gone_with_photo, gone_of_two, gone_beside_field, gone_beside_photo):
+            await connection.execute("DELETE FROM life_facts WHERE fact_id = %s", (fact_id,))
+        await connection.execute("DELETE FROM photos WHERE photo_id = %s", (gone_photo,))
+        context = await build_context(connection, profile_id)
+        stored = await value(
+            connection, "SELECT evidence FROM profile_topics WHERE topic_id = %s", (topics[2],)
+        )
+        return context, old_set, topics, kept, half, kept_photo, gone, stored
+
+    context, old_set, topics, kept, half, kept_photo, gone, stored = with_db(
+        migrated_database_url, build
+    )
+
+    sent = {topic.topic_id: topic for topic in context.topics}
+    for position in (1, 4, 5, 6, 7, 8):
+        assert [f.action for f in sent[topics[position]].feedback] == ["exclude"], position
+    # 남은 근거 이야기와 사진은 제외 규칙대로 입력에서 빠짐
+    for position in (1, 4, 8):
+        assert sent[topics[position]].evidence == [], position
+    assert {fact.fact_id for fact in context.life_facts}.isdisjoint({kept, half})
+    assert kept_photo not in {photo.photo_id for photo in context.photos}
+    assert sent[topics[5]].evidence == [{"profileField": "hobby"}]
+    assert sent[topics[6]].evidence == []
+    assert sent[topics[7]].evidence == [{"profileField": "hobby"}]
+    for position in (2, 3):
+        assert topics[position] not in sent, position
+    assert all(topics[position] in sent for position in range(9, 13))
+    # 저장된 주제와 지난 카드는 그대로
+    assert stored == [{"factId": str(gone)}]
+    assert {c.topic_id for c in context.past_cards if c.set_id == old_set} == set(topics.values())
+
+    # 정상 결과는 통과. 빠진 제외 주제를 가리키는 지난 카드가 있어도 됨
+    request = SimpleNamespace(model="synthetic-model", prompt_version="2")
+    assert result_problems(fake_result(request), context) == []
+    # 빠진 제외 주제를 다시 쓰면 입력에 없는 주제, 남은 제외 주제를 쓰면 제외한 주제로 거절
+    dropped = result_problems(fake_result(request, reuse_topic=topics[2]), context)
+    assert "1번: 이 프로필에 없는 주제" in dropped
+    still_excluded = result_problems(fake_result(request, reuse_topic=topics[4]), context)
+    assert "1번: 보호자가 제외한 주제" in still_excluded
+
+
 def test_generated_cards_and_new_topics_are_saved(migrated_database_url):
     seen = {}
 
@@ -316,15 +542,116 @@ def test_generated_cards_and_new_topics_are_saved(migrated_database_url):
     request = seen["request"]
     assert (request.schema_version, request.model, request.prompt_version) == (1, "synthetic-model", 2)
     assert card_set["status"] == "completed" and card_set["lease_expires_at"] is None
-    assert card_set["generation_log"]["input"]["ageRange"] == "80s"
+    assert card_set["generation_log"]["input"] == sent_ids(request.context)
     assert card_set["generation_log"]["log"] == {"candidates": 18}
-    assert card_set["generation_log"]["cards"][0] == {"position": 1, **EXTRA}
+    # 카드별 부가 정보는 정해진 값만. 고른 이유 같은 글은 남기지 않음
+    assert card_set["generation_log"]["cards"][0] == {"position": 1, "kind": "general"}
     assert [card["position"] for card in cards] == list(range(1, 13))
     assert cards[0]["topic_id"] == request.context.topics[0].topic_id
     assert (cards[1]["evidence_source"], cards[1]["evidence"]) == (
         "profile",
         [{"profileField": "hobby"}],
     )
+
+
+def test_saved_generation_log_keeps_ids_not_text(migrated_database_url):
+    """기록에는 보낸 이야기, 사진, 주제, 회차, 지난 카드의 ID만 남음(PM 결정 2026-11-08).
+
+    생성 쪽 실행 기록과 카드별 부가 정보에도 이야기 내용이 옮겨질 수 있어 숫자와 정해진 값만 남김."""
+    seen = {}
+
+    def generate(request):
+        seen["request"] = request
+        result = fake_result(request, reuse_topic=request.context.topics[0].topic_id)
+        result.log = {
+            "candidates": 18,
+            "refills": ["합성 이야기를 더 찾아라"],
+            "dropped": [{"no": 3, "card_title": "합성 제목", "reason": "합성 이유"}],
+            "writingFirstProblems": ["3번: 질문이 물음표로 끝나지 않는다: 합성 질문"],
+            "selectionSeed": 7,
+            "seconds": 1.5,
+        }
+        for card in result.cards:
+            card.extra = {
+                "kind": "personal",
+                "bucket": "new",
+                "angle": "합성 이야기의 장면",
+                "pickReason": "새 이야기",
+                "agentReason": "합성 이야기",
+                "matchReason": "합성 이유",
+            }
+        return result
+
+    card_set, cards = _process(migrated_database_url, generate)
+
+    log = card_set["generation_log"]
+    assert card_set["status"] == "completed" and len(cards) == 12
+    assert_no_text(log)
+    assert log["input"] == sent_ids(seen["request"].context)
+    assert log["input"]["profileFields"] == ["hobby"]
+    assert all(
+        log["input"][key]
+        for key in ("lifeFactIds", "photoIds", "topicIds", "visitSessionIds", "pastCardIds")
+    )
+    assert log["log"] == {
+        "candidates": 18,
+        "refills": 1,
+        "dropped": 1,
+        "writingFirstProblems": 1,
+        "selectionSeed": 7,
+        "seconds": 1.5,
+    }
+    assert log["cards"] == [
+        {"position": position, "kind": "personal", "bucket": "new"} for position in range(1, 13)
+    ]
+
+
+def _run_worker(database_url, generate):
+    """worker로 작업 하나를 처리. 처리 함수 밖으로 나간 예외는 worker가 실패로 정리함."""
+    worker = create_worker(
+        Settings(_env_file=None, database_url=database_url, ml_api_key="synthetic-key"), generate
+    )
+
+    async def scenario():
+        async with connect(database_url) as connection:
+            _, set_id, _, _ = await _seed(connection)
+        assert await worker.run_once()
+        async with connect(database_url) as connection:
+            cursor = await connection.execute("SELECT * FROM card_sets WHERE set_id = %s", (set_id,))
+            return await cursor.fetchone()
+
+    return run(scenario())
+
+
+@pytest.mark.parametrize(
+    "fail, error_code",
+    [
+        ("generation-error", "NOT_ENOUGH_TOPICS"),
+        ("invalid-result", "INVALID_GENERATION_RESULT"),
+        ("unexpected-error", "CARD_GENERATION_FAILED"),
+    ],
+)
+def test_failed_generation_log_keeps_ids_not_text(migrated_database_url, fail, error_code):
+    seen = {}
+
+    def generate(request):
+        seen["request"] = request
+        if fail == "generation-error":
+            raise CardGenerationError("NOT_ENOUGH_TOPICS", "합성 실패")
+        if fail == "unexpected-error":
+            raise RuntimeError("합성 이야기")
+        result = fake_result(request)
+        result.cards.pop()
+        return result
+
+    card_set = _run_worker(migrated_database_url, generate)
+
+    assert (card_set["status"], card_set["error_code"]) == ("failed", error_code)
+    assert_no_text(card_set["generation_log"])
+    if fail == "unexpected-error":
+        assert card_set["generation_log"] == {"input": None}
+    else:
+        assert card_set["generation_log"] == {"input": sent_ids(seen["request"].context)}
 
 
 @pytest.mark.parametrize(
@@ -336,8 +663,10 @@ def test_result_is_saved_only_while_the_lease_lasts(migrated_database_url, lease
     """생성하는 동안 임대 시각이 지났으면 만료 정리(`expire_leases`)가 돌기 전이라도 결과를
     저장하지 않고 임대 만료로 끝낸다. 임대가 남았으면 그대로 저장한다."""
     queue = CardGenerationQueue()
+    seen = {}
 
     def generate(request):
+        seen["request"] = request
         # 생성 함수가 도는 동안 임대 시각을 옮긴다. 만료 정리는 아직 돌지 않았다.
         with psycopg.connect(psycopg_dsn(migrated_database_url), autocommit=True) as db:
             db.execute(
@@ -377,6 +706,9 @@ def test_result_is_saved_only_while_the_lease_lasts(migrated_database_url, lease
     else:
         assert (card_set["status"], card_set["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
         assert (cards, new_topics) == (0, 0)
+    # 임대 만료로 끝낸 기록도 보낸 글은 남기지 않고 ID만 남김(`reference_input`)
+    assert_no_text(card_set["generation_log"])
+    assert card_set["generation_log"]["input"] == sent_ids(seen["request"].context)
 
 
 def test_lease_that_ends_while_save_waits_for_the_profile_lock_is_not_saved(
@@ -387,6 +719,11 @@ def test_lease_that_ends_while_save_waits_for_the_profile_lock_is_not_saved(
     임대는 잠금을 잡은 뒤의 시각(`clock_timestamp()`)으로 본다. 트랜잭션 시작 시각(`now()`)으로
     보면 기다리는 동안 끝난 임대를 남은 것으로 보고 저장한다."""
     queue = CardGenerationQueue()
+    seen = {}
+
+    def generate(request):
+        seen["request"] = request
+        return fake_result(request)
 
     async def scenario():
         async with (
@@ -400,7 +737,7 @@ def test_lease_that_ends_while_save_waits_for_the_profile_lock_is_not_saved(
                     "SELECT 1 FROM profiles WHERE profile_id = %s FOR UPDATE", (profile_id,)
                 )
                 processing = asyncio.create_task(
-                    CardGenerationProcessor(queue=queue, generate=fake_result)(connection, job)
+                    CardGenerationProcessor(queue=queue, generate=generate)(connection, job)
                 )
                 await _until_waiting_for_lock(holder, connection.info.backend_pid)
                 # 저장 트랜잭션이 시작된 뒤의 시각을 임대 끝으로 둔다.
@@ -420,6 +757,8 @@ def test_lease_that_ends_while_save_waits_for_the_profile_lock_is_not_saved(
 
     assert (card_set["status"], card_set["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
     assert cards == 0
+    assert_no_text(card_set["generation_log"])
+    assert card_set["generation_log"] == {"input": sent_ids(seen["request"].context)}
 
 
 async def _until_waiting_for_lock(observer, pid):
@@ -558,9 +897,8 @@ def test_card_generator_saves_what_the_ai_package_returns(migrated_database_url,
     assert isinstance(request, ai.GenerationRequest) and seen["api_key"] == "synthetic-key"
     assert request.context.age_range == "80s" and request.context.profile_facts.hobby == "합성 취미"
     assert card_set["status"] == "completed"
-    assert set(card_set["generation_log"]["cards"][0]) == {
-        "position", "kind", "bucket", "angle", "pickReason", "agentReason", "matchReason"
-    }
+    assert card_set["generation_log"]["cards"][0] == {"position": 1, "kind": "general", "bucket": "new"}
+    assert_no_text(card_set["generation_log"])
     assert len(cards) == 12 and str(cards[0]["topic_id"]) == request.context.topics[0].topic_id
 
 
