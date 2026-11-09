@@ -402,6 +402,22 @@ BE의 카드 생성 worker가 작업([API 4-1](api-spec.md#4-1-post-apiv1profile
 
 ---
 
+## 첫 카드 사진 준비 (PhotoPreparation)
+
+카드 생성 요청과 상태 응답(API 4-1, 4-2)에 선택적으로 붙는 `photoPreparation`이다. 사진을 기다리는 동안만 있으며 기존 `status`는 `running`을 유지한다. 준비가 끝나면 이 필드를 보내지 않는다.
+
+| 필드 | 값과 의미 |
+| --- | --- |
+| setId | 진행 중인 카드 작업 UUID. 재시도와 계속 진행 요청에 그대로 보냄 |
+| state | `waiting`: 분석 대기, `choice`: 보호자 선택 필요 |
+| total | 요청 시 고정한 사진 중 아직 존재하는 수 |
+| completed | AI 분석 완료 또는 보호자가 쓴 설명이 있는 수 |
+| failed | 분석 실패 또는 임대 만료 수 |
+| pending | 아직 준비되지 않은 나머지 수 |
+| reason | 선택이 필요할 때 `analysisFailed`, `timedOut`, `consentRequired` |
+
+합계는 `completed + failed + pending = total`이다. 사진 없는 첫 생성, 사진 분석 동의가 없는 첫 생성과 두 번째 이후 생성에는 대기를 만들지 않는다. 보호자 선택과 오류는 [API 4-7](api-spec.md#4-7-post-apiv1profilesprofileidcard-generationsphoto-preparation)에 정의한다. 사진이 입력에 포함돼도 최종 카드 수와 사진별 선택 수를 보장하지는 않는다.
+
 ## 대화 카드 묶음 (CardSet)
 
 카드 묶음과 그 카드 12장이다. 지금 쓸 묶음은 [API 4-3](api-spec.md#4-3-get-apiv1profilesprofileidcard-generationscurrent--신규), 회차에 쓴 묶음은 [API 4-4](api-spec.md#4-4-get-apiv1visit-sessionssessionidcard-set--신규)의 응답이다.

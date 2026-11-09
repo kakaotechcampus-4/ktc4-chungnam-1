@@ -35,6 +35,7 @@ from app.schemas.card_generation import (
 )
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
 from app.services.card_generation_log import PROFILE_FIELDS, reference_log
+from app.services.card_photo_preparation import advance_ready, progress as photo_progress
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 logger = logging.getLogger("saerok.card_generation")
@@ -83,11 +84,15 @@ async def generation_status(
     더는 끝나지 않을 `running`을 먼저 실패로 정리함(`CardGenerationQueue.expire_stuck`).
     정리하지 않으면 worker가 없을 때 앱이 `running`만 보고 다시 요청할 수 없음.
     """
+    await advance_ready(connection, profile_id)
     await CardGenerationQueue().expire_stuck(
         connection, profile_id, start_timeout_seconds=start_timeout_seconds
     )
     latest = await _latest(connection, profile_id)
-    return CardGenerationStatus(status=_status(latest), needs_refresh=_needs_refresh(latest))
+    return CardGenerationStatus(
+        status=_status(latest), needs_refresh=_needs_refresh(latest),
+        photo_preparation=await photo_progress(connection, latest["set_id"]) if latest else None,
+    )
 
 
 async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSet:
@@ -202,6 +207,7 @@ async def start_card_generation(
     model: str,
     prompt_version: int,
     start_timeout_seconds: int,
+    photo_wait_timeout_seconds: int = 180,
 ) -> None:
     """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
 
@@ -232,11 +238,24 @@ async def start_card_generation(
                 error_code="CARD_SET_READY",
                 message="아직 쓰지 않은 카드 묶음이 있습니다.",
             )
+        if status == "running":
+            return
+        # 첫 성공 묶음 전만 기다린다. 등록 마치기까지 올라온 사진 ID를 고정하며,
+        # 나중에 추가한 사진 때문에 대기가 끝없이 늘어나지 않게 한다.
+        photos = await (await connection.execute(
+            "SELECT p.photo_id FROM photos p JOIN profiles pr USING(profile_id) "
+            "JOIN current_consents c USING(user_id) "
+            "WHERE p.profile_id=%s AND p.session_id IS NULL AND c.photo_analysis "
+            "AND NOT EXISTS (SELECT 1 FROM card_sets WHERE profile_id=%s AND status='completed') "
+            "ORDER BY p.created_at, p.photo_id", (profile_id, profile_id),
+        )).fetchall()
+        photo_ids = [row["photo_id"] for row in photos]
         await connection.execute(
-            "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
-            "VALUES (%s, 'running', %s, %s) "
+            "INSERT INTO card_sets (profile_id, status, model, prompt_version, photo_wait_ids, photo_wait_until) "
+            "VALUES (%s, 'running', %s, %s, %s, "
+            "CASE WHEN %s THEN clock_timestamp()+(%s * interval '1 second') ELSE NULL END) "
             "ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING",
-            (profile_id, model, str(prompt_version)),
+            (profile_id, model, str(prompt_version), photo_ids, bool(photo_ids), photo_wait_timeout_seconds),
         )
 
 

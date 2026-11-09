@@ -417,6 +417,7 @@ void forgetCareProfilesIn(ProviderContainer container) =>
 void _forgetCareProfiles(void Function(ProviderOrFamily provider) invalidate) {
   for (final provider in <ProviderOrFamily>[
     cardGenerationProvider,
+    cardPhotoPreparationProvider,
     cardMakingProvider,
     cardNoticeProvider,
     careProfilesProvider,
