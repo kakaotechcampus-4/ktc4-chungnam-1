@@ -4,6 +4,14 @@
 GPU 실행 설정(#188), BE 전환 코드(#189)와 이 SSH 운영 연결(#190)은 develop에 병합됐다.
 정식 이미지 교체와 임시 override 해제는 아래 운영 전 확인 항목에 따라 따로 진행한다.
 
+현재 상태 (2026-11-09 기준): 11/5 운영 배포에서 speech-worker의 임시 이미지와 설정을 걷어내고
+예비 STT 설정을 `.env`로 옮겼다. 그 뒤로 api(짧은 음성 전사)와 speech-worker가 모두 예비
+서버로 전환한다(#187의 11/5 운영 배포 기록). 운영 BE는 이제 승인 배포 workflow로 교체하며
+2026-11-09 14:42 KST Deploy run 42568179490부터 develop `59190ba7`이다. 이 workflow의 기본
+교체 대상은 api와 worker 셋(card-worker, speech-worker, photo-worker)이고, BE 호스트의
+`saerok-stt-backup.service`와 ck STT 서버는 바꾸지 않는다. ck STT에는 11/9 오전 #276의
+전사 기본값을 손으로 반영했고 기본 STT 서버는 아직 갱신하지 않았다(팀 운영 기록).
+
 기본 개인 GPU의 Tailscale 연결을 유지한다. 기본 서버에 연결하지 못할 때만 ck로 한 번
 전환한다. ck를 기본으로 바꾸거나 개인 PC를 중계 서버로 사용하지 않는다.
 기존 Tailscale망의 관리 권한이 확보되지 않아 ck는 SSH로 먼저 검증한다.
@@ -73,7 +81,7 @@ namespace 안에 임시 SSH 연결을 만들고 후보 클라이언트를 별도
   | `SAEROK_STT_BACKUP_LOCAL_PORT` | 선택 | BE 쪽 수신 포트. 기본 `18081` |
   | `SAEROK_STT_BACKUP_REMOTE_PORT` | 선택 | ck loopback STT 포트. 기본 `18001`이며 `run-stt.sh`의 포트와 같아야 함 |
 
-  worker의 `SAEROK_AI_SERVER_BACKUP_URL`은 이 파일이 아니라 worker 환경에 두며,
+  api와 worker의 `SAEROK_AI_SERVER_BACKUP_URL`은 이 파일이 아니라 BE의 `.env`(compose의 `env_file`)에 두며,
   `BIND_HOST`와 `LOCAL_PORT`로 만든 주소를 가리킨다.
 - ck는 Supervisor 4.3.0을 별도 가상 환경에 설치해 `ops/ck-backup/`의 설정으로 해당
   STT 프로세스만 관리한다. 관리 소켓은 0600의 Unix 소켓이며 HTTP 관리 포트는 열지 않는다.
@@ -89,9 +97,12 @@ namespace 안에 임시 SSH 연결을 만들고 후보 클라이언트를 별도
 - 원래 이미지와 환경을 BE 내부에 보관하고, worker 전용 compose override를 팀 체크아웃에
   연결했다. 실제 설정은 로컬 Git 제외 목록에 넣고 커밋하지 않는다. 임시 worker 이미지는
   고정돼 있으므로 팀원의 정식 배포 전에 이 override를 확인해야 한다. 기능 PR 병합 후
-  정식 이미지로 교체하고 임시 override를 해제한다.
+  정식 이미지로 교체하고 임시 override를 해제한다. 이 교체와 해제는 11/5 운영 배포에서
+  마쳤다(위 현재 상태).
 - 원복은 보관한 기존 이미지와 원래 환경을 쓰는 worker 전용 rollback override로 한다.
-  다른 서비스와 DB 볼륨은 내리지 않는다.
+  다른 서비스와 DB 볼륨은 내리지 않는다. 이 원복은 11/3 임시 배포용이다. 보관한 기존 이미지는
+  11/5 이후 적용한 DB migration 전의 것이므로 지금은 이 방식으로 되돌리지 않고, BE 되돌리기는
+  [실패와 되돌리기](../../docs/deploy-workflows.md#실패와-되돌리기)를 따른다.
 
 ## 검증 범위와 운영 전 확인
 

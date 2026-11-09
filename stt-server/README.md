@@ -128,6 +128,8 @@ BE의 STT 기본 주소는 `http://<GPU 서버의 Tailscale IP>:8001`이다.
 
 값은 `true`/`false`(또는 `1`/`0`, `yes`/`no`, `on`/`off`)만 받는다. 그 밖의 값이면 모델 로딩 전에 서버가 시작하지 않는다. 기본값은 2026-11-09 ck(P100, `float32`)에서 어르신과 가족 또는 인터뷰어의 실제 대화 녹음으로 비교해 정했다. 지어낸 말은 거의 사라지지만, 짧은 말을 일부 빠뜨리고 아주 작은 목소리를 버릴 수 있다. 기본 처리 서버의 `float16` 환경에서는 비교하지 않았다. 근거와 실패 사례는 [전사 옵션 비교](docs/vad-condition-comparison-20261109.md)에 있다.
 
+현재 적용 (2026-11-09 기준): 이 기본값(#276)은 11/9 오전 ck 예비 서버에만 손으로 반영했고 기본 처리 서버는 아직 갱신하지 않았다(팀 운영 기록). BE의 승인 배포 workflow는 STT 서버를 배포하지 않으므로 STT 서버마다 따로 반영한다.
+
 되돌릴 때는 코드를 바꾸지 않고 실행 환경에 값을 준다. 직접 실행할 때는 명령 앞에 붙이고, ck 예비 서버는 비공개 `runtime.env`에 적는다(`backend/ops/ck-backup/run-stt.sh`가 넘긴다).
 
 ```bash
@@ -137,7 +139,8 @@ SAEROK_STT_ASR_VAD_FILTER=false SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT=true .
 ## 공유 GPU에서 별도 검증
 
 기본값은 기존 개인 GPU의 `large-v3-turbo`, CUDA 0번과 `float16`이다. 이문영 담당자의
-GPU를 기본 처리 서버로 유지한다. 아래 설정은 별도 검증 프로세스에만 적용하며 BE의
+GPU를 기본 처리 서버로 유지한다. 아래 설정은 별도 검증 프로세스와 ck 예비 서버에 적용하며(ck는
+비공개 `runtime.env`에 적고 `backend/ops/ck-backup/run-stt.sh`가 넘긴다) BE의
 서버 주소, 자동 전환, 재시도와 원본 삭제 정책을 변경하지 않는다.
 
 | 환경 변수 | 기본값 | 용도 |

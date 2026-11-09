@@ -39,6 +39,20 @@ def test_snapshot_reads_counts_without_changing_queue(migrated_database_url):
     )
 
 
+def test_deletion_queue_counts_only_requests_the_runner_can_process(migrated_database_url):
+    # 업로드 중 사전 등록처럼 기한(not_before) 전인 요청은 삭제 실행기도 건너뛴다.
+    query(
+        migrated_database_url,
+        "INSERT INTO storage_deletion_request_queue (s3_object_key, not_before) "
+        "VALUES ('synthetic-upload-in-progress', now() + interval '1 hour') RETURNING requested_at",
+    )
+    result = run(
+        runtime_check.collect(Settings(_env_file=None, database_url=migrated_database_url))
+    )
+    assert result["database"]["attention"]["deletion_queue"] == 0
+    assert "DELETION_QUEUE" not in result["issues"]
+
+
 def test_snapshot_detects_migration_mismatch(migrated_database_url):
     result = run(
         runtime_check.collect(

@@ -13,8 +13,8 @@
 > | --- | --- | --- | --- | --- |
 > | D1 | 이야기 분류의 **필드 이름** | `storyCategory`. 값은 `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other` | 분류 저장과 7개 유지는 decmoon05, Sogeum100g 모두 찬성. 이름 `storyCategory`는 PR 본문의 FE 제안이며 확정 전이다. 옛 FE 모델과 미병합 ADR-009가 `category`를 세부 정보 네 항목의 뜻으로 써서 피했다 | FE, BE |
 > | D2 | 기본 그림 번호의 **필드 이름**과 면회 승인 이야기의 번호 | `imageNumber`(1~5). 2-6에서는 필수, 7-4로 만드는 이야기는 서버가 1~5 중 하나를 고름 | 번호 저장은 decmoon05, Sogeum100g 모두 찬성. 필드 이름과 서버가 고를지는 정하지 않았다 | FE, BE |
-> | D3 | **이야기 삭제 때 대화 카드와 주제 처리** | 생애 정보 행만 지운다. 다음 카드 생성부터 빠지고, 이미 만든 카드와 주제는 기록으로 남긴다. 카드 생성 입력에서 지운 이야기를 가리키는 근거 항목은 뺀다 | decmoon05: 삭제한 이야기는 추천에 쓰지 않고 그 이야기만 근거로 한 주제 카드도 지우는 방향. 여러 이야기를 근거로 한 카드는 확인 요청. 결정 전 | PM, BE(작업 B), AI |
-> | D4 | **삭제한 이야기의 내용이 다른 저장소에 남는 문제** | 임시 안 없음. 지금 구조에서는 `card_sets.generation_log.input`에 카드 생성 당시의 이야기 제목과 내용이 그대로 남고, 카드 문구에도 반영돼 있을 수 있다 | PR에서 다루지 않음 | PM(개인정보), BE |
+> | D3 | **이야기 삭제 때 대화 카드와 주제 처리** | 생애 정보 행만 지운다. 다음 카드 생성부터 빠지고, 이미 만든 카드와 주제는 기록으로 남긴다. 카드 생성 입력에서 지운 이야기를 가리키는 근거 항목은 뺀다. **일부 결정, 구현함(PM 결정 2026-11-08, 2026-11-09)**: 근거가 지운 이야기나 사진뿐이던 주제는 다음 카드 생성 입력에서 뺀다. 여러 근거 가운데 일부만 지웠으면 남은 근거로 넣는다. 보호자가 제외한 주제도 근거 이야기와 사진을 모두 지우면 뺀다(2026-11-09). 저장된 카드와 주제를 지울지, 지운 이야기의 내용이 담긴 지난 카드 문구를 입력(`pastCards`)에 계속 넣을지는 정하지 않았다 | decmoon05: 삭제한 이야기는 추천에 쓰지 않고 그 이야기만 근거로 한 주제 카드도 지우는 방향. 여러 이야기를 근거로 한 카드는 확인 요청 | PM, BE(작업 B), AI |
+> | D4 | **삭제한 이야기의 내용이 다른 저장소에 남는 문제** | **결정, 구현함(PM 결정 2026-11-08)**: 카드 생성 기록(`card_sets.generation_log`)에는 글 대신 ID만 남긴다. 기존 기록은 migration `685f243e9f1f`가 고친다. 이미 만든 카드 문구와 주제 제목, 설명에는 지운 이야기의 내용이 반영돼 있을 수 있으며 이 부분은 D3에 남는다 | PR에서 다루지 않음 | PM(개인정보), BE |
 > | D5 | **면회 제안을 승인해 만드는 이야기(7-4)의 분류** | 결정 전까지 7-4 요청은 바꾸지 않는다. 승인된 이야기는 `other`(기타)로 만들고 보호자가 일대기에서 옮긴다 | MoonYoung02: 대화에서 주제를 뽑아 7개 분류로 매핑(`topic_id` 저장 필요, 생성 데이터로 시험 필요). decmoon05: AI가 이야기 후보 응답에 분류를 함께 주고 보호자가 확인·수정. Sogeum100g: 보호자가 직접 고르는 편이 간단하고 정확. **의견이 갈림** | PM, AI, FE, BE(작업 C) |
 > | D6 | 삭제한 이야기의 **변경 제안 상태** | 임시 안 없음. 지금 7-3은 제안에서 만든 생애 정보가 있으면 `accepted`, 없으면 `rejected`로 계산하므로, 승인한 이야기를 지우면 그 제안이 `rejected`로 보인다 | PR에서 다루지 않음 | BE(작업 C), FE |
 > | D7 | **정렬** | 출시 범위는 담은 날짜(`createdAt`)순. 정렬은 앱이 하며 API에 정렬 인자를 두지 않는다 | MoonYoung02, decmoon05: 출시는 날짜순, 생애 시기순은 출시 후. Sogeum100g: 생애 시기순 필요, `최신순`, `입력순` 필터도 제안 | PM, AI, FE |
@@ -95,7 +95,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 - **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
-- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
+- **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 입력에 넣을 수 있는 사진(설명이 있는 사진)에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
 ## DB 변경
 
@@ -148,7 +148,8 @@ ALTER TABLE life_facts
 
 - `storyCategory`: 필수. `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`
 - `title`: 필수. 100자 이하, 비울 수 없다.
-- `content`: 필수. 비울 수 없다.
+- `content`: 필수. 5,000자 이하, 비울 수 없다(2026-11-09 PM 결정).
+- 프로필 하나의 이야기는 7-4 승인으로 만든 것을 포함해 300개까지다(2026-11-09 PM 결정).
 - `imageNumber`: 필수. 1~5 정수. 앱이 처음에 하나를 무작위로 골라 두고 보호자가 바꿀 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
@@ -156,7 +157,8 @@ ALTER TABLE life_facts
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `PROFILE_NOT_FOUND` | |
-| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖 |
+| 409 | `LIFE_FACT_LIMIT_EXCEEDED` | 프로필에 이야기가 이미 300개 있음 |
+| 422 | `INVALID_REQUEST` | 필드가 없거나, 모르는 분류이거나, `imageNumber`가 범위 밖이거나, 제목 100자 또는 내용 5,000자를 넘음 |
 
 **구현 메모**
 
@@ -212,6 +214,7 @@ ALTER TABLE life_facts
 
 - `life_facts`의 행을 지운다. 되돌리는 기능은 없다(앱 확인 창: `지운 이야기는 되돌릴 수 없어요.`).
 - 다음 카드 생성(4-1)의 `context.lifeFacts`에서 빠진다. 4-1이 요청 때 `life_facts`를 다시 읽으므로 따로 할 일은 없다.
+- 근거가 지운 이야기나 사진뿐이던 주제는 다음 카드 생성의 `context.topics`에서 빠진다(PM 결정 2026-11-08). 보호자가 제외한 주제도 근거 이야기와 사진을 모두 지우면 빠진다(PM 결정 2026-11-09). 4-1이 입력을 만들 때 거르므로 이 API에서 따로 할 일은 없다.
 - 이미 만든 카드(`conversation_cards`)와 주제(`profile_topics`)는 지우지 않는다. 면회와 리포트 기록이 카드에 묶여 있기 때문이다.
 - 그 이야기를 출처로 한 변경 제안(`life_fact_proposals`)은 지우지 않는다. `life_facts.source_proposal_id`가 사라질 뿐이다(D6).
 - 세부 정보 이야기는 `life_facts`의 행이 아니므로 이 API로 지울 수 없다. 앱도 휴지통을 두지 않는다.
@@ -228,7 +231,7 @@ ALTER TABLE life_facts
 
 작업 C의 API다. D5가 결정될 때까지 요청과 응답을 바꾸지 않는다.
 
-현재 구현(2026-11-09 기준): 요청과 성공 응답 형식은 그대로다. develop `d9643466`의 #277(11/9 병합, 운영 미배포)로 주제 결정을 하나라도 승인한 확인은 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고(API 명세 7-4의 오류 표에 더함) 아직 면회에 안 쓴 묶음을 `needsRefresh`로 바꾸지만, 생애 정보 제안만 승인한 확인은 2-6처럼 둘 다 하지 않는다(`app/services/proposals.py`).
+현재 구현(2026-11-09 기준): 요청과 성공 응답 형식은 그대로다. #277(11/9 병합, 11/9 14:42 KST 승인 배포부터 운영)로 주제 결정을 하나라도 승인한 확인은 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고(API 명세 7-4의 오류 표에 더함) 아직 면회에 안 쓴 묶음을 `needsRefresh`로 바꾸지만, 생애 정보 제안만 승인한 확인은 2-6처럼 둘 다 하지 않는다(`app/services/proposals.py`). #282(같은 배포)부터는 승인한 이야기를 더해 프로필의 이야기가 300개를 넘으면 409 `LIFE_FACT_LIMIT_EXCEEDED`로 거절하고 제안 정리와 주제 피드백을 포함해 아무것도 저장하지 않으며, 승인하는 이야기 내용도 2-6처럼 5,000자까지다.
 
 - 승인한 생애 정보 제안은 `create_life_fact`의 기본값으로 만든다. 분류는 `other`, 그림 번호는 서버가 고른다. 보호자는 일대기의 `기타`에서 찾아 2-7로 옮긴다.
 - D5가 정해지면 바뀔 수 있는 곳
@@ -239,17 +242,17 @@ ALTER TABLE life_facts
 
 ## 삭제와 카드 생성
 
-D3 결정 전의 임시 안이다. 지금 구조에서 이야기를 지울 때 영향을 받는 곳을 정리한다.
+2026-11-08, 2026-11-09 PM 결정을 반영했다. D3의 남은 부분(저장된 카드와 주제, 지난 카드 문구)은 정하지 않았다. 지금 구조에서 이야기를 지울 때 영향을 받는 곳을 정리한다.
 
-현재 구현(2026-11-09 기준, #161): 2-9는 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고 지우지 않는다. 아직 면회에 안 쓴 완료 묶음은 `stale_at`을 남겨 `needsRefresh`가 되고, 보호자가 홈 버튼을 누를 때 묶음 전체를 다시 만든다(`app/services/life_facts.py`의 `delete_life_fact`). 아래 생성 중 삭제 설명과 '현재 묶음' 항목은 처음 작성 때의 임시 안이다.
+현재 구현(2026-11-09 기준, #161): 2-9는 카드를 만드는 중이면 409 `CARD_GENERATION_IN_PROGRESS`로 거절하고 지우지 않는다. 아직 면회에 안 쓴 완료 묶음은 `stale_at`을 남겨 `needsRefresh`가 되고, 보호자가 홈 버튼을 누를 때 묶음 전체를 다시 만든다(`app/services/life_facts.py`의 `delete_life_fact`). 아래 생성 중 삭제 설명과 '현재 묶음' 항목은 처음 작성 때의 임시 안이다. 표의 처리와 '주제' 항목의 PM 결정(2026-11-08, 2026-11-09)은 #291로 구현했고 11/9 14:42 KST 승인 배포부터 운영에 있다. 기존 카드 생성 기록을 고치는 migration `685f243e9f1f`도 이 배포에서 운영 DB에 적용했다(팀 운영 기록).
 
-| 저장소 | 지운 이야기와의 관계 | 임시 안의 처리 |
+| 저장소 | 지운 이야기와의 관계 | 처리 |
 | --- | --- | --- |
 | `life_facts` | 지운 행 | 삭제 |
 | 4-1 `context.lifeFacts` | 다음 생성 입력 | 자동으로 빠짐 |
-| `profile_topics.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 입력을 만들 때 없는 `factId` 항목을 뺀다 |
-| `conversation_cards.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 `pastCards` 입력을 만들 때 없는 `factId` 항목을 뺀다 |
-| `card_sets.generation_log.input` | 생성 당시 입력 전체. 지운 이야기의 제목과 내용이 들어 있음 | **그대로 남는다(D4)** |
+| `profile_topics.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 입력을 만들 때 없는 `factId` 항목을 뺀다. 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 `topics`에 넣지 않는다(PM 결정 2026-11-08). 보호자가 제외한 주제는 근거 이야기와 사진이 하나라도 남아 있으면 넣고, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09) |
+| `conversation_cards.evidence` | JSONB `{"factId": ...}`. FK 없음 | 행은 둔다. 4-1 `pastCards` 입력을 만들 때 없는 `factId` 항목을 뺀다. 카드 문구는 그대로 넣는다(D3 미정) |
+| `card_sets.generation_log` | 생성 당시 보낸 항목 | ID만 남는다(D4 결정). 이전에 저장된 기록은 migration `685f243e9f1f`가 고친다 |
 | `life_fact_proposals` | 승인한 제안이면 출처 | 둔다. 7-3에서 `rejected`로 보이게 된다(D6) |
 
 - 입력 정리가 필요한 이유: 4-1 결과 검증(`result_problems`)은 카드와 주제의 근거 `factId`가 `context.lifeFacts`에 있어야 통과한다. 지운 이야기를 가리키는 근거가 `topics[].evidence`에 남아 있으면 AI가 그 근거를 다시 쓸 수 있고, 그 결과는 `INVALID_GENERATION_RESULT`로 실패한다.
@@ -258,7 +261,7 @@ D3 결정 전의 임시 안이다. 지금 구조에서 이야기를 지울 때 �
   - 면회에 쓴 카드: 리포트의 카드 요약, 주제 제안(`topic_proposals`, 카드 삭제 시 CASCADE)과 묶여 있다. 지우면 지난 리포트가 바뀐다.
   - 아직 면회에 쓰지 않은 현재 묶음: 카드 묶음은 12장(`position` 1~12)이 전제라 한 장만 뺄 수 없다. 묶음을 다시 만들지, 그 카드만 숨길지 정해야 한다.
   - 여러 이야기를 근거로 한 카드: 남은 근거가 있으면 둘지, 근거 목록에서만 뺄지
-  - 주제: 지운 이야기만 근거로 한 주제를 지울지, 제외(`exclude`)처럼 다룰지
+  - 주제: 다음 생성 입력에서는 빼기로 했다(PM 결정 2026-11-08). 보호자가 제외한 주제도 근거를 모두 지우면 뺀다(PM 결정 2026-11-09). 저장된 주제 행을 지울지는 정하지 않았다. 빠진 주제는 입력에 없으므로 같은 내용을 다시 담으면 새 주제로 나올 수 있다. 제외한 주제였어도 그 제외 결정으로 거르지 않는다
 
 ## LifeFact
 
@@ -313,10 +316,8 @@ D8 결정 전이므로 구현하지 않는다. decmoon05 의견의 방향을 택
 
 FE 작업이며 참고로 적는다. 아래 세 항목은 처음 작성 때의 할 일이다.
 
-현재 구현 (2026-11-09 기준): #137(2026-10-22 병합)로 앱이 일대기 이야기의 조회, 추가, 수정, 삭제를 서버(2-3, 2-6, 2-7, 2-9)에 연결했다. 앱의 `LifeFact`는 `factId`, `storyCategory`, `imageNumber`, `title`, `content` 형식이다(`app/lib/data/models.dart`). `lifeStoryEditsProvider`의 앱 안 기억은 로그인 없이 여는 목 모드에서만 쓰고, 서버에 저장한 분은 서버로 보낸다(`life_story_providers.dart`의 `LifeStoryStore`).
-
 - 앱의 `LifeFact` 모델(`app/lib/data/models.dart`)은 옛 형식(`category`, `text`, `sourceType`)이다. PR #125의 후속 작업으로 새 형식(`factId`, `title`, `content`, `createdAt`)에 이 문서의 `storyCategory`, `imageNumber`를 더해 바꾼다. 목 이야기 10편도 목 데이터 원본(`assets/mock/profile.json`)으로 옮긴다.
 - 화면은 `LifeStory`만 보므로 `LifeFact` → `LifeStory` 변환 한 곳만 고친다. `storyCategory`는 `LifeStoryCategory.parse`로 읽고, 모르는 값이 오면 `other`로 보일지 오류로 볼지 FE가 정한다.
 - 저장 뒤에는 2-3을 다시 읽거나 응답의 LifeFact로 목록을 고친다. `lifeStoryEditsProvider`의 앱 안 기억은 서버 연결 뒤 필요 없다.
 
-현재 구현(2026-11-09 기준, #137): 앱의 `LifeFact`는 새 형식(`factId`, `storyCategory`, `title`, `content`, `imageNumber`, `createdAt`)으로 바뀌었고 목 이야기 10편은 `assets/mock/profile.json`에 있다. `LifeStory.fromLifeFact` 한 곳에서 바꾸며 모르는 분류는 `기타`로, 범위 밖 그림 번호는 1~5 안으로 둔다. 로그인한 계정의 추가, 수정, 삭제는 `lifeStoryStoreProvider`가 2-6, 2-7, 2-9로 보내고 응답으로 목록을 고친다. `lifeStoryEditsProvider`는 로그인하지 않은 목 모드에서만 쓴다. 자세한 동작은 [FE README](../../../app/README.md)의 H 일대기 설명에 있다.
+현재 구현(2026-11-09 기준, #137, 2026-10-22 병합): 앱의 `LifeFact`는 새 형식(`factId`, `storyCategory`, `title`, `content`, `imageNumber`, `createdAt`)으로 바뀌었고 목 이야기 10편은 `assets/mock/profile.json`에 있다. `LifeStory.fromLifeFact` 한 곳에서 바꾸며 모르는 분류는 `기타`로, 범위 밖 그림 번호는 1~5 안으로 둔다. 로그인한 계정의 이야기는 2-3의 `lifeFacts`로 읽고, 추가, 수정, 삭제는 `lifeStoryStoreProvider`가 2-6, 2-7, 2-9로 보내고 응답으로 목록을 고친다. `lifeStoryEditsProvider`는 로그인하지 않은 목 모드에서만 쓴다. 자세한 동작은 [FE README](../../../app/README.md)의 H 일대기 설명에 있다.

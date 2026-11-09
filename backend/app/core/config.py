@@ -50,8 +50,9 @@ class Settings(BaseSettings):
     ml_api_key: SecretStr = SecretStr("")
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
     card_generation_lease_seconds: int = Field(default=300, ge=60)
-    # 4-1 뒤 이 시간 안에 worker가 가져가지 않은 작업은 4-1, 4-2가 실패로 정리함.
-    # worker 하나가 앞 작업을 처리하는 동안 기다리는 작업도 있어 임대 시간보다 길게 둠.
+    # 4-1 뒤 이 시간이 지나도 worker가 가져가지 않았고, 이 시간 동안 worker가 어떤 작업도
+    # 가져가지 않은 작업은 4-1, 4-2가 실패로 정리함. worker가 앞 작업을 처리하는 중이면
+    # 기다리게 둠. 앞 작업 하나가 임대 시간까지 걸릴 수 있어 임대 시간보다 길게 둠.
     card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
     # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
@@ -69,7 +70,8 @@ class Settings(BaseSettings):
     image_s3_encryption: Literal["AES256", "aws:kms"] = "AES256"
     image_presigned_ttl_seconds: int = Field(default=900, ge=60)
     max_image_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
-    # 합성 사진 분석. 운영 동의 연결 전에는 진입점이 production 실행을 거절한다.
+    # 프로필 사진 분석 worker(app/workers/photo_analysis.py). 환경과 관계없이 실행되며
+    # AI 사진 분석(photoAnalysis)에 동의한 계정의 사진만 분석한다(photo_analysis_jobs.py).
     photo_analysis_model: str = ""  # 비어 있으면 report_generation_model을 사용
     photo_analysis_timeout_seconds: int = Field(default=120, ge=10)
     photo_analysis_lease_seconds: int = Field(default=180, ge=60)
@@ -111,6 +113,15 @@ class Settings(BaseSettings):
     fcm_credentials_path: str = ""
     # FCM 인증과 발송 요청 하나의 제한 시간.
     fcm_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
+    # 계정별 사용 한도(2026-11-09 PM 결정). 한 계정이 DB 연결, STT와 ML 호출을 독차지하지
+    # 않게 한다. 짧은 음성 전사(6-6)를 한 계정이 동시에 보낼 수 있는 수. 넘으면 429.
+    # 앱은 전사 중에도 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있어 기본을 2로 둔다.
+    short_transcription_concurrency_per_account: int = Field(default=2, ge=1)
+    # 계정당 푸시 받을 기기 수(1-7). 넘으면 등록 시각이 가장 오래된 기기를 지운다.
+    push_devices_per_account: int = Field(default=5, ge=1)
+    # 면회 회차당 리포트 재요청(6-5) 수. 넘으면 409.
+    report_retries_per_session: int = Field(default=3, ge=1)
 
     @field_validator("session_secret")
     @classmethod

@@ -72,7 +72,8 @@ class AccountRepository(Protocol):
         """가장 최근 동의 이력을 복사해 `changes` 의 선택 동의만 바꾼 이력을 더한다.
 
         약관 버전은 직전 이력의 값을 쓴다. 계정이 없으면 `None` 이다. 알림 수신을
-        거두면 그 계정의 푸시 기기 등록(`push_devices`)도 함께 지운다.
+        거두면 그 계정의 푸시 기기 등록(`push_devices`)도 함께 지운다. AI 사진 분석을
+        거두면 그 계정 프로필 사진의 AI 설명을 지운다(`_discard_ai_photo_descriptions`).
         """
         ...
 
@@ -283,6 +284,8 @@ class PostgresAccountRepository:
                 await self._connection.execute(
                     "DELETE FROM push_devices WHERE user_id = %s", (user_id,)
                 )
+            if changes.get("photoAnalysis") is False:
+                await _discard_ai_photo_descriptions(self._connection, user_id)
         return await self.get(account_id)
 
     async def delete(
@@ -330,6 +333,50 @@ class PostgresAccountRepository:
             consent_version=history[-1]["terms_version"],
             consents=_current_consents(history),
             created_at=user["created_at"],
+        )
+
+
+async def _discard_ai_photo_descriptions(
+    connection: DbConnection, user_id: UUID
+) -> None:
+    """AI 사진 분석 동의를 거둔 계정의 저장된 AI 설명을 지운다(2026-11-09 PM 결정).
+
+    동의 이력을 더한 트랜잭션 안에서 부른다. 분석이 끝난 프로필 사진의 AI 설명, 모델과
+    프롬프트 버전을 비우고 `pending`으로 되돌린다. `completed`가 아니면 셋 다 NULL 이어야
+    하는 CHECK 때문에 함께 비운다. 보호자가 쓴 설명(`user_description`)은 그대로 둔다.
+    다시 동의하면 사진 worker가 `pending`인 사진을 다시 분석한다. 분석 중(`processing`)인
+    사진은 처리 함수가 ML 업체를 부르기 바로 전과 저장 직전에 동의를 다시 보고, 업체를 부르지
+    않거나 결과를 버린 뒤 `pending`으로 되돌린다(`photo_analysis_pipeline.py`).
+
+    지운 설명이 카드 입력이던 프로필(보호자 설명이 없는 사진)은 아직 면회에 안 쓴 완료
+    묶음에 `stale_at`을 찍는다. `card_sets.mark_stale`은 카드를 만드는 중이면 409를
+    내므로 쓰지 않는다. 동의 변경은 카드 생성 때문에 실패하면 안 된다. 만드는 중인 묶음은
+    저장할 때 입력 뒤 사진 설명이 바뀐 것을 보고 갱신 필요로 저장한다(`card_sets.save_result`).
+
+    카드 저장, 사진 분석 결과 저장, 설명 수정과 같은 순서로 프로필을 먼저 잠근다. 그래서
+    그사이 끝난 분석 결과가 지운 설명을 되살리거나 끝난 카드 생성이 갱신 표시를 놓치지 않는다.
+    """
+    await connection.execute(
+        "SELECT 1 FROM profiles WHERE user_id = %s ORDER BY profile_id FOR UPDATE",
+        (user_id,),
+    )
+    cursor = await connection.execute(
+        "UPDATE photos SET analysis_status = 'pending', description = NULL, "
+        "       model = NULL, prompt_version = NULL "
+        "WHERE analysis_status = 'completed' AND session_id IS NULL "
+        "  AND profile_id IN (SELECT profile_id FROM profiles WHERE user_id = %s) "
+        "RETURNING profile_id, user_description",
+        (user_id,),
+    )
+    changed = sorted(
+        {row["profile_id"] for row in await cursor.fetchall() if row["user_description"] is None}
+    )
+    if changed:
+        await connection.execute(
+            "UPDATE card_sets SET stale_at = now() "
+            "WHERE profile_id = ANY(%s) AND status = 'completed' AND session_id IS NULL "
+            "  AND stale_at IS NULL",
+            (changed,),
         )
 
 

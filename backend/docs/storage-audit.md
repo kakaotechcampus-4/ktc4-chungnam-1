@@ -2,7 +2,7 @@
 
 로컬에서 작성하고 합성 자료로 검사한 도구다. 처음 작성할 때는 운영에서 실행하거나 삭제한 기록이 없었다.
 
-현재 구현 (2026-11-09 기준, 운영 배포 기록과 #187): 이 도구와 [삭제 실행기](storage-deletion.md)는 #204로 들어가 11/5 배포부터 운영 이미지에 있다. 운영에서는 11/6에 읽기 검사만 실행했다.
+현재 구현 (2026-11-09 기준, 운영 배포 기록과 #187): 이 도구와 [삭제 실행기](storage-deletion.md)는 #204로 들어가 11/5 배포부터 운영 이미지에 있다. 아래 `unreferenced_queued` 구분(#283)은 11/9 배포(develop `59190ba7`, Deploy run 42568179490)부터 운영 이미지에 있다. 운영에서는 11/6에 읽기 검사만 실행했다.
 
 - DB 검사: 기한이 지났는데 삭제 표시가 없는 녹음 원본 8건(모두 실패 작업)을 셌다. 대기열에는 넣지 않았다.
 - `--s3`: 인스턴스 역할에 `GetBucketLifecycleConfiguration` 권한이 없어 실패했다. 이 권한은 점검용이며 삭제 실행에는 필요 없다. 코드상 Lifecycle 조회가 거절되면 객체 목록 집계까지 전체가 `STORAGE_AUDIT_FAILED`로 끝나므로, 운영 S3 객체 목록과 Lifecycle 상태는 이 도구로 확인하지 못했다.
@@ -23,6 +23,8 @@ uv run python -m app.ops.storage_audit --s3
 두 번째 명령은 설정된 음성, 사진 버킷의 현재 객체 목록과 Lifecycle, 버전 관리 상태도 읽는다. 객체 본문, 서명 URL, 계정과 파일 이름은 출력하지 않는다. 버킷 루트의 예전 테스트 파일, DB 참조 없는 사진도 집계한다. 기본 객체 한도는 버킷당 10,000개이며 `complete=false`이면 전체 검사로 보고하지 않는다. 버전 관리된 버킷의 과거 버전까지 읽는 도구는 아니다.
 
 DB와 S3 목록은 같은 순간의 스냅샷이 아니다. 업로드 중이거나 다른 경로의 자료일 수 있으므로 `unreferenced`는 검토 대상 수다. 자동 삭제 근거로 쓰지 않는다.
+
+`unreferenced_queued`는 DB 참조가 없는 객체 중 이미 삭제 대기열에 있는 수다. 업로드 중인 사진의 사전 등록, 업로드 뒤 행을 넣지 못한 사진, 짧은 음성 전사의 원본이 여기에 해당한다. 그중 `not_before`가 지나지 않아 [삭제 실행기](storage-deletion.md)가 아직 건너뛰는 요청은 `unreferenced_queued_not_due`로 따로 센다. 업로드 중인 사진과 처리 중인 짧은 음성 전사, 정리 코드까지 가지 못하고 멈춘 사진 업로드가 기한 전으로 남는다. `unreferenced`에서 `unreferenced_queued`를 뺀 수가 대기열에도 없는 객체다.
 
 ## 기한이 지난 원본을 기존 삭제 대기열에 넣기
 
@@ -45,4 +47,4 @@ uv run python -m app.ops.storage_audit --enqueue-safe-expired --limit 100
 
 근거: [AWS 객체 만료 안내](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html), [Lifecycle 접두사 필터 예시](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html). 2026-11-03 확인.
 
-테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS에서는 11/6 운영 읽기 검사에서 Lifecycle 조회 권한이 없다는 것만 확인했다. Lifecycle 적용과 실행 결과는 검증하지 않았다.
+테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 대기열에 있는 비참조 객체 구분, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS에서는 11/6 운영 읽기 검사에서 Lifecycle 조회 권한이 없다는 것만 확인했다. Lifecycle 적용과 실행 결과는 검증하지 않았다.

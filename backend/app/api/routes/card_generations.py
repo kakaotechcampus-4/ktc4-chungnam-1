@@ -72,7 +72,8 @@ async def get_card_generation_status(
 ) -> CardGenerationStatus:
     """홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`.
 
-    worker가 가져가지 않거나 멈춘 작업은 정해진 시간이 지나면 `failed`로 바뀜. 앱이 다시 요청할 수 있음.
+    worker가 없거나 멈춰 끝나지 않을 작업은 정해진 시간이 지나면 `failed`로 바뀜. 앱이 다시 요청할 수 있음.
+    worker가 다른 작업을 처리하는 동안 기다리는 작업은 `running`으로 둠.
 
     API 명세 4-2
     """

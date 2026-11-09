@@ -34,6 +34,8 @@ from app.schemas.card_generation import (
     Visit,
 )
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
+from app.services.card_generation_log import PROFILE_FIELDS, reference_log
+from app.workers.base import LEASE_EXPIRED_ERROR
 
 logger = logging.getLogger("saerok.card_generation")
 
@@ -181,8 +183,9 @@ async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-7, 2-9,
-    3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-6, 2-7,
+    2-9, 3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함. 2-6과 7-4는 이야기 개수 상한도
+    이 잠금 안에서 셈(`life_facts.create_life_fact`).
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """
@@ -264,7 +267,6 @@ async def mark_stale(
 
 
 # ── 4-1 처리 ──────────────────────────────────────────
-PROFILE_FIELDS = ("occupation", "hometown", "hobby", "family")
 EVIDENCE_KEYS = ("factId", "photoId", "profileField")
 # 근거 종류별 근거 항목의 키
 EVIDENCE_KEY = {"lifeFact": "factId", "photo": "photoId", "profile": "profileField"}
@@ -302,8 +304,9 @@ def _without_missing_evidence(
 
     보호자가 일대기에서 지운 이야기(API 2-9)와 제외한 주제의 근거 이야기, 사진([`_excluded_evidence`])도
     주제와 지난 카드의 근거에는 남아 있음(FK 없는 JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시
-    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는
-    미정(작업 D 문서 미정 D3).
+    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 이렇게 빼서 근거가 모두
+    사라진 주제는 `build_context`가 넣지 않음(제외한 주제는 DB에 남은 이야기와 입력에 넣을 수
+    있는 사진으로 판정). 저장된 카드와 주제는 지우지 않음(작업 D 문서 D3).
     """
     return [
         item
@@ -313,8 +316,17 @@ def _without_missing_evidence(
     ]
 
 
+def _excluded_topics(feedback_by_topic: dict[UUID, list[TopicFeedback]]) -> set[UUID]:
+    """보호자가 제외(`exclude`)를 고른 주제."""
+    return {
+        topic_id
+        for topic_id, items in feedback_by_topic.items()
+        if any(item.action == "exclude" for item in items)
+    }
+
+
 def _excluded_evidence(
-    topics: list[dict[str, Any]], feedback_by_topic: dict[UUID, list[TopicFeedback]]
+    topics: list[dict[str, Any]], excluded_topics: set[UUID]
 ) -> set[tuple[str, str]]:
     """보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진. 다음 카드 생성 입력에서 뺌.
 
@@ -325,11 +337,21 @@ def _excluded_evidence(
     return {
         (key, item[key])
         for row in topics
-        if any(f.action == "exclude" for f in feedback_by_topic.get(row["topic_id"], []))
+        if row["topic_id"] in excluded_topics
         for item in row["evidence"]
         for key in ("factId", "photoId")
         if key in item
     }
+
+
+def _material_gone(stored: list[dict[str, str]], remaining: list[dict[str, str]]) -> bool:
+    """이야기나 사진 근거가 있었는데 남은 근거(`remaining`)가 하나도 없는 주제인지.
+
+    `remaining`은 저장된 근거에서 없는 이야기와 사진을 뺀 것([`_without_missing_evidence`]).
+    세부 정보 칸(`profileField`) 근거는 빼지 않으므로 남은 근거가 없으면 근거가 모두 이야기나
+    사진이었고 그 이야기와 사진이 모두 빠진 것임. 근거가 없던 주제는 해당하지 않음.
+    """
+    return bool(stored) and not remaining
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -394,11 +416,37 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         feedback_by_topic.setdefault(row["topic_id"], []).append(
             TopicFeedback(action=row["action"], decided_at=row["decided_at"])
         )
-    excluded = _excluded_evidence(topics, feedback_by_topic)
+    # 제외 규칙으로 빼기 전, 지금 DB에 남아 있는 이야기와 입력에 넣을 수 있는 사진(설명이 있는
+    # 사진). AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음)은 여기에도 없음
+    stored_fact_ids = {str(row["fact_id"]) for row in facts}
+    stored_photo_ids = {str(row["photo_id"]) for row in photos}
+    excluded_topics = _excluded_topics(feedback_by_topic)
+    excluded = _excluded_evidence(topics, excluded_topics)
     facts = [row for row in facts if ("factId", str(row["fact_id"])) not in excluded]
     photos = [row for row in photos if ("photoId", str(row["photo_id"])) not in excluded]
     fact_ids = {str(row["fact_id"]) for row in facts}
     photo_ids = {str(row["photo_id"]) for row in photos}
+    topic_evidence = {
+        row["topic_id"]: _without_missing_evidence(row["evidence"], fact_ids, photo_ids)
+        for row in topics
+    }
+
+    def remaining_evidence(row: dict[str, Any]) -> list[dict[str, str]]:
+        """주제를 넣을지 정할 때 쓰는 남은 근거.
+
+        제외한 주제의 근거 이야기와 사진은 제외 규칙 때문에 늘 입력에서 빠지므로, 보낸 입력이
+        아니라 제외 전 DB에 남은 이야기와 입력에 넣을 수 있는 사진으로 판정함. 하나라도 남아
+        있으면 '이 이야기로 만들지 말 것'이라는 표시로 넣고, 보호자가 모두 지웠으면 넣지 않음
+        (PM 결정 2026-11-09).
+        제외한 주제는 근거에 종속되며, 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있음.
+        """
+        if row["topic_id"] in excluded_topics:
+            return _without_missing_evidence(row["evidence"], stored_fact_ids, stored_photo_ids)
+        return topic_evidence[row["topic_id"]]
+
+    # 이야기나 사진 근거가 모두 사라진 주제는 넣지 않음(PM 결정 2026-11-08, 제외한 주제는 2026-11-09).
+    # 원래 근거가 없던 주제와 세부 정보 칸 근거가 있는 주제는 넣음. 저장된 주제와 카드는 지우지 않음
+    topics = [row for row in topics if not _material_gone(row["evidence"], remaining_evidence(row))]
     return CardContext(
         age_range=f"{profile['decade']}s",
         profile_facts=ProfileFacts(**{field: profile[field] for field in PROFILE_FIELDS}),
@@ -418,7 +466,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=_without_missing_evidence(row["evidence"], fact_ids, photo_ids),
+                evidence=topic_evidence[row["topic_id"]],
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -510,13 +558,18 @@ async def save_result(
 ) -> bool:
     """새 주제, 카드 12장, 작업 완료를 한 트랜잭션으로 저장.
 
-    그 사이 임대가 만료돼 실패 처리됐으면 저장하지 않고 `False`.
+    임대가 남은 `running` 작업일 때만 저장함. 임대 시각이 지났으면 만료 정리 전이라도
+    아무것도 저장하지 않고 `False`. 그 사이 실패 처리된 작업도 `False`.
+
+    시각은 프로필 잠금을 기다린 뒤 `clock_timestamp()`로 봄. 트랜잭션 안의 `now()`는
+    트랜잭션 시작 시각이라 잠금을 기다리는 동안 끝난 임대를 남은 것으로 봄. 작업 행을
+    잠근 뒤에는 만료 정리가 기다렸다가 끝난 작업을 건너뜀.
     """
     async with connection.transaction():
         await lock_profile(connection, job.profile_id)
         cursor = await connection.execute(
             "SELECT 1 FROM card_sets WHERE set_id = %s AND status = 'running'"
-            "   AND lease_expires_at IS NOT NULL FOR UPDATE",
+            "   AND lease_expires_at > clock_timestamp() FOR UPDATE",
             (job.set_id,),
         )
         if await cursor.fetchone() is None:
@@ -552,11 +605,14 @@ async def save_result(
                     Jsonb(card.evidence),
                 ),
             )
-        log = {
-            "input": context.model_dump(mode="json", by_alias=True),
-            "log": result.log,
-            "cards": [{"position": card.position, **card.extra} for card in result.cards],
-        }
+        # 기록에는 보낸 글을 복사하지 않고 ID와 숫자만 남김(`card_generation_log`)
+        log = reference_log(
+            {
+                "input": context.model_dump(mode="json", by_alias=True),
+                "log": result.log,
+                "cards": [{"position": card.position, **card.extra} for card in result.cards],
+            }
+        )
         # 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀌면 생성 결과를 정정 전
         # 카드처럼 사용하지 않고 다음 준비 때 갱신한다. 생성 중에 분석이 끝나 새로
         # 생긴 사진은 입력에 없던 새 재료라서 다음 카드부터 쓴다.
@@ -580,7 +636,7 @@ async def save_result(
 
 
 class CardGenerationProcessor:
-    """worker 처리 함수. 실패하면 보낸 context를 `generation_log.input`에 남기고 실패 처리."""
+    """worker 처리 함수. 실패하면 보낸 context의 ID를 `generation_log.input`에 남기고 실패 처리."""
 
     def __init__(self, *, queue: CardGenerationQueue, generate: Generate) -> None:
         self._queue = queue
@@ -614,3 +670,7 @@ class CardGenerationProcessor:
             return
         if not await save_result(connection, job, context, result):
             logger.warning("card_generation_lease_lost set_id=%s", job.set_id)
+            # 만료 정리를 기다리지 않고 임대 만료로 끝냄. 이미 끝난 작업은 `fail`이 바꾸지 않음.
+            await self._queue.fail(
+                connection, job, error_code=LEASE_EXPIRED_ERROR, generation_input=sent
+            )

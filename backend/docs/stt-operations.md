@@ -8,8 +8,8 @@ PR #190의 운영 파일([`ops/stt-backup/`](../ops/stt-backup/), [`ops/ck-backu
 
 ## 현재 구현 (2026-11-09 기준)
 
-- STT 서버 전사 기본값이 #276(11/9 병합)으로 `vad_filter=True`, `condition_on_previous_text=False`로 바뀌었다([STT 서버 전사 옵션](../../stt-server/README.md#전사-옵션)). 승인 배포 workflow(`.github/workflows/deploy.yml`)는 기본 교체 대상(`DEPLOY_SERVICES`)이 api, card-worker, speech-worker, photo-worker이고 STT 서버는 바꾸지 않는다. STT 서버 반영은 서버마다 손으로 한다.
-  - ck 예비 서버: 11/9 PM 승인으로 손으로 반영했다. #276에서 바뀐 소스 파일 두 개와 `run-stt.sh`를 바꾸고 Supervisor로 재시작한 뒤 `/health/live` 200을 확인했다(저장소 밖 팀 운영 기록). 되돌리려면 `runtime.env`에 `SAEROK_STT_ASR_VAD_FILTER=false`, `SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT=true`를 넣고 재시작한다(`run-stt.sh`가 이 두 값을 넘긴다).
+- STT 서버 전사 기본값이 #276(11/9 병합)으로 `vad_filter=True`, `condition_on_previous_text=False`로 바뀌었다([STT 서버 전사 옵션](../../stt-server/README.md#전사-옵션)). 승인 배포 workflow(`.github/workflows/deploy.yml`)는 기본 교체 대상(`DEPLOY_SERVICES`)이 api, card-worker, speech-worker, photo-worker이고 STT 서버는 바꾸지 않는다. 11/9 승인 배포(Deploy run 42568179490, develop `59190ba7`)도 이 네 서비스만 교체했다(실행 기록의 `DEPLOY_SERVICES`). STT 서버 반영은 서버마다 손으로 한다.
+  - ck 예비 서버: 11/9 오전에 PM 승인을 받아 손으로 반영했다. #276에서 바뀐 소스 파일 두 개와 `run-stt.sh`를 바꾸고 Supervisor로 재시작한 뒤 `/health/live` 200을 확인했다(저장소 밖 팀 운영 기록). 되돌리려면 `runtime.env`에 `SAEROK_STT_ASR_VAD_FILTER=false`, `SAEROK_STT_ASR_CONDITION_ON_PREVIOUS_TEXT=true`를 넣고 재시작한다(`run-stt.sh`가 이 두 값을 넘긴다).
   - 기본 GPU 서버: 아직 반영하지 않았다. 11/8에는 기본 서버에 접속되지 않아 운영 분석이 예비 서버로 처리됐다([11/8 안정성 시험](stability-test-20261108.md)). 11/9 기록 시점에도 기본 서버 연결이 끊겨 운영 분석은 ck로만 처리되고 있었다(저장소 밖 팀 운영 기록).
 - 아래 표의 도구 중 운영 상태 점검(#193, #224), 배포 기록(#194), 실패 분석 재처리(#213)는 11/5 develop에 병합됐고, BE 쪽은 11/5 운영 배포부터 운영 서버에 있다. #213의 앱 재요청 화면은 그 변경이 든 앱 빌드가 설치돼야 쓸 수 있다. 분석 접수 제어(#215)는 병합하지 않고 닫혔다.
 - 운영 점검 알림이 5분마다 `runtime_check --probe-stt`를 실행한다(11/7 설치, 저장소 밖 팀 운영 배포 기록). 설정은 [운영 점검](runtime-check.md)을 따른다.
@@ -21,7 +21,7 @@ PR #190의 운영 파일([`ops/stt-backup/`](../ops/stt-backup/), [`ops/ck-backu
 | 운영 상태 점검 `runtime_check`와 `--probe-stt` | worker 상태, 기본 및 예비 `/health/live` 확인 | `docker compose ps`, `docker inspect`, worker 컨테이너 안에서 직접 요청 | #193, #224 병합. `--probe-stt`, `--worker-container`, `--check-ml-config` 사용 |
 | 분석 접수 제어 `deployment_control` | 새 접수와 worker 새 임대 중지 | 없음. 처리 중 작업을 확인하고 중단 시점을 기록 | #215 미병합으로 닫힘. 접수 중지 스위치 없음. 승인 배포 workflow는 처리 중 작업이 0일 때만 worker를 멈춤 |
 | 배포 기록 | 실행 이미지와 migration 대조 | 실제 compose 파일 조합과 이미지 태그를 직접 기록 | #194 병합. 승인 배포 workflow 8단계가 `capture_release.py`로 기록 |
-| 실패 분석 재처리 | 생성 단계 실패의 수동 복구 | 없음. 실패한 회차가 자동으로 다시 처리된다고 안내하지 않음 | #213 병합, BE는 11/5부터 운영 서버([수동 복구](speech-recovery.md)). 앱 재요청 화면은 앱 빌드 배포가 따로 필요. 자동 재처리는 여전히 없음 |
+| 실패 분석 재처리 | 생성 단계 실패의 수동 복구 | 없음. 실패한 회차가 자동으로 다시 처리된다고 안내하지 않음 | #213 병합, BE는 11/5부터 운영 서버([수동 복구](speech-recovery.md)). 11/9 배포부터 재요청은 회차당 3회까지(#285). 앱 재요청 화면은 앱 빌드 배포가 따로 필요. 실패한 회차의 자동 재처리는 여전히 없음 |
 
 ## 세 경로를 구분한다
 

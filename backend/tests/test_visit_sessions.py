@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.api.routes import visit_sessions as routes
+from app.core.database import connect
 from tests.card_fixtures import (
     card_set_in,
     completed_card_set,
@@ -33,6 +35,25 @@ def _create(database_url, user_id, set_id, card_ids):
 
 def _session_count(database_url):
     return query(database_url, "SELECT count(*) AS n FROM visit_sessions")[0]["n"]
+
+
+def _delete_profile_after(monkeypatch, name, database_url, profile_id):
+    """라우트가 부르는 `name`이 끝난 직후 같은 계정의 다른 요청이 프로필을 지운 상황."""
+    original = getattr(routes, name)
+
+    async def then_delete(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        async with connect(database_url) as other:
+            await other.execute("DELETE FROM profiles WHERE profile_id = %s", (profile_id,))
+        return result
+
+    monkeypatch.setattr(routes, name, then_delete)
+
+
+def _profile_of_set(database_url, set_id):
+    return query(
+        database_url, "SELECT profile_id FROM card_sets WHERE set_id = %s", (set_id,)
+    )[0]["profile_id"]
 
 
 # ── 5-1 ──────────────────────────────────────────────
@@ -110,6 +131,35 @@ def test_session_on_other_accounts_set_is_not_found(migrated_database_url):
     assert _session_count(migrated_database_url) == 0
 
 
+def test_session_on_a_profile_deleted_after_the_ownership_check_is_not_found(
+    migrated_database_url, monkeypatch
+):
+    user_id, set_id, cards = with_db(migrated_database_url, _ready_set)
+    profile_id = _profile_of_set(migrated_database_url, set_id)
+    _delete_profile_after(monkeypatch, "require_owned", migrated_database_url, profile_id)
+
+    res = _create(migrated_database_url, user_id, set_id, [cards[0]])
+
+    assert res.status_code == 404 and res.json()["errorCode"] == "CARD_GENERATION_NOT_FOUND"
+    assert _session_count(migrated_database_url) == 0
+
+
+def test_session_response_is_built_before_the_profile_can_be_deleted(
+    migrated_database_url, monkeypatch
+):
+    user_id, set_id, cards = with_db(migrated_database_url, _ready_set)
+    profile_id = _profile_of_set(migrated_database_url, set_id)
+    # 5-1 오류 표에는 회차 404가 없다. 만든 회차는 프로필을 잠근 동안 응답으로 만든다.
+    _delete_profile_after(monkeypatch, "create_visit_session", migrated_database_url, profile_id)
+
+    res = _create(migrated_database_url, user_id, set_id, [cards[0]])
+
+    assert res.status_code == 201
+    assert res.json()["setId"] == str(set_id)
+    assert res.json()["selectedCardIds"] == [str(cards[0])]
+    assert _session_count(migrated_database_url) == 0
+
+
 # ── 5-3 ──────────────────────────────────────────────
 async def _session(connection, *, evaluated=False):
     user_id, profile_id = await user_and_profile(connection)
@@ -169,5 +219,22 @@ def test_reserve_cards_on_other_accounts_session_are_not_found(migrated_database
     other_user, session_id, cards = with_db(migrated_database_url, build)
 
     res = _add(migrated_database_url, other_user, session_id, [cards[9]])
+
+    assert res.status_code == 404 and res.json()["errorCode"] == "VISIT_SESSION_NOT_FOUND"
+
+
+@pytest.mark.parametrize("deleted_after", ["require_owned", "add_session_cards"])
+def test_reserve_cards_on_a_deleted_profile_are_not_found(
+    migrated_database_url, monkeypatch, deleted_after
+):
+    user_id, session_id, cards = with_db(migrated_database_url, _session)
+    profile_id = query(
+        migrated_database_url,
+        "SELECT profile_id FROM visit_sessions WHERE session_id = %s",
+        (session_id,),
+    )[0]["profile_id"]
+    _delete_profile_after(monkeypatch, deleted_after, migrated_database_url, profile_id)
+
+    res = _add(migrated_database_url, user_id, session_id, [cards[9]])
 
     assert res.status_code == 404 and res.json()["errorCode"] == "VISIT_SESSION_NOT_FOUND"

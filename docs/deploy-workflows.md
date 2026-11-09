@@ -70,7 +70,7 @@ GitHub의 Actions 탭에서 Deploy (manual)를 고르고 모드, SHA, 대상 브
 
 ### 서버 조건
 
-11/7 운영 서버에서 읽기로 확인한 값이며, 11/8 세 번의 실제 배포가 이 조건에서 통과했다. 하나라도 다르면 이 workflow를 실행하지 않고 서버 담당과 원인을 먼저 확인한다. 운영 서버는 detached HEAD라 [수동 절차](../backend/docs/deployment.md#갱신)의 `git pull`을 그대로 쓸 수 없고, 손으로 바꾸면 workflow 기록과 서버 상태가 어긋난다.
+11/7 운영 서버에서 읽기로 확인한 값이며, 11/8 세 번과 11/9 한 번의 실제 배포가 이 조건에서 통과했다. 하나라도 다르면 이 workflow를 실행하지 않고 서버 담당과 원인을 먼저 확인한다. 운영 서버는 detached HEAD라 [수동 절차](../backend/docs/deployment.md#갱신)의 `git pull`을 그대로 쓸 수 없고, 손으로 바꾸면 workflow 기록과 서버 상태가 어긋난다.
 
 - SSM Agent가 실행 중이다. SSM 명령은 root로 실행되며 git 쓰기는 `sudo -u <DEPLOY_HOST_USER>`와 umask 022로 한다. root에서 하는 git 읽기는 `--no-optional-locks`로 `.git/index`를 다시 쓰지 않는다. root 소유 index가 남으면 저장소 소유자의 checkout이 실패하고, umask 077로 checkout한 파일은 이미지 안의 비root 사용자가 읽지 못한다.
 - `docker compose`, `git`, `curl`, `sudo`, `jq`와 Python 3.11 이상이 있다(운영 서버는 3.12). `scripts/`의 도구가 3.11 기능을 쓴다.
@@ -129,6 +129,16 @@ Deploy는 배포할 때마다 `saerok-backend:rollback-<실행 번호>`와 `saer
 2. 확인한 태그만 `docker image rm <태그>`로 지운다. 실행 중인 컨테이너가 쓰는 이미지의 마지막 태그는 Docker가 거절하므로 `-f`를 붙이지 않는다. compose가 쓰는 이미지 이름(`docker compose config`의 `image`)은 지우지 않는다.
 3. `docker image prune`으로 태그가 없어진 이미지만 정리한다. `docker image prune -a`는 컨테이너가 쓰지 않는 이미지를 모두 지워 보존 태그가 없는 이전 이미지까지 사라질 수 있고, `docker system prune`은 멈춘 컨테이너와 네트워크까지 지우므로 쓰지 않는다.
 
+## 백업 파일 정리
+
+2단계 백업은 `check`와 `deploy` 모두 실행할 때마다 운영 DB 전체 덤프를 `DEPLOY_BACKUP_DIR`에 하나씩 남긴다. 복원 검사가 실패해도 덤프는 남는다. workflow는 백업을 지우지 않는다.
+
+2026-11-09 PM 결정에 따라 14일 보관한다. 서버의 systemd timer(`backend/ops/backup-prune/`)가 매일 한 번, 만든 지 14일이 지난 백업을 지우고 복원 확인된 가장 최근 백업 1개는 날짜와 상관없이 남긴다. timer의 설치, 확인과 되돌리기는 서버 담당이 [오래된 백업 정리](../backend/docs/release-safety.md#오래된-백업-정리14일-보관)에 따라 한다. 이 문서를 고친 시점에는 설치하지 않았다. 현재 구현 (2026-11-09 기준): timer 파일은 11/9 배포(develop `59190ba7`)로 서버 체크아웃에 들어왔지만 Deploy는 설치하지 않으며, 팀 운영 기록에 설치 기록이 없다. 설치 전까지 백업은 실행마다 쌓인다.
+
+- timer에 적힌 백업 폴더(`/opt/saerok-backups`)는 `DEPLOY_BACKUP_DIR`와 같아야 한다. 이 변수를 바꾸면 timer의 service 파일도 함께 바꾼다.
+- 실패 요약의 되돌리기 안내에 나온 백업 파일도 14일이 지나면 지워질 수 있다. 가장 최근 복원 확인 백업은 남는다.
+- 백업을 운영 DB에 복원하면 백업 뒤의 탈퇴와 동의 철회 등이 되돌아갈 수 있다. 다시 적용하는 절차는 후속 작업이다([이상이 생겼을 때](../backend/docs/release-safety.md#이상이-생겼을-때)).
+
 ## 검증 범위
 
 11/7 로컬에서 확인한 것과 확인하지 않은 것이다. 검사 스크립트와 결과는 PR에 적었다.
@@ -164,10 +174,14 @@ GitHub Actions 실행 결과와 운영 배포 기록으로 확인한 것이다. 
 | 11/8 02:42~02:49 Deploy `deploy` (run 42397653863, Release build 42397205565) | develop `42938250` | 8단계 성공. migration 없음 |
 | 11/8 17:09 Deploy `deploy` (run 42461734289) | develop `8a9508f7`(#267 병합) | 취소. 배포 작업은 단계를 하나도 실행하지 않아 서버는 바뀌지 않았다 |
 | 11/8 22:36~22:39 Deploy `deploy` (run 42485750502, Release build 42485330291) | develop `9c2b8276`(#267, #273 포함) | 8단계 성공. 백업 격리 복원 확인, migration 없음(`e7c3a1f94d20`), api, card-worker, speech-worker, photo-worker 교체, live와 ready 200, 배포 기록 저장 |
+| 11/9 14:35 Deploy `deploy` (run 42568179490 1차 시도) | develop `59190ba7` | 실패. 사전 점검에서 처리 중인 카드 생성 1건(`ACTIVE_JOBS cards=1`, `running` 중 임대가 없거나 만료되지 않은 작업)으로 `IN_PROGRESS_WORK` 멈춤. 서버와 DB는 바뀌지 않았다. 같은 출력에서 서버 저장소가 workflow 밖에서 #275의 작업 브랜치(`fix/first-cards-wait-photo-analysis`)로 체크아웃돼 있었다(추적 파일 변경은 없음) |
+| 11/9 14:41~14:43 Deploy `deploy` (run 42568179490 2차 시도, Release build 42567070594) | develop `59190ba7`(#275, #277~#291 포함) | 8단계 성공. 사전 점검의 이전 이미지 revision `9c2b8276`, 처리 중 작업 0건. 백업 격리 복원 확인, migration `e7c3a1f94d20 → 202cdc671d82 → 685f243e9f1f`, api와 worker 셋 교체, live와 ready 200, 사후 revision `685f243e9f1f` 일치, 배포 기록 저장 |
 
-- 2026-11-09 기준 운영 BE는 위 마지막 배포의 develop `9c2b8276`이다. 그 뒤 11/9에 develop에 병합된 BE 변경 #275(사진 분석 완료로 받아 둔 카드 묶음을 `needsRefresh`로 바꾸지 않음), #277(7-4 주제 결정 승인의 카드 묶음 잠금과 갱신 표시), #278(요청 본문 크기 상한과 업로드 경로의 본문 전 토큰 확인), #279(전사 보관 기한을 넘기거나 지워진 작업의 전사를 리포트 생성에 보내지 않음), #280(전사 저장 직후 멈춘 녹음 작업 이어받기)은 운영에 배포되지 않았다(develop `d9643466`까지). `9c2b8276..d9643466`에 migration은 없다.
-- 이 변경을 처음 배포할 때 사람이 따로 할 일이 둘 있다(각 PR 본문의 배포 안내). #278이 `backend/Caddyfile`을 바꿨으므로 Deploy가 끝난 뒤 caddy를 따로 다시 만든다([배포 문서의 갱신](../backend/docs/deployment.md#갱신)). API의 경로별 본문 상한은 api 교체만으로 적용된다. #280 이전부터 `sttCompleted`로 멈춰 있던 녹음 작업은 인계 임대가 없어 이어받지 않으므로, 배포 직후 운영 DB에서 `status = 'sttCompleted' AND retry_of_analysis_id IS NULL AND lease_expires_at IS NULL`인 행 수를 보고, 있으면 그 행의 `lease_expires_at`을 `now()`로 한 번 바꾼다. 운영에는 `--stt-only` worker가 없어 이 조건의 행은 모두 이어받을 작업이다.
-- 11/8 세 번의 Deploy 배포 모두 사후 점검에서 `DELETION_QUEUE`, `OVERDUE_AUDIO` 주의가 남았다. 삭제 대기열과 기한 지난 녹음 원본을 아직 실제로 지우지 않았기 때문이며 배포 실패로 보지 않았다([운영 점검](../backend/docs/runtime-check.md#주기-실행과-알림)).
-- Android 빌드와 서명은 아직 확인하지 못했다. 11/9 확인 시점까지의 Release build 실행(위 세 실행 포함)은 `SAEROK_API_BASE_URL`과 `SAEROK_GOOGLE_SERVER_CLIENT_ID`가 설정되지 않아 앱 빌드를 건너뛰었고, APK나 AAB artifact를 만든 실행이 없다. release manifest의 `android.built`도 `false`이고 앱 버전 값은 비어 있다(예: run 42485330291).
-- BE 배포 성공은 Android 앱 출시가 아니다. 11/8 기준 Play 프로덕션 첫 게시는 검토 중이다([README의 배포와 시연](../README.md#배포와-시연)).
+- 2026-11-09 기준 운영 BE는 위 마지막 배포의 develop `59190ba7`이다. 그 전 운영은 11/8 배포의 develop `9c2b8276`이었다. 이 배포로 운영에 들어간 11/9 병합 BE 변경은 #275(사진 분석 완료로 받아 둔 카드 묶음을 `needsRefresh`로 바꾸지 않음), #277(7-4 주제 결정 승인의 카드 묶음 잠금과 갱신 표시), #278(요청 본문 크기 상한과 업로드 경로의 본문 전 토큰 확인), #279(전사 보관 기한을 넘기거나 지워진 작업의 전사를 리포트 생성에 보내지 않음), #280(전사 저장 직후 멈춘 녹음 작업 이어받기), #281(전사 정리의 기한 경계와 프로필 삭제 경합), #282(생년월일 범위와 이야기 길이, 개수 상한), #283(지워진 녹음 작업과 끊긴 사진 업로드도 삭제 대기열에 남김), #284(가입 동의 값 확인과 등록 토큰 1회 사용), #285(계정별 사용 한도), #286(다른 작업을 처리하는 동안 기다리는 카드 생성을 실패시키지 않음, migration `202cdc671d82`), #287(백업 정리 timer 파일), #288(AI 사진 분석 동의 철회 때 AI 설명 삭제), #289(임대가 지난 뒤 온 카드 생성 결과를 저장하지 않음), #290(잘못된 토큰을 DB 연결 전에 거절하고 구글 공개키 재조회를 묶음), #291(카드 생성 기록에 ID만 남김, migration `685f243e9f1f`)이다.
+- Release build 42567070594는 develop을 main으로 올리는 PR #230의 `pull_request` 실행이다. 이미지와 release manifest는 GitHub가 만든 병합 시험 커밋(`67bd615c`) 기준이며, 이 커밋의 파일 내용은 `59190ba7`과 같다. Deploy의 Release build 확인은 PR head인 `59190ba7`로 이 실행을 찾았다. 첫 시도는 uv 설치 단계의 일시 실패로 끝났고, 2차 시도에서 9개 작업이 모두 통과했다.
+- 배포 뒤 기능 확인(팀 운영 기록): 2차 시도 뒤 Galaxy S22에서 develop `59190ba7`로 로컬 빌드한 APK(versionCode 7, 디버그 서명, 시험 계정)로 운영 서버를 확인했다. 로그아웃 뒤 다시 로그인, 앱 재실행 뒤 세션 유지, 계정 동의 화면(5개 항목), 사진 올리기 전 동의 시트(#272)와 업로드 뒤 AI 설명 생성, 사진 분석이 끝나기 전에 받아 둔 카드 묶음으로 분석이 끝난 뒤 면회 시작(#275), AI 사진 분석 동의를 끈 뒤 AI 설명 삭제와 직접 쓰기 안내(#288), 면회 뒤 새 카드 묶음 생성(약 30초)이 정상이었다. 말소리 없는 15초 녹음은 리포트 실패로 끝났고 다시 요청(기기 녹음 재제출)도 실패했다(말소리가 없어 예상한 결과). 정상 리포트와 푸시, 새 계정 가입, 7-4 승인, 긴 이야기 입력, TalkBack은 확인하지 못했다. 이 APK는 Release build나 GitHub Releases의 APK가 아니다.
+- 이 배포 뒤 사람이 따로 할 일이 셋 있다(각 PR 본문의 "배포 때 할 일"). 2026-11-09 기준 팀 운영 기록에는 셋 다 실행한 기록이 없다. #278이 `backend/Caddyfile`을 바꿨으므로 caddy를 따로 다시 만든다([배포 문서의 갱신](../backend/docs/deployment.md#갱신)). 2차 시도의 교체 단계 출력에서 caddy는 이전 컨테이너 그대로였다. API의 경로별 본문 상한은 api 교체로 이미 적용됐다. #280 이전부터 `sttCompleted`로 멈춰 있던 녹음 작업은 인계 임대가 없어 이어받지 않으므로, 운영 DB에서 `status = 'sttCompleted' AND retry_of_analysis_id IS NULL AND lease_expires_at IS NULL`인 행 수를 보고, 있으면 그 행의 `lease_expires_at`을 `now()`로 한 번 바꾼다. 운영에는 `--stt-only` worker가 없어 이 조건의 행은 모두 이어받을 작업이다. #287의 백업 정리 timer는 Deploy가 설치하지 않으므로 서버 담당이 [오래된 백업 정리](../backend/docs/release-safety.md#오래된-백업-정리14일-보관)의 "서버에 설치"로 설치한다.
+- 11/8 세 번과 11/9 한 번의 Deploy 배포 모두 사후 점검에서 `DELETION_QUEUE`, `OVERDUE_AUDIO` 주의가 남았다. 삭제 대기열과 기한 지난 녹음 원본을 아직 실제로 지우지 않았기 때문이며 배포 실패로 보지 않았다([운영 점검](../backend/docs/runtime-check.md#주기-실행과-알림)).
+- Android 빌드와 서명은 아직 확인하지 못했다. 11/9 확인 시점까지의 Release build 실행(위 네 실행 포함)은 `SAEROK_API_BASE_URL`과 `SAEROK_GOOGLE_SERVER_CLIENT_ID`가 설정되지 않아 앱 빌드를 건너뛰었고, APK나 AAB artifact를 만든 실행이 없다. release manifest의 `android.built`도 `false`이고 앱 버전 값은 비어 있다(예: run 42485330291, 42567070594). 42567070594의 Android 작업은 성공으로 끝났지만 설정 확인 다음의 빌드 단계는 모두 건너뛰었고, artifact는 백엔드 이미지 기록, OpenAPI 스키마와 release manifest뿐이다.
+- BE 배포 성공은 Android 앱 출시가 아니다. 11/8 기준 Play 프로덕션 첫 게시는 검토 중이다([README의 배포와 시연](../README.md#배포와-시연)). 2026-11-09 기준 GitHub Releases의 시연용 APK는 11/8 18:31 KST에 게시한 파일 그대로이며, 그 뒤 병합된 앱 변경 #270~#272는 들어 있지 않다.
 - Deploy는 STT 서버를 배포하지 않는다. #276(11/9 병합)의 STT 전사 기본값 변경은 이 workflow와 별도로 서버마다 반영하며, 2026-11-09 기준 ck 예비 서버에만 손으로 반영했고 기본 STT 서버는 아직 갱신하지 않았다([배포 안내의 AI 서버 연결](../backend/docs/deployment.md#아직-정하지-않은-것)).
