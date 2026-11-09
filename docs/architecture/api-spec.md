@@ -306,14 +306,14 @@ HTTPS 앞단(Caddy, `backend/Caddyfile`)에도 514 MiB 본문 상한이 있다. 
 
 ### 1-7. `PUT /auth/me/push-devices/{fid}` — 신규
 
-리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음. [PR #248](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/248)로 develop에 병합됐고 11/7 운영 반영(develop `b9747ccd`, [실제 실행 기록](../deploy-workflows.md))부터 운영에 있으며 지금 운영(develop `9c2b8276`)에도 들어 있다.
+리포트 완료 푸시를 받을 이 기기를 등록한다. 본문 없음. [PR #248](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/248)로 develop에 병합됐고 11/6 운영 서버 갱신(develop `da606cb0`, 운영 배포 기록)부터 운영에 있으며 지금 운영(develop `9c2b8276`)에도 들어 있다.
 
 - `fid`: 앱이 FCM에 등록하고 받은 Firebase Installation ID(FID). FCM은 기기 토큰(`getToken`) 대신 FID를 쓰도록 바꿨고, 서버는 HTTP v1 발송의 `fid`에 이 값을 넣는다. 영문 대소문자, 숫자, `-`, `_`로 된 1~64자다(지금 FID는 22자).
 - 같은 요청을 다시 보내면 등록 시각(`push_devices.registered_at`)만 새로 한다. 앱은 켤 때마다 다시 보낸다.
 - 다른 계정에 등록된 FID면 이 계정으로 옮긴다. 같은 기기에서 계정을 바꿔 로그인한 경우이며, 앞 계정의 알림이 이 기기로 가지 않게 된다.
 - 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
 - 탈퇴(1-5)하면 계정과 함께 지운다.
-- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`의 리포트를 연다([PR #264](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/264)). 리포트 생성 실패는 알리지 않는다.
+- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`의 리포트를 연다([PR #247](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/247). 홈 밖의 화면에서 누른 알림을 여는 것은 [PR #264](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/264)). 리포트 생성 실패는 알리지 않는다.
 
 응답 `204`
 
@@ -1303,7 +1303,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
 - 모두 `rejected`인 요청(`반영하지 않고 마치기`)은 카드 생성 입력을 바꾸지 않는다. 카드를 만드는 중에도 받고 `needsRefresh`를 바꾸지 않는다.
 
-현재 구현 (2026-11-09 기준): 위 두 항목과 아래 409 `CARD_GENERATION_IN_PROGRESS`는 11/9 develop에 병합된 [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277)이며 운영 서버(develop `9c2b8276`)에는 아직 없다. 운영 서버는 주제 결정을 승인해도 카드를 만드는 중에 거절하지 않고, 받아 둔 묶음의 `needsRefresh`도 바꾸지 않는다.
+현재 구현 (2026-11-09 기준): 위 첫 항목의 주제 승인 처리(프로필 잠금, 카드 생성 중 거절, `needsRefresh` 표시)와 아래 409 `CARD_GENERATION_IN_PROGRESS`는 11/9 develop에 병합된 [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277)이며 운영 서버(develop `9c2b8276`)에는 아직 없다. 운영 서버는 주제 결정을 승인해도 카드를 만드는 중에 거절하지 않고, 받아 둔 묶음의 `needsRefresh`도 바꾸지 않는다. 생애 정보만 승인한 요청과 모두 `rejected`인 요청의 처리는 운영도 같다.
 
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
@@ -1381,7 +1381,7 @@ S3 삭제만 실패한 경우에는 삭제 요청을 대기열에 남기고 리�
 
 현재 구현 (2026-11-09 기준): 위의 이어받기는 [#280](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/280), 남은 전사 기한에 따른 8-3 시작 제한과 8-3 전송 방식의 변경 제안 호출 직전 확인은 [#279](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/279)로 11/9 develop에 병합됐고 운영 서버(develop `9c2b8276`)에는 아직 없다. #280 전인 운영 서버에서는 전사를 저장한 뒤 8-3을 시작하기 전에 멈춘 작업을 다시 가져가는 경로가 없어, 그 작업은 전사 기한(24시간)이 지나 worker 정리로 `TRANSCRIPT_EXPIRED`가 될 때까지 `sttCompleted`로 남는다.
 
-8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다. 이 검사 전에 무음에서 STT가 지어내는 알려진 문장을 지우며, 나뉘어 온 구간도 이어 붙여 비교한다([PR #267](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/267), [전사 입력 검사](../../backend/docs/speech-input-safety.md)).
+8-1이 성공해도 발화 구간이 없거나 공백뿐이면 `EMPTY_TRANSCRIPT`로 끝내고 8-3을 호출하지 않는다. 이 검사 전에 무음에서 STT가 지어내는 알려진 문장을 지우며([PR #263](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/263)), 나뉘어 온 구간도 이어 붙여 비교한다([PR #267](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/267), [전사 입력 검사](../../backend/docs/speech-input-safety.md)).
 
 화자 라벨이 누락되거나 라벨 수가 예상 인원보다 적어도 리포트와 변경 제안 모델을 호출한다.
 화자 미확인 고정 안내로 대체하지 않으며, 라벨 상태만으로 생성 결과의 저장을 거절하지 않는다.
@@ -1793,7 +1793,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 1 | 앨범에서 사진 설명을 수정하는 API와 분석 중 수정 처리. 설명의 별도 승인은 필요 없음. 해결: 3-3으로 구현했고 늦게 온 AI 결과는 보호자 설명을 덮지 않는다([PR #205](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/205)) | 3-3, 카드 생성, 8-4 | FE, BE, AI. 카드 입력 사용과 생애 사실 승인을 구분 |
 | 2 | 리포트 확인 여부 저장(보류). 제안이 없는 리포트는 7-4가 없어 확인했는지 알 수 없음. 앱은 리포트와 제안을 모두 읽으면 확인한 것으로 보고 홈 알림을 지우며, 앱을 다시 켜면 다시 뜬다(#235). 서버 저장은 #236 | 4-1 호출 시점, 5-4 홈 표시, 7-4 | `visit_sessions.report_acknowledged_at` 추가 검토 |
 | 3 | 사진 보관과 AI 분석은 가입 화면의 별도 선택 항목으로 받고 계정별 이력에 저장하기로 PM 결정 완료(2026-10-14). 유효한 동의는 재요청하지 않으며 미동의자는 기능 사용 시 요청. AI 분석 동의(`photoAnalysis`)의 필드, 가입, 조회, 변경 API와 화면, 미동의 사진의 `pending` 유지와 철회 시 분석 중단은 [PR #257](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/257)로 구현했다. 남은 것은 사진 서버 보관 동의의 필드, API와 화면, 그 철회 처리, 분석 동의 철회 전에 저장된 AI 설명의 처리 | 1-1~1-3, 1-6, 3-1, 5-2, 8-4 | FE, BE, AI. 기존 동의 범위를 바꾸는 경우 PM 확인 |
-| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. 사진 한 장 삭제는 3-4로 구현했다([PR #240](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/240)). 보관 동의가 없어 그 철회 동선은 정하지 않았다. 삭제 대기열의 S3 삭제 실행기([PR #204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204)) 코드는 운영 이미지(develop `9c2b8276`)에 들어 있지만 compose 서비스가 아니라 손으로 실행하는 명령이며, 정기 실행은 정하지 않았고 실제 원본 삭제도 하지 않았다 | 3절 | FE, BE, PM |
+| 7 | 사진 삭제와 보관 동의 철회 동선 및 API 형태. 사진 한 장 삭제 API는 3-4로 구현했다([PR #240](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/240)). 앱에는 올라간 사진을 지우는 버튼이 아직 없어 3-4를 부르지 않는다. 보관 동의가 없어 그 철회 동선은 정하지 않았다. 삭제 대기열의 S3 삭제 실행기([PR #204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204)) 코드는 운영 이미지(develop `9c2b8276`)에 들어 있지만 compose 서비스가 아니라 손으로 실행하는 명령이며, 정기 실행은 정하지 않았고 실제 원본 삭제도 하지 않았다 | 3절 | FE, BE, PM |
 | 8 | 카드 생성이나 음성 분석이 처리 중인 프로필 또는 계정을 지울 때의 처리. 삭제를 허용하고 worker가 사라진 행을 건너뛸지, 처리 중에는 409로 막을지 | 1-5, 2-8 | BE |
 | 9 | 입력 중(`inProgress`)인 프로필만 있을 때 로그인 직후 그 프로필의 입력을 이어서 할지, 홈으로 갈지 | 2-1, 호출 순서 | FE, BE |
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |

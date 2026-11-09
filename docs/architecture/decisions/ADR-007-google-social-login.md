@@ -81,7 +81,7 @@
 ## 영향
 
 - BE는 ID 토큰 검증(서명, `aud`, `iss`, 만료), 계정 생성과 조회, 세션 발급과 갱신, 실패 시 오류 코드를 구현한다. 검증에 실패한 토큰을 성공으로 처리하는 대체 경로를 만들지 않는다.
-- [PR 39](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/39)의 개발용 부트스트랩 스키마와 Alembic이 develop에 반영됐다. `users`는 `firebase_uid` 없이 `(provider, social_id)` 기준으로 구성되며 스키마 소유권은 Alembic에 있다. 이 스키마를 현재 계정 저장소에 연결하는 작업은 아직 완료되지 않았다(작성 당시. 2026-11-09 기준 API는 `PostgresAccountRepository`로 `users`와 `consent_records`에 저장한다. 위 현재 구현 표의 계정 저장 행).
+- [PR 39](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/39)의 개발용 부트스트랩 스키마와 Alembic이 develop에 반영됐다. `users`는 `firebase_uid` 없이 `(provider, social_id)` 기준으로 구성되며 스키마 소유권은 Alembic에 있다. 이 스키마를 현재 계정 저장소에 연결하는 작업은 아직 완료되지 않았다(작성 당시. 이 스키마는 PR #90(2026-10-05 병합)에서 새 스키마로 교체됐고, 2026-11-09 기준 API는 `PostgresAccountRepository`로 `users`(`provider`, `social_id` 열 대신 `google_sub` 열)와 `consent_records`에 저장한다. 위 현재 구현 표의 계정 저장 행).
 - FE의 구글 로그인 연결은 [PR 50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)에서 검토한다. 이 ADR에서는 로그인 화면이나 `AuthAccount`를 수정하지 않으며, 위 후속 작업과 실제 구현 상태를 구분한다.
 - FE와 BE는 `Account`의 `loginId` 제거와 `authProvider` 추가를 공통 검토한다. `docs/architecture/data-contracts.md`의 변경 절차는 `Account`의 필드 이름을 FE, AI와 BE가 함께 확인하도록 요구한다.
 - PM 제안의 검토 항목: 구글 계정 식별자 `sub`로 동일 계정을 식별하고, 이메일과 구글 계정 이름은 실제 구현에서 반환되더라도 사용하지 않고 로그인 처리 후 폐기할 수 있는지 BE와 FE가 확인한다. 추가 저장이 필요하면 목적과 이유를 함께 검토한다.
