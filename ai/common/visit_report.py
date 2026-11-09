@@ -25,6 +25,7 @@ __all__ = [
     "VisitReportError",
     "Reaction",
     "Action",
+    "StoryCategory",
     "combine",
     "card_refs",
     "llm_payload",
@@ -40,6 +41,8 @@ from common.speaker_context import speaker_context
 
 Reaction = Literal["positive", "neutral", "negative", "notUsed"]
 Action = Literal["more", "less", "exclude"]
+# 일대기 분류. backend app/schemas/profiles.py의 StoryCategory와 같은 값
+StoryCategory = Literal["family", "hobby", "work", "hometown", "friend", "travel", "other"]
 ErrorCode = Literal["INVALID_REQUEST", "LLM_UNAVAILABLE", "GENERATION_FAILED"]
 
 
@@ -114,16 +117,18 @@ class VisitReportRequest(_Camel):
 
 # ── 결과 ───────────────────────────────────────────────
 class CardSummaryOut(_Camel):
-    """카드 하나의 한 문장 요약."""
+    """카드 하나의 요약. 보통 한 문장이고 오래 이야기한 카드는 더 길 수 있음."""
     card_id: str
     summary: str
 
 
 class LifeFactProposalOut(_Camel):
-    """새 이야기 후보 하나."""
+    """새 이야기 후보 하나. story_category는 AI가 고른 일대기 분류, sensitive는 아픈 기억일 수 있는 후보."""
     title: str
     content: str
     reason: str
+    story_category: StoryCategory = "other"
+    sensitive: bool = False
 
 
 class TopicProposalOut(_Camel):
@@ -134,20 +139,26 @@ class TopicProposalOut(_Camel):
 
 
 class ReportResult(_Camel):
-    """report_generation.generate_report의 결과."""
+    """report_generation.generate_report의 결과. token_usage는 처리 기록용 숫자이고 #106 응답에는 넣지 않음."""
     model: str
     prompt_version: str
     title: str
     body: str
     card_summaries: list[CardSummaryOut]
+    token_usage: dict[str, int] = Field(default_factory=dict)
 
 
 class ProposalResult(_Camel):
-    """proposal_generation.generate_proposals의 결과."""
+    """proposal_generation.generate_proposals의 결과.
+    *_returned는 모델이 낸 개수(거르기 전), token_usage는 두 호출의 토큰 수 합. 셋 다 처리 기록용 숫자이고 #106 응답에는 넣지 않음.
+    """
     model: str
     prompt_version: str
     life_fact_proposals: list[LifeFactProposalOut]
     topic_proposals: list[TopicProposalOut]
+    life_fact_proposals_returned: int = 0
+    topic_proposals_returned: int = 0
+    token_usage: dict[str, int] = Field(default_factory=dict)
 
 
 class VisitReportResult(_Camel):
@@ -175,6 +186,8 @@ class VisitReportError(RuntimeError):
         """code는 ErrorCode 중 하나, message는 사람이 읽을 이유."""
         super().__init__(f"{code}: {message}")
         self.code, self.message = code, message
+        # 실패 직전까지 받은 토큰 수(처리 기록용 숫자). 끊긴 응답이면 incomplete_responses가 담김
+        self.token_usage: dict[str, int] = {}
 
 
 def combine(analysis_id: str, report: ReportResult, proposals: ProposalResult) -> VisitReportResult:
@@ -191,7 +204,9 @@ def card_refs(request: VisitReportRequest) -> dict[str, str]:
 
 
 def llm_payload(request: VisitReportRequest, refs: dict[str, str], with_facts: bool) -> str:
-    """모델에게 보낼 입력 JSON. 카드는 번호표로, 전사는 화자 라벨과 글만. with_facts면 초기 정보와 저장된 이야기도 넣음."""
+    """모델에게 보낼 입력 JSON. 카드는 번호표로, 전사는 화자 라벨과 글만, 녹음 길이는 분 단위(소수 첫째 자리).
+    with_facts면 초기 정보와 저장된 이야기도 넣음.
+    """
     spoken = [s for s in request.transcript.segments if s.text.strip()]
     if not spoken:
         raise VisitReportError("INVALID_REQUEST", "분석할 발화 구간이 없음")
@@ -199,6 +214,7 @@ def llm_payload(request: VisitReportRequest, refs: dict[str, str], with_facts: b
         "transcript_context": speaker_context(
             [s.speaker_label for s in spoken], request.participant_count
         ),
+        "recording_minutes": round(request.transcript.duration_ms / 60000, 1),
         "evaluation": request.evaluation.model_dump(by_alias=True),
         "cards": [{"card": refs[c.card_id], "card_title": c.card_title, "topic": c.topic.title, "reaction": c.reaction}
                   for c in request.cards],

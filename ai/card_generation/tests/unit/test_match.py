@@ -11,7 +11,7 @@ def _topic(tid: str, excluded: bool = False, score: float = 0.0) -> TopicView:
 def _cand(title: str, link: str | None = None) -> CardCandidate:
     return CardCandidate(linked_topic_id=link, new_topic_title=None if link else title,
                          new_topic_description=None if link else "설명", card_title=title, angle="장면",
-                         kind="general", evidence=[], discover_field=None, reason="이유")
+                         kind="general", evidence=[], discover_field=None, sensitive=False, reason="이유")
 
 
 TOPICS = [_topic("t-ok"), _topic("t-ex", excluded=True), _topic("t-low", score=-1.0)]

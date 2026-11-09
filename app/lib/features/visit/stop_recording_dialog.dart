@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 
+/// 참여자 수를 묻는 물음. 만남을 끝낼 때와 녹음을 다시 보낼 때 같다.
+const participantQuestion = '보호자님을 포함해 모두 몇 분인가요?';
+
 /// 만남을 끝내기 전에 띄우는 확인 창이다.
 ///
 /// 두 가지를 한 자리에서 받는다.
@@ -93,8 +96,10 @@ class _StopRecordingDialogState extends State<_StopRecordingDialog> {
               // 화면의 제목과 부제목 사이와 같은 간격이다.
               const SizedBox(height: AppSpacing.sm),
 
-              Text(
-                widget.recovering ? '이 녹음에 몇 분이 함께했나요?' : '오늘 대화에 몇 분이 함께했나요?',
+              // 보호자를 빼고 세는 일이 없게 물음에 보호자를 넣는다. 녹음을
+              // 다시 보내는 창도 같은 물음이다(2026-11-09 PM 결정).
+              const Text(
+                participantQuestion,
                 // 제목보다 한 단계 연하고 얇다. 눈이 제목과 숫자에 먼저 가게
                 // 두고, 이 줄은 곁들이는 설명으로 읽히게 한다.
                 style: AppTypography.sub,

@@ -171,7 +171,7 @@ def test_submission_checks_aliases_and_code_fills_uuids(store, seeded):
                              new_topic_description=None if link else "설명", card_title=f"c{i}", angle="장면",
                              kind="personal" if fact else "general",
                              evidence=[Evidence(fact_id=fact, photo_id=None, field=None)] if fact else [],
-                             discover_field=None, reason="이유")
+                             discover_field=None, sensitive=False, reason="이유")
 
     good = [cand(0, link=a.alias(seeded.topics["coal"]), fact=a.alias(seeded.facts["coal"]))] + \
            [cand(i) for i in range(1, 16)]
@@ -193,7 +193,7 @@ def test_refill_request_uses_aliases_and_lists_merges(store, seeded):
 
     def cand(t):
         return CardCandidate(linked_topic_id=None, new_topic_title=t, new_topic_description="d", card_title=t,
-                             angle="a", kind="general", evidence=[], discover_field=None, reason="r")
+                             angle="a", kind="general", evidence=[], discover_field=None, sensitive=False, reason="r")
 
     coal = seeded.topics["coal"]
     kept = [Matched(1, cand("도시락"), coal, None, "", None), Matched(2, cand("동료"), coal, None, "", None),

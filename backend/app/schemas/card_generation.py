@@ -61,6 +61,9 @@ class Card(CamelModel):
     evidence: list[dict[str, str]]
     selected: bool
     liked: bool  # 보호자의 "좋았어요" 표시(4-5, 4-6)
+    # 저장된 이야기나 세부 정보의 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드. 앱이 표시를 붙여
+    # 보호자가 고르게 함(2026-11-09 PM 결정). 이전에 만든 카드는 false
+    sensitive: bool
 
 
 class CardSet(CamelModel):
@@ -167,6 +170,8 @@ class GeneratedCard(CamelModel):
     follow_up_questions: list[str]
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: Evidence
+    # 아픈 경험을 다루는 카드. `conversation_cards.sensitive`로 저장하고 4-3, 4-4 카드에 담음
+    sensitive: bool
     # 생성 쪽이 채움. BE는 generation_log에만 남김
     extra: dict[str, Any] = Field(default_factory=dict)
 

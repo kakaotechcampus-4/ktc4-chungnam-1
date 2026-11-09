@@ -138,7 +138,7 @@ async def _card_set(
         "SELECT c.card_id, c.position, c.topic_id, t.title, t.description,"
         "       c.card_title, c.description AS card_description, c.primary_question,"
         "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected,"
-        "       c.liked_at IS NOT NULL AS liked"
+        "       c.liked_at IS NOT NULL AS liked, c.sensitive"
         "  FROM conversation_cards c JOIN profile_topics t ON t.topic_id = c.topic_id"
         " WHERE c.set_id = %s ORDER BY c.position",
         (set_id,),
@@ -158,6 +158,7 @@ async def _card_set(
             evidence=row["evidence"],
             selected=row["selected"],
             liked=row["liked"],
+            sensitive=row["sensitive"],
         )
         for row in await cursor.fetchall()
     ]
@@ -610,7 +611,8 @@ async def save_result(
             await connection.execute(
                 "INSERT INTO conversation_cards (set_id, profile_id, topic_id, card_title,"
                 " position, description, primary_question, follow_up_questions,"
-                " evidence_source, evidence) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                " evidence_source, evidence, sensitive)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     job.set_id,
                     job.profile_id,
@@ -622,6 +624,7 @@ async def save_result(
                     card.follow_up_questions,
                     DB_EVIDENCE_SOURCE[card.evidence_source],
                     Jsonb(card.evidence),
+                    card.sensitive,
                 ),
             )
         # 기록에는 보낸 글을 복사하지 않고 ID와 숫자만 남김(`card_generation_log`)
@@ -693,3 +696,15 @@ class CardGenerationProcessor:
             await self._queue.fail(
                 connection, job, error_code=LEASE_EXPIRED_ERROR, generation_input=sent
             )
+            return
+        # 처리 기록(2026-11-09 PM 결정). 카드 문구와 주제 제목은 남기지 않고 개수만 남김
+        logger.info(
+            "card_generation_completed",
+            extra={
+                "set_id": str(job.set_id),
+                "cards": len(result.cards),
+                "sensitive_cards": sum(card.sensitive for card in result.cards),
+                "model": result.model,
+                "prompt_version": result.prompt_version,
+            },
+        )

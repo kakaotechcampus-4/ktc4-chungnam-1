@@ -61,6 +61,11 @@ def test_healthy_primary_does_not_call_backup(payload) -> None:
     result = asyncio.run(client(handler).analyze_speech(payload))
     assert result.analysis_id == payload.analysis_id
     assert calls == ["primary.test"]
+    # 처리 기록용으로 결과를 돌려준 서버를 적는다. JSON에는 나가지 않는다.
+    assert result.stt_server == "primary"
+    assert set(result.model_dump(by_alias=True)) == {
+        "schemaVersion", "analysisId", "language", "durationMs", "text", "segments",
+    }
 
 
 @pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ConnectTimeout])
@@ -80,6 +85,9 @@ def test_connection_failure_calls_backup_once_with_unchanged_payload(payload, er
     assert result.analysis_id == payload.analysis_id
     assert calls == ["primary.test", "backup.test"]
     assert bodies == [payload.model_dump(mode="json", by_alias=True)] * 2
+    assert result.stt_server == "backup"
+    # 알려진 STT 지어낸 문장을 거른 결과(`model_copy`)도 서버 기록을 이어받는다.
+    assert result.model_copy(update={"text": ""}).stt_server == "backup"
 
 
 def test_next_job_starts_with_primary_again(payload) -> None:
@@ -202,7 +210,11 @@ def test_backup_log_contains_no_request_or_connection_details(payload, caplog) -
     with caplog.at_level(logging.WARNING, logger="saerok.ai_server"):
         asyncio.run(client(handler).analyze_speech(payload))
     events = [r.getMessage() for r in caplog.records if r.name == "saerok.ai_server"]
-    assert events == ["speech_analysis_backup_used reason=connect_failure"]
+    # 작업과 이어 볼 수 있게 analysis_id만 붙인다. 연결 오류 내용이나 주소는 남기지 않는다.
+    assert events == [
+        f"speech_analysis_backup_used analysis_id={payload.analysis_id} reason=connect_failure"
+    ]
+    assert "synthetic private detail" not in events[0] and "primary.test" not in events[0]
 
 
 @pytest.mark.parametrize("backup_url", [

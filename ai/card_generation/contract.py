@@ -145,7 +145,9 @@ class CardExtra(_Camel):
 
 
 class CardOut(_Camel):
-    """카드 한 장. evidence_source는 근거 종류, evidence는 근거 항목 목록(none이면 빈 목록)."""
+    """카드 한 장. evidence_source는 근거 종류, evidence는 근거 항목 목록(none이면 빈 목록).
+    sensitive는 아픈 경험을 다루는 카드. 보호자가 보고 고르도록 앱에 표시함(2판부터 나옴).
+    """
     position: int
     topic: TopicOut
     card_title: str
@@ -155,6 +157,7 @@ class CardOut(_Camel):
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: list[dict[str, str]]
     extra: CardExtra
+    sensitive: bool = False
 
 
 class GenerationResult(_Camel):

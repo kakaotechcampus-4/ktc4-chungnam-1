@@ -21,7 +21,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/report.md"
-PROMPT_VERSION = "report-5"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "report-6"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _TITLE_MAX = 200              # #106 응답 검증과 같은 길이
 
 
@@ -34,17 +34,20 @@ def generate_report(request: VisitReportRequest, *, model: str, api_key: str, at
         raise VisitReportError("INVALID_REQUEST", f"모르는 model: {model}")
     refs = card_refs(request)
     payload = llm_payload(request, refs, with_facts=False)
+    usage: dict[str, int] = {}
     try:
         out = invoke_structured(chat_model(ChatConfig(model=model, api_key=api_key)), _Report,
                                 [("system", PROMPT.read_text(encoding="utf-8")), ("user", payload)],
-                                "면회 리포트", attempts, on_retry)
+                                "면회 리포트", attempts, on_retry, usage=usage)
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"
-        raise VisitReportError(code, f"{type(error).__name__}: {error}") from error
+        failed = VisitReportError(code, f"{type(error).__name__}: {error}")
+        failed.token_usage = usage  # 처리 기록용 숫자. 끊긴 응답 수(incomplete_responses)가 여기 담김
+        raise failed from error
     if not out.title.strip() or not out.body.strip():
         raise VisitReportError("GENERATION_FAILED", "제목이나 본문이 비어 있음")
     return ReportResult(model=model, prompt_version=PROMPT_VERSION, title=out.title[:_TITLE_MAX], body=out.body,
-                        card_summaries=_summaries(out, request, refs))
+                        card_summaries=_summaries(out, request, refs), token_usage=usage)
 
 
 # 리포트 LLM의 응답 형식. 모델이 읽는 스키마라 docstring을 두지 않음

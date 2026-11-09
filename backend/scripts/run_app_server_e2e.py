@@ -232,6 +232,7 @@ def _synthetic_generate(request):
                 follow_up_questions=["어떤 색이었나요?", "어디서 보셨나요?", "누구와 보셨나요?"],
                 evidence_source="lifeFact" if evidence else "none",
                 evidence=evidence,
+                sensitive=False,
             )
         )
     return CardGenerationResult(
@@ -363,7 +364,13 @@ def _synthetic_report(request, deadline):
         "body": "수선집 단골손님과 한복 이야기를 나눈 합성 리포트입니다.",
         "cardSummaries": [{"cardId": str(used.card_id), "summary": "E2E 합성 카드 요약"}],
         "lifeFactProposals": [
-            {"title": "E2E 합성 제안 이야기", "content": "한복 고름을 여러 번 다시 다셨어요.", "reason": "E2E 합성 이유"}
+            {
+                "title": "E2E 합성 제안 이야기",
+                "content": "한복 고름을 여러 번 다시 다셨어요.",
+                "reason": "E2E 합성 이유",
+                "storyCategory": "work",
+                "sensitive": False,
+            }
         ],
         "topicProposals": [{"cardId": str(used.card_id), "suggestedAction": "more", "reason": "E2E 합성 이유"}],
     }

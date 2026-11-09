@@ -33,10 +33,12 @@ import 'package:saerok/features/profile/profile_screen.dart';
 import 'package:saerok/features/settings/settings_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
+import 'package:saerok/features/visit/recording_share.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
 
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
+import 'fake_recording_share.dart';
 import 'fake_report_server.dart';
 import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
@@ -207,6 +209,7 @@ Widget _app({
   bool skipGoogleLogin = false,
   PendingUploads? uploads,
   VisitPhotos? photos,
+  RecordingShare? share,
   SelectedProfileStore? selectedProfile,
 }) {
   final router = GoRouter(
@@ -277,6 +280,8 @@ Widget _app({
       // 기기의 녹음 폴더를 건드리지 않는다.
       pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      // 앱 캐시의 공유 사본 폴더를 건드리지 않는다.
+      recordingShareProvider.overrideWithValue(share ?? FakeRecordingShare()),
       selectedProfileStoreProvider.overrideWithValue(
         selectedProfile ?? FakeSelectedProfileStore(),
       ),
@@ -930,6 +935,7 @@ void main() {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
       final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
+      final share = FakeRecordingShare();
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -946,6 +952,7 @@ void main() {
           session: _signedIn(),
           initialLocation: AppRoutes.settings,
           photos: photos,
+          share: share,
         ),
       );
 
@@ -960,6 +967,7 @@ void main() {
       expect(photos.forgottenAccounts, isEmpty, reason: '로그아웃은 면회 사진을 지우지 않는다');
       expect(photos.discarded, isEmpty);
       expect(photos.kept.keys, ['/fake/visit-1.jpg']);
+      expect(share.forgotCopies, 0, reason: '로그아웃은 공유한 녹음 사본을 지우지 않는다');
     });
   });
 
@@ -1038,6 +1046,7 @@ void main() {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
       final photos = FakeVisitPhotos();
+      final share = FakeRecordingShare();
       final selectedProfile = FakeSelectedProfileStore()
         ..values[_signedIn().account.accountId] = 'p-remembered'
         ..values['account-other'] = 'p-other';
@@ -1058,6 +1067,7 @@ void main() {
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
           photos: photos,
+          share: share,
           selectedProfile: selectedProfile,
         ),
       );
@@ -1069,6 +1079,7 @@ void main() {
       expect(uploads.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 녹음과 재전송 기록을 지운다');
+      expect(share.forgotCopies, 1, reason: '공유하며 앱 캐시에 남긴 녹음 사본을 지운다');
       expect(photos.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 면회 사진을 지운다');
@@ -1083,6 +1094,7 @@ void main() {
     testWidgets('서버가 실패하면 화면에 남아 탈퇴되지 않았음을 알린다', (tester) async {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
+      final share = FakeRecordingShare();
 
       await _pumpWithProfile(
         tester,
@@ -1097,6 +1109,7 @@ void main() {
           session: _signedIn(),
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
+          share: share,
         ),
       );
 
@@ -1110,6 +1123,7 @@ void main() {
         isEmpty,
         reason: '탈퇴하지 않았으면 녹음을 지우지 않는다',
       );
+      expect(share.forgotCopies, 0, reason: '탈퇴하지 않았으면 공유 사본도 지우지 않는다');
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
       expect(store.stored, isNotNull);
       expect(

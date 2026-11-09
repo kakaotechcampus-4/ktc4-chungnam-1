@@ -426,6 +426,7 @@ class ConversationCard {
     required this.evidenceSource,
     required this.evidence,
     required this.selected,
+    this.sensitive = false,
   });
 
   factory ConversationCard.fromJson(Map<String, dynamic> json) =>
@@ -442,6 +443,8 @@ class ConversationCard {
             .cast<Map<String, dynamic>>()
             .toList(),
         selected: json['selected'] as bool,
+        // 이 값을 주기 전의 서버와 목 묶음은 조심스러운 카드를 만들지 않았다.
+        sensitive: json['sensitive'] as bool? ?? false,
       );
 
   final String cardId;
@@ -467,6 +470,11 @@ class ConversationCard {
 
   /// 회차를 만들 때 고른 카드와 면회 중 보충한 카드가 `true` 다.
   final bool selected;
+
+  /// 아픈 경험(사별, 전쟁, 사고, 병 같은)을 다루는 카드다. 일대기나 세부 정보에
+  /// 담긴 이야기에서 왔을 때만 AI 가 만든다. 화면은 `조심스러운 이야기` 표시를
+  /// 달아 보호자가 고를지 정하게 한다. 서버가 주지 않으면 `false` 다.
+  final bool sensitive;
 }
 
 // ── 면회 회차 ───────────────────────────────────────
@@ -813,8 +821,8 @@ enum TopicAction {
 
 /// 일대기에 더할 생애 정보 제안. `life_fact_proposals` 에 대응한다.
 ///
-/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title] 과
-/// [content] 뿐이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
+/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title], [content] 와
+/// [storyCategory] 이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
 /// 그대로 들고 있다.
 class LifeFactProposal {
   const LifeFactProposal({
@@ -823,6 +831,8 @@ class LifeFactProposal {
     required this.content,
     required this.reason,
     required this.reviewStatus,
+    this.storyCategory,
+    this.sensitive = false,
   });
 
   factory LifeFactProposal.fromJson(Map<String, dynamic> json) =>
@@ -832,6 +842,8 @@ class LifeFactProposal {
         content: json['content'] as String,
         reason: json['reason'] as String,
         reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
+        storyCategory: json['storyCategory'] as String?,
+        sensitive: json['sensitive'] as bool? ?? false,
       );
 
   final String proposalId;
@@ -841,6 +853,16 @@ class LifeFactProposal {
   final String content;
   final String reason;
   final ChangeReviewStatus? reviewStatus;
+
+  /// AI 가 고른 일대기 분류. [LifeFact.storyCategory] 와 같은 일곱 값이다.
+  ///
+  /// 이 값을 주기 전의 서버는 `null` 이다. 그런 서버는 7-4 에서 분류를 받지
+  /// 않으므로(모르는 필드는 거절한다) 화면은 분류 고르기를 두지 않는다.
+  final String? storyCategory;
+
+  /// 아픈 기억(사별, 전쟁, 사고, 병 같은)일 수 있는 이야기다. 서버가 주지
+  /// 않으면 `false` 다.
+  final bool sensitive;
 }
 
 /// 주제 제안이 가리키는 주제. `profile_topics` 에 대응한다.
@@ -967,28 +989,35 @@ class TopicReview {
 /// [title] 과 [content] 는 일대기에 저장할 최종 값이다. 보호자가 고치지 않았으면
 /// 제안 그대로다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에
 /// 더한 것이다.
+///
+/// [storyCategory] 는 보호자가 분류를 바꿨을 때만 담는다. 없으면 서버가 제안의
+/// 분류로 담는다.
 class LifeFactReview {
   const LifeFactReview.accepted({
     required this.proposalId,
     required this.title,
     required this.content,
+    this.storyCategory,
   }) : reviewStatus = ChangeReviewStatus.accepted;
 
   const LifeFactReview.rejected({required this.proposalId})
     : reviewStatus = ChangeReviewStatus.rejected,
       title = null,
-      content = null;
+      content = null,
+      storyCategory = null;
 
   final String proposalId;
   final ChangeReviewStatus reviewStatus;
   final String? title;
   final String? content;
+  final String? storyCategory;
 
   Map<String, dynamic> toJson() => {
     'proposalId': proposalId,
     'reviewStatus': reviewStatus.name,
     if (title != null) 'title': title,
     if (content != null) 'content': content,
+    if (storyCategory != null) 'storyCategory': storyCategory,
   };
 }
 

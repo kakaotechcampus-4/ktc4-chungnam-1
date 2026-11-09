@@ -265,7 +265,7 @@ def test_proposals_contract(migrated_database_url):
     records = Records(migrated_database_url)
     user_id, profile_id = records.account()
     visit = _reported(records, profile_id)
-    fact_proposal = records.life_fact_proposal(visit)
+    fact_proposal = records.life_fact_proposal(visit, story_category="travel", sensitive=True)
     topic_proposal = records.topic_proposal(visit, 0, "more")
 
     response = records.call(user_id, "GET", f"/api/v1/visit-sessions/{visit.session_id}/proposals")
@@ -280,6 +280,8 @@ def test_proposals_contract(migrated_database_url):
                 "title": "합성 제안",
                 "content": "합성 제안 내용",
                 "reason": "합성 이유",
+                "storyCategory": "travel",
+                "sensitive": True,
                 "reviewStatus": "pending",
             }
         ],
@@ -443,6 +445,26 @@ def test_review_final_values_must_match_review_status(migrated_database_url):
             "lifeFacts": [
                 {"proposalId": fact, "reviewStatus": "accepted", "title": "가" * 101, "content": "합성"}
             ],
+            "topics": rejected_topic,
+        },
+        # 분류는 승인 항목에만, 7개 값 가운데 하나로 보낸다. 고르지 않으면 빼고 보낸다.
+        *(
+            {
+                "lifeFacts": [
+                    {
+                        "proposalId": fact,
+                        "reviewStatus": "accepted",
+                        "title": "합성",
+                        "content": "합성",
+                        "storyCategory": category,
+                    }
+                ],
+                "topics": rejected_topic,
+            }
+            for category in (None, "occupation", "")
+        ),
+        {
+            "lifeFacts": [{"proposalId": fact, "reviewStatus": "rejected", "storyCategory": "work"}],
             "topics": rejected_topic,
         },
         {"lifeFacts": rejected_fact, "topics": [{"proposalId": topic, "reviewStatus": "accepted"}]},

@@ -208,6 +208,7 @@ BE는 성공 응답 스키마와 요청·응답의 `analysisId`가 같은지 검
 | `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
 | `app/services/speech_analysis_pipeline.py` | 제출 서비스, 음성 대기열과 STT 처리 함수 |
+| `app/services/speech_analysis_stats.py` | 작업이 끝나거나 실패할 때 남기는 처리 기록 한 줄(`speech_analysis_finished`) |
 | `app/workers/base.py` | 임대, 처리와 실패 기록을 반복하는 worker 공통 골격 |
 | `app/workers/speech_analysis.py` | 독립 worker 실행 진입점 |
 | `app/clients/ai_server.py` | 내부 AI 서버 HTTP 클라이언트와 오류 매핑 |
@@ -451,6 +452,27 @@ uv run python -m app.workers.speech_analysis --once
 ```
 
 worker와 API는 같은 PostgreSQL과 S3 설정을 사용해야 한다.
+
+### 10.6 처리 기록
+
+worker는 작업 하나가 끝나거나 실패할 때 `speech_analysis_finished` 한 줄을 남긴다(2026-11-09 PM
+결정). JSON 로그의 필드는 다음과 같고, 대화 내용, 제목, 이름은 넣지 않는다. 모르는 값은 `null`이다.
+
+| 필드 | 뜻 |
+| --- | --- |
+| `outcome`, `error_code` | `completed`, `sttCompleted`(`--stt-only`), `stopped`(다른 처리가 먼저 끝냄), `failed`와 실패 코드 |
+| `analysis_id` | 작업 ID |
+| `stt_server` | 결과를 돌려준 STT 서버(`primary`, `backup`). 리포트만 다시 만든 작업은 `null` |
+| `audio_seconds`, `last_segment_end_seconds` | 녹음 길이와 마지막 전사 구간이 끝난 시각(초). 둘의 차이가 크면 전사가 일찍 끊긴 것이다 |
+| `transcript_segments`, `transcript_chars`, `speaker_labels` | 전사 구간 수, 글자 수, 서로 다른 화자 라벨 수 |
+| `report_body_chars` | 리포트 본문 글자 수 |
+| `life_story_proposals_returned`, `life_story_proposals_kept` | 모델이 낸 이야기 후보 수와 AI 쪽에서 거르고 자른 뒤 남은 수 |
+| `story_categories`, `sensitive_proposals` | 남은 후보의 분류별 수와 아픈 기억 표시 수 |
+| `topic_proposals_returned`, `topic_proposals_kept` | 모델이 낸 주제 조정 수와 남은 수 |
+| `model`, `prompt_version`, `token_usage` | 모델, 프롬프트 판(리포트와 변경 제안을 `+`로 이음), 토큰 수 |
+
+카드 생성 worker는 저장을 마치면 `card_generation_completed`(묶음 ID, 카드 수 `cards`, 아픈 경험 카드 수
+`sensitive_cards`, 모델, 프롬프트 판)를 남긴다.
 
 ## 11. 실제 API 통합 테스트
 

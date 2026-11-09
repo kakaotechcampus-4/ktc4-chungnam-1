@@ -1,12 +1,12 @@
 """Persist the first card job's photo barrier.
 
 Revision ID: a926d137e405
-Revises: 685f243e9f1f
+Revises: 9c4e2b7a1f63
 """
 from alembic import op
 
 revision = "a926d137e405"
-down_revision = "685f243e9f1f"
+down_revision = "9c4e2b7a1f63"
 branch_labels = None
 depends_on = None
 
