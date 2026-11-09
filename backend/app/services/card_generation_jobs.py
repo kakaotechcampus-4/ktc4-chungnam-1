@@ -22,6 +22,7 @@ from psycopg.types.json import Jsonb
 
 from app.core.database import DbConnection
 from app.services.card_generation_log import reference_input
+from app.services.card_photo_preparation import advance_ready
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 # 정해진 시간이 지나도 worker가 가져가지 않았고, 그동안 worker가 다른 작업도 가져가지 않은
@@ -82,8 +83,8 @@ class CardGenerationQueue:
                    generation_log = jsonb_build_object('input', NULL)
              WHERE profile_id = %(profile_id)s AND status = 'running'
                AND (
-                    (lease_expires_at IS NULL
-                     AND created_at <= now() - (%(timeout)s * interval '1 second')
+                    (lease_expires_at IS NULL AND photo_wait_until IS NULL
+                     AND coalesce(photo_ready_at, created_at) <= now() - (%(timeout)s * interval '1 second')
                      AND NOT EXISTS (
                          SELECT 1 FROM card_sets AS progress
                           WHERE progress.claimed_at > now() - (%(timeout)s * interval '1 second')
@@ -104,11 +105,13 @@ class CardGenerationQueue:
     async def claim(
         self, connection: DbConnection, *, lease_seconds: int
     ) -> CardGenerationJob | None:
+        await advance_ready(connection)
         cursor = await connection.execute(
             """
             WITH candidate AS (
                 SELECT set_id FROM card_sets
                  WHERE status = 'running' AND lease_expires_at IS NULL
+                   AND photo_wait_until IS NULL
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1

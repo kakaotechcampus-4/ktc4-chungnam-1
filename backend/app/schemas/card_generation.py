@@ -18,6 +18,21 @@ class CamelModel(ApiModel):
     model_config = ConfigDict(alias_generator=to_camel)
 
 
+class PhotoPreparation(CamelModel):
+    set_id: UUID
+    state: Literal["waiting", "choice"]
+    total: int
+    completed: int
+    failed: int
+    pending: int
+    reason: Literal["analysisFailed", "timedOut", "consentRequired"] | None = None
+
+
+class PhotoPreparationChoice(CamelModel):
+    set_id: UUID
+    action: Literal["retry", "continue"]
+
+
 class CardGenerationStatus(CamelModel):
     """4-1, 4-2 응답. 상태별 홈 버튼은 API 명세 4절 표 참고."""
 
@@ -25,6 +40,7 @@ class CardGenerationStatus(CamelModel):
     status: Literal["none", "running", "ready", "inVisit", "failed"]
     # 카드를 받은 뒤 프로필이나 일대기를 고쳐서 새로 만들어야 하면 true. 이 묶음으로는 면회를 시작할 수 없음
     needs_refresh: bool = False
+    photo_preparation: PhotoPreparation | None = None
 
 
 class CardTopic(CamelModel):

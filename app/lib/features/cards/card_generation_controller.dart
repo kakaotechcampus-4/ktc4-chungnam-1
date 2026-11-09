@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
 import '../../data/card_api.dart';
 import '../../data/providers.dart';
 
@@ -54,6 +55,48 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   /// 보내지 않기 위해서다.
   Future<void> start() => _begin((api, run) => _check(api, run));
 
+  /// 홈 재진입은 이미 접수한 작업만 이어받고 새 작업을 만들지 않는다.
+  Future<void> resume() => _begin((api, run) async {
+    final status = await _readStatus(api, run);
+    return status == CardGenerationStatus.running
+        ? _wait(api, run, status)
+        : status;
+  });
+
+  Future<void> resolvePhotos(String action) => _begin((api, run) async {
+    final photos = ref.read(cardPhotoPreparationProvider(profileId));
+    if (api is! PhotoPreparationApi || photos == null) {
+      return _readStatus(api, run);
+    }
+    try {
+      final result = await (api as PhotoPreparationApi).resolvePhotos(
+        profileId,
+        photos.setId,
+        action,
+      );
+      _setPhotos(run, result.photos);
+      return _wait(api, run, result.status);
+    } on ApiServerFailure catch (error) {
+      if (error.errorCode != 'PHOTO_PREPARATION_CHANGED') rethrow;
+      return _wait(api, run, await _readStatus(api, run));
+    }
+  });
+
+  void _setPhotos(int run, CardPhotoPreparation? photos) {
+    if (ref.mounted && run == _run) {
+      ref.read(cardPhotoPreparationProvider(profileId).notifier).set(photos);
+    }
+  }
+
+  Future<CardGenerationStatus> _readStatus(CardApi api, int run) async {
+    if (api is PhotoPreparationApi) {
+      final result = await (api as PhotoPreparationApi).snapshot(profileId);
+      _setPhotos(run, result.photos);
+      return result.status;
+    }
+    return api.status(profileId);
+  }
+
   /// 홈 버튼. 쓸 묶음이 생길 때까지 확인하고, 받은 뒤 정보를 고친 묶음이면
   /// 새로 만든다. 이미 묻는 중이면 그대로 둔다.
   ///
@@ -95,7 +138,7 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     int run, {
     bool remake = false,
   }) async {
-    final status = await api.status(profileId);
+    final status = await _readStatus(api, run);
     if (remake && _outdated(status)) {
       _mark(run, CardMaking.remaking);
       return _generate(api, run);
@@ -122,7 +165,14 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   /// 4-1 로 만들어 달라고 한 뒤 다 될 때까지 기다린다.
   Future<CardGenerationStatus> _generate(CardApi api, int run) async {
     _mark(run, CardMaking.making);
-    return _wait(api, run, await api.requestGeneration(profileId));
+    final status = await api.requestGeneration(profileId);
+    return _wait(
+      api,
+      run,
+      api is PhotoPreparationApi && status == CardGenerationStatus.running
+          ? await _readStatus(api, run)
+          : status,
+    );
   }
 
   /// `running` 이 끝날 때까지 4-2 로 다시 묻는다.
@@ -132,10 +182,15 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     CardGenerationStatus status,
   ) async {
     while (status == CardGenerationStatus.running) {
+      if (!ref.mounted || run != _run) return status;
+      if (ref.read(cardPhotoPreparationProvider(profileId))?.needsChoice ??
+          false) {
+        return status;
+      }
       _mark(run, CardMaking.making);
       await Future<void>.delayed(ref.read(cardPollIntervalProvider));
       if (!ref.mounted || run != _run) return status;
-      status = await api.status(profileId);
+      status = await _readStatus(api, run);
     }
 
     // 새로 만든 묶음이다. 앞서 받아 둔 묶음이나 실패를 버리고 다시 받는다.
@@ -160,6 +215,22 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     if (_stage == CardMaking.remaking) return;
     _setStage(stage);
   }
+}
+
+final cardPhotoPreparationProvider =
+    NotifierProvider.family<
+      CardPhotoPreparationState,
+      CardPhotoPreparation?,
+      String
+    >(CardPhotoPreparationState.new);
+
+class CardPhotoPreparationState extends Notifier<CardPhotoPreparation?> {
+  CardPhotoPreparationState(this.profileId);
+  final String profileId;
+  @override
+  CardPhotoPreparation? build() => null;
+  // ignore: use_setters_to_change_properties
+  void set(CardPhotoPreparation? value) => state = value;
 }
 
 /// 자동 재시도는 끈다. 다시 시도하면 4-1 을 또 보내므로 버튼으로만 한다.
