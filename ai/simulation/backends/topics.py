@@ -61,10 +61,10 @@ class TopicsBackend(Backend):
         ("life_facts", ("fact_id",), OWN),
     ]
     prompt_files = {
-        "추천 ① 조사 에이전트": "card_generation/_versions/v1/prompts/agent.md",
-        "추천 ② 연결 판정": "card_generation/_versions/v1/prompts/match.md",
-        "추천 ④ 문안 작성": "card_generation/_versions/v1/prompts/writing_topics.md",
-        "추천 ①② 같은 이야기 기준": "card_generation/_versions/v1/prompts/same_story.md",
+        "추천 ① 조사 에이전트": "card_generation/_versions/v2/prompts/agent.md",
+        "추천 ② 연결 판정": "card_generation/_versions/v2/prompts/match.md",
+        "추천 ④ 문안 작성": "card_generation/_versions/v2/prompts/writing_topics.md",
+        "추천 ①② 같은 이야기 기준": "card_generation/_versions/v2/prompts/same_story.md",
     }
 
     def store(self, conn: psycopg.Connection, pid: str) -> ProfileStore:

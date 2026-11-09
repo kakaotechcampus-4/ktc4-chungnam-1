@@ -42,8 +42,9 @@ def test_request_creates_one_running_set(migrated_database_url):
     assert first.status_code == 202
     assert first.json() == {"schemaVersion": 1, "status": "running", "needsRefresh": False}
     assert again.status_code == 202 and again.json()["status"] == "running"
+    # 기본 판은 2다(2026-11-09, 아픈 경험 카드 표시가 2판부터 나옴).
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "gpt-6-luna", "prompt_version": "1"}
+        {"status": "running", "model": "gpt-6-luna", "prompt_version": "2"}
     ]
 
 
@@ -288,6 +289,33 @@ def test_ready_set_is_current(migrated_database_url):
     assert first["evidence"] == [{"profileField": "occupation"}]
     assert len(first["followUpQuestions"]) == 3 and first["selected"] is False
     assert first["liked"] is False
+    assert first["sensitive"] is False
+
+
+def test_sensitive_cards_are_marked_in_the_current_and_session_sets(migrated_database_url):
+    """아픈 경험을 다루는 카드 표시(2026-11-09 PM 결정)가 4-3과 4-4 카드에 그대로 나온다."""
+
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        await connection.execute(
+            "UPDATE conversation_cards SET sensitive = true WHERE card_id = ANY(%s)",
+            ([cards[2], cards[9]],),
+        )
+        return user_id, profile_id, set_id
+
+    user_id, profile_id, set_id = with_db(migrated_database_url, build)
+
+    current = _current(migrated_database_url, user_id, profile_id).json()
+    assert [card["position"] for card in current["cards"] if card["sensitive"]] == [3, 10]
+
+    async def start_visit(connection):
+        return await visit_with(connection, profile_id, set_id, evaluated=False)
+
+    session_id = with_db(migrated_database_url, start_visit)
+    app = make_app(migrated_database_url, user_id)
+    used = request(app, "GET", f"/api/v1/visit-sessions/{session_id}/card-set").json()
+    assert [card["position"] for card in used["cards"] if card["sensitive"]] == [3, 10]
 
 
 def test_set_stays_current_until_its_visit_is_evaluated(migrated_database_url):

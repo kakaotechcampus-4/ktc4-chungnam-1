@@ -372,7 +372,10 @@ def test_deleting_life_fact_keeps_its_source_proposal(migrated_database_url):
 
 
 def test_create_life_fact_defaults_story_category_and_image(migrated_database_url):
-    """7-4는 분류와 그림 번호를 보내지 않는다. 기타와 1~5 중 한 번호로 만든다."""
+    """분류를 넘기지 않으면 기타로, 그림 번호를 넘기지 않으면 1~5 중 한 번호로 만든다.
+
+    7-4는 분류를 늘 넘긴다(보호자가 고른 값이나 제안의 분류). `test_proposal_review_life_facts.py` 참고.
+    """
     api = DbApi(migrated_database_url)
     profile_id = UUID(api.create_account().create_profile()["profileId"])
 

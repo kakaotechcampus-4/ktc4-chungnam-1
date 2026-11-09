@@ -183,6 +183,8 @@ CREATE TABLE conversation_cards (
     review_reaction     VARCHAR(10) CHECK (review_reaction IN ('positive', 'neutral', 'negative', 'notUsed')),
     report_summary      TEXT     CHECK (length(btrim(report_summary)) > 0),
     liked_at            TIMESTAMPTZ,
+    -- 저장된 이야기나 세부 정보의 아픈 경험을 다루는 카드. 앱이 표시를 붙여 보호자가 고르게 한다.
+    sensitive           BOOLEAN  NOT NULL DEFAULT false,
     FOREIGN KEY (set_id, profile_id)
         REFERENCES card_sets(set_id, profile_id) ON DELETE CASCADE,
     FOREIGN KEY (topic_id, profile_id)
@@ -301,6 +303,11 @@ CREATE TABLE life_fact_proposals (
     status      VARCHAR(10)  NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'settled')),
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- AI가 고른 일대기 분류(`life_facts.story_category`와 같은 값)와 아픈 기억일 수 있는 후보 표시.
+    story_category VARCHAR(20) NOT NULL DEFAULT 'other'
+                     CONSTRAINT life_fact_proposals_story_category_check CHECK (story_category IN
+                       ('family', 'hobby', 'work', 'hometown', 'friend', 'travel', 'other')),
+    sensitive   BOOLEAN      NOT NULL DEFAULT false,
     FOREIGN KEY (session_id, profile_id)
         REFERENCES visit_sessions(session_id, profile_id) ON DELETE CASCADE,
     UNIQUE (proposal_id, profile_id)

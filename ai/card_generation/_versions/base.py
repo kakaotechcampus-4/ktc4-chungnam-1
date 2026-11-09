@@ -31,6 +31,7 @@ class Version:
     min_new_topics: int    # 기존 주제에 연결하지 않은 새 주제 수
     decay: float           # 면회 한 번이 지날 때마다 결정의 무게에 곱하는 값
     selection: SelectionRules
+    sensitive_cards: bool = False   # 아픈 경험 카드(sensitive)를 내는 판인지. 2판부터. 아니면 제출 검사가 sensitive를 보지 않고 결과도 늘 false
 
     def _read(self, name: str) -> str:
         """이 판의 prompts 폴더에서 파일 하나를 읽음."""

@@ -159,6 +159,12 @@ docker compose run --rm api alembic downgrade 685f243e9f1f-1
 docker compose run --rm api alembic upgrade head
 ```
 
+### 이야기 후보 분류와 아픈 기억 표시
+
+migration `9c4e2b7a1f63`(2026-11-09 PM 결정)은 `life_fact_proposals.story_category`, `life_fact_proposals.sensitive`, `conversation_cards.sensitive`를 더하고 기존 행을 `other`, `false`로 채운다. 열만 더하므로 이전 코드가 실행 중이어도 적용할 수 있고, 이전 코드가 쓰는 행도 기본값으로 들어간다. 새 코드는 세 열을 읽고 쓰므로 migration을 먼저 적용한 뒤 api, speech-worker, card-worker를 새 이미지로 띄운다(위 "갱신" 순서와 같다).
+
+- 카드의 아픈 경험 표시는 카드 생성 2판부터 채워진다. 기본값은 2이며, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION=1`이 적혀 있으면 표시가 늘 `false`다. 값을 바꾸면 이미 만든 묶음은 그대로이고 다음 4-1부터 2판으로 만든다.
+
 ### worker 종료와 유예 시간
 
 `docker compose stop`, `restart`와 이미지가 바뀐 뒤의 `up -d`는 worker에 SIGTERM을 보낸다. worker는 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 로그에는 `worker_stopping` 다음에 `worker_stopped`가 남는다. 대기 중이었으면 바로 끝나고, 작업을 처리하는 중이었으면 갱신 명령이 그만큼 오래 걸린다.

@@ -133,8 +133,10 @@ FilledButton _doneButton(WidgetTester tester) =>
 FilledButton _applyButton(WidgetTester tester, String label) =>
     tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
 
-/// 아래 반영 버튼을 누르고 홈으로 갈 때까지 기다린다.
+/// 아래 반영 버튼을 누르고 홈으로 갈 때까지 기다린다. 이야기를 지운 뒤 뜬
+/// 되돌리기 알림이 버튼을 가릴 수 있어, 알림이 저절로 닫힐 때까지 먼저 기다린다.
 Future<void> _apply(WidgetTester tester, String label) async {
+  await _waitUndoClosed(tester);
   await tester.tap(find.widgetWithText(FilledButton, label));
   await tester.pumpAndSettle();
 }
@@ -148,6 +150,66 @@ Future<void> _openEditor(WidgetTester tester) async {
 /// [index] 번째 카드의 지우기 버튼을 누른다.
 Future<void> _remove(WidgetTester tester, int index) async {
   await tester.tap(find.byTooltip('이 제안 지우기').at(index));
+  await tester.pumpAndSettle();
+}
+
+/// 되돌리기 알림이 저절로 닫힐 만큼 시간을 보낸다.
+Future<void> _waitUndoClosed(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 5));
+  await tester.pumpAndSettle();
+}
+
+/// AI 가 제외하기를 제안한 주제.
+const _excludeTopic = TopicProposal(
+  proposalId: 'topic_proposal_test_005',
+  cardId: 'card_test_005',
+  topic: ProposalTopic(topicId: 'topic_test_005', title: '합성 제외 주제'),
+  suggestedAction: TopicAction.exclude,
+  reason: '합성 제외 이유',
+  reviewStatus: ChangeReviewStatus.pending,
+);
+
+/// 두 번째 이야기 제안. 되돌린 이야기가 원래 자리로 오는지 볼 때 쓴다.
+const _secondFact = LifeFactProposal(
+  proposalId: 'life_fact_proposal_test_006',
+  title: '합성 두 번째 제목',
+  content: '합성 두 번째 이야기 내용',
+  reason: '합성 두 번째 이야기 이유',
+  reviewStatus: ChangeReviewStatus.pending,
+);
+
+/// AI 가 분류를 고른 이야기 제안. 분류를 주는 서버의 응답이다.
+const _familyFact = LifeFactProposal(
+  proposalId: 'life_fact_proposal_test_004',
+  title: '합성 가족 이야기',
+  content: '합성 가족 이야기 내용',
+  reason: '합성 가족 이야기 이유',
+  reviewStatus: ChangeReviewStatus.pending,
+  storyCategory: 'family',
+);
+
+/// 분류 고르기 창 안에서 찾는다.
+Finder _inSheet(Finder finder) =>
+    find.descendant(of: find.byType(BottomSheet), matching: finder);
+
+/// 분류 고르기 창의 한 줄.
+Finder _sheetOption(String label) => find
+    .ancestor(of: _inSheet(find.text(label)), matching: find.byType(Semantics))
+    .first;
+
+bool _isSheetSelected(WidgetTester tester, String label) =>
+    tester.getSemantics(_sheetOption(label)).flagsCollection.isSelected ==
+    Tristate.isTrue;
+
+/// 첫 이야기 카드의 분류 고르기 창을 연다.
+Future<void> _openCategories(WidgetTester tester) async {
+  await tester.tap(find.text('바꾸기'));
+  await tester.pumpAndSettle();
+}
+
+/// 분류 고르기 창에서 [label] 을 고른다.
+Future<void> _pickCategory(WidgetTester tester, String label) async {
+  await tester.tap(_inSheet(find.text(label)));
   await tester.pumpAndSettle();
 }
 
@@ -245,6 +307,69 @@ void main() {
         isTrue,
         reason: '다른 행동을 골라도 AI 제안 표시는 원래 줄에 남는다',
       );
+    });
+
+    testWidgets('AI 가 제외하기를 제안하면 골라 두지 않고 반영을 막는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [],
+        topics: const [_excludeTopic],
+      );
+
+      for (final label in ['더 자주 꺼내기', '당분간 쉬어가기', '제외하기']) {
+        expect(_isSelected(tester, label), isFalse, reason: label);
+      }
+      // 무엇을 제안했는지는 그대로 알린다.
+      final mark = tester.getRect(find.text('AI 제안'));
+      expect(tester.getRect(_option('제외하기')).contains(mark.center), isTrue);
+      expect(find.text('앞으로 이 주제는 추천하지 않아요.'), findsNothing);
+      expect(find.text('어떻게 할지 고르지 않은 주제가 있어요.'), findsOneWidget);
+      expect(_applyButton(tester, '이대로 반영하기').onPressed, isNull);
+
+      await tester.tap(find.text('제외하기'));
+      await tester.pumpAndSettle();
+
+      expect(_isSelected(tester, '제외하기'), isTrue);
+      expect(find.text('앞으로 이 주제는 추천하지 않아요.'), findsOneWidget);
+      expect(find.text('어떻게 할지 고르지 않은 주제가 있어요.'), findsNothing);
+      await _apply(tester, '이대로 반영하기');
+      expect((repository.sent!['topics'] as List).single, {
+        'proposalId': 'topic_proposal_test_005',
+        'reviewStatus': 'accepted',
+        'action': 'exclude',
+      });
+    });
+
+    testWidgets('제외하기 제안이 섞여 있어도 다른 주제는 AI 제안이 골라져 있다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        facts: const [],
+        topics: const [_topic, _excludeTopic],
+      );
+
+      expect(find.text('어떻게 할지 고르지 않은 주제가 있어요.'), findsOneWidget);
+
+      // 제외하기 제안 카드에서 당분간 쉬어가기를 고른다.
+      await tester.tap(find.text('당분간 쉬어가기').at(1));
+      await tester.pumpAndSettle();
+      await _apply(tester, '이대로 반영하기');
+
+      expect(repository.sent!['topics'], [
+        {
+          'proposalId': 'topic_proposal_test_001',
+          'reviewStatus': 'accepted',
+          'action': 'more',
+        },
+        {
+          'proposalId': 'topic_proposal_test_005',
+          'reviewStatus': 'accepted',
+          'action': 'less',
+        },
+      ]);
     });
 
     testWidgets('AI 제안을 읽지 못하면 아무것도 고르지 않는다', (tester) async {
@@ -387,6 +512,87 @@ void main() {
     });
   });
 
+  group('이야기 지우기와 되돌리기', () {
+    testWidgets('이야기를 지우면 되돌리기 알림을 띄운다', (tester) async {
+      await _open(tester, topics: const []);
+
+      await _remove(tester, 0);
+
+      expect(find.text('합성 제목'), findsNothing);
+      expect(find.text('이 이야기는 일대기에 더하지 않아요.'), findsOneWidget);
+      expect(find.widgetWithText(SnackBarAction, '되돌리기'), findsOneWidget);
+    });
+
+    testWidgets('되돌리면 지운 이야기가 원래 자리로 돌아오고 남겨 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_fact, _secondFact],
+      );
+
+      await _remove(tester, 0);
+      expect(find.text('합성 제목'), findsNothing);
+
+      await tester.tap(find.text('되돌리기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('합성 제목'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('합성 제목')).dy,
+        lessThan(tester.getTopLeft(find.text('합성 두 번째 제목')).dy),
+        reason: '되돌린 이야기는 원래처럼 첫 번째다',
+      );
+
+      await _apply(tester, '이대로 반영하기');
+      expect(
+        [
+          for (final f in repository.sent!['lifeFacts'] as List)
+            (f as Map)['reviewStatus'],
+        ],
+        ['accepted', 'accepted'],
+      );
+    });
+
+    testWidgets('되돌리지 않으면 알림이 저절로 닫히고 rejected 로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(tester, repository: repository, topics: const []);
+
+      await _remove(tester, 0);
+      await _waitUndoClosed(tester);
+
+      expect(find.text('이 이야기는 일대기에 더하지 않아요.'), findsNothing);
+      await _apply(tester, '반영하지 않고 마치기');
+      expect((repository.sent!['lifeFacts'] as List).single, {
+        'proposalId': 'life_fact_proposal_test_001',
+        'reviewStatus': 'rejected',
+      });
+    });
+
+    testWidgets('주제를 지울 때는 되돌리기 알림을 띄우지 않는다', (tester) async {
+      await _open(tester, facts: const []);
+
+      await _remove(tester, 0);
+
+      expect(find.text('되돌리기'), findsNothing);
+    });
+
+    testWidgets('반영하고 홈으로 가면 되돌리기 알림을 닫는다', (tester) async {
+      await _open(tester, facts: const [_fact, _secondFact]);
+
+      await _remove(tester, 1);
+      expect(find.text('되돌리기'), findsOneWidget);
+
+      // 알림이 닫히기 전에 반영한다. 알림이 버튼을 가리므로 버튼을 직접 부른다.
+      _applyButton(tester, '이대로 반영하기').onPressed!();
+      await tester.pumpAndSettle();
+
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(find.text('되돌리기'), findsNothing);
+    });
+  });
+
   group('이야기 수정 화면', () {
     testWidgets('제목은 100자까지만 받고 쓴 글자 수를 보여준다', (tester) async {
       await _open(tester, topics: const []);
@@ -452,6 +658,295 @@ void main() {
 
       expect(find.textContaining('고칠 이야기를 찾지 못했어요.'), findsOneWidget);
       expect(find.text('수정 완료'), findsNothing);
+    });
+  });
+
+  group('이야기 분류', () {
+    testWidgets('분류를 주지 않는 서버의 제안에는 분류 줄을 두지 않는다', (tester) async {
+      await _open(tester, topics: const []);
+
+      expect(find.text('바꾸기'), findsNothing);
+      expect(find.text('분류'), findsNothing);
+    });
+
+    testWidgets('AI 가 고른 분류를 일대기와 같은 이름으로 보여준다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_familyFact]);
+
+      expect(find.text('분류'), findsOneWidget);
+      expect(find.text('가족'), findsOneWidget);
+      expect(find.text('직접 고른 분류예요.'), findsNothing);
+    });
+
+    testWidgets('모르는 분류는 기타로 보여준다', (tester) async {
+      await _open(
+        tester,
+        topics: const [],
+        facts: const [
+          LifeFactProposal(
+            proposalId: 'life_fact_proposal_test_005',
+            title: '합성 제목',
+            content: '합성 내용',
+            reason: '합성 이유',
+            reviewStatus: ChangeReviewStatus.pending,
+            storyCategory: 'unknown_category',
+          ),
+        ],
+      );
+
+      expect(find.text('기타'), findsOneWidget);
+    });
+
+    testWidgets('분류를 누르면 일곱 분류 중 지금 분류가 골라져 있고 AI 제안을 적는다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_familyFact]);
+
+      await _openCategories(tester);
+
+      expect(_inSheet(find.text('이야기 분류')), findsOneWidget);
+      for (final label in ['가족', '취미', '일', '고향', '친구', '여행', '기타']) {
+        expect(_inSheet(find.text(label)), findsOneWidget, reason: label);
+      }
+      expect(_isSheetSelected(tester, '가족'), isTrue);
+      expect(_isSheetSelected(tester, '여행'), isFalse);
+      final mark = tester.getRect(_inSheet(find.text('AI 제안')));
+      expect(tester.getRect(_sheetOption('가족')).contains(mark.center), isTrue);
+    });
+
+    testWidgets('다른 분류를 고르면 닫히고 고른 분류와 직접 골랐다는 표시를 보여준다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_familyFact]);
+
+      await _openCategories(tester);
+      await _pickCategory(tester, '여행');
+
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('여행'), findsOneWidget);
+      expect(find.text('가족'), findsNothing);
+      expect(find.text('직접 고른 분류예요.'), findsOneWidget);
+
+      // 다시 열면 고른 분류가 골라져 있고 AI 제안 표시는 원래 줄에 남는다.
+      await _openCategories(tester);
+      expect(_isSheetSelected(tester, '여행'), isTrue);
+      final mark = tester.getRect(_inSheet(find.text('AI 제안')));
+      expect(tester.getRect(_sheetOption('가족')).contains(mark.center), isTrue);
+    });
+
+    testWidgets('그냥 닫으면 분류를 바꾸지 않는다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_familyFact]);
+
+      await _openCategories(tester);
+      // 창 바깥(위쪽)을 눌러 닫는다.
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('가족'), findsOneWidget);
+      expect(find.text('직접 고른 분류예요.'), findsNothing);
+    });
+
+    testWidgets('바꾼 분류만 storyCategory 로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_familyFact, _fact],
+      );
+
+      // 첫 이야기(가족)만 분류 줄이 있다. 분류를 주지 않은 제안은 줄이 없다.
+      expect(find.text('바꾸기'), findsOneWidget);
+      await _openCategories(tester);
+      await _pickCategory(tester, '여행');
+      await _apply(tester, '이대로 반영하기');
+
+      expect(repository.sent!['lifeFacts'], [
+        {
+          'proposalId': 'life_fact_proposal_test_004',
+          'reviewStatus': 'accepted',
+          'title': '합성 가족 이야기',
+          'content': '합성 가족 이야기 내용',
+          'storyCategory': 'travel',
+        },
+        {
+          'proposalId': 'life_fact_proposal_test_001',
+          'reviewStatus': 'accepted',
+          'title': '합성 제목',
+          'content': '합성 이야기 내용',
+        },
+      ]);
+    });
+
+    testWidgets('바꾸지 않으면 storyCategory 를 보내지 않는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_familyFact],
+      );
+
+      await _apply(tester, '이대로 반영하기');
+
+      expect((repository.sent!['lifeFacts'] as List).single, {
+        'proposalId': 'life_fact_proposal_test_004',
+        'reviewStatus': 'accepted',
+        'title': '합성 가족 이야기',
+        'content': '합성 가족 이야기 내용',
+      });
+    });
+
+    testWidgets('AI 가 고른 분류로 되돌리면 바꾼 것으로 치지 않는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_familyFact],
+      );
+
+      await _openCategories(tester);
+      await _pickCategory(tester, '여행');
+      await _openCategories(tester);
+      await _pickCategory(tester, '가족');
+
+      expect(find.text('직접 고른 분류예요.'), findsNothing);
+      await _apply(tester, '이대로 반영하기');
+      expect(
+        ((repository.sent!['lifeFacts'] as List).single as Map).containsKey(
+          'storyCategory',
+        ),
+        isFalse,
+      );
+    });
+
+    testWidgets('분류를 바꾼 뒤 뺀 이야기는 rejected 만 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_familyFact],
+      );
+
+      await _openCategories(tester);
+      await _pickCategory(tester, '여행');
+      await _remove(tester, 0);
+      await _apply(tester, '반영하지 않고 마치기');
+
+      expect((repository.sent!['lifeFacts'] as List).single, {
+        'proposalId': 'life_fact_proposal_test_004',
+        'reviewStatus': 'rejected',
+      });
+    });
+
+    testWidgets('고친 이야기와 바꾼 분류를 함께 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_familyFact],
+      );
+
+      await _openEditor(tester);
+      await tester.enterText(_fieldFinder('제목'), '고친 제목');
+      await tester.pump();
+      await tester.tap(find.text('수정 완료'));
+      await tester.pumpAndSettle();
+      await _openCategories(tester);
+      await _pickCategory(tester, '친구');
+      await _apply(tester, '이대로 반영하기');
+
+      expect((repository.sent!['lifeFacts'] as List).single, {
+        'proposalId': 'life_fact_proposal_test_004',
+        'reviewStatus': 'accepted',
+        'title': '고친 제목',
+        'content': '합성 가족 이야기 내용',
+        'storyCategory': 'friend',
+      });
+    });
+
+    testWidgets('글자를 키워도 분류 줄과 고르기 창이 넘치지 않는다', (tester) async {
+      await _open(
+        tester,
+        topics: const [],
+        facts: const [_familyFact],
+        textScale: 1.5,
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.bySemanticsLabel('분류 가족')).height,
+        greaterThanOrEqualTo(48),
+      );
+
+      await _openCategories(tester);
+      expect(tester.takeException(), isNull);
+      for (final label in ['가족', '기타']) {
+        expect(
+          tester.getSize(_sheetOption(label)).height,
+          greaterThanOrEqualTo(48),
+          reason: label,
+        );
+      }
+    });
+  });
+
+  group('아픈 기억일 수 있는 이야기', () {
+    testWidgets('sensitive 제안에는 아픈 기억일 수 있다고 적는다', (tester) async {
+      await _open(
+        tester,
+        topics: const [],
+        facts: const [
+          LifeFactProposal(
+            proposalId: 'life_fact_proposal_test_006',
+            title: '합성 아픈 이야기',
+            content: '합성 아픈 이야기 내용',
+            reason: '아픈 기억일 수 있어 확인이 필요해요.',
+            reviewStatus: ChangeReviewStatus.pending,
+            storyCategory: 'family',
+            sensitive: true,
+          ),
+          _fact,
+        ],
+      );
+
+      expect(find.text('아픈 기억일 수 있어요.'), findsOneWidget);
+      final note = tester.getRect(find.text('아픈 기억일 수 있어요.'));
+      final firstContent = tester.getRect(find.text('합성 아픈 이야기 내용'));
+      final secondTitle = tester.getRect(find.text('합성 제목'));
+      expect(note.top, greaterThan(firstContent.bottom), reason: '그 이야기 안에 둔다');
+      expect(note.bottom, lessThan(secondTitle.top));
+    });
+
+    testWidgets('sensitive 가 아니면 안내를 두지 않는다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_familyFact]);
+
+      expect(find.text('아픈 기억일 수 있어요.'), findsNothing);
+    });
+
+    testWidgets('아픈 기억일 수 있는 이야기도 남겨 두면 accepted 로 보낸다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [
+          LifeFactProposal(
+            proposalId: 'life_fact_proposal_test_006',
+            title: '합성 아픈 이야기',
+            content: '합성 아픈 이야기 내용',
+            reason: '합성 이유',
+            reviewStatus: ChangeReviewStatus.pending,
+            sensitive: true,
+          ),
+        ],
+      );
+
+      await _apply(tester, '이대로 반영하기');
+
+      expect(
+        ((repository.sent!['lifeFacts'] as List).single as Map)['reviewStatus'],
+        'accepted',
+      );
     });
   });
 

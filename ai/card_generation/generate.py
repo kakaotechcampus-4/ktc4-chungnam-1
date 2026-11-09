@@ -102,7 +102,9 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
             drafts.append((pos, picked, topic, refs))
             writing.append({"position": pos, "card_title": c.card_title, "angle": c.angle, "kind": c.kind,
                             "evidence_texts": [t for t in store.evidence_texts(refs) if t],
-                            "topic": {"title": title, "description": description}})
+                            "topic": {"title": title, "description": description},
+                            # 2판의 아픈 경험 카드는 문안 규칙 8(캐묻지 않기)을 따르도록 표시를 넘김. 1판은 늘 false
+                            "sensitive": bool(c.sensitive and v.sensitive_cards)})
         texts, first_problems = write_cards(model, {"age_band": store.get_profile().age_band}, writing, v.writing_prompt(),
                                             deadline)
         return rec, drafts, texts, first_problems
@@ -131,7 +133,9 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
                              # 근거는 한 종류만 받으므로 첫 근거의 종류가 카드의 근거 종류
                              evidence_source=_SOURCE[next(iter(refs[0]))] if refs else "none", evidence=refs,
                              extra=CardExtra(kind=c.kind, bucket=picked.bucket, angle=c.angle, pick_reason=picked.reason,
-                                             agent_reason=c.reason, match_reason=picked.matched.reason)))
+                                             agent_reason=c.reason, match_reason=picked.matched.reason),
+                             # 1판은 프롬프트가 아픈 경험을 막으므로 모델이 true를 적어도 내보내지 않음
+                             sensitive=c.sensitive and v.sensitive_cards))
     log = {"candidates": len(rec.agent.candidates), "toolCalls": len(rec.agent.tool_calls),
            "rejectedSubmissions": len(rec.agent.rejected), "refills": rec.refills,
            "dropped": rec.selection.dropped + rec.match.dropped, "selectionSeed": seed,

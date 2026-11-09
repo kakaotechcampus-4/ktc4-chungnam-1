@@ -49,7 +49,8 @@ abstract interface class PendingUploads {
 
   /// 아직 보내지 못한 회차의 녹음을 찾는다. 기록이 없거나, 이미 보냈거나,
   /// 파일이 사라졌으면 `null` 이다.
-  /// [includeUploaded]는 서버 분석 실패 후 원본 재제출에만 쓴다.
+  /// [includeUploaded]는 서버 분석 실패 후 원본 재제출과 리포트의
+  /// `녹음 파일 공유`(recording_share.dart)에만 쓴다.
   Future<PendingUpload?> find(String sessionId, {bool includeUploaded = false});
 
   /// 서버가 받았거나 다시 받지 않는 회차의 녹음이라고 적는다. 녹음 파일과 계정,

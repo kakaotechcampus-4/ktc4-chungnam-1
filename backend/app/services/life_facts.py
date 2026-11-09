@@ -11,7 +11,8 @@
 쓰는 `create_life_fact`가 센다. DB 제약은 없다.
 
 일대기의 분류(`story_category`)와 기본 그림 번호(`image_number`, 1~5)도 저장한다. 그림 파일은
-앱에 있다. 필드 이름은 임시다(작업 D 문서 미정 D1, D2).
+앱에 있다. 필드 이름은 임시다(작업 D 문서 미정 D1, D2). 7-4로 만드는 이야기의 분류는 보호자가
+고른 값이고, 고르지 않았으면 AI가 제안에 붙인 분류다(2026-11-09 PM 결정).
 """
 
 import secrets
@@ -69,8 +70,9 @@ async def create_life_fact(
     먼저 잠근다(`card_sets.lock_profile`). 7-4처럼 한 트랜잭션에서 여러 번 부르면 앞에서 만든
     이야기도 함께 세므로, 하나라도 넘으면 트랜잭션 전체가 저장되지 않는다.
 
-    7-4는 분류와 그림 번호를 보내지 않으므로 기본값을 쓴다. 분류는 `other`(기타)이고 그림
-    번호는 1~5 중 하나를 고른다(작업 D 문서 미정 D2, D5).
+    7-4는 보호자가 고른 분류나 제안의 분류(AI가 고른 값)를 넘긴다(2026-11-09 PM 결정, 작업 D
+    문서 D5). 그림 번호는 보내지 않으므로 1~5 중 하나를 고른다(D2). 분류 기본값 `other`는 분류를
+    모르는 호출을 위한 것이다.
     """
     cursor = await connection.execute(
         "SELECT count(*) AS n FROM life_facts WHERE profile_id = %s", (profile_id,)

@@ -12,7 +12,11 @@ from app.clients.ai_server import AiServerClient
 from app.clients.fcm import FcmClient, ServiceAccount
 from app.core.config import Settings
 from app.core.database import connect
-from app.schemas.visit_report_generation import VisitReportRequest, VisitReportResult
+from app.schemas.visit_report_generation import (
+    GenerationCounts,
+    VisitReportRequest,
+    VisitReportResult,
+)
 from app.services.audio_storage import S3AudioStorage
 from app.services.report_notifications import PushReportNotifier, ReportNotifier
 from app.services.speech_analysis_jobs import (
@@ -110,9 +114,13 @@ def report_generator(settings: Settings) -> GenerateReport:
 
     리포트와 변경 제안을 차례로 만들고 `combine`으로 8-3 응답 하나로 합친다. 각 호출
     직전에 마감과 취소 상태를 확인해, 제한 시간이 지난 뒤 남은 스레드가 외부 ML API로
-    전사문을 다시 보내지 않게 한다. 변경 제안 호출 직전에는 DB의 작업 행도 다시 읽어,
-    그 사이 계정, 프로필이나 회차가 지워졌거나 작업이 끝났거나 전사 기한이 지났으면
-    보내지 않는다. 이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
+    전사문을 다시 보내지 않게 한다. 변경 제안은 이야기 후보와 주제 조정을 따로 부르므로
+    (2026-11-09 PM 결정) 두 호출 직전마다(`before_call`) DB의 작업 행도 다시 읽어, 그 사이
+    계정, 프로필이나 회차가 지워졌거나 작업이 끝났거나 전사 기한이 지났으면 보내지 않는다.
+    이미 시작한 호출은 생성 함수 쪽에서 끊을 수 없다.
+
+    모델이 낸 후보 수와 토큰 수는 8-3 응답에 없으므로 결과에 따로 붙인다(`GenerationCounts`).
+    처리 기록 한 줄에만 쓴다.
     """
     api_key = settings.ml_api_key.get_secret_value()
     if not api_key:
@@ -137,16 +145,34 @@ def report_generator(settings: Settings) -> GenerateReport:
             report = report_generation.generate_report(sent, model=model, api_key=api_key)
             # 리포트 응답이 시간 초과 확정 뒤에 와도 변경 제안 호출을 시작하지 않는다.
             # 작업이 지워졌거나 끝났거나 전사 기한이 지났어도 전사문을 다시 보내지 않는다.
-            deadline.check_job()
             proposals = proposal_generation.generate_proposals(
-                sent, model=model, api_key=api_key
+                sent, model=model, api_key=api_key, before_call=deadline.check_job
             )
         except ai.VisitReportError as error:
-            raise generation_failed(error.code) from error
+            failed = generation_failed(error.code)
+            # 끊긴 응답(incomplete_responses)도 숫자로 남기려고 생성 함수의 토큰 수를 옮긴다.
+            failed.token_usage = getattr(error, "token_usage", None)  # type: ignore[attr-defined]
+            raise failed from error
         result = ai.combine(sent.analysis_id, report, proposals)
-        return parse_result(result.model_dump(mode="json", by_alias=True), request)
+        parsed = parse_result(result.model_dump(mode="json", by_alias=True), request)
+        return parsed.with_counts(
+            GenerationCounts(
+                life_fact_proposals_returned=proposals.life_fact_proposals_returned,
+                topic_proposals_returned=proposals.topic_proposals_returned,
+                token_usage=_add_usage(report.token_usage, proposals.token_usage),
+            )
+        )
 
     return generate
+
+
+def _add_usage(*usages: dict[str, int]) -> dict[str, int]:
+    """리포트와 변경 제안 호출의 토큰 수를 이름별로 더한다."""
+    total: dict[str, int] = {}
+    for usage in usages:
+        for name, count in usage.items():
+            total[name] = total.get(name, 0) + count
+    return total
 
 
 def main() -> None:

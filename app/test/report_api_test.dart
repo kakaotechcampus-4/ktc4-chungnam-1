@@ -229,6 +229,72 @@ void main() {
     });
   });
 
+  group('변경 제안(7-3)의 이야기 분류와 아픈 기억 표시', () {
+    test('AI 가 고른 분류와 sensitive 를 읽는다', () async {
+      final server = FakeReportServer(
+        proposals: {
+          's1': FakeReportServer.proposal(
+            's1',
+            storyCategory: 'family',
+            sensitive: true,
+          ),
+        },
+      );
+
+      final fact = (await server.api.proposals('s1')).lifeFactProposals.single;
+
+      expect(fact.storyCategory, 'family');
+      expect(fact.sensitive, isTrue);
+    });
+
+    test('두 값을 주지 않는 예전 서버면 분류는 없고 sensitive 는 false 다', () async {
+      final server = FakeReportServer(
+        proposals: {'s1': FakeReportServer.proposal('s1')},
+      );
+
+      final fact = (await server.api.proposals('s1')).lifeFactProposals.single;
+
+      expect(fact.storyCategory, isNull);
+      expect(fact.sensitive, isFalse);
+    });
+  });
+
+  test('보호자가 바꾼 분류는 7-4 승인 항목에 storyCategory 로 담는다', () async {
+    final server = FakeReportServer(
+      proposals: {
+        's1': FakeReportServer.proposal('s1', storyCategory: 'family'),
+      },
+    );
+
+    await server.api.reviewProposals(
+      's1',
+      const ProposalReview(
+        lifeFacts: [
+          LifeFactReview.accepted(
+            proposalId: 'proposal-1',
+            title: '한복',
+            content: '한복을 주로 만드셨어요.',
+            storyCategory: 'work',
+          ),
+        ],
+        topics: [],
+      ),
+    );
+
+    expect(server.requests.single.body, {
+      'lifeFacts': [
+        {
+          'proposalId': 'proposal-1',
+          'reviewStatus': 'accepted',
+          'title': '한복',
+          'content': '한복을 주로 만드셨어요.',
+          'storyCategory': 'work',
+        },
+      ],
+      'topics': <Object>[],
+    });
+  });
+
   test('이미 확인한 변경 제안은 그렇게 알린다', () {
     expect(
       reportFailureMessage(

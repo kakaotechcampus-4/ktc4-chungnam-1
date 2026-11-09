@@ -10,6 +10,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../visit/recording_share.dart';
 import 'report_text.dart';
 
 /// G-1 리포트.
@@ -25,6 +26,9 @@ import 'report_text.dart';
 /// 확인할 제안이 없으면 확인을 마칠 버튼이 없으므로, 리포트와 제안을 모두 읽으면
 /// 이 리포트의 홈 도착 알림을 지운다. 어느 하나라도 읽는 중이거나 읽지 못했으면
 /// 지우지 않는다. 제안이 남았으면 변경 사항 확인을 마쳐야 지운다.
+///
+/// 이 기기에 그 회차의 녹음 파일이 남아 있으면 맨 아래에 `녹음 파일 공유` 를
+/// 둔다([visitRecordingPathProvider]). 파일이 없으면 자리를 두지 않는다.
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({required this.reportId, super.key});
 
@@ -199,6 +203,30 @@ class _BodyState extends ConsumerState<_Body> {
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
 
+  /// 녹음 파일 공유 창을 여는 중. 두 번 열지 않도록 버튼을 막는다.
+  bool _sharing = false;
+
+  /// 기기에 남은 이 회차의 녹음 파일로 공유 창을 연다. 그 사이 파일이
+  /// 사라졌으면 알리고 버튼을 거둔다.
+  Future<void> _shareRecording(String path) async {
+    setState(() => _sharing = true);
+    final result = await ref.read(recordingShareProvider).share(path);
+    if (!mounted) return;
+    setState(() => _sharing = false);
+    final message = switch (result) {
+      RecordingShareResult.opened => null,
+      RecordingShareResult.missing => '녹음 파일을 찾지 못했어요.',
+      RecordingShareResult.failed => '녹음 파일을 공유하지 못했어요.',
+    };
+    if (result == RecordingShareResult.missing) {
+      ref.invalidate(visitRecordingPathProvider(widget.report.sessionId));
+    }
+    if (message == null) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -232,6 +260,11 @@ class _BodyState extends ConsumerState<_Body> {
     );
     final countText = cards.countText;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // 이 기기에 녹음이 남은 회차에만 공유를 둔다. 찾는 중이거나 찾지 못하면 두지
+    // 않는다.
+    final recordingPath = ref
+        .watch(visitRecordingPathProvider(report.sessionId))
+        .value;
 
     // 확인할 제안이 남았을 때만 변경 사항으로 보낸다. 읽는 중에는 두지 않고,
     // 읽지 못했으면 둔다. 변경 사항 화면이 다시 시도를 보여준다. 실패한 요청을
@@ -322,6 +355,14 @@ class _BodyState extends ConsumerState<_Body> {
                     style: set.sub,
                     textAlign: TextAlign.center,
                   ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+
+              if (recordingPath case final path?) ...[
+                const SizedBox(height: AppSpacing.section - AppSpacing.lg),
+                _RecordingShare(
+                  onShare: _sharing ? null : () => _shareRecording(path),
                 ),
                 const SizedBox(height: AppSpacing.lg),
               ],
@@ -476,6 +517,27 @@ class _CardSummaryTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 이 기기에 남은 면회 녹음 파일을 다른 앱으로 보내는 버튼.
+///
+/// 안내 문구 없이 버튼만 둔다(2026-11-09 PM 결정). 보낼 곳은 공유 창에서
+/// 보호자가 고른다.
+class _RecordingShare extends StatelessWidget {
+  const _RecordingShare({required this.onShare});
+
+  /// `null` 이면 공유 창을 여는 중이라 막는다.
+  final VoidCallback? onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    return SecondaryButton(
+      borderColor: HomeColors.outline,
+      icon: Icons.share_outlined,
+      label: '녹음 파일 공유',
+      onPressed: onShare,
     );
   }
 }

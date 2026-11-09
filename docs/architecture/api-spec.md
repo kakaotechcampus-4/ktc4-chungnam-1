@@ -822,6 +822,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
       ],
       "evidenceSource": "profile",
       "evidence": [ { "profileField": "hobby" } ],
+      "sensitive": false,
       "extra": { "...": "..." }
     },
     {
@@ -841,6 +842,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
       ],
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
+      "sensitive": false,
       "extra": { "...": "..." }
     }
   ],
@@ -851,6 +853,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
 - 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
 - `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나이며, 카드의 근거 항목은 모두 `evidenceSource`와 같은 종류다(`lifeFact`는 `factId`, `photo`는 `photoId`, `profile`은 `profileField`). `profileField`는 context의 `profileFacts`에서 값이 있는 항목만 가리킨다.
+- `sensitive`: 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)만 `true`를 낼 수 있고 1판은 늘 `false`다. BE는 `conversation_cards.sensitive`로 저장해 [CardSet](#cardset)에 담는다.
 - `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 화면과 결과 검증에 쓰지 않고, `generation_log`에는 정해진 값과 숫자만 남긴다(아래 '카드 생성 기록').
 - `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
 
@@ -1347,6 +1350,8 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 
 응답 `200` — [ChangeProposal](#changeproposal)
 
+- 생애 정보 제안마다 AI가 고른 일대기 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있다는 표시(`sensitive`)를 담는다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 404 | `VISIT_SESSION_NOT_FOUND` | |
@@ -1365,7 +1370,8 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
       "proposalId": "00000000-0000-4000-8000-000000000801",
       "reviewStatus": "accepted",
       "title": "한복",
-      "content": "한복과 두루마기를 주로 만드셨어요."
+      "content": "한복과 두루마기를 주로 만드셨어요.",
+      "storyCategory": "hobby"
     }
   ],
   "topics": [
@@ -1381,6 +1387,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
   - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다. 제안 값이 이 길이를 넘으면 보호자가 줄여서 보내야 한다.
+  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류이며 값은 2-6과 같다. 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`이나 7개 밖의 값은 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
@@ -1390,7 +1397,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 서버 처리
 
 - 모든 제안을 `settled`로 바꾼다.
-- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`은 바꾸지 않는다.
+- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 분류는 요청의 `storyCategory`이고 없으면 제안의 `storyCategory`이며, 그림 번호는 서버가 1~5 중에 고른다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`, `story_category`, `sensitive`는 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(4-1)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
@@ -1406,7 +1413,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 | 409 | `CARD_GENERATION_IN_PROGRESS` | `accepted` 주제 항목이 있는데 카드를 만드는 중(4-2 `running`). 404, `PROPOSAL_ALREADY_REVIEWED`, 422 검사가 먼저다 |
 | 409 | `LIFE_FACT_LIMIT_EXCEEDED` | `accepted` 생애 정보 제안을 더하면 프로필의 이야기가 300개를 넘음. 404, 위 두 409, 422 검사가 먼저다 |
 | 422 | `INVALID_PROPOSAL_REVIEW` | `pending` 제안이 빠졌거나 다른 회차의 제안 |
-| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음. 최종 `title`이 100자, `content`가 5,000자를 넘음 |
+| 422 | `INVALID_REQUEST` | `accepted` 항목에 최종 값(`title`과 `content`, 또는 `action`)이 없거나 `rejected` 항목에 있음. 최종 `title`이 100자, `content`가 5,000자를 넘음. `storyCategory`가 `null`이거나 7개 값이 아니거나 `rejected` 항목에 있음 |
 
 <br>
 
@@ -1562,7 +1569,9 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
     {
       "title": "한복",
       "content": "한복을 주로 만드셨어요.",
-      "reason": "이번 면회에서 확인되었어요."
+      "reason": "이번 면회에서 확인되었어요.",
+      "storyCategory": "work",
+      "sensitive": false
     }
   ],
   "topicProposals": [
@@ -1577,6 +1586,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 
 - `cardSummaries`는 `reaction`이 `positive`, `neutral`, `negative`인 카드만 담는다.
 - `topicProposals`는 요청의 `cards` 안에서 카드당 최대 1개다. `suggestedAction`: `more`, `less`, `exclude`
+- `lifeFactProposals`는 30개까지다(2026-11-09 PM 결정, AI 쪽이 먼저 자름). 항목마다 AI가 고른 일대기 분류 `storyCategory`(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있는지 `sensitive`가 있어야 하며, 어기면 `INVALID_AI_RESPONSE`다. 두 값은 `life_fact_proposals`에 저장하고 7-3에 담는다. develop 반영분이며 운영에는 아직 배포하지 않았다.
 - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
 - `mood`는 AI가 만들지 않는다. 백엔드가 `conversationSatisfaction`으로 계산한다(1~2 `hard`, 3 `normal`, 4~5 `good`).
 - `proposalId`는 백엔드가 부여한다.
@@ -1687,7 +1697,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 }
 ```
 
-- `storyCategory`, `imageNumber`: 2-6과 같다. 7-4로 만든 생애 정보는 `other`이고 번호는 서버가 1~5 중에 고른다(분류 결정 방식은 [미정 사항](#미정-사항) 13).
+- `storyCategory`, `imageNumber`: 2-6과 같다. 7-4로 만든 생애 정보의 분류는 보호자가 승인 때 고른 값이고, 고르지 않았으면 AI가 제안에 붙인 분류다(2026-11-09 PM 결정, [미정 사항](#미정-사항) 13). 만든 뒤에는 2-7로 바꿀 수 있다. 번호는 서버가 1~5 중에 고른다.
 
 ### ProfilePhoto
 
@@ -1741,7 +1751,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
       "evidenceSource": "lifeFact",
       "evidence": [ { "factId": "00000000-0000-4000-8000-000000000111" } ],
       "selected": false,
-      "liked": false
+      "liked": false,
+      "sensitive": false
     }
   ]
 }
@@ -1752,6 +1763,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `needsRefresh`: 이 묶음을 받은 뒤 프로필이나 일대기, 프로필 사진 설명을 고쳤거나 사진을 지웠거나 AI 사진 분석 동의를 거둬 AI 설명이 지워졌거나(1-6) 변경 사항에서 주제 결정을 반영했으면(7-4) `true`. 이 묶음으로는 5-1을 부를 수 없다(4절).
 - `cards`: 12장. 회차에서 고른 카드와 더한 보충 카드는 `selected`가 `true`다.
 - `liked`: 보호자가 4-5로 "좋았어요"를 표시한 카드면 `true`. 4-6으로 지우면 `false`다.
+- `sensitive`: 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`. 앱이 표시를 달아 보호자가 고를지 정하게 한다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)으로 만든 묶음에서만 `true`가 나오고, 1판 묶음과 이 필드를 더하기 전에 만든 카드는 `false`다. develop 반영분이며 운영에는 아직 배포하지 않았다. 운영에서 채우려면 운영 설정 `SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 필요하다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `evidence` 항목은 `{"factId"}`, `{"photoId"}`, `{"profileField"}` 중 하나다(4-1 처리). 세부 정보 네 항목처럼 `fact_id`가 없는 근거는 `profile`과 `{"profileField": "occupation"}`으로 가리킨다.
 
 ### VisitSession
@@ -1852,6 +1864,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
       "title": "한복",
       "content": "한복을 주로 만드셨어요.",
       "reason": "이번 면회에서 확인되었어요.",
+      "storyCategory": "work",
+      "sensitive": false,
       "reviewStatus": "pending"
     }
   ],
@@ -1875,7 +1889,8 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `topic.description`: 주제 설명이다. [CardSet](#cardset)의 `topic.description`, 4-1 요청의 `topics[].description`과 같은 값이다.
 - `suggestedAction`: `more`, `less`, `exclude`
 - `reviewStatus`: `pending`, `accepted`, `rejected`. DB에는 `pending`과 `settled`만 저장하므로, `settled`인 제안은 승인 결과(생애 정보 또는 주제 피드백)가 있으면 `accepted`, 없으면 `rejected`로 반환한다.
-- `lifeFactProposals`의 `title`, `content`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
+- `storyCategory`: AI가 고른 일대기 분류(2-6과 같은 7개 값). 7-4에서 보호자가 바꾸지 않으면 이 분류로 이야기를 만든다. `sensitive`: 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보면 `true`이며 앱이 안내를 붙인다. 두 필드를 더하기 전에 만든 제안은 `other`, `false`다(2026-11-09 PM 결정, #139, migration `9c4e2b7a1f63`).
+- `lifeFactProposals`의 `title`, `content`, `storyCategory`, `sensitive`와 `topicProposals`의 `suggestedAction`은 AI의 원래 제안이며 검토 뒤에도 바뀌지 않는다. 보호자가 고친 값은 생애 정보와 주제 피드백에만 남는다. 검토 뒤 응답에 보호자가 고른 값을 담을지는 미정([미정 사항](#미정-사항) 10)
 
 <br>
 
@@ -1894,4 +1909,4 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 | 10 | 검토 뒤 ChangeProposal 응답에 보호자가 고른 행동과 고친 생애 정보를 담을지. 지금은 원래 제안 값만 돌려줌 | 7-3, 7-4 | FE, BE |
 | 11 | 일대기 분류와 그림 번호의 필드 이름(`storyCategory`, `imageNumber`는 임시) | 2-3, 2-6, 2-7 | FE, BE. [작업 D 문서](../../backend/docs/work-split/D-life-story.md) D1, D2 |
 | 12 | 지운 이야기를 근거로 만든 저장된 카드와 주제의 처리, 지운 이야기의 내용이 담긴 지난 카드 문구를 다음 생성 입력(`pastCards`)에 넣을지, 지운 이야기의 제안이 7-3에서 `rejected`로 보이는 문제. 카드 생성 기록은 ID만 남기고, 이야기나 사진 근거가 모두 사라진 주제는 다음 생성 입력에서 빼기로 정했다(PM 결정 2026-11-08, 제외한 주제는 2026-11-09) | 2-9, 4-1, 7-3 | PM, BE, AI. 작업 D 문서 D3, D4, D6 |
-| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |
+| 13 | 면회 제안을 승인해 만드는 생애 정보의 분류를 AI가 제안할지 보호자가 고를지. 해결(PM 결정 2026-11-09, #139): AI가 이야기 후보마다 분류를 붙이고(8-3, 7-3의 `storyCategory`) 보호자가 승인 때 바꿀 수 있다(7-4의 선택 `storyCategory`). 만든 뒤에도 일대기에서 2-7로 바꾼다. develop 반영분이며 운영 배포 전 | 7-3, 7-4, 8-3 | PM, AI, FE, BE. 작업 D 문서 D5 |

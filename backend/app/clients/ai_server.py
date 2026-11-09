@@ -9,6 +9,7 @@ from app.core.errors import AppError
 from app.schemas.speech_analysis import (
     SpeechAnalysisRequest,
     SpeechAnalysisResult,
+    SttServer,
 )
 
 
@@ -57,6 +58,22 @@ class AiServerClient:
         self,
         payload: SpeechAnalysisRequest,
     ) -> SpeechAnalysisResult:
+        """결과에는 그 결과를 돌려준 서버(`stt_server`)를 적는다. 처리 기록에만 쓴다.
+
+        실패해도 마지막으로 부른 서버를 `AppError.stt_server`에 적어 처리 기록에 남긴다.
+        """
+        state: dict[str, SttServer] = {"server": "primary"}
+        try:
+            return await self._analyze_speech(payload, state)
+        except AppError as error:
+            error.stt_server = state["server"]  # type: ignore[attr-defined]
+            raise
+
+    async def _analyze_speech(
+        self,
+        payload: SpeechAnalysisRequest,
+        state: dict[str, SttServer],
+    ) -> SpeechAnalysisResult:
         try:
             if self._backup_base_url:
                 # 두 시도가 하나의 제한 시간을 공유한다. worker 임대를 늘리지 않는다.
@@ -68,7 +85,11 @@ class AiServerClient:
                     except (httpx.ConnectError, httpx.ConnectTimeout):
                         # 요청을 보내기 전 연결 실패만 전환한다. 응답 대기 중 재전송하면
                         # 기본 서버가 같은 음성을 아직 처리하고 있을 수 있다.
-                        logger.warning("speech_analysis_backup_used reason=connect_failure")
+                        logger.warning(
+                            "speech_analysis_backup_used analysis_id=%s reason=connect_failure",
+                            payload.analysis_id,
+                        )
+                        state["server"] = "backup"
                         response = await self._post(
                             self._backup_base_url, payload, self._failover_timeout
                         )
@@ -112,7 +133,7 @@ class AiServerClient:
                 error_code="INVALID_AI_RESPONSE",
                 message="음성 분석 서버의 응답 형식이 올바르지 않습니다.",
             )
-        return result
+        return result.served_by(state["server"])
 
     async def _post(
         self,

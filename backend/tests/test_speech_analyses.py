@@ -127,8 +127,8 @@ class FakeReportGenerator:
     def __init__(self) -> None:
         self.sessions: list[str] = []
 
-    async def generate(self, connection, *, session_id: str, speech) -> None:
-        del connection
+    async def generate(self, connection, *, session_id: str, speech, stats) -> None:
+        del connection, stats
         assert speech.text == "합성 전사 결과"
         self.sessions.append(session_id)
 
@@ -379,10 +379,21 @@ def capture_stops(caplog) -> None:
 
 
 def stopped_logs(caplog) -> list[str]:
+    """멈춘 단계 기록. 처리 기록 한 줄(`speech_analysis_finished`)은 `finished_outcomes`로 본다."""
     return [
         record.getMessage()
         for record in caplog.records
-        if record.name == "saerok.speech_analysis" and record.levelno == logging.INFO
+        if record.name == "saerok.speech_analysis"
+        and record.levelno == logging.INFO
+        and record.getMessage() != "speech_analysis_finished"
+    ]
+
+
+def finished_outcomes(caplog) -> list[str]:
+    return [
+        record.outcome
+        for record in caplog.records
+        if record.getMessage() == "speech_analysis_finished"
     ]
 
 
@@ -410,6 +421,7 @@ def test_worker_does_not_generate_a_report_for_a_job_that_lost_its_lease(caplog)
     assert stopped_logs(caplog) == [
         f"speech_analysis_stopped analysis_id={job.analysis_id} stage=sttCompleted"
     ]
+    assert finished_outcomes(caplog) == ["stopped"]
     assert "합성 전사 결과" not in caplog.text
     assert job.object_key not in caplog.text
 
@@ -435,6 +447,7 @@ def test_worker_stops_before_report_when_the_job_fails_after_stt(caplog) -> None
         f"speech_analysis_stopped analysis_id={accepted['analysisId']} "
         "stage=generatingReport"
     ]
+    assert finished_outcomes(caplog) == ["stopped"]
 
 
 def test_worker_finishes_stt_without_claiming_report_completion() -> None:
