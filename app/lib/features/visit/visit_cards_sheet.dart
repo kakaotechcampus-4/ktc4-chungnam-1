@@ -9,6 +9,7 @@ import '../../app/routes.dart';
 import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/recording_pulse.dart';
 import '../cards/card_source_photo.dart';
 import 'visit_controller.dart';
 
@@ -128,7 +129,7 @@ class _CardsState extends ConsumerState<_Cards> {
 
     return Column(
       children: [
-        const _DragHandle(),
+        _SheetTop(state: state),
         _CardBar(
           state: state,
           shownCount: _hiddenFrom ?? state.cards.length,
@@ -211,13 +212,44 @@ class _CardsState extends ConsumerState<_Cards> {
   }
 }
 
+/// 시트 맨 위. 손잡이 바로 아래에 녹음 상태와 시간을 둔다.
+///
+/// 시트가 화면의 5분의 4를 덮어 녹음 화면의 `녹음 중이에요` 와 시간이 가려졌다
+/// (2026-11-10 UX 점검 7번). 녹음이 이어지는지 보려고 시트를 내리지 않아도 되게
+/// 여기 작게 다시 보인다. 원래 손잡이 아래 여백과 카드 막대 위 여백을 이 줄에
+/// 내주어 글자 1배에서는 시트 안 높이가 그대로이고, 메인 질문의 자리도 줄지
+/// 않는다. 그래서 시트 높이([visitCardsSheetHeightFactor])는 바꾸지 않았다.
+class _SheetTop extends StatelessWidget {
+  const _SheetTop({required this.state});
+
+  final VisitState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const _DragHandle(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+          child: _RecordingStatus(
+            key: const Key('visitSheetRecordingStatus'),
+            recording: state.recording,
+            elapsed: state.elapsedLabel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
 
   @override
   Widget build(BuildContext context) {
+    // 아래 녹음 표시 줄과 붙어 한 묶음으로 보이게 위아래 여백을 8로 둔다.
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Container(
         width: 44,
         height: 4,
@@ -226,6 +258,88 @@ class _DragHandle extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
       ),
+    );
+  }
+}
+
+/// 녹음 화면의 상태와 시간을 한 줄로 줄인 것이다.
+///
+/// 녹음 화면의 마이크 원을 작게 줄여 같은 모양으로 둔다. 녹음 중이면 초록 면에
+/// 흰 마이크와 둘레의 물결([RecordingPulse]), 멈추면 연초록 면에 진한 테두리와
+/// 멈춤 표시다. 색만으로 가르지 않도록 아이콘과 글자도 바뀐다. 누르는 자리가
+/// 아니라 면이나 테두리로 감싸지 않는다.
+///
+/// 화면 낭독기는 녹음 화면처럼 상태가 바뀔 때 바로 읽고(`녹음 중이에요`,
+/// `잠시 멈췄어요`), 1초마다 바뀌는 시간은 바뀔 때 읽지 않는다. 시간은 글자가
+/// 커져 한 줄에 들어가지 않으면 다음 줄로 내려간다.
+class _RecordingStatus extends StatelessWidget {
+  const _RecordingStatus({
+    required this.recording,
+    required this.elapsed,
+    super.key,
+  });
+
+  final bool recording;
+  final String elapsed;
+
+  /// 작은 녹음 원의 지름. 보조 글자 한 줄 높이에 들어간다.
+  static const _dot = 20.0;
+
+  /// 작은 원 둘레로 물결이 퍼지는 거리. 옆 글자와의 간격(8)에 닿지 않는다.
+  static const _spread = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.md,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: recording ? '녹음 중이에요' : '잠시 멈췄어요',
+          excludeSemantics: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RecordingPulse(
+                active: recording,
+                spread: _spread,
+                child: Container(
+                  width: _dot,
+                  height: _dot,
+                  decoration: BoxDecoration(
+                    color: recording ? HomeColors.accent : HomeColors.bubble,
+                    shape: BoxShape.circle,
+                    border: recording
+                        ? null
+                        : Border.all(color: HomeColors.outline, width: 1.5),
+                  ),
+                  child: Icon(
+                    recording ? Icons.mic : Icons.pause,
+                    size: 14,
+                    color: recording ? AppColors.background : AppColors.textSub,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                recording ? '녹음 중' : '잠시 멈춤',
+                style: AppTypography.sub.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          elapsed,
+          style: AppTypography.sub.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -318,15 +432,11 @@ class _CardBarState extends State<_CardBar>
     final state = widget.state;
     final count = widget.shownCount.clamp(0, state.cards.length);
 
-    // 시트 손잡이와 헷갈리지 않게 손잡이에서 조금 떨어뜨린다. 아래 여백은
-    // 두지 않는다. 막대 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
+    // 시트 손잡이와 헷갈리지 않게 손잡이에서 떨어뜨린다. 그 사이에 녹음 표시
+    // 줄([_SheetTop])이 있고 막대 위 누르는 자리의 남는 높이(20)가 간격이
+    // 되므로 위 여백은 두지 않는다. 아래 여백도 같은 이유로 두지 않는다.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.screen,
-        AppSpacing.lg,
-        AppSpacing.screen,
-        0,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
       child: LayoutBuilder(
         builder: (context, constraints) => AnimatedBuilder(
           animation: _controller,

@@ -7,7 +7,7 @@ import '../design/tokens.dart';
 /// PM이 녹음 버튼을 누른 뒤 녹음이 시작됐는지 알 수 없었다(2026-11-10). 원의
 /// 테두리 색이나 글자만 바뀌어서는 한눈에 보이지 않아, 녹음하는 동안 원 둘레가
 /// 숨 쉬듯 움직이게 한다. E-2 녹음 화면과 B-3 ~ B-6 세부 정보의 음성 입력이
-/// 함께 쓴다.
+/// 함께 쓰고, 면회 중 대화 카드 시트의 작은 녹음 원도 [spread] 를 줄여 쓴다.
 ///
 /// 물결은 [child] 밖에 그리고 자리를 차지하지 않는다. 원 크기와 화면 높이가
 /// 그대로라 상태가 바뀌어도 아래 글자와 버튼이 오르내리지 않는다. 원 밖으로
@@ -18,7 +18,12 @@ import '../design/tokens.dart';
 /// 그린다. 녹음 중이라는 것은 화면의 글자가 함께 알리므로 화면 낭독기는 이
 /// 그림을 읽지 않는다.
 class RecordingPulse extends StatefulWidget {
-  const RecordingPulse({super.key, required this.active, required this.child});
+  const RecordingPulse({
+    super.key,
+    required this.active,
+    this.spread = defaultSpread,
+    required this.child,
+  });
 
   /// 지금 녹음하고 있다.
   final bool active;
@@ -26,9 +31,13 @@ class RecordingPulse extends StatefulWidget {
   /// 마이크 원. 물결은 이 영역에 꼭 맞는 원을 기준으로 그린다.
   final Widget child;
 
-  /// 원 밖으로 물결이 퍼지는 거리. 세부 정보 입력에서 원과 아래 안내 글자
+  /// 원 밖으로 물결이 퍼지는 거리. 움직임 줄이기의 고정 고리도 이 거리에
+  /// 맞춰 줄어든다.
+  final double spread;
+
+  /// 큰 마이크 원의 물결 거리. 세부 정보 입력에서 원과 아래 안내 글자
   /// 사이(16)에 닿지 않게 둔다.
-  static const spread = 14.0;
+  static const defaultSpread = 14.0;
 
   /// `false` 면 움직이지 않고 움직임 줄이기처럼 고정된 고리를 그린다. 끝나지
   /// 않는 움직임이 화면이 멈추기를 기다리는 위젯 테스트를 막으므로
@@ -93,6 +102,7 @@ class _RecordingPulseState extends State<RecordingPulse>
                   wave: _wave,
                   active: widget.active,
                   still: _still,
+                  spread: widget.spread,
                 ),
               ),
             ),
@@ -105,18 +115,24 @@ class _RecordingPulseState extends State<RecordingPulse>
 }
 
 class _PulsePainter extends CustomPainter {
-  _PulsePainter({required this.wave, required this.active, required this.still})
-    : super(repaint: wave);
+  _PulsePainter({
+    required this.wave,
+    required this.active,
+    required this.still,
+    required this.spread,
+  }) : super(repaint: wave);
 
   final Animation<double> wave;
   final bool active;
   final bool still;
+  final double spread;
 
   /// 물결이 원에서 막 나올 때의 진하기. 퍼지며 옅어져 끝에서 사라진다.
   static const _waveAlpha = 0.4;
 
   /// 움직이지 않을 때의 고리. 원과 조금 떨어뜨려 원의 테두리와 겹쳐 보이지
-  /// 않게 한다. 바깥 끝이 [RecordingPulse.spread] 안에 든다.
+  /// 않게 한다. 큰 마이크 원([RecordingPulse.defaultSpread])의 값이고, 바깥
+  /// 끝이 물결 거리 안에 들도록 [spread] 에 비례해 줄인다.
   static const _ringGap = 5.0;
   static const _ringWidth = 3.0;
 
@@ -127,12 +143,14 @@ class _PulsePainter extends CustomPainter {
     final radius = size.shortestSide / 2;
 
     if (still) {
+      final scale = spread / RecordingPulse.defaultSpread;
+      final ringWidth = _ringWidth * scale;
       canvas.drawCircle(
         center,
-        radius + _ringGap + _ringWidth / 2,
+        radius + _ringGap * scale + ringWidth / 2,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = _ringWidth
+          ..strokeWidth = ringWidth
           ..color = HomeColors.accent,
       );
       return;
@@ -142,7 +160,7 @@ class _PulsePainter extends CustomPainter {
     // 바깥 띠로 그려 원 안의 색에 섞이지 않는다.
     for (final shift in const [0.0, 0.5]) {
       final t = (wave.value + shift) % 1;
-      final width = RecordingPulse.spread * Curves.easeOut.transform(t);
+      final width = spread * Curves.easeOut.transform(t);
       if (width <= 0) continue;
       canvas.drawCircle(
         center,
@@ -157,5 +175,8 @@ class _PulsePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PulsePainter old) =>
-      old.wave != wave || old.active != active || old.still != still;
+      old.wave != wave ||
+      old.active != active ||
+      old.still != still ||
+      old.spread != spread;
 }
