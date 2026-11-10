@@ -141,6 +141,36 @@ void main() {
       expect(story.isProfileDetail, isFalse);
     });
 
+    test('아픈 기억 표시를 읽고, 없는 예전 응답은 표시가 없다', () {
+      Map<String, dynamic> json({bool? sensitive}) => {
+        'schemaVersion': 1,
+        'factId': 'fact_001',
+        'profileId': 'p1',
+        'storyCategory': 'family',
+        'title': '합성 사별 이야기',
+        'content': '합성 내용',
+        'imageNumber': 2,
+        'createdAt': '2026-11-10T10:00:00+09:00',
+        'sensitive': ?sensitive,
+      };
+
+      final marked = LifeFact.fromJson(json(sensitive: true));
+      final unmarked = LifeFact.fromJson(json(sensitive: false));
+      final old = LifeFact.fromJson(json());
+
+      expect(
+        [marked.sensitive, unmarked.sensitive, old.sensitive],
+        [true, false, false],
+      );
+      expect(LifeStory.fromLifeFact(marked).sensitive, isTrue);
+      expect(LifeStory.fromLifeFact(old).sensitive, isFalse);
+      expect(
+        detailStoriesOf(_profile(family: '딸 둘')).single.sensitive,
+        isFalse,
+        reason: '세부 정보 이야기에는 표시가 없다',
+      );
+    });
+
     test('모르는 분류는 기타에, 범위 밖 그림 번호는 1~5 안에 둔다', () {
       final unknown = LifeStory.fromLifeFact(
         _fact(storyCategory: 'school', imageNumber: 9),
@@ -220,8 +250,9 @@ void main() {
       bool reduceMotion = false,
       double textScale = 1,
       CareProfilesNotifier Function() profiles = _ProfileWithDetails.new,
+      Size size = const Size(412, 917),
     }) async {
-      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.physicalSize = size * 3;
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
 
@@ -301,6 +332,39 @@ void main() {
 
       // 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나눈다.
       expect(find.text('김새록 님의'), findsOneWidget);
+    });
+
+    testWidgets('세로 기준 화면에서는 책이 화면 폭의 72% 로 스크롤 없이 그려진다', (tester) async {
+      await openAt(tester, AppRoutes.album);
+
+      final book = tester.getSize(find.bySemanticsLabel('앨범 펼치기'));
+      // 412 에서 좌우 여백 20 씩을 뺀 372 의 72%.
+      expect(book.width, closeTo(372 * 0.72, 0.5));
+      expect(
+        find.ancestor(
+          of: find.bySemanticsLabel('앨범 펼치기'),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsNothing,
+      );
+    });
+
+    // 2026-11-10 E2E: 가로 화면에서 책이 남는 높이에 맞춰 약 7 x 9 로 줄었다.
+    testWidgets('가로 화면에서는 책을 화면 높이에 맞춰 그리고 스크롤해 편수를 본다', (tester) async {
+      await openAt(tester, AppRoutes.album, size: const Size(917, 412));
+
+      expect(tester.takeException(), isNull);
+      final book = tester.getSize(find.bySemanticsLabel('앨범 펼치기'));
+      expect(book.width, greaterThanOrEqualTo(150));
+      expect(book.height, closeTo(book.width * 4.2 / 3, 0.5));
+
+      final count = find.text('지금까지 12편의 이야기가 담겨 있어요');
+      await tester.ensureVisible(count);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(count).bottom, lessThanOrEqualTo(412));
+
+      await tapAndSettle(tester, find.bySemanticsLabel('앨범 펼치기'));
+      expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
     });
 
     testWidgets('애니메이션 줄이기가 켜져 있으면 표지를 넘기지 않고 바로 간다', (tester) async {

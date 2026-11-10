@@ -7,6 +7,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
+import '../cards/sensitive_card_badge.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
 
@@ -263,12 +264,18 @@ class _RecentList extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      child: Text(
-                        story.title,
-                        style: AppTypography.body,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: story.sensitive
+                          // 목차처럼 아픈 기억일 수 있는 이야기는 제목 아래에
+                          // 작은 표시를 단다. 승인 직후에는 여기에 먼저 보인다.
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _RecentTitle(story.title),
+                                const SizedBox(height: AppSpacing.xs),
+                                const SensitiveCardBadge(),
+                              ],
+                            )
+                          : _RecentTitle(story.title),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     Text(
@@ -284,4 +291,19 @@ class _RecentList extends StatelessWidget {
       ],
     );
   }
+}
+
+/// 최근 이야기 한 줄의 제목. 길면 한 줄에서 자른다.
+class _RecentTitle extends StatelessWidget {
+  const _RecentTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    title,
+    style: AppTypography.body,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+  );
 }

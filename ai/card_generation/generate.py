@@ -27,7 +27,7 @@ from langchain_core.language_models import BaseChatModel
 from card_generation._steps.deadline import Deadline, timed_out
 from card_generation._steps.match import MatchOutcome, run_match
 from card_generation._steps.research.agent import AgentRun, AgentSession
-from card_generation._steps.research.candidates import evidence_refs
+from card_generation._steps.research.candidates import CardCandidate, evidence_refs
 from card_generation._steps.research.store import ProfileStore
 from card_generation._steps.select import Picked, Selection, SelectionFailed, select_cards
 from card_generation._steps.write import WritingFailed, write_cards
@@ -81,8 +81,15 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
     seed = random.SystemRandom().randrange(2**32) if seed is None else seed
     started = time.monotonic()
     config = ChatConfig(model=request.model, api_key=api_key, timeout=int(min(time_limit, 120)))
-    store = ProfileStore(request.context, v.decay)
+    store = ProfileStore(request.context, v.decay, show_sensitive=v.sensitive_cards)
     titles = {t.topic_id: (t.title, t.description) for t in request.context.topics}
+    # 아픈 기억일 수 있다고 표시된 이야기. 2판에서 이 이야기를 근거로 한 카드는 모델이 무엇을 적든 아픈 경험 카드(PM 결정, 2026-11-10)
+    painful = store.sensitive_fact_ids() if v.sensitive_cards else set()
+
+    def is_sensitive(c: CardCandidate, refs: list[dict[str, str]]) -> bool:
+        """1판은 프롬프트가 아픈 경험을 막으므로 늘 false. 2판은 모델의 표시나 근거 이야기의 표시 중 하나라도 있으면 true."""
+        return v.sensitive_cards and (c.sensitive or any(r.get("factId") in painful for r in refs))
+
     model = chat_model(config)
     deadline = Deadline(config, time_limit)
 
@@ -104,7 +111,7 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
                             "evidence_texts": [t for t in store.evidence_texts(refs) if t],
                             "topic": {"title": title, "description": description},
                             # 2판의 아픈 경험 카드는 문안 규칙 8(캐묻지 않기)을 따르도록 표시를 넘김. 1판은 늘 false
-                            "sensitive": bool(c.sensitive and v.sensitive_cards)})
+                            "sensitive": is_sensitive(c, refs)})
         texts, first_problems = write_cards(model, {"age_band": store.get_profile().age_band}, writing, v.writing_prompt(),
                                             deadline)
         return rec, drafts, texts, first_problems
@@ -134,12 +141,16 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
                              evidence_source=_SOURCE[next(iter(refs[0]))] if refs else "none", evidence=refs,
                              extra=CardExtra(kind=c.kind, bucket=picked.bucket, angle=c.angle, pick_reason=picked.reason,
                                              agent_reason=c.reason, match_reason=picked.matched.reason),
-                             # 1판은 프롬프트가 아픈 경험을 막으므로 모델이 true를 적어도 내보내지 않음
-                             sensitive=c.sensitive and v.sensitive_cards))
+                             sensitive=is_sensitive(c, refs)))
     log = {"candidates": len(rec.agent.candidates), "toolCalls": len(rec.agent.tool_calls),
            "rejectedSubmissions": len(rec.agent.rejected), "refills": rec.refills,
            "dropped": rec.selection.dropped + rec.match.dropped, "selectionSeed": seed,
            "writingFirstProblems": first_problems, "seconds": round(time.monotonic() - started, 1)}
+    if v.sensitive_cards:
+        # 모델은 false로 적었지만 근거 이야기의 아픈 기억 표시 때문에 true로 낸 카드 수. 1판 기록은 그대로 둠
+        log["sensitiveFromStories"] = sum(1 for _, picked, _, refs in drafts
+                                          if is_sensitive(picked.matched.candidate, refs)
+                                          and not picked.matched.candidate.sensitive)
     return GenerationResult(model=request.model, prompt_version=request.prompt_version, cards=cards, log=log)
 
 

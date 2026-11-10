@@ -142,6 +142,31 @@ def test_sends_a_fixed_notification_to_the_fid_with_a_signed_token():
     }
 
 
+def test_failure_notification_has_a_fixed_text_and_no_error_detail():
+    google = FakeGoogle()
+    client = _client(google)
+
+    result = run(
+        client.send_report_failed(FID, session_id=SESSION_ID, analysis_id=ANALYSIS_ID)
+    )
+
+    assert result is SendResult.SENT
+    [send] = google.sends
+    # 실패 코드와 이유, 어르신 이름은 담지 않는다.
+    assert json.loads(send.content) == {
+        "message": {
+            "fid": FID,
+            "notification": {"title": "새록", "body": "리포트를 만들지 못했어요"},
+            "data": {
+                "type": "reportFailed",
+                "sessionId": SESSION_ID,
+                "analysisId": ANALYSIS_ID,
+            },
+            "android": {"priority": "high"},
+        }
+    }
+
+
 def test_reuses_the_access_token_until_it_is_about_to_expire():
     google = FakeGoogle()
     clock = Clock()

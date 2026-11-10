@@ -388,7 +388,8 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
     )[0]
     facts = await _rows(
         connection,
-        "SELECT fact_id, title, content, created_at, source_proposal_id IS NOT NULL AS from_visit"
+        "SELECT fact_id, title, content, created_at, sensitive,"
+        "       source_proposal_id IS NOT NULL AS from_visit"
         "  FROM life_facts WHERE profile_id = %(profile_id)s ORDER BY created_at, fact_id",
         profile_id,
     )
@@ -477,6 +478,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 content=row["content"],
                 created_at=row["created_at"],
                 source="visit" if row["from_visit"] else "caregiver",
+                sensitive=row["sensitive"],
             )
             for row in facts
         ],

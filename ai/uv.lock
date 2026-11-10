@@ -697,7 +697,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.0,<2" },
     { name = "langchain-openai", specifier = ">=1.6,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1,<4" },
-    { name = "pydantic", specifier = ">=2.7,<3" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
 ]
 
 [package.metadata.requires-dev]

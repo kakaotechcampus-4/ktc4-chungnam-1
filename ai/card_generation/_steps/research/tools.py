@@ -70,12 +70,14 @@ class Usage(BaseModel):
 
 
 class LifeFactView(BaseModel):
-    """이야기 하나와 그 사용 이력."""
+    """이야기 하나와 그 사용 이력. sensitive는 아픈 기억일 수 있는 이야기라는 표시로, 아픈 경험 카드를 내는 판(2판)에서만
+    채우고 그 밖의 판에는 키째 보이지 않음(1판의 도구 결과를 바꾸지 않으려는 것)."""
     fact_id: str
     title: str
     content: str
     from_visit: bool         # 면회 기록에서 나온 제안을 보호자가 승인해 만든 이야기
     usage: Usage
+    sensitive: bool | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class LifeFactPage(BaseModel):

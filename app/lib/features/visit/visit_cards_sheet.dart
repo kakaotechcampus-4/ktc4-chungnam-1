@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show OrdinalSortKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
+import '../cards/card_source_photo.dart';
 import 'visit_controller.dart';
 
 /// E-3, E-4 면회 중 대화 카드.
@@ -144,10 +148,7 @@ class _CardsState extends ConsumerState<_Cards> {
                   Expanded(
                     child: Semantics(
                       sortKey: const OrdinalSortKey(0),
-                      child: _MainQuestion(
-                        cardTitle: card.cardTitle,
-                        question: card.primaryQuestion,
-                      ),
+                      child: _MainQuestion(card: card),
                     ),
                   ),
                   Expanded(
@@ -430,14 +431,60 @@ class _CardBarSegment extends StatelessWidget {
 }
 
 /// 위쪽 절반. 흰 바탕에 어르신께 여쭙는 문장을 크게 둔다.
+///
+/// 사진에서 나온 카드는 소제목 위에 그 사진을 작게 둔다([CardSourcePhoto]).
+/// 사진은 소제목과 메인 질문을 제 크기로 놓고 남는 높이만 쓰며 120 을 넘지
+/// 않는다. 남는 높이가 48 보다 작으면(작은 화면, 큰 글자) 질문을 줄이지 않도록
+/// 사진을 두지 않는다. 곁눈질로 읽는 질문이 먼저다.
 class _MainQuestion extends StatelessWidget {
-  const _MainQuestion({required this.cardTitle, required this.question});
+  const _MainQuestion({required this.card});
 
-  final String cardTitle;
-  final String question;
+  final ConversationCard card;
+
+  static const _photoMax = CardSourcePhoto.largestHeight;
+  static const _photoMin = 48.0;
+  static const _questionWidth = 340.0;
+
+  /// 바닥에 둔 채 곁눈질로 읽으므로 다른 화면보다 크게 둔다.
+  static final _questionStyle = AppTypography.screenTitle.copyWith(
+    fontSize: 32,
+    height: 1.4,
+  );
+
+  /// 사진에 줄 수 있는 높이. 소제목과 메인 질문을 제 크기로 놓고 남는 높이에서
+  /// 사진 아래 여백을 뺀다.
+  double _photoRoom(BuildContext context, BoxConstraints box) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    double heightOf(String text, TextStyle style, double width) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textAlign: TextAlign.center,
+        textDirection: direction,
+        textScaler: scaler,
+      )..layout(maxWidth: width);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final title = heightOf(
+      '[ ${card.cardTitle} ]',
+      AppTypography.sub,
+      box.maxWidth,
+    );
+    final question = heightOf(
+      card.primaryQuestion,
+      _questionStyle,
+      _questionWidth,
+    );
+    return box.maxHeight - title - AppSpacing.lg - question - AppSpacing.md;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cardTitle = card.cardTitle;
+    final question = card.primaryQuestion;
     return Container(
       width: double.infinity,
       color: HomeColors.background,
@@ -452,33 +499,42 @@ class _MainQuestion extends StatelessWidget {
         AppSpacing.screen,
         52,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '[ $cardTitle ]',
-            style: AppTypography.sub,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 340),
-                child: Text(
-                  question,
-                  // 바닥에 둔 채 곁눈질로 읽으므로 다른 화면보다 크게 둔다.
-                  style: AppTypography.screenTitle.copyWith(
-                    fontSize: 32,
-                    height: 1.4,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final photo = card.evidenceSource == 'photo'
+              ? math.min(_photoMax, _photoRoom(context, box))
+              : 0.0;
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (photo >= _photoMin)
+                CardSourcePhoto(
+                  card: card,
+                  maxHeight: photo,
+                  alignment: Alignment.center,
+                ),
+              Text(
+                '[ $cardTitle ]',
+                style: AppTypography.sub,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _questionWidth),
+                    child: Text(
+                      question,
+                      style: _questionStyle,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

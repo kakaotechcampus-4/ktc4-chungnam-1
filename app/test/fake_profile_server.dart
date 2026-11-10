@@ -242,7 +242,8 @@ class FakeProfileServer {
     }, 404);
   }
 
-  /// 명세의 LifeFact 응답 하나를 만든다.
+  /// 명세의 LifeFact 응답 하나를 만든다. [sensitive] 를 주지 않으면 그 필드가
+  /// 없는 예전 응답이다.
   static Map<String, Object?> lifeFact({
     required String id,
     required String profileId,
@@ -251,6 +252,7 @@ class FakeProfileServer {
     String content = '수선집에 오래 다닌 단골손님이 많았어요.',
     int imageNumber = 3,
     String createdAt = '2026-09-01T10:00:00+09:00',
+    bool? sensitive,
   }) => {
     'schemaVersion': 1,
     'factId': id,
@@ -260,6 +262,7 @@ class FakeProfileServer {
     'content': content,
     'imageNumber': imageNumber,
     'createdAt': createdAt,
+    'sensitive': ?sensitive,
   };
 
   /// 명세의 Profile 응답 하나를 만든다.

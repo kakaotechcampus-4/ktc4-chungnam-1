@@ -25,7 +25,7 @@ def build_context(conn: psycopg.Connection, profile_id: str) -> CardContext:
 
     profile = rows("SELECT (date_part('year', age(current_date, birth_date))::int / 10 * 10) AS decade, "
                    "occupation, hometown, hobby, family FROM profiles WHERE profile_id = %(pid)s")[0]
-    facts = rows("SELECT fact_id::text, title, content, created_at, source_proposal_id IS NOT NULL AS from_visit "
+    facts = rows("SELECT fact_id::text, title, content, created_at, sensitive, source_proposal_id IS NOT NULL AS from_visit "
                  "FROM life_facts WHERE profile_id = %(pid)s ORDER BY created_at, fact_id")
     photos = rows("SELECT photo_id::text, description FROM photos WHERE profile_id = %(pid)s AND session_id IS NULL "
                   "AND analysis_status = 'completed' ORDER BY created_at, photo_id")
@@ -48,7 +48,7 @@ def build_context(conn: psycopg.Connection, profile_id: str) -> CardContext:
         "ageRange": f"{profile['decade']}s",
         "profileFacts": {k: profile[k] for k in ("occupation", "hometown", "hobby", "family")},
         "lifeFacts": [{"factId": f["fact_id"], "title": f["title"], "content": f["content"], "createdAt": f["created_at"],
-                       "source": "visit" if f["from_visit"] else "caregiver"} for f in facts],
+                       "source": "visit" if f["from_visit"] else "caregiver", "sensitive": f["sensitive"]} for f in facts],
         "photos": [{"photoId": p["photo_id"], "description": p["description"]} for p in photos],
         "topics": [{"topicId": t["topic_id"], "title": t["title"], "description": t["description"],
                     "evidence": t["evidence"] or [], "createdAt": t["created_at"], "feedback": by_topic.get(t["topic_id"], [])}

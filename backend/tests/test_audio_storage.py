@@ -79,3 +79,23 @@ def test_s3_audio_is_private_encrypted_and_has_a_bounded_download_url() -> None:
     assert 0 < client.presign[2] <= 300
     assert download.url.startswith("https://")
     assert client.delete == ("synthetic-bucket", "temporary/speech/id.wav")
+
+
+def test_download_streams_the_object_into_the_given_file() -> None:
+    # 30분을 넘는 녹음을 나눌 때 worker가 원본을 임시 파일로 받는다.
+    class DownloadingClient(FakeS3Client):
+        def download_fileobj(self, bucket, key, file):
+            self.downloaded = (bucket, key)
+            file.write(b"synthetic-wave")
+
+    client = DownloadingClient()
+    storage = S3AudioStorage(
+        bucket="synthetic-bucket", region="ap-northeast-2",
+        presigned_ttl_seconds=900, client=client,
+    )
+    file = BytesIO()
+
+    asyncio.run(storage.download(object_key="temporary/speech/id.wav", file=file))
+
+    assert client.downloaded == ("synthetic-bucket", "temporary/speech/id.wav")
+    assert file.getvalue() == b"synthetic-wave"

@@ -1,4 +1,4 @@
-"""리포트 완료 푸시의 대상 고르기와 음성 worker 연결 검증.
+"""리포트 완료와 실패 푸시의 대상 고르기와 음성 worker 연결 검증.
 
 대상 고르기는 임시 DB(`conftest.py`)에서, worker 연결은 메모리 작업 저장소로 확인한다.
 FCM 은 [FakeSender] 로 대신한다. 계정, 회차와 FID 는 모두 합성이다.
@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.clients.fcm import SendResult
 from app.core.database import connect
+from app.core.errors import AppError
 from app.services.report_notifications import PushReportNotifier
 from app.services.speech_analysis_jobs import SpeechAnalysisStatus
 from app.services.speech_analysis_pipeline import create_speech_worker
@@ -31,6 +32,7 @@ FID_OTHER = "eSyntheticFidOtherXXXX"
 class FakeSender:
     def __init__(self, results: dict[str, SendResult] | None = None) -> None:
         self.sent: list[tuple[str, str, str]] = []
+        self.failed_sent: list[tuple[str, str, str]] = []
         self._results = results or {}
         self.error: Exception | None = None
 
@@ -40,6 +42,14 @@ class FakeSender:
         if self.error is not None:
             raise self.error
         self.sent.append((fid, session_id, analysis_id))
+        return self._results.get(fid, SendResult.SENT)
+
+    async def send_report_failed(
+        self, fid: str, *, session_id: str, analysis_id: str
+    ) -> SendResult:
+        if self.error is not None:
+            raise self.error
+        self.failed_sent.append((fid, session_id, analysis_id))
         return self._results.get(fid, SendResult.SENT)
 
 
@@ -66,12 +76,14 @@ def _completed_job(records: Records, profile_id: UUID, status: str = "completed"
     return visit.session_id, records.job(visit.session_id, status)
 
 
-def _notify(records: Records, sender: FakeSender, analysis_id: UUID) -> None:
+def _notify(
+    records: Records, sender: FakeSender, analysis_id: UUID, *, failed: bool = False
+) -> None:
     async def scenario() -> None:
         async with connect(records.database_url) as connection:
-            await PushReportNotifier(sender).report_ready(
-                connection, analysis_id=str(analysis_id)
-            )
+            notifier = PushReportNotifier(sender)
+            notify = notifier.report_failed if failed else notifier.report_ready
+            await notify(connection, analysis_id=str(analysis_id))
 
     run(scenario())
 
@@ -111,6 +123,35 @@ def test_nothing_is_sent_unless_the_job_is_completed(migrated_database_url):
         _notify(records, sender, analysis_id)
 
     assert sender.sent == []
+
+
+def test_failure_is_sent_only_for_a_failed_job(migrated_database_url):
+    records = Records(migrated_database_url)
+    user_id, profile_id = _caregiver(records)
+    _register(records, user_id, FID_A)
+    sender = FakeSender()
+
+    session_id, failed_id = _completed_job(records, profile_id, "failed")
+    _notify(records, sender, failed_id, failed=True)
+    # 다른 처리가 먼저 끝냈거나 아직 처리 중인 작업에는 실패를 알리지 않는다.
+    for status in ("completed", "generatingReport"):
+        _, analysis_id = _completed_job(records, profile_id, status)
+        _notify(records, sender, analysis_id, failed=True)
+
+    assert sender.failed_sent == [(FID_A, str(session_id), str(failed_id))]
+    assert sender.sent == []
+
+
+def test_failure_is_not_sent_without_push_consent(migrated_database_url):
+    records = Records(migrated_database_url)
+    user_id, profile_id = _caregiver(records, push=False)
+    _register(records, user_id, FID_A)
+    _, analysis_id = _completed_job(records, profile_id, "failed")
+    sender = FakeSender()
+
+    _notify(records, sender, analysis_id, failed=True)
+
+    assert sender.failed_sent == []
 
 
 def test_nothing_is_sent_when_push_consent_is_withdrawn(migrated_database_url):
@@ -164,10 +205,15 @@ def test_send_errors_do_not_escape(migrated_database_url):
 class FakeNotifier:
     def __init__(self) -> None:
         self.analysis_ids: list[str] = []
+        self.failed_ids: list[str] = []
 
     async def report_ready(self, connection, *, analysis_id: str) -> None:
         del connection
         self.analysis_ids.append(analysis_id)
+
+    async def report_failed(self, connection, *, analysis_id: str) -> None:
+        del connection
+        self.failed_ids.append(analysis_id)
 
 
 def _worker(jobs, storage, ai, reports, notifier):
@@ -209,4 +255,27 @@ def test_worker_does_not_notify_a_job_that_stopped_before_the_report():
         ).run_once()
     )
 
+    assert notifier.analysis_ids == []
+    assert notifier.failed_ids == []
+
+
+def test_worker_notifies_a_failure_after_marking_the_job_failed():
+    application, jobs, storage, _ = harness()
+    accepted = submit(application).json()
+    notifier = FakeNotifier()
+
+    class UnavailableAi(FakeAiServer):
+        async def analyze_speech(self, payload):
+            raise AppError(status_code=503, error_code="AI_SERVER_UNAVAILABLE",
+                           message="합성 연결 실패", retryable=True)
+
+    run(_worker(jobs, storage, UnavailableAi(), FakeReportGenerator(), notifier).run_once())
+
+    job = run(
+        jobs.get_for_account(
+            analysis_id=accepted["analysisId"], account_id=ACCOUNT.account_id
+        )
+    )
+    assert job.status == SpeechAnalysisStatus.FAILED
+    assert notifier.failed_ids == [accepted["analysisId"]]
     assert notifier.analysis_ids == []

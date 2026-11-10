@@ -292,6 +292,10 @@ class _TrackedAudioStorage:
         await self._inner.upload(object_key=object_key, file=file)
         self.objects[object_key] = b""
 
+    async def download(self, *, object_key: str, file) -> None:
+        # 30분을 넘는 녹음은 worker가 원본을 받아 조각으로 나눈다.
+        await self._inner.download(object_key=object_key, file=file)
+
     async def create_download(self, *, object_key: str, expires_at: datetime):
         return await self._inner.create_download(object_key=object_key, expires_at=expires_at)
 
@@ -311,6 +315,11 @@ class _MemoryAudioStorage:
     async def upload(self, *, object_key: str, file) -> None:
         file.seek(0)
         self.objects[object_key] = file.read()
+
+    async def download(self, *, object_key: str, file) -> None:
+        if object_key not in self.objects:
+            raise RuntimeError("E2E_AUDIO_NOT_UPLOADED")
+        file.write(self.objects[object_key])
 
     async def create_download(self, *, object_key: str, expires_at: datetime):
         from app.services.audio_storage import AudioDownload

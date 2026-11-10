@@ -73,6 +73,8 @@ services:
     # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
+    # 전사 임대 900초 + 리포트 임대 900초 + 60초. 30분 조각으로 나눈 긴 녹음은 진행 중인 조각만
+    # 마치고 대기열로 되돌리므로 조각 수가 늘어도 이 값으로 충분하다(docs/deployment.md).
     stop_grace_period: ${SAEROK_SPEECH_STOP_GRACE_SECONDS:-1860}s
     restart: unless-stopped
     logging: *default-logging
