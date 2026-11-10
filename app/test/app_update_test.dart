@@ -688,5 +688,86 @@ void main() {
         expect(started, 1, reason: '알림이 버튼을 덮지 않는다');
       });
     }
+
+    // 360x640 글자 1.3배에서 띠와 키보드가 함께 있으면 입력칸이 보일 자리가 30px
+    // 남짓만 남아 적는 칸이 보이지 않았다. 키보드가 있는 동안 띠를 접어 둔다.
+    testWidgets('키보드가 올라와 있으면 띠를 접어 적는 칸을 가리지 않고, 내리면 다시 보인다', (tester) async {
+      tester.view.physicalSize = const Size(360, 640) * 3;
+      tester.view.devicePixelRatio = 3;
+      tester.view.padding = const FakeViewPadding(top: 24 * 3);
+      tester.view.viewPadding = const FakeViewPadding(top: 24 * 3);
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      final gateway = FakeAppUpdateGateway();
+      final router = GoRouter(
+        initialLocation: AppRoutes.cards,
+        routes: [
+          GoRoute(
+            path: AppRoutes.cards,
+            builder: (context, state) => Scaffold(
+              appBar: const AppTopBar(title: '이야기 고치기'),
+              body: ScreenBody(
+                scrollable: true,
+                bottom: PrimaryButton(label: '저장하기', onPressed: () {}),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('이야기', style: AppTypography.body),
+                    TextField(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appUpdateGatewayProvider.overrideWithValue(gateway)],
+          child: MaterialApp.router(
+            theme: buildAppTheme(),
+            routerConfig: router,
+            builder: (context, child) =>
+                AppUpdateWatcher(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      gateway.status = AppUpdateStatus.available;
+      await ProviderScope.containerOf(
+        tester.element(find.byType(AppUpdateWatcher)),
+      ).read(appUpdateControllerProvider.notifier).suspectOutdated();
+      await tester.pumpAndSettle();
+      expect(find.text(AppUpdateMessages.needed), findsOneWidget);
+
+      await tester.showKeyboard(find.byType(TextField));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280 * 3);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AppUpdateBanner), findsNothing);
+      expect(
+        find.byType(TextField).hitTestable(),
+        findsOneWidget,
+        reason: '적는 칸이 보인다',
+      );
+      expect(find.text('저장하기').hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(find.byType(AppBar)),
+        const Rect.fromLTWH(0, 0, 360, 24 + kToolbarHeight),
+        reason: '띠를 접으면 상단바가 다시 상태 표시줄 자리를 맡는다',
+      );
+
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(
+        find.text(AppUpdateMessages.needed),
+        findsOneWidget,
+        reason: '닫은 것이 아니므로 다시 보인다',
+      );
+      expect(find.text(AppUpdateMessages.update).hitTestable(), findsOneWidget);
+    });
   });
 }
