@@ -33,7 +33,12 @@ const _needsRefresh = CardGenerationStatus.needsRefresh;
 const _poll = Duration(milliseconds: 50);
 const _button = '오늘의 대화카드 받기';
 const _making = '대화 카드를 만들고 있어요';
+const _checking = '카드를 확인하고 있어요';
 const _remakingNotice = '카드를 받은 뒤 어르신 정보가 바뀌어서';
+const _failedNotice = '대화 카드를 만들지 못했어요';
+const _offlineNotice = '서버에 연결하지 못했어요';
+const _readyNotice = '대화 카드가 준비됐어요';
+const _openAction = '카드 보기';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -329,21 +334,202 @@ void main() {
     await tester.pump(_poll);
     await tester.pump();
   });
+
+  // 2026-11-10 UX 점검 6번. 신호가 약하면 4-2 가 15초까지 걸려 눌리지 않은
+  // 것처럼 보였다.
+  testWidgets('상태 확인이 0.4초를 넘기면 버튼에 확인 중임을 보인다', (tester) async {
+    final api = _SlowStatusCardApi();
+    final (_, router) = await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    // 누른 뒤 첫 화면부터 잰다.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(_button), findsOneWidget, reason: '빨리 끝나면 깜빡이지 않게 그대로 둔다');
+    expect(spinnerInButton(), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.text(_checking), findsOneWidget);
+    expect(spinnerInButton(), findsOneWidget);
+    expect(find.text(_making), findsNothing, reason: '아직 만들지 않는다');
+
+    api.answer.complete(_ready);
+    await tester.pump();
+    await tester.pump();
+    expect(location(router), AppRoutes.cards);
+  });
+
+  testWidgets('확인 중에 만들기로 넘어가면 만드는 중 글로 바뀐다', (tester) async {
+    final api = _SlowStatusCardApi();
+    await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(find.text(_checking), findsOneWidget);
+
+    api.answer.complete(_none);
+    await tester.pump();
+    expect(find.text(_making), findsOneWidget);
+    expect(find.text(_checking), findsNothing);
+  });
+
+  // 2026-11-10 UX 점검 11번. 버튼 글자가 시작 전과 같아 알림창을 놓치면 할
+  // 일을 몰랐다.
+  testWidgets('기다려 만든 카드의 알림창에 카드 보기를 두고 누르면 카드 화면으로 간다', (tester) async {
+    final api = FakeCardApi(statuses: [_none, _running, _ready]);
+    final (_, router) = await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump(_poll);
+    await tester.pump(_poll);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 750));
+
+    final action = find.widgetWithText(SnackBarAction, _openAction);
+    expect(action, findsOneWidget);
+    expect(location(router), AppRoutes.home, reason: '누르기 전에는 데려가지 않는다');
+
+    await tester.tap(action);
+    await tester.pump();
+    await tester.pump();
+    expect(location(router), AppRoutes.cards);
+  });
+
+  testWidgets('카드 보기가 있어도 알림창은 저절로 닫혀 버튼을 계속 가리지 않는다', (tester) async {
+    final api = FakeCardApi(statuses: [_none, _ready]);
+    final (_, router) = await openHome(tester, api);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump(_poll);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 750));
+    expect(find.widgetWithText(SnackBarAction, _openAction), findsOneWidget);
+
+    // 버튼이 있는 알림창은 기본으로 닫히지 않는다(`SnackBar.persist`).
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(SnackBar), findsNothing);
+
+    await tester.tap(find.text(_button));
+    await tester.pump();
+    await tester.pump();
+    expect(location(router), AppRoutes.cards, reason: '닫힌 뒤에는 홈 버튼으로 들어간다');
+  });
+
+  group('앱을 다시 켜 이어 물은 작업', () {
+    CardGenerationSnapshot snap(CardGenerationStatus status) =>
+        CardGenerationSnapshot(status, null);
+
+    /// 홈은 첫 화면을 그린 뒤 이어 묻는다. 기다리는 작업이면 한 번 더 묻는다.
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(_poll);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 750));
+    }
+
+    testWidgets('기다리던 작업이 실패하면 누른 때와 같은 실패 안내를 남긴다', (tester) async {
+      final api = _ResumeCardApi([snap(_running), snap(_failed)]);
+      final (_, router) = await openHome(tester, api);
+      await settle(tester);
+
+      expect(api.calls.where((c) => c == 'snapshot'), hasLength(2));
+      expect(find.textContaining(_failedNotice), findsOneWidget);
+      expect(find.text(_button), findsOneWidget);
+      expect(location(router), AppRoutes.home);
+      expect(api.calls, isNot(contains('request')), reason: '새로 만들지 않는다');
+    });
+
+    testWidgets('앱을 닫은 사이 실패한 작업도 알린다', (tester) async {
+      final api = _ResumeCardApi([snap(_failed)]);
+      await openHome(tester, api);
+      await settle(tester);
+
+      expect(find.textContaining(_failedNotice), findsOneWidget);
+    });
+
+    testWidgets('기다리던 작업을 묻지 못하게 되면 연결 안내를 남긴다', (tester) async {
+      final api = _ResumeCardApi([snap(_running), const ApiNetworkFailure()]);
+      await openHome(tester, api);
+      await settle(tester);
+
+      expect(find.textContaining(_offlineNotice), findsOneWidget);
+    });
+
+    testWidgets('기다리던 작업이 없을 때 묻지 못한 것은 알리지 않는다', (tester) async {
+      final api = _ResumeCardApi([const ApiNetworkFailure()]);
+      await openHome(tester, api);
+      await settle(tester);
+
+      expect(
+        find.textContaining(_offlineNotice),
+        findsNothing,
+        reason: '보호자가 누르지 않았고 놓친 작업도 없다',
+      );
+    });
+
+    testWidgets('기다리던 작업이 다 되면 카드 보기 알림창으로 알리고 데려가지 않는다', (tester) async {
+      final api = _ResumeCardApi([snap(_running), snap(_ready)]);
+      final (_, router) = await openHome(tester, api);
+      await settle(tester);
+
+      expect(find.textContaining(_readyNotice), findsOneWidget);
+      expect(find.widgetWithText(SnackBarAction, _openAction), findsOneWidget);
+      expect(location(router), AppRoutes.home);
+    });
+
+    testWidgets('이미 있던 묶음을 확인만 했으면 알리지 않는다', (tester) async {
+      final api = _ResumeCardApi([snap(_ready)]);
+      final (_, router) = await openHome(tester, api);
+      await settle(tester);
+
+      expect(find.byType(SnackBar), findsNothing);
+      expect(location(router), AppRoutes.home);
+    });
+  });
 }
 
-/// 4-2 의 응답을 테스트가 직접 보낸다.
+/// 4-2 와 4-1 의 응답을 테스트가 직접 보낸다.
 class _SlowStatusCardApi implements CardApi {
   final answer = Completer<CardGenerationStatus>();
+  final request = Completer<CardGenerationStatus>();
 
   @override
   Future<CardGenerationStatus> status(String profileId) => answer.future;
 
   @override
   Future<CardGenerationStatus> requestGeneration(String profileId) =>
-      throw UnimplementedError();
+      request.future;
 
   @override
   Future<CardSet> current(String profileId) => throw UnimplementedError();
+}
+
+/// 첫 사진 준비 상태(4-2)를 주는 서버. 홈은 이 서버일 때만 앱을 다시 켜면 이어
+/// 묻는다. [replies] 를 차례로 돌려주고 마지막 값은 계속 돌려준다. 실패를 넣으면
+/// 그 실패로 답한다.
+class _ResumeCardApi extends FakeCardApi implements PhotoPreparationApi {
+  _ResumeCardApi(this.replies);
+
+  final List<Object> replies;
+
+  @override
+  Future<CardGenerationSnapshot> snapshot(String profileId) async {
+    calls.add('snapshot');
+    final reply = replies.length > 1 ? replies.removeAt(0) : replies.single;
+    if (reply is ApiFailure) throw reply;
+    return reply as CardGenerationSnapshot;
+  }
+
+  @override
+  Future<CardGenerationSnapshot> resolvePhotos(
+    String profileId,
+    String setId,
+    String action,
+  ) => throw UnimplementedError();
 }
 
 /// 서버에 닿지 못한다.

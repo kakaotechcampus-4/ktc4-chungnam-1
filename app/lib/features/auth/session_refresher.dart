@@ -9,7 +9,8 @@
 /// 다시 받지 못해 로그인부터 해야 하면 [sessionLossProvider] 로 알리고, 앱의
 /// 맨 위가 그 화면으로 보낸다. 요청 코드는 화면을 옮기지 않는다. 면회를
 /// 녹음하는 동안이면 세션을 지우지 않고 녹음이 끝날 때까지 미룬다
-/// ([sessionHoldProvider]).
+/// ([sessionHoldProvider]). 면회 흐름의 화면이면 지우기 전에 보호자에게 먼저
+/// 알리고 확인을 받는다([unconfirmedSessionLossProvider]).
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +51,18 @@ class SessionLossNotifier extends Notifier<SessionLoss?> {
 final sessionLossProvider = NotifierProvider<SessionLossNotifier, SessionLoss?>(
   SessionLossNotifier.new,
 );
+
+/// 잃었지만 보호자가 확인할 때까지 지우지 않고 둔 세션이다.
+///
+/// 면회 흐름에서 잃으면([SessionRefresher.needsConfirmation]) 세션을 바로 지우지
+/// 않는다. 지우면 단말의 어르신 목록이 비면서 뒤 화면이 등록 안내로 바뀐다.
+/// 앱의 맨 위가 이 값을 보고 확인 창을 띄우고, 확인하면
+/// [SessionRefresher.confirmLoss] 가 세션을 지운 뒤 [sessionLossProvider] 로
+/// 알린다(UX 점검 8번, 2026-11-10).
+final unconfirmedSessionLossProvider =
+    NotifierProvider<SessionLossNotifier, SessionLoss?>(
+      SessionLossNotifier.new,
+    );
 
 /// 세션을 잃어도 지금은 지우지 않고 기다리게 한다. 면회를 녹음하는 동안 녹음이
 /// 켜고 끈다(`VisitController`).
@@ -116,6 +129,19 @@ class SessionRefresher {
   /// 녹음이 끝나도 알리지 않는다.
   AuthSession? _heldSession;
 
+  /// 세션을 지우기 전에 보호자의 확인을 먼저 받을지 답한다. 앱의 맨 위가 지금
+  /// 화면을 보고 정한다(`main.dart`, 면회 흐름이면 `true`). 정하지 않았으면
+  /// 확인 없이 바로 지운다.
+  bool Function() needsConfirmation = _immediately;
+
+  static bool _immediately() => false;
+
+  /// 보호자의 확인을 기다리는 잃은 세션([unconfirmedSessionLossProvider]).
+  SessionLoss? _unconfirmedLoss;
+
+  /// [_unconfirmedLoss] 를 잃은 때의 세션.
+  AuthSession? _unconfirmedSession;
+
   /// 지금 다시 받는 중인 작업이다. 여러 요청이 함께 401 을 받아도 한 번만 받는다.
   Future<_Renewal>? _running;
 
@@ -175,8 +201,11 @@ class SessionRefresher {
   Future<bool> refresh() async => await _renew() is _Renewed;
 
   Future<_Renewal> _renew() {
-    // 녹음하는 동안 이미 잃은 세션이다. 계정 선택 창을 다시 띄우지 않는다.
-    if (_heldLoss != null) return Future.value(const _NotRenewed());
+    // 녹음하는 동안이나 확인을 기다리는 동안 이미 잃은 세션이다. 계정 선택 창을
+    // 다시 띄우지 않는다.
+    if (_heldLoss != null || _unconfirmedLoss != null) {
+      return Future.value(const _NotRenewed());
+    }
     return _running ??= _refresh().whenComplete(() => _running = null);
   }
 
@@ -261,6 +290,32 @@ class SessionRefresher {
       }
       return;
     }
+    if (needsConfirmation()) {
+      // 면회 흐름이다. 화면을 옮기기 전에 보호자에게 먼저 알린다. 세션은
+      // 확인할 때 지운다([confirmLoss]). 이미 묻고 있으면 처음 이유를 둔다.
+      if (_unconfirmedLoss == null) {
+        _unconfirmedLoss = loss;
+        _unconfirmedSession = _ref.read(sessionProvider);
+        _ref.read(unconfirmedSessionLossProvider.notifier).report(loss);
+      }
+      return;
+    }
+    await _ref.read(sessionProvider.notifier).discard();
+    _ref.read(sessionLossProvider.notifier).report(loss);
+  }
+
+  /// 보호자가 확인 창에서 확인했다. 기다리던 세션을 지우고
+  /// [sessionLossProvider] 로 알려 로그인 화면이나 동의 화면으로 가게 한다.
+  ///
+  /// 그 사이 로그아웃했거나 다시 로그인했으면 그 세션을 건드리지 않는다.
+  Future<void> confirmLoss() async {
+    final loss = _unconfirmedLoss;
+    final session = _unconfirmedSession;
+    _unconfirmedLoss = null;
+    _unconfirmedSession = null;
+    _ref.read(unconfirmedSessionLossProvider.notifier).clear();
+    if (loss == null) return;
+    if (!identical(_ref.read(sessionProvider), session)) return;
     await _ref.read(sessionProvider.notifier).discard();
     _ref.read(sessionLossProvider.notifier).report(loss);
   }

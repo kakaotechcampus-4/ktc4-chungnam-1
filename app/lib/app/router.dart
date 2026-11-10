@@ -53,6 +53,7 @@ GoRouter buildRouter() {
           // 같은 경로로 다시 오면 화면을 새로 만들어 복원 확인을 다시 한다.
           key: ValueKey(state.uri.toString()),
           signedOut: state.uri.queryParameters['signedOut'] == 'true',
+          sessionLost: state.uri.queryParameters['sessionLost'] == 'true',
         ),
       ),
       GoRoute(

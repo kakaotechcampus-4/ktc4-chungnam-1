@@ -20,6 +20,7 @@ import 'journey_server.dart';
 
 const _homeCardsButton = '오늘의 대화카드 받기';
 const _cardsReadyNotice = '대화 카드가 준비됐어요';
+const _openCardsAction = '카드 보기';
 
 /// 이야기 제안을 승인하면서 보호자가 고친 내용.
 const _correctedContent = '두루마기를 주로 지으셨어요.';
@@ -178,12 +179,13 @@ void defineAppJourneyTests() {
       expect(find.text('리포트가 도착했어요'), findsNothing, reason: '확인을 마친 알림');
 
       // 다음 대화 준비 1: 지난 묶음은 평가까지 끝나 서버가 새로 만든다. 새로
-      // 만드는 동안은 홈에 머물고 다 되면 알림창으로 알린다(#222). 다시 누르면
-      // 카드 화면으로 간다.
+      // 만드는 동안은 홈에 머물고 다 되면 알림창으로 알린다(#222). 알림창의
+      // `카드 보기` 로 카드 화면에 간다. 알림창이 떠 있는 동안은 홈 버튼을
+      // 가린다(2026-11-10 UX 점검 11번).
       await app.tap(find.text(_homeCardsButton));
       await app.waitFor(find.textContaining(_cardsReadyNotice));
       expect(server.setIds, hasLength(2));
-      await app.tap(find.text(_homeCardsButton));
+      await app.tap(find.text(_openCardsAction));
       await app.waitFor(find.text('오늘의 대화 카드'));
       expect(
         find.text(journeyProposalTitle),
@@ -248,6 +250,8 @@ void defineAppJourneyTests() {
       await app.waitFor(find.textContaining('어르신 정보가 바뀌어서'));
       await app.waitFor(find.textContaining(_cardsReadyNotice));
       expect(server.setIds, hasLength(3), reason: '묶음 전체를 한 번 다시 만든다');
+      // 알림창이 저절로 닫힌 뒤에는 홈 버튼을 다시 눌러 들어간다.
+      await app.waitUntilGone(find.byType(SnackBar));
       await app.tap(find.text(_homeCardsButton));
       await app.waitFor(find.text('대화 시작하기'));
       expect(
