@@ -387,6 +387,10 @@ void main() {
           textScale: scale,
         );
 
+        // 360x800 글자 2.0배 홈은 본문과 버튼, 알림을 한 스크롤로 이어 알림이
+        // 첫 화면 아래에 있다.
+        await tester.ensureVisible(_banner);
+        await tester.pump();
         await _tap(tester, _banner);
 
         expect(tester.takeException(), isNull);

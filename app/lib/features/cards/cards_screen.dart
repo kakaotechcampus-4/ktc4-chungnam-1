@@ -510,14 +510,21 @@ class _SelectionSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    // 좁은 화면에서 글자를 키우면 한 줄에 들어가지 않는다. 넘치면 안내를
+    // 다음 줄로 내린다.
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.sm,
       children: [
-        AppChip(
-          count == 0 ? '아직 고르지 않았어요' : '$count개 선택함',
-          tone: count == 0 ? ChipTone.weak : ChipTone.strong,
-          accent: HomeColors.accent,
+        // 칩은 가운데 맞춤이라 폭을 다 주면 한 줄을 다 차지한다. 글자 폭만 준다.
+        IntrinsicWidth(
+          child: AppChip(
+            count == 0 ? '아직 고르지 않았어요' : '$count개 선택함',
+            tone: count == 0 ? ChipTone.weak : ChipTone.strong,
+            accent: HomeColors.accent,
+          ),
         ),
-        const SizedBox(width: AppSpacing.md),
         Text('최대 ${CardRules.selectableCount}개까지', style: AppTypography.sub),
       ],
     );

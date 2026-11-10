@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -72,154 +74,124 @@ class HomeScreen extends ConsumerWidget {
                 onNotice: () =>
                     needsProfile(() => context.push(AppRoutes.notifications)),
               ),
+              // 버튼과 알림을 아래에 두고 남는 높이에 안내 문구와 말풍선을 담는다.
+              // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
+              // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
+              // 붙는 순간 아래로 넘친다.
+              //
+              // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
+              // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문과
+              // 버튼을 한 스크롤로 잇는다. 예전에는 위와 아래가 따로 스크롤되어
+              // 360x640 에서 작은 창 둘로 갈렸다(2026-11-10 UX 점검 12). 글자를
+              // 잘리게 두지 않는다(`app/DESIGN.md`).
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, available) => ScreenBody(
-                    bottom: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: available.maxHeight * 0.7,
-                      ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            _CardButton(hasProfile: hasProfile),
-                            // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
-                            // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
-                            if (notice != null) ...[
-                              const SizedBox(height: AppSpacing.lg),
-                              switch (notice) {
-                                // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
-                                ReportNotice.generating => _GeneratingNotice(
-                                  date: date,
-                                ),
-                                ReportNotice.ready => _ReportNotice(
-                                  date: date,
-                                  // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
-                                  onTap: () {
-                                    if (reportId == null) return;
-                                    context.push(AppRoutes.reportOf(reportId));
-                                  },
-                                ),
-                                ReportNotice.failed => _ResumeNotice(
-                                  date: date,
-                                  title: '리포트를 만들지 못했어요',
-                                  reason: analysisFailureReason(
-                                    info?.failureCode,
-                                  ),
-                                  hint: '눌러서 분석 다시 요청하기',
-                                  icon: Icons.error_outline,
-                                  // 녹음이 남았으면 공유도 고르게 한다.
-                                  onTap: () {
-                                    final analysisId = info?.analysisId;
-                                    if (reportId == null ||
-                                        analysisId == null) {
-                                      return;
-                                    }
-                                    openFailedReport(
-                                      context,
-                                      ref,
-                                      sessionId: reportId,
-                                      analysisId: analysisId,
-                                    );
-                                  },
-                                ),
-                                // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
-                                // 서버의 알림이라 회차 ID 가 있다.
-                                ReportNotice.evaluationPending => _ResumeNotice(
-                                  date: date,
-                                  title: '평가 이어서 하기',
-                                  hint: '평가를 마치면 리포트를 만들어요',
-                                  onTap: () {
-                                    if (reportId == null) return;
-                                    context.push(
-                                      AppRoutes.visitReviewOf(reportId),
-                                    );
-                                  },
-                                ),
-                                ReportNotice.audioPending => _ResumeNotice(
-                                  date: date,
-                                  title: '음성 다시 보내기',
-                                  hint: '녹음을 보내면 리포트를 만들어요',
-                                  onTap: () {
-                                    if (reportId == null) return;
-                                    context.push(
-                                      AppRoutes.visitUploadOf(reportId),
-                                    );
-                                  },
-                                ),
-                                // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
-                                // 만드는 중에 묻지 못해도 이 배너로 바꾼다. 다시
-                                // 묻는 동안에는 배너를 지우지 않고 도는 표시를 둔다.
-                                ReportNotice.checkFailed => _ResumeNotice(
-                                  date: date,
-                                  icon: Icons.refresh,
-                                  title: '리포트 상태를 확인하지 못했어요',
-                                  hint: info?.rechecking ?? false
-                                      ? '다시 확인하고 있어요'
-                                      : '눌러서 다시 확인하기',
-                                  busy: info?.rechecking ?? false,
-                                  onTap: () => ref
-                                      .read(reportNoticeProvider.notifier)
-                                      .retry(),
-                                ),
-                              },
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
-                    // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
-                    // 붙는 순간 아래로 넘친다.
-                    //
-                    // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
-                    // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문을
-                    // 스크롤한다. 글자를 잘리게 두지 않는다(`app/DESIGN.md`).
-                    child: LayoutBuilder(
-                      builder: (context, box) {
-                        final roomy =
-                            MediaQuery.textScalerOf(context).scale(1) <= 1.3 &&
-                            box.maxHeight >= 300;
-                        final content = Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
-                            // 이름을 읽는 동안에는 이름 없이 묻는다.
-                            Text(
-                              name == null
-                                  ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                                  : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
-                              // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
-                              style: AppTypography.sectionTitle,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: AppSpacing.xxl),
-                            // 어르신을 바꾸면 인사말부터 다시 시작한다.
-                            if (roomy)
-                              Flexible(
-                                child: HomeTalk(key: ValueKey(profileKey)),
-                              )
-                            else
-                              HomeTalk(
-                                key: ValueKey(profileKey),
-                                mascotSize: 140,
-                              ),
-                          ],
-                        );
-                        const alignment = Alignment(0, -0.2);
-                        if (roomy) {
-                          return Align(alignment: alignment, child: content);
-                        }
-                        return SingleChildScrollView(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: box.maxHeight,
-                            ),
-                            child: Align(alignment: alignment, child: content),
+                child: _HomeBody(
+                  bottom: Column(
+                    children: [
+                      _CardButton(hasProfile: hasProfile),
+                      // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
+                      // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
+                      if (notice != null) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        switch (notice) {
+                          // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
+                          ReportNotice.generating => _GeneratingNotice(
+                            date: date,
                           ),
-                        );
-                      },
-                    ),
+                          ReportNotice.ready => _ReportNotice(
+                            date: date,
+                            // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.reportOf(reportId));
+                            },
+                          ),
+                          ReportNotice.failed => _ResumeNotice(
+                            date: date,
+                            title: '리포트를 만들지 못했어요',
+                            reason: analysisFailureReason(info?.failureCode),
+                            hint: '눌러서 분석 다시 요청하기',
+                            icon: Icons.error_outline,
+                            // 녹음이 남았으면 공유도 고르게 한다.
+                            onTap: () {
+                              final analysisId = info?.analysisId;
+                              if (reportId == null || analysisId == null) {
+                                return;
+                              }
+                              openFailedReport(
+                                context,
+                                ref,
+                                sessionId: reportId,
+                                analysisId: analysisId,
+                              );
+                            },
+                          ),
+                          // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
+                          // 서버의 알림이라 회차 ID 가 있다.
+                          ReportNotice.evaluationPending => _ResumeNotice(
+                            date: date,
+                            title: '평가 이어서 하기',
+                            hint: '평가를 마치면 리포트를 만들어요',
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.visitReviewOf(reportId));
+                            },
+                          ),
+                          ReportNotice.audioPending => _ResumeNotice(
+                            date: date,
+                            title: '음성 다시 보내기',
+                            hint: '녹음을 보내면 리포트를 만들어요',
+                            onTap: () {
+                              if (reportId == null) return;
+                              context.push(AppRoutes.visitUploadOf(reportId));
+                            },
+                          ),
+                          // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
+                          ReportNotice.checkFailed => _ResumeNotice(
+                            date: date,
+                            icon: Icons.refresh,
+                            title: '리포트 상태를 확인하지 못했어요',
+                            hint: info?.rechecking ?? false
+                                ? '다시 확인하고 있어요'
+                                : '눌러서 다시 확인하기',
+                            busy: info?.rechecking ?? false,
+                            onTap: () =>
+                                ref.read(reportNoticeProvider.notifier).retry(),
+                          ),
+                        },
+                      ],
+                    ],
+                  ),
+                  top: LayoutBuilder(
+                    builder: (context, box) {
+                      // 남는 높이를 받았으면 그림을 그 안에 줄여 담는다. 한
+                      // 스크롤로 이을 때는 높이가 정해지지 않아 그림 크기를 둔다.
+                      final roomy = box.hasBoundedHeight;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                          // 이름을 읽는 동안에는 이름 없이 묻는다.
+                          Text(
+                            name == null
+                                ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                                : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
+                            // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
+                            style: AppTypography.sectionTitle,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.xxl),
+                          // 어르신을 바꾸면 인사말부터 다시 시작한다.
+                          if (roomy)
+                            Flexible(child: HomeTalk(key: ValueKey(profileKey)))
+                          else
+                            HomeTalk(
+                              key: ValueKey(profileKey),
+                              mascotSize: 140,
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -229,6 +201,157 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 홈 본문. [bottom] (버튼과 알림)을 화면 아래에 두고 남는 높이에 [top] 을 담는다.
+///
+/// 글자가 1.3배 이하이고 남는 높이가 [_FitOrScroll.minTop] 이상이면 [top] 에
+/// 그 높이를 주어 그림을 줄인다. 아니면 [top] 을 제 높이대로 두고 [bottom] 과
+/// 함께 한 스크롤로 잇는다. 여백은 [ScreenBody] 와 같다.
+class _HomeBody extends StatelessWidget {
+  const _HomeBody({required this.top, required this.bottom});
+
+  final Widget top;
+  final Widget bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    final fit = MediaQuery.textScalerOf(context).scale(1) <= 1.3;
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, viewport) => SingleChildScrollView(
+          child: _FitOrScroll(
+            minHeight: viewport.maxHeight,
+            fit: fit,
+            top: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: top,
+            ),
+            bottom: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.lg,
+                AppSpacing.screen,
+                AppSpacing.xxl,
+              ),
+              child: bottom,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [_HomeBody] 의 배치. 아래 칸을 먼저 재고 남는 높이를 보고 위 칸의 높이를 정한다.
+///
+/// 남는 높이를 미리 알아야 해서 위젯을 엮어서는 만들 수 없다. 위 칸의 그림은
+/// 남는 높이에 맞춰 줄어드는데(`LayoutBuilder`), 이런 위젯은 스크롤 안에서
+/// 내용 높이를 미리 재는 `IntrinsicHeight` 를 쓸 수 없다. 면회 상태 안내의
+/// `_NoticeLayout`(`status_notice.dart`)과 같은 방식이다.
+class _FitOrScroll extends MultiChildRenderObjectWidget {
+  _FitOrScroll({
+    required this.minHeight,
+    required this.fit,
+    required Widget top,
+    required Widget bottom,
+  }) : super(children: [top, bottom]);
+
+  /// 스크롤 창의 높이. 내용이 적어도 이만큼 채워 [bottom] 을 화면 아래에 둔다.
+  final double minHeight;
+
+  /// 위 칸을 남는 높이에 맞춰도 되는지. 글자를 크게 키웠으면 `false` 다.
+  final bool fit;
+
+  /// 위 칸에 줄 남는 높이의 최소값. 이보다 낮으면 그림을 줄여도 넘친다.
+  static const minTop = 300.0;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFitOrScroll(minHeight, fit);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFitOrScroll renderObject,
+  ) {
+    renderObject
+      ..minHeight = minHeight
+      ..fit = fit;
+  }
+}
+
+class _FitOrScrollParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderFitOrScroll extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _FitOrScrollParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _FitOrScrollParentData> {
+  _RenderFitOrScroll(this._minHeight, this._fit);
+
+  /// 남는 높이를 위 2, 아래 3 으로 나눈다.
+  static const _alignment = Alignment(0, -0.2);
+
+  double _minHeight;
+  set minHeight(double value) {
+    if (value == _minHeight) return;
+    _minHeight = value;
+    markNeedsLayout();
+  }
+
+  bool _fit;
+  set fit(bool value) {
+    if (value == _fit) return;
+    _fit = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _FitOrScrollParentData) {
+      child.parentData = _FitOrScrollParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final top = firstChild!;
+    final bottom = childAfter(top)!;
+    final width = constraints.maxWidth;
+
+    bottom.layout(BoxConstraints.tightFor(width: width), parentUsesSize: true);
+    final room = _minHeight - bottom.size.height;
+    final fits = _fit && room >= _FitOrScroll.minTop;
+    // 맞출 때는 남는 높이까지만, 이을 때는 높이를 정하지 않는다.
+    top.layout(
+      BoxConstraints(maxWidth: width, maxHeight: fits ? room : double.infinity),
+      parentUsesSize: true,
+    );
+
+    final height = fits
+        ? _minHeight
+        : math.max(_minHeight, top.size.height + bottom.size.height);
+    size = constraints.constrain(Size(width, height));
+
+    final topArea = Size(size.width, size.height - bottom.size.height);
+    (top.parentData! as _FitOrScrollParentData).offset = _alignment.alongOffset(
+      (topArea - top.size) as Offset,
+    );
+    (bottom.parentData! as _FitOrScrollParentData).offset = Offset(
+      0,
+      size.height - bottom.size.height,
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
 /// 홈 바닥의 연한 세이지 언덕 두 겹. 장식이라 누를 수 없고 화면 낭독기도 읽지 않는다.

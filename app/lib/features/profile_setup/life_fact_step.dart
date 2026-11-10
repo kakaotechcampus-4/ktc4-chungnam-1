@@ -407,12 +407,49 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     if (heard == null) widget.onCleared();
   }
 
-  /// 원 아래 보조 내용(한 줄 글과 버튼)이 차지하는 가장 큰 높이.
+  /// 원 아래 보조 내용이 차지하는 가장 큰 높이.
+  ///
+  /// 상태마다 보조 내용이 다르므로 가장 긴 것을 미리 재어 잡는다. 예전에는
+  /// 글 한 줄과 48 높이 버튼으로 셈해, 글자를 키워 안내가 두 줄이 되고 버튼이
+  /// 높아지면 `재시도` 가 잡아 둔 높이 밖으로 밀려 아래 버튼에 가렸다.
   static double _extraHeight(BuildContext context) {
-    const style = AppTypography.body;
-    final line =
-        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
-    return AppSpacing.sm + line + AppSpacing.md + AppSizes.minTouch;
+    final scaler = MediaQuery.textScalerOf(context);
+    final base = DefaultTextStyle.of(context).style;
+    // 등록 화면은 좌우 여백 안에 이 단계를 놓는다. 실제 폭이 이보다 좁으면
+    // 아래에서 실제 내용 높이가 이 값을 넘겨 자리를 늘린다.
+    final width = MediaQuery.sizeOf(context).width - AppSpacing.screen * 2;
+
+    double textHeight(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: base.merge(style)),
+        textAlign: TextAlign.center,
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+      )..layout(maxWidth: width);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    // 공통 보조 버튼은 높이 56 이상이고 글자를 키우면 위아래 여백 12씩과
+    // 글자 높이만큼 높아진다(`app_buttons.dart`).
+    const label = AppTypography.button;
+    final button = [
+      AppSizes.control,
+      scaler.scale(label.fontSize!) * label.height! + AppSpacing.md * 2,
+    ].reduce((a, b) => a > b ? a : b);
+
+    final heights = [
+      // 듣는 중: 다 말했어요.
+      button,
+      // 보내지 못함: 안내 한 줄과 재시도.
+      textHeight(_MicArea.sendFailedDetail, AppTypography.body) +
+          AppSpacing.md +
+          button,
+      // 못 알아들음: 다시 말해 달라는 안내.
+      textHeight(_MicArea.retryHint, AppTypography.sub),
+    ];
+    return AppSpacing.sm + heights.reduce((a, b) => a > b ? a : b);
   }
 
   _MicArea _micArea(_MicPart part) => _MicArea(
@@ -505,22 +542,23 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
 
         // 마이크 화면에서는 원 아래 빈 공간의 맨 위에 보조 내용(다 말했어요,
         // 둘째 줄 안내)을 둔다. 원과 첫 줄 안내는 위아래 같은 빈 공간 사이
-        // 한가운데에 오고, 보조 내용은 높이 계산에 들지 않아 상태가 바뀌어도 원이
-        // 오르내리지 않는다.
+        // 한가운데에 온다. 보조 영역은 상태마다 다른 보조 내용 가운데 가장 긴
+        // 것의 높이를 미리 잡아 두므로 상태가 바뀌어도 원이 오르내리지 않는다.
         if (!choosing && _phase != _Phase.manualInput && _phase != _Phase.heard)
           Expanded(
             flex: 3,
             child: Stack(
-              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
               children: [
                 // 보조 내용이 들어갈 높이를 알린다. 등록 화면은 내용 높이를
                 // 미리 재어 모자라면 스크롤하므로, 좁거나 글자가 커도 이 영역이
                 // 이만큼은 남아 버튼이 늘 눌린다.
                 SizedBox(width: double.infinity, height: _extraHeight(context)),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
+                // 실제 내용도 높이 계산에 넣는다. 미리 잰 값이 모자라도(예를
+                // 들어 실제 폭이 더 좁을 때) 내용이 영역 밖으로 나가 가려지지
+                // 않는다.
+                SizedBox(
+                  width: double.infinity,
                   child: _micArea(_MicPart.extra),
                 ),
               ],
@@ -621,25 +659,29 @@ class _InputMethodChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _MethodButton(
-            // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
-            icon: Icons.record_voice_over_outlined,
-            label: '말로 답하기',
-            onTap: onVoice,
+    // 글자를 키워 한쪽 이름이 두 줄이 되어도 두 버튼 높이를 맞춘다.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _MethodButton(
+              // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
+              icon: Icons.record_voice_over_outlined,
+              label: '말로 답하기',
+              onTap: onVoice,
+            ),
           ),
-        ),
-        const SizedBox(width: AppSpacing.item),
-        Expanded(
-          child: _MethodButton(
-            icon: Icons.chat_bubble_outline,
-            label: '글로 답하기',
-            onTap: onText,
+          const SizedBox(width: AppSpacing.item),
+          Expanded(
+            child: _MethodButton(
+              icon: Icons.chat_bubble_outline,
+              label: '글로 답하기',
+              onTap: onText,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -728,15 +770,20 @@ class _MethodButtonState extends State<_MethodButton>
             ),
           );
         },
-        child: SizedBox(
-          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다.
-          height: 96,
+        child: ConstrainedBox(
+          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다. 글자를 키워
+          // 이름이 두 줄이 되면 잘리지 않게 그만큼 높아진다.
+          constraints: const BoxConstraints(minHeight: 96),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(widget.icon, size: 44, color: HomeColors.accent),
               const SizedBox(height: AppSpacing.lg),
-              Text(widget.label, style: AppTypography.bodyStrong),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyStrong,
+              ),
             ],
           ),
         ),
@@ -900,12 +947,14 @@ class _MicArea extends StatelessWidget {
       _ when sendFailed => (
         Text(
           '연결이 원활하지 않아',
+          textAlign: TextAlign.center,
           style: statusStyle.copyWith(color: AppColors.danger),
         ),
         Column(
           children: [
             Text(
-              '말씀을 글로 옮기지 못했어요.',
+              sendFailedDetail,
+              textAlign: TextAlign.center,
               style: statusStyle.copyWith(color: AppColors.danger),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -924,9 +973,14 @@ class _MicArea extends StatelessWidget {
       _ when failed => (
         Text(
           '목소리를 잘 듣지 못했어요.',
+          textAlign: TextAlign.center,
           style: statusStyle.copyWith(color: AppColors.danger),
         ),
-        const Text('마이크를 눌러 다시 말씀해주세요.', style: AppTypography.sub),
+        const Text(
+          retryHint,
+          textAlign: TextAlign.center,
+          style: AppTypography.sub,
+        ),
       ),
       _ => (const Text('마이크를 누르고 말씀해주세요', style: statusStyle), null),
     };
@@ -1003,6 +1057,12 @@ class _MicArea extends StatelessWidget {
       ],
     );
   }
+
+  /// 보내지 못했을 때 원 아래 둘째 줄. 보조 자리 높이를 잴 때도 쓴다.
+  static const sendFailedDetail = '말씀을 글로 옮기지 못했어요.';
+
+  /// 못 알아들었을 때 원 아래 둘째 줄. 보조 자리 높이를 잴 때도 쓴다.
+  static const retryHint = '마이크를 눌러 다시 말씀해주세요.';
 
   /// 마이크 원의 지름과 그 안의 아이콘(또는 도는 표시) 크기. 모든 상태가 같다.
   static const _micSize = 120.0;
