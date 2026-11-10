@@ -357,8 +357,9 @@ void main() {
       // 끝까지 내리면 사진 선택의 두 버튼이 모두 보인다.
       await tester.drag(_homeScrollables(), const Offset(0, -5000));
       await tester.pump();
-      expect(find.text('사진 분석 다시 시도').hitTestable(), findsOneWidget);
-      expect(find.text('완료된 사진으로 카드 만들기').hitTestable(), findsOneWidget);
+      expect(find.text('준비된 설명으로 카드 만들기').hitTestable(), findsOneWidget);
+      expect(find.text('설정에서 동의 켜기').hitTestable(), findsOneWidget);
+      expect(find.text('사진 분석 다시 시도'), findsNothing);
     });
 
     testWidgets('기준 화면에서는 스크롤 없이 그림을 줄여 버튼까지 담는다', (tester) async {
