@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../data/card_api.dart';
 import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
+import '../../data/setup_draft_store.dart';
 import '../auth/auth_providers.dart';
 import '../cards/card_generation_controller.dart';
 import '../life_story/life_story_providers.dart';
@@ -16,6 +18,7 @@ import '../profile/photo_description_store.dart';
 import '../visit/visit_camera.dart';
 import 'photo_picker.dart';
 import 'photo_uploader.dart';
+import 'setup_draft_keeper.dart';
 import 'setup_steps.dart';
 
 /// 입력 흐름이 모아 둔 값이다. 화면을 오가도 유지된다.
@@ -33,6 +36,7 @@ class SetupDraft {
     this.stage,
     this.facts = const {},
     this.photos = const [],
+    this.uploadedBefore = 0,
   });
 
   final String name;
@@ -62,8 +66,20 @@ class SetupDraft {
   /// `LifeFact.category` 별로 모은 문장. 건너뛴 항목은 담기지 않는다.
   final Map<String, String> facts;
 
-  /// 앨범에서 고른 사진과 각각의 업로드 상태. 최대 [maxProfilePhotos] 장이다.
+  /// 앨범에서 고른 사진과 각각의 업로드 상태. [uploadedBefore] 와 합쳐 최대
+  /// [maxProfilePhotos] 장이다.
   final List<SetupPhoto> photos;
+
+  /// 앱을 다시 켜기 전에 이 분에게 올린 사진 수. 단말 초안에서 가져오며
+  /// [photos] 에는 들어 있지 않다. 고른 사진의 경로는 초안에 두지 않는다.
+  final int uploadedBefore;
+
+  /// 서버에 올라간 사진 수. 단말 초안에 남긴다.
+  int get uploadedPhotoCount =>
+      uploadedBefore +
+      photos
+          .where((photo) => photo.status == PhotoUploadStatus.uploaded)
+          .length;
 
   bool get hasPhoto => photos.isNotEmpty;
 
@@ -233,6 +249,7 @@ class SetupDraft {
     ConditionStage? stage,
     Map<String, String>? facts,
     List<SetupPhoto>? photos,
+    int? uploadedBefore,
   }) => SetupDraft(
     name: name ?? this.name,
     gender: gender ?? this.gender,
@@ -246,6 +263,7 @@ class SetupDraft {
     stage: stage ?? this.stage,
     facts: facts ?? this.facts,
     photos: photos ?? this.photos,
+    uploadedBefore: uploadedBefore ?? this.uploadedBefore,
   );
 }
 
@@ -260,17 +278,32 @@ class SetupState {
 
   /// 서버에서 불러온 입력 중인 분을 이어서 입력할 때 쓴다. 서버에 저장된 기본
   /// 정보와 세부 정보로 채우고, 기본 정보는 이미 마쳤으므로 세부 정보부터 연다.
-  factory SetupState.resumeOf(CareProfileEntry entry) {
+  ///
+  /// 단말에 남긴 초안([saved])이 있으면 세부 정보는 초안의 답을 쓰고, 멈춘
+  /// 단계부터 열며, 올린 사진 수를 넘긴다. 세부 정보는 마칠 때만 서버에
+  /// 저장하므로 초안이 더 새 값이다.
+  factory SetupState.resumeOf(
+    CareProfileEntry entry, {
+    SavedSetupDraft? saved,
+  }) {
     final info = entry.basicInfo;
     if (info == null) return SetupState(remoteId: entry.remoteId);
+    String? factOf(String category) {
+      final text = saved == null
+          ? entry.details.of(category)
+          : saved.facts[category]?.trim();
+      return text == null || text.isEmpty ? null : text;
+    }
+
     return SetupState(
       draft: SetupDraft.fromBasicInfo(info).copyWith(
         facts: {
           for (final step in lifeFactSteps)
-            step.category: ?entry.details.of(step.category),
+            step.category: ?factOf(step.category),
         },
+        uploadedBefore: (saved?.uploadedPhotos ?? 0).clamp(0, maxProfilePhotos),
       ),
-      reachedIndex: 1,
+      reachedIndex: (saved?.reachedIndex ?? 1).clamp(1, _photoIndex),
       remoteId: entry.remoteId,
     );
   }
@@ -311,6 +344,13 @@ class SetupState {
     return math.min(math.max(stepIndex, reachedIndex), _photoIndex);
   }
 
+  /// 단말에 남길 초안. 글로 된 답, 가 본 가장 먼 단계와 올린 사진 수만 담는다.
+  SavedSetupDraft get saved => SavedSetupDraft(
+    facts: draft.facts,
+    reachedIndex: math.max(stepIndex, reachedIndex),
+    uploadedPhotos: draft.uploadedPhotoCount,
+  );
+
   SetupState copyWith({int? stepIndex, SetupDraft? draft, String? remoteId}) {
     final step = stepIndex ?? this.stepIndex;
     return SetupState(
@@ -326,12 +366,28 @@ const lifeFactStepCount = 4;
 
 class SetupController extends Notifier<SetupState> {
   @override
-  SetupState build() => const SetupState();
+  SetupState build() {
+    // 입력이 바뀔 때마다 단말에 초안을 남긴다. 화면을 거치지 않으므로 첫 등록과
+    // 더 등록하는 분 모두 남는다.
+    listenSelf((_, next) => _keepDraft(next));
+    return const SetupState();
+  }
 
   void updateDraft(SetupDraft draft) => state = state.copyWith(draft: draft);
 
   /// 로그인 세션이 있으면 서버에 저장한다. 없으면(임시 건너뛰기) 앱 안에만 둔다.
   bool get _online => ref.read(sessionProvider) != null;
+
+  String? get _accountId => ref.read(sessionProvider)?.account.accountId;
+
+  /// 서버에 프로필을 만든 뒤(2-2)부터 단말에 초안을 남긴다. 세부 정보는 그
+  /// 뒤에 받으므로 빠지는 답이 없다. 로그인하지 않았으면 남기지 않는다.
+  void _keepDraft(SetupState next) {
+    final accountId = _accountId;
+    final remoteId = next.remoteId;
+    if (accountId == null || remoteId == null) return;
+    ref.read(setupDraftKeeperProvider).keep(accountId, remoteId, next.saved);
+  }
 
   /// 기본 정보를 마치고 다음 단계로 간다.
   ///
@@ -367,6 +423,27 @@ class SetupController extends Notifier<SetupState> {
   void restore(SetupState saved) =>
       state = saved.copyWith(stepIndex: saved.resumeIndex);
 
+  /// `입력 중` 인 분 [id] 의 입력을 되살린다.
+  ///
+  /// 앱이 켜진 동안 남긴 입력([pendingSetupsProvider])이 있으면 그것을 쓴다.
+  /// 없으면(앱을 다시 켬) 서버의 기본 정보에 단말 초안을 더한다
+  /// ([SetupState.resumeOf]).
+  Future<void> resume(String id) async {
+    final kept = ref.read(pendingSetupsProvider)[id];
+    final entry = ref.read(careProfilesProvider).byId(id);
+    if (kept != null || entry == null) {
+      restore(kept ?? const SetupState());
+      return;
+    }
+    final accountId = _accountId;
+    final remoteId = entry.remoteId;
+    final saved = accountId == null || remoteId == null
+        ? null
+        : await ref.read(setupDraftKeeperProvider).read(accountId, remoteId);
+    if (!ref.mounted) return;
+    restore(SetupState.resumeOf(entry, saved: saved));
+  }
+
   /// 다음 단계로 간다.
   ///
   /// 마지막 단계에서는 아무것도 하지 않는다. 화면이 흐름을 끝낸다.
@@ -392,13 +469,14 @@ class SetupController extends Notifier<SetupState> {
     updateDraft(state.draft.copyWith(facts: facts));
   }
 
-  /// 고른 사진을 뒤에 붙인다. 최대 장수를 넘는 것은 버린다.
+  /// 고른 사진을 뒤에 붙인다. 앞서 올린 사진과 합쳐 최대 장수를 넘는 것은
+  /// 버린다.
   void addPhotos(List<PickedPhoto> picked) {
     if (!state.draft.canEditPhotos) return;
     final photos = [
       ...state.draft.photos,
       for (final photo in picked) SetupPhoto(photo),
-    ].take(maxProfilePhotos);
+    ].take(math.max(0, maxProfilePhotos - state.draft.uploadedBefore));
     updateDraft(state.draft.copyWith(photos: photos.toList()));
   }
 
@@ -456,6 +534,9 @@ class SetupController extends Notifier<SetupState> {
   /// 세부 정보를 저장하면 첫 카드 생성(4-1)을 요청한다. 서버는 이 요청이
   /// 있어야 등록을 마친 것(`completed`)으로 센다. 요청이 실패해도 등록은
   /// 마친다. 카드 화면에 들어가면 상태(4-2)를 보고 다시 요청한다.
+  ///
+  /// 세부 정보를 저장하면 단말 초안을 지운다. 저장하지 못하면 남겨 다시 이어
+  /// 간다.
   Future<void> finish({String? addingId}) async {
     final draft = state.draft;
     final info = draft.toBasicInfo();
@@ -473,6 +554,11 @@ class SetupController extends Notifier<SetupState> {
         // 카드 화면이 다시 요청한다.
       }
       if (!ref.mounted) return;
+      if (_accountId case final accountId?) {
+        unawaited(
+          ref.read(setupDraftKeeperProvider).clear(accountId, remoteId),
+        );
+      }
     }
     final details = EnteredDetails.fromFacts(draft.facts);
     final profiles = ref.read(careProfilesProvider.notifier);
@@ -497,15 +583,24 @@ final setupControllerProvider = NotifierProvider<SetupController, SetupState>(
 /// `입력 중` 인 분마다 입력하던 값과 단계다.
 ///
 /// 입력 화면은 한 번에 한 분만 다루므로, 화면을 떠나도 그 분의 입력이 남도록
-/// 여기에 옮겨 둔다. 다시 열면 [SetupController.restore] 로 되살린다.
-/// 앱이 켜져 있는 동안만 기억한다.
+/// 여기에 옮겨 둔다. 다시 열면 [SetupController.resume] 으로 되살린다.
+/// 이 목록은 앱이 켜져 있는 동안만 기억한다. 앱을 다시 켠 뒤에는 서버에 만든
+/// 분의 단말 초안([SetupDraftKeeper])으로 이어 간다.
 class PendingSetups extends Notifier<Map<String, SetupState>> {
   @override
   Map<String, SetupState> build() => const {};
 
   void save(String id, SetupState setup) => state = {...state, id: setup};
 
-  void remove(String id) => state = {...state}..remove(id);
+  /// 입력을 마쳤거나 그만두었다. 서버에 만든 분이면([remoteId], 없으면 남긴
+  /// 입력의 서버 ID) 단말 초안도 지운다.
+  void remove(String id, {String? remoteId}) {
+    final savedId = remoteId ?? state[id]?.remoteId;
+    state = {...state}..remove(id);
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    if (accountId == null || savedId == null) return;
+    unawaited(ref.read(setupDraftKeeperProvider).clear(accountId, savedId));
+  }
 }
 
 final pendingSetupsProvider =

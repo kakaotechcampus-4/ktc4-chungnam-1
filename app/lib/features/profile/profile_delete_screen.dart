@@ -16,6 +16,7 @@ import '../auth/auth_messages.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_draft_keeper.dart';
 import '../visit/pending_uploads.dart';
 import '../visit/recording_share.dart';
 import '../visit/visit_photos.dart';
@@ -92,6 +93,7 @@ class _BodyState extends ConsumerState<_Body> {
     final selectedProfile = ref.read(selectedProfileStoreProvider);
     final relationships = ref.read(profileRelationshipStoreProvider);
     final birthInputs = ref.read(profileBirthInputStoreProvider);
+    final setupDrafts = ref.read(setupDraftKeeperProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -129,6 +131,8 @@ class _BodyState extends ConsumerState<_Body> {
       await relationships.clear(accountId);
       // 나이로 입력했다는 표시도 지운다. 저장소가 실패를 삼킨다.
       await birthInputs.clear(accountId);
+      // 등록하다 멈춘 세부 정보 초안도 지운다. 저장소가 실패를 삼킨다.
+      await setupDrafts.clearAccount(accountId);
     }
 
     if (!mounted) return;

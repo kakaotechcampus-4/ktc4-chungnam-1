@@ -10,26 +10,38 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import psycopg
 
 from card_generation._steps.research.store import ProfileStore
-from card_generation._versions import LATEST
+from card_generation._versions import LATEST, VERSIONS
+from card_generation._versions.base import Version
 from card_generation.contract import CardGenerationError, GenerationRequest
 from card_generation.generate import generate_cards
 from common.llm import ChatConfig
 
-from . import OWN, Backend
+from . import OWN, Backend, steps
 from .context import build_context
 
 NAME = "topics"
 
 
-def profile_store(url: str, pid: str) -> ProfileStore:
+AI_ROOT = Path(__file__).resolve().parents[2]
+
+
+def profile_store(url: str, pid: str, v: Version = LATEST) -> ProfileStore:
     """화면용 조회. 카드 생성과 같은 context를 DB에서 조립해 읽는다."""
     with psycopg.connect(url) as ro:
-        return ProfileStore(build_context(ro, pid), LATEST.decay)
+        return ProfileStore(build_context(ro, pid), v.decay)
+
+
+def version_prompt_files(v: Version) -> dict[str, str]:
+    """버전 하나의 카드 생성 프롬프트. 화면 이름 → ai/ 기준 경로."""
+    base = v.prompts.relative_to(AI_ROOT).as_posix()
+    return {"추천 ① 조사 에이전트": f"{base}/agent.md", "추천 ② 연결 판정": f"{base}/match.md",
+            "추천 ④ 문안 작성": f"{base}/writing_topics.md", "추천 ①② 같은 이야기 기준": f"{base}/same_story.md"}
 
 
 def topic_group(t) -> str:
@@ -60,24 +72,30 @@ class TopicsBackend(Backend):
         ("life_fact_proposals", ("proposal_id",), OWN),
         ("life_facts", ("fact_id",), OWN),
     ]
-    prompt_files = {
-        "추천 ① 조사 에이전트": "card_generation/_versions/v2/prompts/agent.md",
-        "추천 ② 연결 판정": "card_generation/_versions/v2/prompts/match.md",
-        "추천 ④ 문안 작성": "card_generation/_versions/v2/prompts/writing_topics.md",
-        "추천 ①② 같은 이야기 기준": "card_generation/_versions/v2/prompts/same_story.md",
-    }
+    last_steps: dict[str, Any] | None = None  # 마지막 카드 생성의 단계 기록. 실패했을 때도 남는다
+
+    def __init__(self, prompt_version: int | None = None) -> None:
+        """prompt_version은 카드 생성 버전. 없으면 최신 버전(LATEST). 운영 backend 기본 버전과 다를 수 있다."""
+        if prompt_version is not None and prompt_version not in VERSIONS:
+            raise ValueError(f"없는 버전입니다: {prompt_version}. 있는 버전: {sorted(VERSIONS)}")
+        self.v = VERSIONS[prompt_version] if prompt_version is not None else LATEST
+        self.prompt_files = version_prompt_files(self.v)
 
     def store(self, conn: psycopg.Connection, pid: str) -> ProfileStore:
-        return ProfileStore(build_context(conn, pid), LATEST.decay)
+        return ProfileStore(build_context(conn, pid), self.v.decay)
 
     # 1 카드 받기: 실제 backend worker와 같은 경로. DB에서 context 조립 → generate_cards → 결과 저장
     def recommend(self, url: str, pid: str, config: ChatConfig, model) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         with psycopg.connect(url) as ro:
             context = build_context(ro, pid)
-        store = ProfileStore(context, LATEST.decay)   # 화면에 보여 줄 '추천 전' 주제 상태와 근거 글. 생성에는 쓰지 않는다
+        store = ProfileStore(context, self.v.decay)   # 화면에 보여 줄 '추천 전' 주제 상태와 근거 글. 생성에는 쓰지 않는다
         before = {t.topic_id: t for t in store.all_topics()}
-        request = GenerationRequest(model=config.model, prompt_version=LATEST.number, context=context)
-        result = generate_cards(request, api_key=config.api_key)
+        request = GenerationRequest(model=config.model, prompt_version=self.v.number, context=context)
+        with steps.record() as rec:
+            try:
+                result = generate_cards(request, api_key=config.api_key)
+            finally:
+                self.last_steps = {"context": context.model_dump(mode="json", by_alias=True), **rec}
         topics = {t.topic_id: t for t in context.topics}
         cards = []
         with psycopg.connect(url) as rw, rw.transaction():
@@ -114,7 +132,9 @@ class TopicsBackend(Backend):
         record = {"candidates": result.log["candidates"], "tool_calls": result.log["toolCalls"],
                   "rejected_submissions": result.log["rejectedSubmissions"], "refills": result.log["refills"],
                   "dropped": result.log["dropped"], "new_topics": sum(1 for c in result.cards if not c.topic.topic_id),
-                  "writing_first_problems": result.log["writingFirstProblems"], "seconds": result.log["seconds"]}
+                  "writing_first_problems": result.log["writingFirstProblems"], "seconds": result.log["seconds"],
+                  "prompt_version": result.prompt_version, "sensitive_from_stories": result.log.get("sensitiveFromStories"),
+                  "steps": self.last_steps}
         return cards, record
 
     def card_names(self, card: dict[str, Any]) -> list[str]:
@@ -157,7 +177,7 @@ class TopicsBackend(Backend):
 
     # 상태
     def state(self, url: str, pid: str) -> dict[str, Any]:
-        store = profile_store(url, pid)
+        store = profile_store(url, pid, self.v)
         topics = store.all_topics()
         facts = store.list_life_facts(order="oldest", limit=30).facts
         return {"life_facts": [{"title": f.title, "content": f.content, "from_visit": f.from_visit} for f in facts],

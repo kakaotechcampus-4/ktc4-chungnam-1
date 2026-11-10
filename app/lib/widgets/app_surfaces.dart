@@ -231,10 +231,12 @@ class SelectionMark extends StatelessWidget {
 
 /// 오른쪽에 고르기 표시가 있는 카드다.
 ///
-/// 카드 본문을 누르면 [onTap] 으로 펼쳐지고, 카드 오른쪽 3분의 1을 누르면
-/// [onToggleSelected] 로 고른다. 원만 누르기 어렵다는 의견이 있어 원 둘레가
-/// 아니라 오른쪽 3분의 1 전체 높이를 고르는 자리로 둔다. 원의 자리와 글자 폭은
-/// 예전(여백 24, 사이 12, 자리 48)과 같다.
+/// 카드 본문을 누르면 [onTap] 으로 펼쳐지고, 원 둘레의 고르는 자리를 누르면
+/// [onToggleSelected] 로 고른다. 원만 누르기 어렵다는 의견이 있어 고르는 자리를
+/// 카드 전체 높이로 둔다. 폭은 글자를 비워 둔 오른쪽 여백과 같은 84 로 정했다.
+/// 오른쪽 3분의 1로 두었을 때는 좁은 화면에서 설명 글자가 고르는 자리 안까지
+/// 들어가, 설명을 눌러 펼치려다 카드가 골라졌다(2026-11-10 UX 점검 19). 원의
+/// 자리와 글자 폭은 예전(여백 24, 사이 12, 자리 48)과 같다.
 ///
 /// 화면 낭독기가 두 동작을 따로 읽도록 고르는 자리를 독립된 항목으로 두고,
 /// [selectLabel] 에 무엇을 고르는지 적어 선택 여부와 함께 알린다.
@@ -271,6 +273,7 @@ class SelectableCard extends StatelessWidget {
   final VoidCallback onToggleSelected;
 
   /// 글자가 원과 겹치지 않게 비워 두는 오른쪽 여백. 예전 24 + 48 + 12.
+  /// 고르는 자리의 폭도 이 값이다.
   static const _contentRight = 84.0;
 
   @override
@@ -298,20 +301,18 @@ class SelectableCard extends StatelessWidget {
           ),
         ),
         // 카드 전체 높이에 걸치므로 원은 카드 높이의 가운데에 오고, 펼치면
-        // 펼친 카드의 가운데로 함께 옮겨 간다.
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: FractionallySizedBox(
-              widthFactor: 1 / 3,
-              heightFactor: 1,
-              child: SelectionToggle(
-                label: selectLabel,
-                selected: selected,
-                onTap: onToggleSelected,
-                accent: accent,
-              ),
-            ),
+        // 펼친 카드의 가운데로 함께 옮겨 간다. 폭은 글자를 비워 둔 여백과 같아
+        // 글자 위를 누르면 늘 펼친다.
+        Positioned(
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: _contentRight,
+          child: SelectionToggle(
+            label: selectLabel,
+            selected: selected,
+            onTap: onToggleSelected,
+            accent: accent,
           ),
         ),
       ],
@@ -319,7 +320,7 @@ class SelectableCard extends StatelessWidget {
   }
 }
 
-/// [SelectableCard] 오른쪽 3분의 1의 고르는 자리다.
+/// [SelectableCard] 오른쪽 원 둘레의 고르는 자리다.
 ///
 /// 받은 자리 전체를 누를 수 있고, 원은 오른쪽 끝에서 [SelectableCard] 가 정한
 /// 자리에 그린다. 화면 낭독기는 [label] 과 선택 여부를 읽는다.

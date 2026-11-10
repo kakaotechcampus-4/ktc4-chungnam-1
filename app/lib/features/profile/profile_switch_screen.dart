@@ -198,7 +198,10 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     }
 
     profiles.remove(profile.id);
-    ref.read(pendingSetupsProvider.notifier).remove(profile.id);
+    // 입력 중이던 분이면 단말에 남긴 세부 정보 초안도 함께 지운다.
+    ref
+        .read(pendingSetupsProvider.notifier)
+        .remove(profile.id, remoteId: remoteId);
     setState(() => _removing = false);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()

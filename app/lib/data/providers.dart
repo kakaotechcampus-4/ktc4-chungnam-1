@@ -997,7 +997,9 @@ enum ReportNotice {
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
-  /// 묻게 한다.
+  /// 묻게 한다. 만드는 중에 다시 시도할 수 없는 실패로 묻기를 멈췄을 때도 이
+  /// 알림이다. 만드는 중 배너가 끝없이 돌지 않게 한다. 다시 묻는 동안에는
+  /// [ReportNoticeInfo.rechecking] 으로 남는다.
   checkFailed,
 }
 
@@ -1010,9 +1012,14 @@ class ReportNoticeInfo {
     this.visitDate,
     this.fromServer = false,
     this.failureCode,
+    this.rechecking = false,
   });
 
   final ReportNotice notice;
+
+  /// [ReportNotice.checkFailed] 를 눌러 다시 묻는 중이다. 묻는 동안 배너를
+  /// 지우면 사라졌다가 최대 15초 뒤 다시 나타났다(2026-11-10 UX 점검 17번).
+  final bool rechecking;
 
   /// 서버의 회차로 정한 알림이다. 아니면 목 데이터의 알림이고, 화면이 목
   /// 리포트를 가리킨다.
@@ -1167,19 +1174,33 @@ class _ReportNoticesNotifier
     unawaited(_follow(key, _nextRound(key), remoteProfileId));
   }
 
-  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 비운다.
+  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 지우지 않고 다시
+  /// 묻는 중([ReportNoticeInfo.rechecking])으로 둔다.
   void retry(_NoticeKey key, String remoteProfileId) {
     _synced.add(key);
     final round = _nextRound(key);
-    _set(key, null);
+    _set(key, _checkFailed(state[key], rechecking: true));
     unawaited(_follow(key, round, remoteProfileId));
   }
 
+  /// 묻지 못했다는 알림. 만드는 중이던 회차를 알면 날짜와 회차를 그대로 둔다.
+  static ReportNoticeInfo _checkFailed(
+    ReportNoticeInfo? shown, {
+    bool rechecking = false,
+  }) => ReportNoticeInfo(
+    ReportNotice.checkFailed,
+    reportId: shown?.reportId,
+    analysisId: shown?.analysisId,
+    visitDate: shown?.visitDate,
+    fromServer: true,
+    rechecking: rechecking,
+  );
+
   /// 가장 최근 회차를 읽어 알림을 정하고, 만드는 중이면 끝날 때까지 묻는다.
   ///
-  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없을 때
-  /// 묻지 못하면 [ReportNotice.checkFailed] 를 띄운다. 이미 띄운 알림은 그대로
-  /// 둔다.
+  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없거나,
+  /// 만드는 중이었거나, 다시 묻던 중에 묻지 못하면 [ReportNotice.checkFailed] 를
+  /// 띄운다. 그 밖에 이미 띄운 알림은 그대로 둔다.
   Future<void> _follow(
     _NoticeKey key,
     int round,
@@ -1202,15 +1223,14 @@ class _ReportNoticesNotifier
         latest = await api.latestSession(remoteProfileId);
       } on ApiFailure catch (failure) {
         if (_stale(key, round)) return;
-        if (_retryable(failure) &&
-            state[key]?.notice == ReportNotice.generating) {
+        final shown = state[key];
+        if (_retryable(failure) && shown?.notice == ReportNotice.generating) {
           continue;
         }
-        if (state[key] == null) {
-          _set(
-            key,
-            const ReportNoticeInfo(ReportNotice.checkFailed, fromServer: true),
-          );
+        if (shown == null ||
+            shown.notice == ReportNotice.generating ||
+            shown.notice == ReportNotice.checkFailed) {
+          _set(key, _checkFailed(shown));
         }
         return;
       }
@@ -1251,7 +1271,8 @@ class _ReportNoticesNotifier
   }
 
   /// 분석 작업이 끝날 때까지 묻는다. 끝났거나 그만 물어야 하면 `true`, 작업을
-  /// 찾지 못해 회차부터 다시 물어야 하면 `false` 다.
+  /// 찾지 못해 회차부터 다시 물어야 하면 `false` 다. 다시 시도할 수 없는
+  /// 실패로 그만 물으면 만드는 중 배너를 [ReportNotice.checkFailed] 로 바꾼다.
   Future<bool> _pollAnalysis(
     _NoticeKey key,
     int round,
@@ -1274,6 +1295,7 @@ class _ReportNoticesNotifier
         if (failure is ApiServerFailure && failure.statusCode == 404) {
           return false;
         }
+        _set(key, _checkFailed(state[key]));
         return true;
       }
       if (_stale(key, round)) return true;
@@ -1323,9 +1345,15 @@ class _ReportNoticesNotifier
   }
 
   /// 서버에 닿지 못했거나 서버가 다시 시도해도 된다고 알렸다.
+  ///
+  /// 5xx 를 공통 `ErrorResponse` 없이 받은 것(본문 없는 502, 504 등)도 다시
+  /// 묻는다. 앞단 프록시가 앱 서버의 응답을 받지 못한 것이라 서버가 `retryable`
+  /// 을 알릴 수 없었다. 여기서는 상태를 읽기만 하므로 다시 물어도 탈이 없다.
   static bool _retryable(ApiFailure failure) =>
       failure is ApiNetworkFailure ||
-      (failure is ApiServerFailure && failure.retryable);
+      (failure is ApiServerFailure &&
+          (failure.retryable ||
+              failure.statusCode >= 500 && failure.errorCode == null));
 
   /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
   /// `null` 이다.

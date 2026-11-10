@@ -53,6 +53,7 @@ class NoticeScreen extends ConsumerWidget {
                       reason: notice == ReportNotice.failed
                           ? analysisFailureReason(info.failureCode)
                           : null,
+                      rechecking: info.rechecking,
                       onOpen: () {
                         final id = info.reportId;
                         // 회차 상태를 묻지 못했으면 다시 묻는다.
@@ -115,6 +116,7 @@ class _NoticeRow extends StatelessWidget {
     required this.notice,
     required this.onOpen,
     this.reason,
+    this.rechecking = false,
   });
 
   final String? date;
@@ -123,6 +125,9 @@ class _NoticeRow extends StatelessWidget {
 
   /// 제목 아래에 덧붙이는 실패 이유. 홈 배너와 같은 문구다.
   final String? reason;
+
+  /// 확인하지 못한 회차 상태를 다시 묻는 중이다. 홈 배너와 같이 누르지 않는다.
+  final bool rechecking;
 
   @override
   Widget build(BuildContext context) {
@@ -133,11 +138,15 @@ class _NoticeRow extends StatelessWidget {
       ReportNotice.failed => ('리포트를 만들지 못했어요', '눌러서 분석 다시 요청하기'),
       ReportNotice.evaluationPending => ('평가 이어서 하기', '평가를 마치면 리포트를 만들어요'),
       ReportNotice.audioPending => ('음성 다시 보내기', '녹음을 보내면 리포트를 만들어요'),
-      ReportNotice.checkFailed => ('리포트 상태를 확인하지 못했어요', '눌러서 다시 확인하기'),
+      ReportNotice.checkFailed => (
+        '리포트 상태를 확인하지 못했어요',
+        rechecking ? '다시 확인하고 있어요' : '눌러서 다시 확인하기',
+      ),
     };
-    // 만드는 중에는 결과 화면을 열지 않는다.
+    // 만드는 중에는 결과 화면을 열지 않는다. 다시 묻는 중에도 누르지 않는다.
     final onTap = switch (notice) {
       ReportNotice.generating => null,
+      ReportNotice.checkFailed when rechecking => null,
       _ => onOpen,
     };
 

@@ -40,7 +40,8 @@ def _fake_models(monkeypatch, life, topics) -> list[dict]:
         return config   # 동시에 오는 두 호출이 서로의 설정을 읽지 않게 설정을 그대로 대역 모델로 씀
 
     def invoke(client, schema, messages, *args, usage=None, **kwargs):
-        calls.append({"effort": client.effort, "schema": schema, "system": messages[0][1],
+        calls.append({"effort": client.effort, "max_tokens": client.max_tokens,
+                      "schema": schema, "system": messages[0][1],
                       "payload": json.loads(messages[1][1])})
         if usage is not None:
             usage["calls"] = usage.get("calls", 0) + 1
@@ -132,6 +133,7 @@ def test_life_stories_and_topics_are_separate_calls(monkeypatch):
     by_schema = {c["schema"]: c for c in calls}   # 동시에 보내므로 기록 순서는 정해져 있지 않음
     assert len(calls) == 2 and set(by_schema) == {_LifeFacts, _Topics}
     assert (by_schema[_LifeFacts]["effort"], by_schema[_Topics]["effort"]) == ("medium", "low")
+    assert all(c["max_tokens"] == 16000 for c in calls)
     life_prompt, topic_prompt = _prompts()
     assert (by_schema[_LifeFacts]["system"], by_schema[_Topics]["system"]) == (life_prompt, topic_prompt)
     assert calls[0]["payload"] == calls[1]["payload"]
@@ -218,7 +220,7 @@ def test_category_and_sensitive_reach_the_106_response(monkeypatch):
          "storyCategory": "hometown", "sensitive": True},
         {"title": "손주와 여행 계획", "content": "합성 경험 내용", "reason": "합성 이유",
          "storyCategory": "travel", "sensitive": False}]
-    assert out["promptVersion"] == "report-6+proposals-9"
+    assert out["promptVersion"] == "report-6+proposals-10"
     assert "tokenUsage" not in out and "lifeFactProposalsReturned" not in out
 
 
@@ -334,6 +336,20 @@ def test_prompt_keeps_painful_and_uncertain_stories_for_review():
     assert "어르신이 함께한 일이면 내고" in life_prompt
     for value in ("family", "hobby", "work", "hometown", "friend", "travel", "other"):
         assert value in life_prompt
+
+
+def test_story_prompt_checks_attribution_and_uncertainty_in_content():
+    """문구 회귀 검사다. 실제 인물 관계의 정확성은 별도 모델 평가로 확인한다."""
+    life, topics = _prompts()
+    for rule in (
+        "해당 이야기 앞뒤의 질문, 답변, 되묻기와 정정을 함께 대조한다",
+        "서로 다른 집안의 인물이나 다른 시기의 사건을 하나로 합치지 않는다",
+        "그 부분만 title과 content에서도 단정하지 않는다",
+        "행동한 사람과 들은 사람을 바꾸지 않았는지",
+        "사건의 앞뒤를 뒤집지 않았는지",
+    ):
+        assert rule in life
+        assert rule not in topics
 
 
 def test_topic_prompt_drops_scarcity_rules_but_keeps_one_per_card():
