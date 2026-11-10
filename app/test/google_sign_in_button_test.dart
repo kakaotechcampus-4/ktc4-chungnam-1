@@ -156,9 +156,15 @@ void main() {
     semantics.dispose();
   });
 
-  for (final scale in [1.3, 2.0]) {
-    testWidgets('360x640 글자 $scale배에서도 글자가 잘리지 않고 버튼 안에 든다', (tester) async {
-      _screen(tester, const Size(360, 640), scale: scale);
+  for (final (size, scale) in const [
+    (Size(360, 640), 1.3),
+    (Size(360, 640), 2.0),
+    (Size(390, 844), 1.3),
+    (Size(390, 844), 2.0),
+  ]) {
+    final tag = '${size.width.toInt()}x${size.height.toInt()}';
+    testWidgets('$tag 글자 $scale배에서도 글자가 잘리지 않고 버튼 안에 든다', (tester) async {
+      _screen(tester, size, scale: scale);
       await tester.pumpWidget(_host(onPressed: () {}));
 
       expect(tester.takeException(), isNull);
