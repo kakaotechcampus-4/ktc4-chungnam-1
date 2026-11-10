@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart' show OrdinalSortKey;
+import 'package:flutter/semantics.dart'
+    show CustomSemanticsAction, OrdinalSortKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -202,7 +204,8 @@ class _CardsState extends ConsumerState<_Cards> {
                             : state.followUpIndex % state.followUpCount,
                         turn: state.followUpIndex,
                         count: state.followUpCount,
-                        onTap: controller.nextFollowUp,
+                        onNext: controller.nextFollowUp,
+                        onPrevious: controller.previousFollowUp,
                       ),
                     ),
                   ),
@@ -704,43 +707,103 @@ class _MainQuestion extends StatelessWidget {
 }
 
 /// 아래쪽 절반. 회색 바탕으로 위와 구분하고, 누르면 다음 꼬리 질문으로 넘어간다.
+/// 옆으로 밀어도 넘어간다. 왼쪽으로 밀면 다음 질문, 오른쪽으로 밀면 앞 질문이다.
 ///
 /// 넘길 때 앞 질문이 왼쪽으로 밀려 사라진 뒤 다음 질문이 오른쪽에서 들어온다.
-/// 글자만 바뀌면 넘어갔는지 알아채기 어려웠다.
-class _FollowUpQuestion extends StatelessWidget {
+/// 글자만 바뀌면 넘어갔는지 알아채기 어려웠다. 앞 질문으로 되돌릴 때는 거꾸로
+/// 오른쪽으로 밀려 사라지고 왼쪽에서 들어온다.
+class _FollowUpQuestion extends StatefulWidget {
   const _FollowUpQuestion({
     required this.question,
     required this.index,
     required this.turn,
     required this.count,
-    required this.onTap,
+    required this.onNext,
+    required this.onPrevious,
     super.key,
   });
 
   final String question;
   final int index;
 
-  /// 넘긴 횟수. 한 바퀴 돌아 같은 질문이 와도 넘김 효과가 보이게 이 값으로
-  /// 질문을 가른다.
+  /// 꼬리 질문의 자리([VisitState.followUpIndex]). 넘기면 하나 늘고 되돌리면
+  /// 하나 준다. 늘었는지 줄었는지로 질문이 밀려 나가는 쪽을 정한다.
   final int turn;
 
   final int count;
-  final VoidCallback onTap;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
+
+  @override
+  State<_FollowUpQuestion> createState() => _FollowUpQuestionState();
+}
+
+class _FollowUpQuestionState extends State<_FollowUpQuestion> {
+  /// 옆으로 이만큼 끌었거나 이보다 빠르게 그었을 때만 넘긴다. 누르다 손가락이
+  /// 조금 비껴가는 정도로는 넘어가지 않는다.
+  static const _swipeDistance = 48.0;
+  static const _swipeVelocity = 300.0;
+
+  /// 옆으로 미는 손짓은 화면 낭독기에서 쓸 수 없어 동작 메뉴에 넘기기를 둔다.
+  /// 두 번 누르면 그대로 다음 질문으로 넘어간다.
+  static const _nextAction = CustomSemanticsAction(label: '다음 꼬리 질문');
+  static const _previousAction = CustomSemanticsAction(label: '이전 꼬리 질문');
+
+  /// 질문이 바뀐 횟수. 한 바퀴 돌아 같은 질문이 오거나 앞뒤로 빠르게 오가
+  /// 같은 자리로 돌아와도 넘김 효과가 보이게 이 값으로 질문을 가른다.
+  int _shown = 0;
+
+  /// 마지막 넘김이 다음 질문 쪽이었는지.
+  bool _forward = true;
+
+  /// 이번 끌기에서 옆으로 움직인 거리. 왼쪽이 음수다.
+  double _dragged = 0;
+
+  @override
+  void didUpdateWidget(_FollowUpQuestion old) {
+    super.didUpdateWidget(old);
+    if (widget.turn == old.turn) return;
+    _shown++;
+    _forward = widget.turn > old.turn;
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final dragged = _dragged;
+    _dragged = 0;
+
+    // 빠르게 그었으면 그은 쪽을, 천천히 끌었으면 끈 거리를 본다.
+    final double toward;
+    if (velocity.abs() >= _swipeVelocity) {
+      toward = velocity;
+    } else if (dragged.abs() >= _swipeDistance) {
+      toward = dragged;
+    } else {
+      return;
+    }
+    if (toward < 0) {
+      widget.onNext();
+    } else {
+      widget.onPrevious();
+    }
+  }
 
   Widget _slide(Widget child, Animation<double> animation) {
-    // 앞 질문이 조금 왼쪽으로 밀리며 사라진 뒤에 다음 질문이 오른쪽에서
-    // 들어온다. 둘이 함께 움직이면 글자가 겹쳐 어지러웠다.
+    // 앞 질문이 조금 밀리며 사라진 뒤에 다음 질문이 반대쪽에서 들어온다.
+    // 둘이 함께 움직이면 글자가 겹쳐 어지러웠다. 다음 질문으로 넘기면 왼쪽,
+    // 앞 질문으로 되돌리면 오른쪽으로 밀려 나간다.
     //
     // 나가는 쪽은 애니메이션이 1에서 0으로 거꾸로 돈다. 두 쪽 모두 뒤 절반
     // 구간만 쓰므로, 나가는 질문은 앞 절반에 사라지고 들어오는 질문은 뒤
     // 절반에 나타나 한 번에 하나만 보인다.
-    final incoming = child.key == ValueKey(turn);
+    final incoming = child.key == ValueKey(_shown);
+    final shift = _forward ? 0.25 : -0.25;
     final half = CurvedAnimation(
       parent: animation,
       curve: const Interval(0.5, 1, curve: Curves.easeOutCubic),
     );
     final offset = Tween<Offset>(
-      begin: Offset(incoming ? 0.25 : -0.25, 0),
+      begin: Offset(incoming ? shift : -shift, 0),
       end: Offset.zero,
     ).animate(half);
     return SlideTransition(
@@ -754,11 +817,14 @@ class _FollowUpQuestion extends StatelessWidget {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 400);
+    final question = widget.question;
+    final index = widget.index;
+    final count = widget.count;
 
-    return Material(
+    final area = Material(
       color: HomeColors.bubble,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onNext,
         child: Container(
           width: double.infinity,
           decoration: const BoxDecoration(
@@ -782,9 +848,13 @@ class _FollowUpQuestion extends StatelessWidget {
                     width: double.infinity,
                     child: AnimatedSwitcher(
                       duration: duration,
-                      transitionBuilder: _slide,
+                      // 빌드마다 새 함수를 넘긴다. 함수가 바뀌어야
+                      // AnimatedSwitcher 가 나가는 질문의 효과도 지금 방향으로
+                      // 다시 만든다.
+                      transitionBuilder: (child, animation) =>
+                          _slide(child, animation),
                       child: Padding(
-                        key: ValueKey(turn),
+                        key: ValueKey(_shown),
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.screen,
                         ),
@@ -841,6 +911,26 @@ class _FollowUpQuestion extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+
+    return Semantics(
+      customSemanticsActions: {
+        _nextAction: widget.onNext,
+        _previousAction: widget.onPrevious,
+      },
+      // 옆으로 끄는 손길만 받는다. 위아래로 끄는 손길은 시트가 받아 내려 닫는다.
+      child: GestureDetector(
+        // 손가락을 댄 자리부터 끈 거리를 잰다.
+        dragStartBehavior: DragStartBehavior.down,
+        // 화면 낭독기에는 옆으로 밀기 대신 위 동작 메뉴를 둔다.
+        excludeFromSemantics: true,
+        onHorizontalDragStart: (_) => _dragged = 0,
+        onHorizontalDragUpdate: (details) =>
+            _dragged += details.primaryDelta ?? 0,
+        onHorizontalDragEnd: _onDragEnd,
+        onHorizontalDragCancel: () => _dragged = 0,
+        child: area,
       ),
     );
   }
