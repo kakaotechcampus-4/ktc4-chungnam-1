@@ -55,7 +55,7 @@ def test_upload_analysis_query_card_input(migrated_database_url):
         return await build_context(conn, UUID(profile))
     assert with_db(migrated_database_url, context).photos[0].description == "합성 사진 분석"
     row = api.query("SELECT model, prompt_version, lease_expires_at FROM photos")[0]
-    assert row == {"model": "synthetic-model", "prompt_version": "photo-1", "lease_expires_at": None}
+    assert row == {"model": "synthetic-model", "prompt_version": "photo-2", "lease_expires_at": None}
 
 
 def test_ai_completion_does_not_overwrite_caregiver(migrated_database_url):

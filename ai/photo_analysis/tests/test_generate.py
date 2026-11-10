@@ -35,6 +35,7 @@ def test_multimodal_call_has_no_profile_or_metadata(monkeypatch):
     assert len(fake.messages) == 2
     assert fake.messages[1].content[1]["image_url"]["url"].startswith("https://synthetic.invalid/")
     assert "EXIF" in fake.messages[0].content
+    assert fake.messages[0].content == module.PROMPT.read_text(encoding="utf-8")
     assert configs[0].timeout == 120
 
 
@@ -58,3 +59,10 @@ def test_invalid_output_or_provider_error_is_sanitized(monkeypatch, result):
 def test_blank_description_rejected():
     with pytest.raises(ValidationError):
         PhotoDescription(description="\n\t ")
+
+
+def test_photo_prompt_checks_each_person_and_visible_action():
+    text = module.PROMPT.read_text(encoding="utf-8")
+    assert module.PROMPT_VERSION == "photo-2"
+    for rule in ("인물별 위치", "다른 사람에게 옮기거나", "조명이나 가림", "실제로 보고 있거나 하고 있는 일"):
+        assert rule in text
