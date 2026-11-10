@@ -3,6 +3,8 @@
 //
 // 서버는 `FakeProfileServer` 와 `FakeReportServer` 다. 값은 모두 합성이다.
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/auth_api.dart';
@@ -341,5 +343,114 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
     expect(_info(container)!.notice, isNot(ReportNotice.checkFailed));
+  });
+
+  // 2026-11-10 UX 점검 17번. 다시 시도할 수 없는 실패가 오면 묻기를 멈추고
+  // 만드는 중 배너가 끝없이 돌았다.
+  group('만드는 중에 묻지 못하면', () {
+    FakeReportServer processing({String? analysisId = 'a1'}) =>
+        FakeReportServer(
+          sessions: {
+            'p1': [
+              FakeReportServer.session(
+                id: 's1',
+                status: 'processing',
+                analysisId: analysisId,
+              ),
+            ],
+          },
+          analyses: {
+            'a1': ['transcribing'],
+          },
+        );
+
+    const analysisPath = '/api/v1/speech-analyses/a1';
+
+    test('분석 작업을 다시 시도할 수 없는 실패면 확인하지 못했다고 바꾼다', () async {
+      final server = processing();
+      final container = await _signedIn(server);
+      await _until(() => _info(container)?.notice == ReportNotice.generating);
+
+      server.failures['GET $analysisPath'] = (
+        status: 500,
+        errorCode: 'INTERNAL_ERROR',
+      );
+      await _until(() => _info(container)?.notice == ReportNotice.checkFailed);
+      expect(_info(container)!.visitDate, '2026-10-13', reason: '어느 만남인지 둔다');
+
+      final asked = server.count(analysisPath);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(server.count(analysisPath), asked, reason: '눌러서 다시 묻기 전에는 묻지 않는다');
+    });
+
+    test('회차를 다시 시도할 수 없는 실패면 확인하지 못했다고 바꾼다', () async {
+      // 작업 ID 를 몰라 회차부터 다시 묻는 중이다.
+      final server = processing(analysisId: null);
+      final container = await _signedIn(server);
+      await _until(() => _info(container)?.notice == ReportNotice.generating);
+
+      server.failures['GET /api/v1/profiles/p1/visit-sessions'] = (
+        status: 500,
+        errorCode: 'INTERNAL_ERROR',
+      );
+      await _until(() => _info(container)?.notice == ReportNotice.checkFailed);
+    });
+
+    test('본문 없는 5xx 는 다시 시도할 수 있는 실패로 보고 계속 묻는다', () async {
+      final server = processing();
+      final container = await _signedIn(server);
+      await _until(() => _info(container)?.notice == ReportNotice.generating);
+
+      // 앞단 프록시가 공통 오류 본문 없이 돌려주는 502 다.
+      server.bareFailures['GET $analysisPath'] = 502;
+      final before = server.count(analysisPath);
+      await _until(() => server.count(analysisPath) > before + 2);
+      expect(_info(container)!.notice, ReportNotice.generating);
+
+      server.bareFailures.clear();
+      server.analyses['a1'] = ['completed'];
+      await _until(() => _info(container)?.notice == ReportNotice.ready);
+    });
+  });
+
+  test('확인하지 못한 알림을 눌러 다시 묻는 동안 알림을 지우지 않는다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+      },
+    )..offline = true;
+    final container = await _signedIn(server);
+    await _until(() => _info(container)?.notice == ReportNotice.checkFailed);
+
+    server
+      ..offline = false
+      ..hold = Completer<void>();
+    container.read(reportNoticeProvider.notifier).retry();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(
+      _info(container)?.notice,
+      ReportNotice.checkFailed,
+      reason: '지우면 사라졌다가 다시 나타난다',
+    );
+
+    server.hold!.complete();
+    await _until(() => _info(container)?.notice == ReportNotice.ready);
+  });
+
+  test('다시 묻다 또 실패하면 다시 누를 수 있는 알림으로 돌아온다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [FakeReportServer.session(id: 's1', status: 'completed')],
+      },
+    )..offline = true;
+    final container = await _signedIn(server);
+    await _until(() => _info(container)?.notice == ReportNotice.checkFailed);
+    final before = server.requests.length;
+
+    container.read(reportNoticeProvider.notifier).retry();
+    await _until(() => server.requests.length > before);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(_info(container)!.notice, ReportNotice.checkFailed);
   });
 }

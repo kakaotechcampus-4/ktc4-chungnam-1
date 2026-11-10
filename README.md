@@ -84,7 +84,7 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 
 ## 바로가기 링크
 
-- 🚀 **배포**: [원스토어](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+- 🚀 **배포**: [원스토어](https://m.onestore.co.kr/v2/ko-kr/app/0001012223) | [GitHub Release](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)
 
 - 🗂️ **협업 공간**: [팀 노션 페이지](https://app.notion.com/p/elice-track/2-32a2bb98425783f789d581889bd816e4?p=3bb2bb98425780578cf2e7b7ba204ba9&pm=s)
   
