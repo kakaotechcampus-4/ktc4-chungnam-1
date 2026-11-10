@@ -11,6 +11,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/recording_pulse.dart';
 import '../cards/card_source_photo.dart';
+import 'recording_stopped_alert.dart';
 import 'visit_controller.dart';
 
 /// E-3, E-4 면회 중 대화 카드.
@@ -31,6 +32,8 @@ Future<void> showVisitCardsSheet(
   return showModalBottomSheet<void>(
     context: context,
     transitionAnimationController: controller,
+    // 녹음이 멈추면 녹음 화면이 이 이름으로 시트를 찾아 닫는다.
+    routeSettings: const RouteSettings(name: visitCardsSheetRouteName),
     isScrollControlled: true,
     backgroundColor: HomeColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
@@ -89,6 +92,23 @@ class VisitCardsSheetPreview extends StatelessWidget {
 /// 시트가 화면 높이에서 차지하는 비율.
 const visitCardsSheetHeightFactor = 0.8;
 
+/// 대화 카드 시트 경로의 이름.
+const visitCardsSheetRouteName = 'visitCardsSheet';
+
+/// 대화 카드 시트가 맨 위에 떠 있으면 닫는다.
+///
+/// 보호자 모르게 녹음이 멈추면 시트를 닫아 녹음 화면 맨 위의 멈춤 띠를 보게 한다
+/// (2026-11-10 PM 확인). 시트와 녹음 화면 두 곳에 같은 띠를 띄우면 헷갈려서
+/// 띠는 녹음 화면에만 둔다. 카드 추가 화면이 시트 위에 있으면 보던 화면을 빼앗지
+/// 않고, 시트로 돌아왔을 때 닫는다.
+void closeVisitCardsSheet(BuildContext context) {
+  final navigator = Navigator.maybeOf(context);
+  if (navigator == null) return;
+  navigator.popUntil(
+    (route) => route.settings.name != visitCardsSheetRouteName,
+  );
+}
+
 class _SheetBody extends ConsumerWidget {
   const _SheetBody();
 
@@ -133,6 +153,9 @@ class _CardsState extends ConsumerState<_Cards> {
     await context.push(AppRoutes.visitAddCards);
     if (!mounted) return;
     setState(() => _hiddenFrom = null);
+    // 카드를 더하는 동안 녹음이 멈췄으면 시트를 닫아 녹음 화면의 띠를 보게 한다.
+    final visit = ref.read(visitControllerProvider).value;
+    if (recordingAlertOf(visit) != null) closeVisitCardsSheet(context);
   }
 
   @override

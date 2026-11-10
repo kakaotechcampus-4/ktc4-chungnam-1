@@ -11,6 +11,7 @@ import '../auth/session_refresher.dart';
 import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
+import 'recording_service.dart';
 import 'visit_camera.dart';
 import 'visit_photos.dart';
 import 'visit_recorder.dart';
@@ -27,6 +28,15 @@ enum VisitRecordingProblem {
 
   /// 녹음은 했는데 파일을 마무리하지 못했다.
   saveFailed,
+
+  /// 보호자가 멈추지 않았는데 장치가 녹음을 잠시 멈췄다. 다른 앱이 소리를 내거나
+  /// 전화가 와서 오디오 포커스를 잃은 경우다(`record` 의 `audioInterruption: pause`).
+  /// 저절로 잇지 않으므로 `이어서 녹음` 을 눌러야 한다. 파일은 열려 있다.
+  interrupted,
+
+  /// 보호자가 끝내지 않았는데 장치가 녹음을 끝냈다. 같은 파일에 이어 쓸 수 없어
+  /// `만남 끝내기` 로 지금까지의 녹음을 저장하게 한다.
+  recorderStopped,
 
   /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
   sessionFailed,
@@ -206,7 +216,22 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 사진 올리기를 차례로 잇는다([_uploadPhoto]).
   Future<void> _photoQueue = Future.value();
 
+  /// 녹음 파일이 열려 있는 동안 장치의 상태 알림을 듣는다([_onDeviceState]).
+  ///
+  /// 보호자가 누르지 않았는데 장치가 멈추면 알아채려는 것이다. 앱이 뒤로 가거나
+  /// 화면이 꺼지는 것만으로는 멈추지 않는다(2026-11-10 PM 결정). 녹음은 마이크
+  /// 포그라운드 서비스로 이어지고, 앱 생명주기에 따라 멈추는 처리는 두지 않는다.
+  StreamSubscription<VisitRecorderState>? _deviceState;
+
+  void _stopListeningDevice() {
+    unawaited(_deviceState?.cancel());
+    _deviceState = null;
+  }
+
   VisitRecorder get _recorder => ref.read(visitRecorderProvider);
+
+  /// 녹음 파일이 열려 있는 동안 띄우는 포그라운드 서비스와 알림이다.
+  RecordingService get _service => ref.read(recordingServiceProvider);
 
   @override
   Future<VisitState> build() async {
@@ -223,11 +248,16 @@ class VisitController extends AsyncNotifier<VisitState> {
     _photoQueue = Future.value();
     _holdingSession = false;
     final sessionHold = ref.read(sessionHoldProvider.notifier);
+    final recordingService = ref.read(recordingServiceProvider);
     ref.onDispose(() {
       _ticker?.cancel();
+      _stopListeningDevice();
       // 녹음을 마무리하지 못한 채 정리됐다. 세션을 계속 붙잡아 두지 않는다.
       // 정리하는 중에는 다른 provider 를 바꾸지 않도록 미룬다.
       if (_holdingSession) Future.microtask(sessionHold.release);
+      // 면회가 끝났다. 녹음 알림을 남기지 않는다. 파일을 닫는 중이면 닫은 뒤
+      // [_stop] 이 내린다.
+      if (_fileOpen) recordingService.hide();
     });
 
     // 회차를 만든 뒤 사진을 다시 찍었으면 새 사진을 올린다. 5-2 는 다시 올리면
@@ -263,6 +293,9 @@ class VisitController extends AsyncNotifier<VisitState> {
   Future<void> startRecording() async {
     final current = state.value;
     if (current == null || current.recording || _creatingSession) return;
+    // 장치가 파일을 닫았다. 이어서 녹음하면 소리 없이 시간만 흐르므로 받지 않는다.
+    // 화면은 `만남 끝내기` 만 보인다.
+    if (current.problem == VisitRecordingProblem.recorderStopped) return;
 
     if (current.started) {
       // 시작한 뒤 파일이 열려 있지 않으면 이미 닫았거나 닫는 중이다. `record`
@@ -298,6 +331,12 @@ class VisitController extends AsyncNotifier<VisitState> {
     }
 
     _fileOpen = true;
+    _stopListeningDevice();
+    _deviceState = _recorder.stateChanges.listen(
+      _onDeviceState,
+      // 약속은 오류 대신 멈춤을 보내는 것이지만, 오류가 와도 멈춘 것으로 본다.
+      onError: (Object _) => _onDeviceState(VisitRecorderState.stopped),
+    );
     // 녹음하는 동안 세션을 잃어도 로그인 화면으로 보내지 않는다. 화면이 바뀌면
     // 녹음 화면이 닫히며 녹음이 멈춘다. 파일을 닫으면 놓는다([_stop]).
     _holdingSession = true;
@@ -311,6 +350,10 @@ class VisitController extends AsyncNotifier<VisitState> {
       ),
     );
     _startTicker();
+    // 화면을 끄거나 다른 앱으로 옮겨도 녹음이 이어지게 마이크 포그라운드 서비스를
+    // 알림과 함께 띄운다. 안드로이드는 앱이 앞에 있을 때만 띄우게 하므로 녹음
+    // 버튼을 누른 지금 띄운다. 파일을 닫으면 내린다([_stop]).
+    _service.show(recording: true);
     // 녹음 중에 앱이 죽어도 다시 켰을 때 이 회차의 파일을 찾도록 바로 적어 둔다.
     // 끝내지 못한 파일의 머리글은 보내기 전에 고친다(repairUnfinishedRecording).
     unawaited(_rememberUpload());
@@ -475,11 +518,15 @@ class VisitController extends AsyncNotifier<VisitState> {
       await _recorder.resume();
     } on Exception {
       _fail(VisitRecordingProblem.startFailed);
+      // 녹음이 멈춘 채다. 알림도 멈췄다고 크게 알린다.
+      if (_fileOpen) _service.interrupted();
       return;
     }
 
     _update((now) => now.copyWith(recording: true, clearProblem: true));
     _startTicker();
+    // 열린 파일에 이어 쓸 때만 알림을 녹음 중으로 되돌린다.
+    if (_fileOpen) _service.show(recording: true);
   }
 
   /// 녹음과 시간을 함께 멈춘다. 파일은 닫지 않고 이어서 쓴다.
@@ -491,6 +538,8 @@ class VisitController extends AsyncNotifier<VisitState> {
     state = AsyncData(current.copyWith(recording: false));
     if (!_fileOpen) return;
 
+    // 파일은 열려 있으므로 서비스는 그대로 두고 알림 문구만 바꾼다.
+    _service.show(recording: false);
     try {
       await _recorder.pause();
     } on Exception {
@@ -548,23 +597,38 @@ class VisitController extends AsyncNotifier<VisitState> {
     }
     final current = state.value!;
     _fileOpen = false;
+    _stopListeningDevice();
+    // 파일을 닫는 사이 provider 가 정리돼도 내릴 수 있게 미리 받아 둔다.
+    final service = _service;
 
     try {
       VisitRecording? saved;
-      var problem = current.problem;
+      // 녹음 중에 장치가 멈췄거나 이어 가지 못했던 일은 파일을 닫으면 지나간
+      // 일이다. 저장에 성공하면 남기지 않는다. 남기면 저장한 면회에 `녹음을 이어
+      // 가지 못했어요` 띠가 남는다. 파일이 열린 뒤의 `startFailed` 는 이어 가기
+      // 실패뿐이다(첫 시작 실패는 파일이 없다).
+      final carried = switch (current.problem) {
+        VisitRecordingProblem.interrupted ||
+        VisitRecordingProblem.recorderStopped ||
+        VisitRecordingProblem.startFailed => null,
+        final other => other,
+      };
+      var problem = carried;
       try {
         saved = await _recorder.stop();
         if (saved == null) problem = VisitRecordingProblem.saveFailed;
       } on Exception {
         problem = VisitRecordingProblem.saveFailed;
       }
-      // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다.
+      // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다. 장치가
+      // 먼저 멈춰 이미 닫힌 파일이면 그대로 쓴다.
       final startedPath = current.recordingPath;
       if (saved == null && startedPath != null) {
         try {
-          if (repairUnfinishedRecording(startedPath)) {
+          if (isFinishedRecording(startedPath) ||
+              repairUnfinishedRecording(startedPath)) {
             saved = VisitRecording(path: startedPath);
-            problem = current.problem;
+            problem = carried;
           }
         } on FileSystemException {
           // 고치지 못했다. 저장 실패로 둔다.
@@ -593,6 +657,8 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
       await _rememberUpload();
     } finally {
+      // 파일을 닫았다. 마지막 소리까지 파일에 쓴 뒤 녹음 알림과 서비스를 내린다.
+      service.hide();
       // 녹음이 끝났다. 그 사이 잃은 세션이 있으면 이제 로그인 화면으로 보낸다.
       // 파일을 닫은 뒤 기기 기록까지 마친 다음이다.
       if (ref.mounted && _holdingSession) {
@@ -670,6 +736,37 @@ class VisitController extends AsyncNotifier<VisitState> {
 
   void _fail(VisitRecordingProblem problem) {
     _update((now) => now.copyWith(recording: false, problem: problem));
+  }
+
+  /// 녹음 장치의 상태가 바뀌었다. 앱이 부르지 않은 멈춤만 본다.
+  ///
+  /// 앱이 멈출 때는 [pauseRecording] 이 장치를 부르기 전에 [VisitState.recording]
+  /// 을 내리고, 끝낼 때는 [_stop] 이 [_fileOpen] 을 먼저 내린다. 그래서 그 뒤에 오는
+  /// 알림은 여기서 걸러진다. 장치의 알림은 부른 순서대로 오므로, 멈춘 뒤 바로
+  /// 이어서 녹음해도 앞 멈춤 알림이 이어 간 뒤에 닿지 않는다.
+  void _onDeviceState(VisitRecorderState device) {
+    if (!_fileOpen || !ref.mounted) return;
+    final now = state.value;
+    if (now == null) return;
+    switch (device) {
+      case VisitRecorderState.recording:
+        return;
+      case VisitRecorderState.paused:
+        if (!now.recording) return;
+        _interrupt(VisitRecordingProblem.interrupted);
+      case VisitRecorderState.stopped:
+        if (now.problem == VisitRecordingProblem.recorderStopped) return;
+        _interrupt(VisitRecordingProblem.recorderStopped);
+    }
+  }
+
+  /// 보호자가 모르는 사이 녹음이 멈췄다. 시간을 멈추고, 화면이 크게 알리게
+  /// [VisitState.problem] 을 두고, 알림도 멈췄다고 바꾼다. 파일은 닫지 않는다.
+  /// 이어서 녹음하거나 만남을 끝내 저장하는 것은 보호자가 고른다.
+  void _interrupt(VisitRecordingProblem problem) {
+    _stopTicker();
+    _fail(problem);
+    _service.interrupted();
   }
 
   /// 닫은 파일을 이어 가려 했다. 장치는 부르지 않는다.

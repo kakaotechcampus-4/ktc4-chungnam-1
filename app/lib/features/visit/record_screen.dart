@@ -3,6 +3,8 @@ import 'dart:math' show pi;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsService;
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,6 +19,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart' show AppSurfaceBox;
 import '../../widgets/recording_pulse.dart';
 import '../profile/profile_dialogs.dart' show showChoiceDialog;
+import 'recording_stopped_alert.dart';
 import 'stop_recording_dialog.dart';
 import 'visit_cards_sheet.dart';
 import 'visit_controller.dart';
@@ -30,8 +33,9 @@ import 'visit_recorder.dart';
 /// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작, 멈춤, 끝내기와
 /// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
 ///
-/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 앱이
-/// 백그라운드로 내려간 뒤의 녹음은 보장하지 않는다(`app/README.md`).
+/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 화면을
+/// 끄거나 다른 앱으로 옮긴 뒤의 녹음은 [VisitController] 가 띄우는 마이크
+/// 포그라운드 서비스가 맡는다(`recording_service.dart`, `app/README.md`).
 class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
 
@@ -75,6 +79,26 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
         context,
         upload: upload!,
         onRetry: _controller.retryPhotoUpload,
+      );
+    }
+  }
+
+  /// 보호자 모르게 녹음이 멈췄다. 화면 맨 위 띠와 함께 진동과 화면 낭독기로도
+  /// 알린다. 카드 시트가 떠 있으면 닫아 이 화면의 띠를 보게 한다(2026-11-10
+  /// PM 확인, [closeVisitCardsSheet]). 화면을 끄거나 다른 앱에 있을 때는 녹음
+  /// 알림이 소리와 진동으로 알린다(`RecordingService.interrupted`).
+  void _onRecordingAlert(RecordingAlert? previous, RecordingAlert? next) {
+    if (next == null || next == previous) return;
+    closeVisitCardsSheet(context);
+    unawaited(HapticFeedback.vibrate());
+    final view = View.maybeOf(context);
+    if (view != null) {
+      unawaited(
+        SemanticsService.sendAnnouncement(
+          view,
+          '${recordingAlertTitle(next)}. ${recordingAlertDetail(next)}',
+          TextDirection.ltr,
+        ),
       );
     }
   }
@@ -138,17 +162,28 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       ),
       _onPhotoUpload,
     );
+    ref.listen<RecordingAlert?>(
+      visitControllerProvider.select((v) => recordingAlertOf(v.value)),
+      _onRecordingAlert,
+    );
 
     // 녹음하는 동안만 화면을 켜 둔다. 잠시 멈춤, 끝내기 확인 창(멈춘 채로
     // 묻는다), 끝내기와 녹음 실패에서는 놓고, 화면을 떠나면 [KeepScreenOn] 이
-    // 빠지면서 놓는다.
+    // 빠지면서 놓는다. 보호자 모르게 멈춘 띠가 떠 있는 동안은 켜 둔다.
     return PopScope(
       canPop: _leaving || !_inProgress(visit.value),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
       child: KeepScreenOn(
-        enabled: visit.value?.recording ?? false,
+        // 보호자 모르게 녹음이 멈춰 띠를 띄운 동안에도 켜 둔다. 화면이 저절로
+        // 꺼지면 띠를 보지 못한다. 저장 실패는 녹음이 끝난 뒤라 놓는다.
+        enabled:
+            (visit.value?.recording ?? false) ||
+            switch (recordingAlertOf(visit.value)) {
+              null || RecordingAlert.saveFailed => false,
+              _ => true,
+            },
         // 홈과 같은 세이지 색감이다(`HomeColors`).
         child: Scaffold(
           backgroundColor: HomeColors.background,
@@ -169,7 +204,8 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                 : state.started
                 ? _Recording(
                     state: state,
-                    onStop: () => _confirmStop(context, _controller, state),
+                    onStop: () =>
+                        _confirmStop(context, ref, _controller, state),
                   )
                 : const _Intro(),
           ),
@@ -236,7 +272,9 @@ class _Intro extends ConsumerWidget {
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          // 실기기에서 보고 마이크 원을 16 더 내렸다(2026-11-07).
+          // 실기기에서 보고 마이크 원을 16 더 내렸다(2026-11-07). 녹음 이어짐
+          // 안내 두 줄은 녹음 중 알림과 `만남 끝내기` 버튼이 같은 것을 알려 주어
+          // 빼고 원래 간격으로 되돌렸다(2026-11-10 PM 확인).
           const SizedBox(
             height: AppSpacing.xxxl * 2 + AppSpacing.xxl + AppSpacing.lg,
           ),
@@ -281,6 +319,7 @@ class _Intro extends ConsumerWidget {
 /// 넘어간다. 먼저 넘어가면 마지막 몇 초가 파일에 남지 않을 수 있다.
 Future<void> _confirmStop(
   BuildContext context,
+  WidgetRef ref,
   VisitController controller,
   VisitState state,
 ) async {
@@ -298,6 +337,10 @@ Future<void> _confirmStop(
 
   await controller.stopRecording(participantCount: participantCount);
   if (!context.mounted) return;
+  // 파일을 저장하지 못했으면 넘어가지 않고 녹음 화면 맨 위 띠로 크게 알린다.
+  // 소감 화면에는 이 실패를 알리는 자리가 없다. 띠의 `소감 쓰기` 로 넘어간다.
+  final problem = ref.read(visitControllerProvider).value?.problem;
+  if (problem == VisitRecordingProblem.saveFailed) return;
   context.push(AppRoutes.visitReview);
 }
 
@@ -322,6 +365,11 @@ class _ProblemNotice extends ConsumerWidget {
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
     VisitRecordingProblem.cardsOutdated =>
       '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
+    // 녹음을 시작한 뒤에만 생기므로 보통은 화면 맨 위 띠(RecordingStoppedAlert)가
+    // 알린다. 그래도 문구를 비워 두지 않는다.
+    VisitRecordingProblem.interrupted => '녹음이 멈췄어요.\n이어서 녹음을 눌러주세요.',
+    VisitRecordingProblem.recorderStopped =>
+      '녹음이 멈췄어요.\n만남 끝내기를 누르면 지금까지 녹음한 것을 저장해요.',
     VisitRecordingProblem.recordingClosed =>
       '이 면회의 녹음은 이미 끝났어요.\n이어서 녹음할 수 없어요.',
   };
@@ -500,22 +548,55 @@ class _Recording extends ConsumerWidget {
         // ScreenBody 의 SafeArea 가 하단 안전영역을 한 번 더 쓰므로 카드 자리와
         // 따로 빼 둔다. 빼지 않으면 그만큼 컨트롤이 스크롤 밖으로 밀린다.
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final peekHeight = (constraints.maxHeight - _statusHeight - bottomInset)
-            .clamp(_CardPeek.minHeight, _CardPeek.maxHeight + bottomInset);
+        // 녹음 멈춤 띠가 있으면 줄어든 자리에서 카드 그림이 위만 조금 보이게
+        // 잘려 그림을 숨기고 `위로 올려서` 안내 줄만 둔다(2026-11-10). 남는 높이는
+        // 띠와 녹음 상태가 쓴다. 띠가 사라지면 그림이 바로 돌아온다.
+        final peekHeight = recordingAlertOf(state) != null
+            ? _PullHint._height + bottomInset
+            : (constraints.maxHeight - _statusHeight - bottomInset).clamp(
+                _CardPeek.minHeight,
+                _CardPeek.maxHeight + bottomInset,
+              );
 
-        return _body(context, controller, peekHeight);
+        return _body(context, ref, controller, peekHeight);
       },
     );
   }
+
+  /// 띠 안의 큰 버튼 이름. 띠가 알리는 멈춤마다 다음에 할 일 하나만 둔다.
+  static String _alertActionLabel(RecordingAlert alert) => switch (alert) {
+    RecordingAlert.interrupted || RecordingAlert.resumeFailed => '이어서 녹음',
+    RecordingAlert.deviceStopped => '만남 끝내기',
+    RecordingAlert.saveFailed => '소감 쓰기',
+  };
+
+  VoidCallback _alertAction(
+    BuildContext context,
+    WidgetRef ref,
+    VisitController controller,
+    RecordingAlert alert,
+  ) => switch (alert) {
+    RecordingAlert.interrupted ||
+    RecordingAlert.resumeFailed => controller.startRecording,
+    RecordingAlert.deviceStopped => onStop,
+    RecordingAlert.saveFailed => () => context.push(AppRoutes.visitReview),
+  };
 
   /// 녹음 상태가 잘리지 않는 높이. 여백과 글자, 원, 컨트롤의 합에 여유를 더했다.
   static const _statusHeight = 410.0;
 
   Widget _body(
     BuildContext context,
+    WidgetRef ref,
     VisitController controller,
     double peekHeight,
   ) {
+    final alert = recordingAlertOf(state);
+    // 장치가 파일을 닫았거나 저장에 실패했으면 이어서 녹음할 수 없다.
+    final canResume =
+        alert != RecordingAlert.deviceStopped &&
+        alert != RecordingAlert.saveFailed;
+    final canEnd = alert != RecordingAlert.saveFailed;
     return Column(
       children: [
         Expanded(
@@ -524,7 +605,19 @@ class _Recording extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: AppSpacing.xxxl),
+                // 보호자 모르게 녹음이 멈췄으면 맨 위에 크게 알린다(2026-11-10
+                // PM 결정). 그만큼 아래 내용은 스크롤로 내려간다.
+                if (alert != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  RecordingStoppedAlert(
+                    key: const Key('recordingStoppedAlert'),
+                    alert: alert,
+                    actionLabel: _alertActionLabel(alert),
+                    onAction: _alertAction(context, ref, controller, alert),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                ] else
+                  const SizedBox(height: AppSpacing.xxxl),
                 // 멈춤과 이어서 녹음을 누르면 바뀐 상태를 화면 낭독기가 바로
                 // 읽는다. 1초마다 바뀌는 시간은 읽지 않게 여기에만 둔다.
                 Semantics(
@@ -583,23 +676,26 @@ class _Recording extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _ControlButton(
-                      icon: state.recording ? Icons.pause : Icons.play_arrow,
-                      label: state.recording ? '잠시 멈춤' : '이어서 녹음',
-                      onTap: state.recording
-                          ? controller.pauseRecording
-                          : controller.startRecording,
-                    ),
-                    const SizedBox(width: AppSpacing.xxl),
-                    _ControlButton(
-                      icon: Icons.stop,
-                      label: '만남 끝내기',
-                      onTap: onStop,
-                    ),
+                    if (canResume)
+                      _ControlButton(
+                        icon: state.recording ? Icons.pause : Icons.play_arrow,
+                        label: state.recording ? '잠시 멈춤' : '이어서 녹음',
+                        onTap: state.recording
+                            ? controller.pauseRecording
+                            : controller.startRecording,
+                      ),
+                    if (canResume && canEnd)
+                      const SizedBox(width: AppSpacing.xxl),
+                    if (canEnd)
+                      _ControlButton(
+                        icon: Icons.stop,
+                        label: '만남 끝내기',
+                        onTap: onStop,
+                      ),
                   ],
                 ),
 
-                if (state.problem != null) ...[
+                if (state.problem != null && alert == null) ...[
                   const SizedBox(height: AppSpacing.xl),
                   _ProblemNotice(problem: state.problem!),
                 ],
@@ -612,6 +708,7 @@ class _Recording extends ConsumerWidget {
 
         _CardPeek(
           height: peekHeight,
+          showFan: alert == null,
           onOpen: (sheet) => showVisitCardsSheet(context, controller: sheet),
         ),
       ],
@@ -642,6 +739,12 @@ class _Finished extends ConsumerWidget {
     final sessionId = state.sessionId;
     // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
     final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
+    final reviewLabel = ended ? '소감 쓰기' : '평가 이어서 하기';
+    void openReview() => context.push(
+      ended || sessionId == null
+          ? AppRoutes.visitReview
+          : AppRoutes.visitReviewOf(sessionId),
+    );
     // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리는 중이거나 올리지 못했다.
     // 만남을 끝낸 뒤에는 녹음 화면도 알리지 않았으므로 같게 둔다.
     final photoNotice =
@@ -651,16 +754,14 @@ class _Finished extends ConsumerWidget {
 
     return ScreenBody(
       scrollable: true,
-      bottom: PrimaryButton(
-        label: ended ? '소감 쓰기' : '평가 이어서 하기',
-        color: HomeColors.accent,
-        loadingColor: HomeColors.accentLoading,
-        onPressed: () => context.push(
-          ended || sessionId == null
-              ? AppRoutes.visitReview
-              : AppRoutes.visitReviewOf(sessionId),
-        ),
-      ),
+      bottom: saveFailed
+          ? null
+          : PrimaryButton(
+              label: reviewLabel,
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              onPressed: openReview,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -687,7 +788,12 @@ class _Finished extends ConsumerWidget {
           // 1배에서도 첫 화면 밖이다.
           if (saveFailed) ...[
             const SizedBox(height: AppSpacing.xxl),
-            const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
+            RecordingStoppedAlert(
+              key: const Key('recordingStoppedAlert'),
+              alert: RecordingAlert.saveFailed,
+              actionLabel: reviewLabel,
+              onAction: openReview,
+            ),
           ],
           if (photoNotice) ...[
             SizedBox(height: saveFailed ? AppSpacing.lg : AppSpacing.xxl),
@@ -734,10 +840,17 @@ class _Finished extends ConsumerWidget {
 /// 알 수 없어서, 카드를 화면 아래에 내어 두고 끌어올려 꺼내는 자리로 바꿨다.
 /// 끌어올리기와 누르기 둘 다 같은 시트를 연다.
 class _CardPeek extends StatefulWidget {
-  const _CardPeek({required this.height, required this.onOpen});
+  const _CardPeek({
+    required this.height,
+    required this.onOpen,
+    this.showFan = true,
+  });
 
   /// 하단 안전영역까지 포함한 전체 높이.
   final double height;
+
+  /// 부채 그림을 그린다. 녹음 멈춤 띠가 있는 동안은 끄고 안내 줄만 둔다.
+  final bool showFan;
 
   /// 주어진 움직임으로 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
   final Future<void> Function(AnimationController sheet) onOpen;
@@ -786,6 +899,18 @@ class _CardPeekState extends State<_CardPeek>
   /// 푼다. 끌기 시작에서만 풀면 끌 수 없는 화면 낭독기 사용자는 한 번 닫은 뒤
   /// 다시 꺼낼 수 없다.
   bool _opening = false;
+
+  @override
+  void didUpdateWidget(_CardPeek old) {
+    super.didUpdateWidget(old);
+    // 끌어올리는 도중에 녹음이 멈춰 띠가 떴다. 그리던 시트를 거두고 이번 끌기는
+    // 열지 않는다. 띠를 먼저 보게 한다.
+    if (old.showFan && !widget.showFan && _following) {
+      _following = false;
+      _sheet.value = 0;
+      _preview.hide();
+    }
+  }
 
   @override
   void dispose() {
@@ -897,15 +1022,16 @@ class _CardPeekState extends State<_CardPeek>
             height: widget.height,
             child: Stack(
               children: [
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: _CardPeek._fanBottom + bottomInset,
-                  child: _CardFan(
-                    key: const Key('cardPeekFan'),
-                    height: fanHeight,
+                if (widget.showFan)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _CardPeek._fanBottom + bottomInset,
+                    child: _CardFan(
+                      key: const Key('cardPeekFan'),
+                      height: fanHeight,
+                    ),
                   ),
-                ),
                 Positioned(
                   left: 0,
                   right: 0,

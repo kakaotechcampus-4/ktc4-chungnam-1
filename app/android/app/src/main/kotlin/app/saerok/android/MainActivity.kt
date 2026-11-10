@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
@@ -16,6 +17,10 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var screenAwakeChannel: MethodChannel? = null
+    private var recordingServiceChannel: MethodChannel? = null
+
+    // 알림 권한 창의 답을 기다리는 요청들. 창은 한 번만 띄우고 답을 모두에게 준다.
+    private val notificationPermissionResults = mutableListOf<MethodChannel.Result>()
     private var micSettingsChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +64,35 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        // 새 엔진에는 녹음 중인 면회가 없다. 앞 엔진이 남긴 녹음 알림을 내린다.
+        RecordingService.hide(this)
+        recordingServiceChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            RECORDING_SERVICE_CHANNEL,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    SHOW_RECORDING -> {
+                        val title = call.argument<String>("title")
+                        val text = call.argument<String>("text")
+                        // 녹음이 멈췄을 때만 소리와 진동이 나는 알림으로 올린다.
+                        val alert = call.argument<Boolean>("alert") ?: false
+                        if (title == null || text == null) {
+                            result.error("BAD_ARGUMENT", "title 이나 text 값이 없다", null)
+                        } else {
+                            result.success(RecordingService.show(this, title, text, alert))
+                        }
+                    }
+                    HIDE_RECORDING -> {
+                        RecordingService.hide(this)
+                        result.success(null)
+                    }
+                    REQUEST_NOTIFICATION_PERMISSION -> requestNotificationPermission(result)
+                    else -> result.notImplemented()
+                }
+            }
+        }
         micSettingsChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             MIC_SETTINGS_CHANNEL,
@@ -81,6 +115,11 @@ class MainActivity : FlutterActivity() {
         micSettingsChannel?.setMethodCallHandler(null)
         micSettingsChannel = null
         setKeepScreenOn(false)
+        // 엔진과 함께 녹음도 멈춘다. 녹음 알림이 남지 않게 내린다.
+        recordingServiceChannel?.setMethodCallHandler(null)
+        recordingServiceChannel = null
+        RecordingService.hide(this)
+        finishNotificationPermission(false)
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -92,6 +131,44 @@ class MainActivity : FlutterActivity() {
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    // 녹음 알림이 보이도록 알림 권한을 묻는다(`lib/features/visit/recording_service.dart`).
+    // 안드로이드 12 이하는 권한 없이 보이고, 이미 받았으면 묻지 않는다. 거절해도 녹음과
+    // 서비스는 그대로이며 알림만 알림창에 보이지 않는다.
+    private fun requestNotificationPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(true)
+            return
+        }
+        notificationPermissionResults.add(result)
+        if (notificationPermissionResults.size > 1) return
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            NOTIFICATION_PERMISSION_REQUEST,
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        // 다른 플러그인(마이크, 푸시)의 권한 창 답은 FlutterActivity 가 넘겨준다.
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
+        finishNotificationPermission(
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    private fun finishNotificationPermission(granted: Boolean) {
+        val waiting = notificationPermissionResults.toList()
+        notificationPermissionResults.clear()
+        waiting.forEach { it.success(granted) }
     }
 
     // 휴대전화 설정의 새록 앱 정보 화면을 연다(`lib/app/mic_settings.dart`).
@@ -129,5 +206,14 @@ class MainActivity : FlutterActivity() {
         const val OPEN_APP_SETTINGS = "openAppSettings"
         const val IS_MIC_PERMANENTLY_DENIED = "isMicPermanentlyDenied"
         const val REPORT_CHANNEL_ID = "report_ready"
+
+        // Dart 의 `MethodChannelRecordingService` 와 같아야 한다.
+        const val RECORDING_SERVICE_CHANNEL = "app.saerok.android/recording_service"
+        const val SHOW_RECORDING = "show"
+        const val HIDE_RECORDING = "hide"
+        const val REQUEST_NOTIFICATION_PERMISSION = "requestNotificationPermission"
+
+        // 다른 플러그인의 권한 요청 번호(record 1001 등)와 겹치지 않게 고른 값이다.
+        const val NOTIFICATION_PERMISSION_REQUEST = 7302
     }
 }
