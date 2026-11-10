@@ -164,6 +164,7 @@ docker compose run --rm api alembic upgrade head
 migration `9c4e2b7a1f63`(2026-11-09 PM 결정)은 `life_fact_proposals.story_category`, `life_fact_proposals.sensitive`, `conversation_cards.sensitive`를 더하고 기존 행을 `other`, `false`로 채운다. 열만 더하므로 이전 코드가 실행 중이어도 적용할 수 있고, 이전 코드가 쓰는 행도 기본값으로 들어간다. 새 코드는 세 열을 읽고 쓰므로 migration을 먼저 적용한 뒤 api, speech-worker, card-worker를 새 이미지로 띄운다(위 "갱신" 순서와 같다). 운영에는 11/10 01:41 KST Deploy(run 42656825849, develop `83695093`)로 적용했고, 배포 뒤 서버의 alembic revision은 `9c4e2b7a1f63`이다.
 
 - 카드의 아픈 경험 표시는 카드 생성 2판부터 채워진다. 기본값은 2이며, 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION=1`이 적혀 있으면 표시가 늘 `false`다. 값을 바꾸면 이미 만든 묶음은 그대로이고 다음 4-1부터 2판으로 만든다. 11/10 배포 때 확인한 운영 `.env`에는 이 값이 없어 기본값 2가 쓰이고, 운영 카드는 2판이다.
+- migration `5d2e8b1c9a47`(2026-11-10 PM 결정, 운영 배포 전)은 `life_facts.sensitive`를 더하고, 이미 승인한 이야기에는 출처 제안(`life_fact_proposals.sensitive`)의 표시를 옮긴다. 나머지 행은 `false`다. 열을 더하고 값을 채우기만 하므로 이전 코드가 실행 중이어도 적용할 수 있지만, 그사이 이전 api가 7-4로 만든 이야기는 표시 없이(`false`) 들어간다. 새 api와 card-worker는 이 열을 읽으므로 migration을 먼저 적용한 뒤 띄운다. card-worker가 보내는 `lifeFacts[].sensitive`는 같은 이미지의 `ai/card_generation`만 받으므로 api와 card-worker를 같은 이미지로 맞춘다.
 
 ### worker 종료와 유예 시간
 

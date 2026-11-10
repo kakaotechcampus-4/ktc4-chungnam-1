@@ -141,6 +141,36 @@ void main() {
       expect(story.isProfileDetail, isFalse);
     });
 
+    test('아픈 기억 표시를 읽고, 없는 예전 응답은 표시가 없다', () {
+      Map<String, dynamic> json({bool? sensitive}) => {
+        'schemaVersion': 1,
+        'factId': 'fact_001',
+        'profileId': 'p1',
+        'storyCategory': 'family',
+        'title': '합성 사별 이야기',
+        'content': '합성 내용',
+        'imageNumber': 2,
+        'createdAt': '2026-11-10T10:00:00+09:00',
+        'sensitive': ?sensitive,
+      };
+
+      final marked = LifeFact.fromJson(json(sensitive: true));
+      final unmarked = LifeFact.fromJson(json(sensitive: false));
+      final old = LifeFact.fromJson(json());
+
+      expect(
+        [marked.sensitive, unmarked.sensitive, old.sensitive],
+        [true, false, false],
+      );
+      expect(LifeStory.fromLifeFact(marked).sensitive, isTrue);
+      expect(LifeStory.fromLifeFact(old).sensitive, isFalse);
+      expect(
+        detailStoriesOf(_profile(family: '딸 둘')).single.sensitive,
+        isFalse,
+        reason: '세부 정보 이야기에는 표시가 없다',
+      );
+    });
+
     test('모르는 분류는 기타에, 범위 밖 그림 번호는 1~5 안에 둔다', () {
       final unknown = LifeStory.fromLifeFact(
         _fact(storyCategory: 'school', imageNumber: 9),

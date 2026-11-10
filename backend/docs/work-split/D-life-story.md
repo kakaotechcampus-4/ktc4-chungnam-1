@@ -20,7 +20,7 @@
 > | D7 | **정렬** | 출시 범위는 담은 날짜(`createdAt`)순. 정렬은 앱이 하며 API에 정렬 인자를 두지 않는다 | MoonYoung02, decmoon05: 출시는 날짜순, 생애 시기순은 출시 후. Sogeum100g: 생애 시기순 필요, `최신순`, `입력순` 필터도 제안 | PM, AI, FE |
 > | D8 | **이야기에 사용자 사진 붙이기** | 이 문서의 범위에서 뺀다. 출시 후 후보로 [사진 연결 메모](#출시-후-후보-사진-연결)만 남긴다 | decmoon05: 등록한 프로필 사진을 골라 연결하고 없으면 새로 올리는 방식, 일정에 영향이 있으면 출시 후. Sogeum100g: 필요 | PM, FE, BE(작업 A) |
 > | D9 | 기존 `life_facts` 행의 기본값 | migration에서 `story_category = 'other'`, `image_number = 1`로 채운다. 개발 DB의 합성 자료만 있다는 전제다 | PR에서 다루지 않음 | BE |
-> | D10 | 카드 생성 입력(4-1 `context.lifeFacts`)에 분류를 넣을지 | 넣지 않는다. 내부 형식은 바꾸지 않는다 | PR에서 다루지 않음 | AI, BE(작업 B) |
+> | D10 | 카드 생성 입력(4-1 `context.lifeFacts`)에 분류를 넣을지 | 넣지 않는다. 내부 형식은 바꾸지 않는다. 아픈 기억 표시(`sensitive`)는 넣는다(2026-11-10 PM 결정, 아래 [아픈 기억 표시](#아픈-기억-표시)) | PR에서 다루지 않음 | AI, BE(작업 B) |
 >
 > 이 밖에 담당자가 정해지지 않았다. 작업 D를 맡을 BE 담당은 PM이 정한다.
 
@@ -93,7 +93,7 @@ FE 코드: [life_story.dart](../../../app/lib/features/life_story/life_story.dar
 
 ## 다른 담당과 맞출 함수
 
-- **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`: 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. D5 결정(2026-11-09) 뒤 7-4는 보호자가 고른 분류나 제안의 분류를 `story_category`로 넘긴다(#295, 11/10 운영 배포부터 운영). `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
+- **변경** `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None, sensitive=False)`: 7-4는 제안의 아픈 기억 표시를 `sensitive`로 넘긴다(2026-11-10 PM 결정). 새 인자는 기본값이 있어 작업 C의 7-4 호출은 고치지 않아도 된다. D5 결정(2026-11-09) 뒤 7-4는 보호자가 고른 분류나 제안의 분류를 `story_category`로 넘긴다(#295, 11/10 운영 배포부터 운영). `image_number`가 `None`이면 1~5 중 하나를 서버가 고른다(D2). 트랜잭션을 열지 않고 소유 확인을 하지 않는 기존 규칙은 그대로다.
 - **변경** `LifeFact` dataclass와 `list_life_facts`: `story_category`, `image_number`를 더한다. 2-3 응답이 이 값을 쓴다.
 - **작업 B와 맞춤** 카드 생성 입력 정리(D3 임시 안): 4-1의 `context.topics[].evidence`와 `context.pastCards[].evidence`에서 지금 `life_facts`에 없는 `factId` 항목을 뺀다. 빼고 나서 이야기나 사진 근거가 하나도 남지 않은 주제는 `context.topics`에 넣지 않는다(PM 결정 2026-11-08, 구현함). 보호자가 제외한 주제는 근거가 제외 규칙으로 늘 입력에서 빠지므로 `life_facts`와 입력에 넣을 수 있는 사진(설명이 있는 사진)에 남은 근거로 정하며, 모두 지웠으면 넣지 않는다. 세부 정보 칸 근거가 있으면 넣는다(PM 결정 2026-11-09, 구현함). [삭제와 카드 생성](#삭제와-카드-생성)을 참고한다.
 
@@ -180,8 +180,8 @@ ALTER TABLE life_facts
 }
 ```
 
-- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같다.
-- 네 필드 모두 `null`로 지울 수 없다.
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`, `sensitive`. 규칙은 2-6과 같다. `sensitive`는 2026-11-10에 더했다([아픈 기억 표시](#아픈-기억-표시)).
+- 다섯 필드 모두 `null`로 지울 수 없다.
 - 분류를 바꿔도 `imageNumber`는 보낸 값이나 저장된 값을 그대로 쓴다. 앱은 번호를 분류와 묶어 그림 파일을 고르므로 서버가 다시 고르지 않는다.
 - `createdAt`은 바뀌지 않는다. 고쳐도 목차 순서는 그대로다.
 
@@ -241,6 +241,17 @@ ALTER TABLE life_facts
 
 <br>
 
+### 아픈 기억 표시
+
+2026-11-10 PM 결정: 보호자가 지우지 않는 한 아픈 이야기도 일대기에 남기고 카드에도 쓴다. 일대기는 부드러운 표시를 달고, 그 이야기를 근거로 한 카드에는 `조심스러운 이야기` 표시가 붙는다. 11/10 E2E에서 7-4가 제안의 `sensitive`를 버려 승인한 사별 이야기가 일대기와 카드 생성에 표시 없이 들어간 것(E2E 문제 5, 10)을 고친다. 운영 배포 전이다.
+
+- `life_facts.sensitive BOOLEAN NOT NULL DEFAULT false`(migration `5d2e8b1c9a47`). 이미 승인한 이야기는 출처 제안의 표시를 옮기고 나머지는 `false`다.
+- 7-4는 승인한 제안의 `sensitive`를 그대로 옮긴다. 요청으로는 바꾸지 않는다. 2-6은 받지 않고 `false`로 만든다. 2-7은 `sensitive`를 받아 보호자가 켜고 끈다. 값이 실제로 바뀌면 제목, 내용처럼 아직 면회에 안 쓴 묶음이 `needsRefresh`가 되고, 카드를 만드는 중이면 409다.
+- 2-3, 2-6, 2-7의 [LifeFact](#lifefact)와 4-1 `context.lifeFacts[]`에 `sensitive`를 담는다. 카드 생성 2판은 그 이야기를 근거로 한 카드를 늘 `sensitive`로 낸다(`ai/card_generation/README.md`).
+- 앱은 일대기 첫 장의 최근 이야기, 목차와 이야기 화면에 `조심스러운 이야기` 표시를 달고, 홈 말풍선의 무작위 이야기에서 뺀다. 지금 앱의 이야기 수정 화면에는 표시를 바꾸는 칸이 없고 2-7에 `sensitive`를 보내지 않는다.
+
+<br>
+
 ## 삭제와 카드 생성
 
 2026-11-08, 2026-11-09 PM 결정을 반영했다. D3의 남은 부분(저장된 카드와 주제, 지난 카드 문구)은 정하지 않았다. 지금 구조에서 이야기를 지울 때 영향을 받는 곳을 정리한다.
@@ -277,10 +288,12 @@ ALTER TABLE life_facts
   "title": "단골손님",
   "content": "수선집에 오래 다닌 단골손님이 많았어요.",
   "imageNumber": 3,
+  "sensitive": false,
   "createdAt": "2026-08-21T12:10:00+09:00"
 }
 ```
 
+- `sensitive`는 아픈 기억일 수 있는 이야기라는 표시다(2026-11-10 PM 결정, [아픈 기억 표시](#아픈-기억-표시)). 이 필드가 없는 응답은 `false`로 읽는다.
 - `storyCategory`, `imageNumber`가 새 필드다. 나머지는 [API 명세의 LifeFact](../../../docs/architecture/api-spec.md#lifefact)와 같다.
 - 출처(일대기에서 담음 또는 면회 승인)는 지금처럼 응답에 담지 않는다.
 

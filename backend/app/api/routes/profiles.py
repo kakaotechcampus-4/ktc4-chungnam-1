@@ -66,6 +66,7 @@ def to_life_fact_response(fact: LifeFact) -> LifeFactResponse:
         title=fact.title,
         content=fact.content,
         image_number=fact.image_number,
+        sensitive=fact.sensitive,
         created_at=fact.created_at,
     )
 

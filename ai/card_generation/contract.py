@@ -56,12 +56,16 @@ class ProfileFacts(_Camel):
 
 
 class LifeFactIn(_Camel):
-    """보호자가 확인한 생애 이야기 하나. source가 visit이면 면회 뒤 제안을 승인해 생긴 이야기."""
+    """보호자가 확인한 생애 이야기 하나. source가 visit이면 면회 뒤 제안을 승인해 생긴 이야기.
+    sensitive는 아픈 기억일 수 있는 이야기(backend life_facts.sensitive). 2판은 이 이야기를 근거로 한 카드를
+    늘 아픈 경험 카드로 냄(PM 결정, 2026-11-10). 보내지 않으면 false.
+    """
     fact_id: str
     title: str
     content: str
     created_at: datetime | None = None
     source: Literal["visit", "caregiver"] = "caregiver"   # visit: 면회 뒤 제안을 승인해 생긴 이야기
+    sensitive: bool = False
 
 
 class PhotoIn(_Camel):
@@ -147,6 +151,7 @@ class CardExtra(_Camel):
 class CardOut(_Camel):
     """카드 한 장. evidence_source는 근거 종류, evidence는 근거 항목 목록(none이면 빈 목록).
     sensitive는 아픈 경험을 다루는 카드. 보호자가 보고 고르도록 앱에 표시함(2판부터 나옴).
+    2판에서는 근거 이야기 중 sensitive인 것이 있으면 모델이 무엇을 적든 true.
     """
     position: int
     topic: TopicOut

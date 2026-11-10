@@ -5,8 +5,10 @@
 // 않으므로 바뀔 때마다 다른 쪽이 나온다.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/features/home/home_phrases.dart';
+import 'package:saerok/features/life_story/life_story_providers.dart';
 import 'package:saerok/widgets/mascot.dart';
 
 import 'journey/journey_harness.dart';
@@ -78,6 +80,61 @@ void main() {
     await app.back();
     await app.waitFor(find.text(other));
     expect(find.byType(Mascot), findsOneWidget);
+    await app.close();
+  });
+
+  testWidgets('아픈 기억일 수 있는 이야기는 밝은 말과 함께 권하지 않는다', (tester) async {
+    // 라디오 노래 대신 아픈 기억 표시가 붙은 이야기 하나만 담았다. 고를 수 있는
+    // 이야기는 세부 정보 `하시던 일` 하나뿐이다.
+    const painful = '남편분을 떠나보낸 해';
+    final server = JourneyServer()
+      ..lifeFacts.add({
+        'factId': '00000000-0000-4000-8000-000000000102',
+        'storyCategory': 'family',
+        'title': painful,
+        'content': '합성 내용이에요.',
+        'imageNumber': 1,
+        'createdAt': '2026-10-21T10:00:00+09:00',
+        'sensitive': true,
+      });
+    final app = await JourneyDriver.launch(tester, server);
+    await app.waitFor(find.byType(Mascot));
+
+    for (var i = 0; i < 4; i++) {
+      await app.tap(find.byType(Mascot));
+      await app.waitFor(_anyOf(storyRemarks));
+      expect(find.text(_job), findsOneWidget);
+      expect(find.text(painful), findsNothing);
+      await _settleReaction(app);
+    }
+    await app.close();
+  });
+
+  testWidgets('보여주던 이야기에 아픈 기억 표시가 붙으면 인사말로 돌아간다', (tester) async {
+    final server = _server();
+    final app = await JourneyDriver.launch(tester, server);
+    await app.waitFor(find.byType(Mascot));
+
+    // 이야기가 둘이라 번갈아 나온다. `라디오 노래` 가 보일 때까지 누른다.
+    await app.tap(find.byType(Mascot));
+    await app.waitFor(_anyOf(storyRemarks));
+    if (find.text(_radio).evaluate().isEmpty) {
+      await _settleReaction(app);
+      await app.tap(find.byType(Mascot));
+      await app.waitFor(find.text(_radio));
+    }
+    expect(_anyOf(_greetings), findsNothing);
+
+    // 서버가 같은 이야기를 표시를 붙여 돌려준다(2-7 로 보호자가 켠 경우).
+    server.lifeFacts.singleWhere((f) => f['title'] == _radio)['sensitive'] =
+        true;
+    ProviderScope.containerOf(
+      tester.element(find.byType(Mascot)),
+    ).read(lifeStoryStoreProvider).reload();
+
+    await app.waitFor(_anyOf(_greetings));
+    expect(find.text(_radio), findsNothing);
+    expect(_anyOf(storyRemarks), findsNothing);
     await app.close();
   });
 

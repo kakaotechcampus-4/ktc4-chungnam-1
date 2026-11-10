@@ -90,6 +90,8 @@ def test_added_life_fact_follows_the_contract(migrated_database_url):
         "title": "단골손님",
         "content": "합성 단골손님 이야기",
         "imageNumber": 3,
+        # 2-6으로 담은 이야기에는 아픈 기억 표시가 없다. 2-7로 켠다.
+        "sensitive": False,
     }
 
 
@@ -251,6 +253,8 @@ def test_patch_changes_only_the_sent_fields(migrated_database_url):
     title_only = caregiver.call("PATCH", path, json={"title": "고친 제목"})
     category_only = caregiver.call("PATCH", path, json={"storyCategory": "friend"})
     image_only = caregiver.call("PATCH", path, json={"imageNumber": 5})
+    marked = caregiver.call("PATCH", path, json={"sensitive": True})
+    unmarked = caregiver.call("PATCH", path, json={"sensitive": False})
     unchanged = caregiver.call("PATCH", path, json={})
 
     assert content_only.status_code == 200
@@ -260,6 +264,9 @@ def test_patch_changes_only_the_sent_fields(migrated_database_url):
     # 분류를 바꿔도 그림 번호와 담은 시각(`createdAt`)은 그대로다.
     assert category_only.json() == edited
     assert image_only.json() == {**edited, "imageNumber": 5}
+    # 보호자는 아픈 기억 표시를 켜고 끌 수 있다(2026-11-10 PM 결정).
+    assert marked.json() == {**edited, "imageNumber": 5, "sensitive": True}
+    assert unmarked.json() == image_only.json()
     assert unchanged.json() == image_only.json()
 
 
@@ -279,6 +286,9 @@ def test_patch_rejects_cleared_or_blank_fields(migrated_database_url):
         {"imageNumber": None},
         {"imageNumber": 0},
         {"imageNumber": 6},
+        {"sensitive": None},
+        {"sensitive": "true"},
+        {"sensitive": 1},
     ]
     codes = [
         caregiver.call("PATCH", path, json=body).json()["errorCode"]

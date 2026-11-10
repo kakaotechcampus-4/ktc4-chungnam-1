@@ -129,6 +129,17 @@ def test_profile_correction_of_card_input_marks_ready_set(migrated_database_url,
     assert _stale_at(migrated_database_url, set_id) is not None
 
 
+def test_story_sensitive_mark_change_marks_ready_set(migrated_database_url):
+    """아픈 기억 표시는 카드의 '조심스러운 이야기' 표시와 문안을 정하는 카드 생성 입력이다(2026-11-10 PM 결정)."""
+    user_id, profile_id, fact_id, set_id, _ = with_db(migrated_database_url, _ready)
+
+    res = _correct_story(migrated_database_url, user_id, fact_id, {"sensitive": True})
+
+    assert res.status_code == 200 and res.json()["sensitive"] is True
+    assert _status(migrated_database_url, user_id, profile_id)["needsRefresh"] is True
+    assert _stale_at(migrated_database_url, set_id) is not None
+
+
 def test_story_deletion_marks_ready_set(migrated_database_url):
     user_id, profile_id, fact_id, set_id, _ = with_db(migrated_database_url, _ready)
 
@@ -165,10 +176,11 @@ def test_profile_edit_outside_card_input_keeps_set_usable(migrated_database_url,
     [
         {"storyCategory": "work", "imageNumber": 2},
         {"title": "교단에 서던 시절", "content": "시골 분교에서 30년 동안 아이들을 가르치셨어요."},
+        {"sensitive": False},
     ],
 )
 def test_story_edit_outside_card_input_keeps_set_usable(migrated_database_url, body):
-    """분류와 그림 번호만 고치거나 제목과 내용을 같은 값으로 다시 저장한 경우."""
+    """분류와 그림 번호만 고치거나 제목, 내용, 아픈 기억 표시를 같은 값으로 다시 저장한 경우."""
     user_id, profile_id, fact_id, set_id, _ = with_db(migrated_database_url, _ready)
 
     res = _correct_story(migrated_database_url, user_id, fact_id, body)
