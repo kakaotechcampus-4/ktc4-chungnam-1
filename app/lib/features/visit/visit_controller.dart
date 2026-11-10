@@ -579,11 +579,14 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     try {
       VisitRecording? saved;
-      // 녹음 중에 장치가 멈췄던 일은 파일을 닫으면 지나간 일이다. 저장에 성공하면
-      // 남기지 않는다.
+      // 녹음 중에 장치가 멈췄거나 이어 가지 못했던 일은 파일을 닫으면 지나간
+      // 일이다. 저장에 성공하면 남기지 않는다. 남기면 저장한 면회에 `녹음을 이어
+      // 가지 못했어요` 띠가 남는다. 파일이 열린 뒤의 `startFailed` 는 이어 가기
+      // 실패뿐이다(첫 시작 실패는 파일이 없다).
       final carried = switch (current.problem) {
         VisitRecordingProblem.interrupted ||
-        VisitRecordingProblem.recorderStopped => null,
+        VisitRecordingProblem.recorderStopped ||
+        VisitRecordingProblem.startFailed => null,
         final other => other,
       };
       var problem = carried;

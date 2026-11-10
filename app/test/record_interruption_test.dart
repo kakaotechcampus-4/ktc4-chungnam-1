@@ -361,6 +361,25 @@ void main() {
     await leave(tester, container);
   });
 
+  testWidgets('이어 가지 못한 뒤 만남을 끝내 저장하면 띠를 남기지 않는다', (tester) async {
+    final recorder = FakeVisitRecorder(failOnResume: true);
+    final (container, visit) = await open(tester, recorder: recorder);
+    await tester.tap(find.byIcon(Icons.pause));
+    await settle(tester);
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await settle(tester);
+    expect(read(container).problem, VisitRecordingProblem.startFailed);
+
+    await visit.stopRecording(participantCount: 2);
+    await settle(tester);
+
+    expect(read(container).problem, isNull);
+    expect(read(container).recordingPath, isNotNull);
+    expect(alertFinder, findsNothing);
+
+    await leave(tester, container);
+  });
+
   testWidgets('만남을 끝냈는데 저장하지 못하면 넘어가지 않고 같은 띠로 알린다', (tester) async {
     final recorder = FakeVisitRecorder(failOnStop: true);
     final (container, _) = await open(tester, recorder: recorder);
