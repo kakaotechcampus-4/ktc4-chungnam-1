@@ -243,6 +243,34 @@ void main() {
       expect(_cards(), 6);
     });
 
+    testWidgets('불러오는 동안에는 누를 수 없는 버튼으로 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _open(tester);
+
+      await _tapMore(tester);
+      final loading = find.widgetWithText(OutlinedButton, '카드를 불러오고 있어요');
+      expect(tester.widget<OutlinedButton>(loading).onPressed, isNull);
+      // 누를 수 없는 버튼을 누를 수 있는 버튼으로 읽지 않는다(`app/DESIGN.md`).
+      expect(
+        find.semantics.byLabel('카드를 불러오고 있어요').evaluate().single,
+        isSemantics(
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: false,
+          hasTapAction: false,
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      expect(
+        find.semantics.byLabel('대화 카드 3장 더 보기').evaluate().single,
+        isSemantics(isButton: true, isEnabled: true, hasTapAction: true),
+        reason: '다 불러오면 다시 누를 수 있다',
+      );
+      handle.dispose();
+    });
+
     testWidgets('두 번 누르면 9장이 되고 버튼이 사라진다', (tester) async {
       await _open(tester);
 
