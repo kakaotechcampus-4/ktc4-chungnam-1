@@ -8,6 +8,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../cards/card_expand_cue.dart';
 import '../cards/card_source_photo.dart';
 import '../cards/cards_screen.dart' show cardSelectLabel;
 import '../cards/sensitive_card_badge.dart';
@@ -177,8 +178,8 @@ class _AddCardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
-    // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+    // 카드 본문을 누르면 펼쳐지고, 오른쪽 원 둘레의 자리(폭 84)를 눌러야
+    // 선택된다. 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
     return SelectableCard(
       accent: HomeColors.accent,
       shadows: AppShadows.cardSoft,
@@ -218,15 +219,11 @@ class _AddCardTile extends StatelessWidget {
                   ],
                 ),
               ),
-          ] else ...[
+            const SizedBox(height: AppSpacing.xs),
+          ] else
             const SizedBox(height: AppSpacing.md),
-            Text(
-              '눌러서 질문 보기',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            ),
-          ],
+          // 카드 고르기 화면과 같은 펼침 단서다.
+          CardExpandCue(expanded: expanded),
         ],
       ),
     );

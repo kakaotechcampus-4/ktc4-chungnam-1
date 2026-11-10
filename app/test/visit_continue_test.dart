@@ -222,7 +222,7 @@ void main() {
       expect(find.textContaining('아직 마치지 않은 면회가 있어요'), findsOneWidget);
       expect(find.text('평가 이어서 하기'), findsOneWidget);
       expect(find.text('대화 시작하기'), findsNothing);
-      expect(find.text('눌러서 질문 보기'), findsNothing);
+      expect(find.text('질문 보기'), findsNothing);
     });
 
     testWidgets('앱을 다시 켰으면 4-3 의 회차로 평가를 이어서 한다', (tester) async {
