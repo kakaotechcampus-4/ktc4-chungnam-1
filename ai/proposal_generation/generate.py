@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from common.llm import ENDPOINTS, ChatConfig, chat_model, llm_down
 from common.structured import invoke_structured
+from common.retry import RetryBlocked
 from common.visit_report import (
     Action,
     LifeFactProposalOut,
@@ -71,6 +72,8 @@ def generate_proposals(request: VisitReportRequest, *, model: str, api_key: str,
         try:
             return invoke_structured(chat_model(config), schema, [("system", prompt), ("user", payload)],
                                      label, attempts, on_retry, usage=usage)
+        except RetryBlocked as blocked:
+            raise blocked.original
         except Exception as error:
             code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"
             failed = VisitReportError(code, f"{type(error).__name__}: {error}")

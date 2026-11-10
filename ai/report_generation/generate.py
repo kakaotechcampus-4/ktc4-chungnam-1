@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from common.llm import ENDPOINTS, ChatConfig, chat_model, llm_down
 from common.structured import invoke_structured
+from common.retry import RetryBlocked
 from common.visit_report import (
     CardSummaryOut,
     ReportResult,
@@ -39,6 +40,8 @@ def generate_report(request: VisitReportRequest, *, model: str, api_key: str, at
         out = invoke_structured(chat_model(ChatConfig(model=model, api_key=api_key)), _Report,
                                 [("system", PROMPT.read_text(encoding="utf-8")), ("user", payload)],
                                 "면회 리포트", attempts, on_retry, usage=usage)
+    except RetryBlocked as blocked:
+        raise blocked.original
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"
         failed = VisitReportError(code, f"{type(error).__name__}: {error}")

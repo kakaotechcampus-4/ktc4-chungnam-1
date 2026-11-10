@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from common.llm import ChatConfig, ENDPOINTS, chat_model, llm_down
+from common.retry import RetryBlocked
 
 PROMPT = Path(__file__).parent / "prompts" / "description.md"
 PROMPT_VERSION = "photo-2"
@@ -47,6 +48,8 @@ def analyze_photo(download_url: str, *, model: str, api_key: str,
             ]),
         ])
         return PhotoDescription.model_validate(result)
+    except RetryBlocked as blocked:
+        raise blocked.original
     except Exception as error:
         code = "LLM_UNAVAILABLE" if llm_down(error) else "INVALID_IMAGE_ANALYSIS_RESULT"
         raise PhotoAnalysisError(code) from None
