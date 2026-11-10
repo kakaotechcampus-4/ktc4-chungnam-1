@@ -69,24 +69,31 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
     return ref.mounted && _stage != CardMaking.checking;
   }
 
-  Future<void> resolvePhotos(String action) => _begin((api, run) async {
-    final photos = ref.read(cardPhotoPreparationProvider(profileId));
-    if (api is! PhotoPreparationApi || photos == null) {
-      return _readStatus(api, run);
-    }
-    try {
-      final result = await (api as PhotoPreparationApi).resolvePhotos(
-        profileId,
-        photos.setId,
-        action,
-      );
-      _setPhotos(run, result.photos);
-      return _wait(api, run, result.status);
-    } on ApiServerFailure catch (error) {
-      if (error.errorCode != 'PHOTO_PREPARATION_CHANGED') rethrow;
-      return _wait(api, run, await _readStatus(api, run));
-    }
-  });
+  /// 사진 준비 선택(4-7)을 보내고 쓸 묶음이 생길 때까지 기다린다.
+  ///
+  /// [prepare] 처럼 만드는 중인 작업을 기다렸으면 `true` 를 돌려준다. 홈은
+  /// 홈 버튼을 누른 때와 같이 결과를 알린다.
+  Future<bool> resolvePhotos(String action) async {
+    await _begin((api, run) async {
+      final photos = ref.read(cardPhotoPreparationProvider(profileId));
+      if (api is! PhotoPreparationApi || photos == null) {
+        return _readStatus(api, run);
+      }
+      try {
+        final result = await (api as PhotoPreparationApi).resolvePhotos(
+          profileId,
+          photos.setId,
+          action,
+        );
+        _setPhotos(run, result.photos);
+        return _wait(api, run, result.status);
+      } on ApiServerFailure catch (error) {
+        if (error.errorCode != 'PHOTO_PREPARATION_CHANGED') rethrow;
+        return _wait(api, run, await _readStatus(api, run));
+      }
+    });
+    return ref.mounted && _stage != CardMaking.checking;
+  }
 
   void _setPhotos(int run, CardPhotoPreparation? photos) {
     if (ref.mounted && run == _run) {

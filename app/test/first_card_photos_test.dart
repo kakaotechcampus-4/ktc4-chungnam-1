@@ -435,5 +435,39 @@ void main() {
       );
       await tester.pumpWidget(const SizedBox.shrink());
     });
+
+    // 주 버튼으로 만든 카드도 홈 버튼을 누른 때와 같이 알린다. 알리지 않으면
+    // 다 되거나 실패해도 홈 버튼이 시작 전 글자로 조용히 돌아간다(UX 점검 11번).
+    for (final (status, expected) in const [
+      (_ready, '대화 카드가 준비됐어요'),
+      (CardGenerationStatus.failed, '대화 카드를 만들지 못했어요'),
+    ]) {
+      testWidgets('준비된 설명으로 만들기를 눌러 기다린 결과 $status 를 알린다', (tester) async {
+        final api =
+            PhotoApi([
+                _snapshot(reason: 'consentRequired'),
+                const CardGenerationSnapshot(_running, null),
+                CardGenerationSnapshot(status, null),
+              ])
+              ..pendingResolve = (Completer<CardGenerationSnapshot>()
+                ..complete(const CardGenerationSnapshot(_running, null)));
+        final (_, router) = await openHome(tester, api);
+
+        await tester.tap(find.text('준비된 설명으로 카드 만들기'));
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        await tester.pump(const Duration(milliseconds: 750));
+
+        expect(api.actions, ['$_id/set-1/continue']);
+        expect(find.textContaining(expected), findsOneWidget);
+        if (status == _ready) {
+          expect(find.widgetWithText(SnackBarAction, '카드 보기'), findsOneWidget);
+        }
+        expect(location(router), AppRoutes.home, reason: '기다린 뒤라 데려가지 않는다');
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    }
   });
 }

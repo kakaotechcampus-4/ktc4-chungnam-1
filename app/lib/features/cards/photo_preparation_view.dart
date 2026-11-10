@@ -19,6 +19,7 @@ class PhotoPreparationView extends ConsumerWidget {
   const PhotoPreparationView({
     required this.profileId,
     this.recheck,
+    this.resolve,
     super.key,
   });
   final String profileId;
@@ -27,10 +28,23 @@ class PhotoPreparationView extends ConsumerWidget {
   /// 알림창으로 알리려고 자기 것을 넘긴다. 없으면 생성 흐름의 `resume` 이다.
   final Future<void> Function()? recheck;
 
+  /// 사진 준비 선택(`retry`, `continue`)을 보낸다. 홈은 기다려 만든 결과를 홈
+  /// 버튼을 누른 때와 같이 알리려고 자기 것을 넘긴다. 없으면 생성 흐름의
+  /// `resolvePhotos` 다. 카드 화면은 결과를 그 화면에서 보여준다.
+  final Future<void> Function(String action)? resolve;
+
   Future<void> _recheck(WidgetRef ref) async {
     final recheck = this.recheck;
     if (recheck != null) return recheck();
     await ref.read(cardGenerationProvider(profileId).notifier).resume();
+  }
+
+  Future<void> _resolve(WidgetRef ref, String action) async {
+    final resolve = this.resolve;
+    if (resolve != null) return resolve(action);
+    await ref
+        .read(cardGenerationProvider(profileId).notifier)
+        .resolvePhotos(action);
   }
 
   /// 계정 약관 동의 화면을 열고, 돌아오면 사진 준비 상태를 다시 읽는다. 동의를
@@ -47,7 +61,6 @@ class PhotoPreparationView extends ConsumerWidget {
     if (photos == null) return const SizedBox.shrink();
     final generation = ref.watch(cardGenerationProvider(profileId));
     final busy = generation.isLoading;
-    final controller = ref.read(cardGenerationProvider(profileId).notifier);
     final message = !photos.needsChoice
         ? '사진을 분석하고 있어요. ${photos.completed}/${photos.total}장 완료\n'
               '분석이 끝나면 사진과 이야기를 함께 사용해 카드를 만들어요. 앱을 닫아도 계속 진행돼요.'
@@ -90,9 +103,7 @@ class PhotoPreparationView extends ConsumerWidget {
             label: photos.completed == 0 ? '사진 없이 카드 만들기' : '준비된 설명으로 카드 만들기',
             color: HomeColors.accent,
             loadingColor: HomeColors.accentLoading,
-            onPressed: busy
-                ? null
-                : () => unawaited(controller.resolvePhotos('continue')),
+            onPressed: busy ? null : () => unawaited(_resolve(ref, 'continue')),
           ),
           const SizedBox(height: AppSpacing.sm),
           SecondaryButton(
@@ -106,17 +117,13 @@ class PhotoPreparationView extends ConsumerWidget {
           const SizedBox(height: AppSpacing.md),
           OutlinedButton(
             style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: busy
-                ? null
-                : () => unawaited(controller.resolvePhotos('retry')),
+            onPressed: busy ? null : () => unawaited(_resolve(ref, 'retry')),
             child: const Text('사진 분석 다시 시도'),
           ),
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton(
             style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: busy
-                ? null
-                : () => unawaited(controller.resolvePhotos('continue')),
+            onPressed: busy ? null : () => unawaited(_resolve(ref, 'continue')),
             child: Text(
               photos.completed == 0 ? '사진 없이 카드 만들기' : '완료된 사진으로 카드 만들기',
             ),

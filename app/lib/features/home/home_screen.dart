@@ -441,7 +441,11 @@ class _CardButtonState extends ConsumerState<_CardButton>
           ),
         if (photos != null) ...[
           const SizedBox(height: AppSpacing.md),
-          PhotoPreparationView(profileId: profileId!, recheck: _resume),
+          PhotoPreparationView(
+            profileId: profileId!,
+            recheck: _resume,
+            resolve: _resolvePhotos,
+          ),
         ] else if (stage == CardMaking.remaking) ...[
           const SizedBox(height: AppSpacing.md),
           const _RemakingNotice(),
@@ -468,6 +472,25 @@ class _CardButtonState extends ConsumerState<_CardButton>
         .read(cardGenerationProvider(profileId).notifier)
         .prepare();
     if (!context.mounted) return;
+    _announce(profileId, name, waited: waited);
+  }
+
+  /// 사진 준비 화면의 선택(`준비된 설명으로 카드 만들기`, `사진 분석 다시 시도`
+  /// 등)을 보내고, 기다려 만든 결과를 홈 버튼을 누른 때와 같이 알린다. 알리지
+  /// 않으면 다 되거나 실패해도 홈 버튼이 시작 전 글자로 조용히 돌아갔다
+  /// (2026-11-10 UX 점검 11번, 18번). 선택을 처리하지 못했거나 다시 고를 일이
+  /// 생겨 사진 준비 화면이 남아 있으면 그 화면이 알린다.
+  Future<void> _resolvePhotos(String action) async {
+    final profileId = ref.read(serverProfileIdProvider).value;
+    if (profileId == null) return;
+    final name = ref.read(profileProvider).value?.profile.name;
+    ref.read(cardNoticeProvider(profileId).notifier).set(null);
+
+    final waited = await ref
+        .read(cardGenerationProvider(profileId).notifier)
+        .resolvePhotos(action);
+    if (!mounted) return;
+    if (ref.read(cardPhotoPreparationProvider(profileId)) != null) return;
     _announce(profileId, name, waited: waited);
   }
 
