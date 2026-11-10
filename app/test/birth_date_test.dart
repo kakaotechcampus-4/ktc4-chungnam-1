@@ -245,12 +245,12 @@ void main() {
       expect(info.birthByAge, isTrue);
     });
 
-    test('나이는 50세부터 110세까지 받는다', () {
+    test('나이는 10세부터 110세까지 받는다', () {
       final draft = _base.copyWith(birthByAge: true);
       expect(draft.basicInfoFilled, isFalse, reason: '나이를 적지 않았다');
-      expect(draft.withAgeText('49').ageOutOfRange, isTrue);
+      expect(draft.withAgeText('9').ageOutOfRange, isTrue);
       expect(draft.withAgeText('111').ageOutOfRange, isTrue);
-      expect(draft.withAgeText('50').basicInfoFilled, isTrue);
+      expect(draft.withAgeText('10').basicInfoFilled, isTrue);
       expect(draft.withAgeText('110').basicInfoFilled, isTrue);
       expect(draft.withAgeText('').age, isNull);
     });
@@ -346,11 +346,11 @@ void main() {
 
       await tester.enterText(find.byType(TextField).last, '8');
       await tester.pump();
-      expect(find.textContaining('50세에서 110세 사이'), findsOneWidget);
+      expect(find.textContaining('10세에서 110세 사이'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField).last, '82');
       await tester.pump();
-      expect(find.textContaining('50세에서 110세 사이'), findsNothing);
+      expect(find.textContaining('10세에서 110세 사이'), findsNothing);
       expect(last!.birthByAge, isTrue);
       expect(last!.age, 82);
 
