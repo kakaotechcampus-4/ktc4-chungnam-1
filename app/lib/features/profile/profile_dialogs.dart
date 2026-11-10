@@ -74,13 +74,18 @@ Future<bool> showChoiceDialog(
 }
 
 /// 알리기만 하는 창. [showChoiceDialog] 와 같은 모양에 버튼이 하나다.
+///
+/// [barrierDismissible] 이 `false` 면 바깥을 눌러도 닫히지 않는다. 버튼을 눌러야
+/// 다음으로 넘어가는 안내에 쓴다.
 Future<void> showNoticeDialog(
   BuildContext context, {
   required String title,
   required String detail,
   String label = '확인',
+  bool barrierDismissible = true,
 }) => showDialog<bool>(
   context: context,
+  barrierDismissible: barrierDismissible,
   builder: (context) =>
       _ChoiceDialog(title: title, detail: detail, primaryLabel: label),
 );

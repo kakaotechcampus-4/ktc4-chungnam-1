@@ -276,6 +276,9 @@ class JourneyRecorder implements VisitRecorder {
   /// [start] 를 부른 횟수. 녹음 전 승인보다 먼저 녹음하지 않았는지 본다.
   int starts = 0;
 
+  /// [stop] 을 부른 횟수. 화면을 옮기기 전에 파일을 닫았는지 본다.
+  int stops = 0;
+
   @override
   Future<bool> hasPermission() async => true;
 
@@ -296,6 +299,7 @@ class JourneyRecorder implements VisitRecorder {
 
   @override
   Future<VisitRecording?> stop() async {
+    stops++;
     final path = _path;
     return path == null ? null : VisitRecording(path: path);
   }

@@ -9,6 +9,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/recording_pulse.dart';
+import '../profile/profile_dialogs.dart';
 import 'setup_steps.dart';
 import 'speech_input.dart';
 
@@ -349,6 +350,24 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
     widget.onCleared();
   }
 
+  /// 글로 쓰던 중 `말로 답할게요`(실패 뒤에는 `다시 녹음하기`)를 눌렀다.
+  ///
+  /// 말로 바꾸면 입력칸의 글과 저장본이 지워진다. 적은 글이 있으면 한 번 묻고,
+  /// 그대로 두기로 하면(바깥을 눌러 닫은 경우 포함) 쓰던 화면에 남는다.
+  Future<void> _switchToVoice() async {
+    if (_manual.text.trim().isNotEmpty) {
+      final confirmed = await showChoiceDialog(
+        context,
+        title: '말로 다시 답할까요?',
+        detail: '적은 내용이 지워져요.',
+        primaryLabel: '말로 답하기',
+        secondaryLabel: '계속 적기',
+      );
+      if (!confirmed || !mounted || _phase != _Phase.manualInput) return;
+    }
+    _startVoice();
+  }
+
   /// 말로 답하러 간다. 방법을 처음 고를 때와 글로 쓰다 바꿀 때, 실패한 뒤
   /// 다시 녹음할 때 모두 이리로 온다. 어느 쪽이든 마이크 화면이 바로 나온다.
   void _startVoice() {
@@ -549,7 +568,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
             child: _SwitchMethodButton(
               icon: Icons.record_voice_over_outlined,
               label: _cameFromFailure ? '다시 녹음하기' : '말로 답할게요',
-              onTap: _startVoice,
+              // 적은 글이 있으면 지우기 전에 묻는다(2026-11-10 UX 점검 20).
+              onTap: _switchToVoice,
             ),
           )
         else if (!choosing)
