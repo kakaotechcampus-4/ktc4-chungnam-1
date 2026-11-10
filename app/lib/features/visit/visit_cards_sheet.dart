@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show OrdinalSortKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -129,6 +127,17 @@ class _CardsState extends ConsumerState<_Cards> {
     return Column(
       children: [
         const _DragHandle(),
+        if (card.evidenceSource == 'photo')
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+            child: CardSourcePhoto(
+              card: card,
+              compact: true,
+              gap: 0,
+              alignment: Alignment.centerRight,
+              viewerStatus: _PhotoVisitStatus(sessionId: state.sessionId),
+            ),
+          ),
         _CardBar(
           state: state,
           shownCount: _hiddenFrom ?? state.cards.length,
@@ -137,71 +146,116 @@ class _CardsState extends ConsumerState<_Cards> {
 
         // 남은 자리를 크게 둘로 나눈다.
         Expanded(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Column(
-                children: [
-                  // 화면 낭독기는 메인 질문, 꼬리 질문, 이전, 다음 순서로
-                  // 읽는다. 버튼이 두 영역 경계에 걸쳐 있어 위치만으로 두면
-                  // 꼬리 질문보다 먼저 읽힐 수 있다.
-                  Expanded(
-                    child: Semantics(
-                      sortKey: const OrdinalSortKey(0),
-                      child: _MainQuestion(card: card),
-                    ),
-                  ),
-                  Expanded(
-                    child: Semantics(
-                      sortKey: const OrdinalSortKey(1),
-                      // 카드를 바꾸면 꼬리 질문 넘김 효과 없이 바로 바꾼다.
-                      // 밀려 나가는 효과는 같은 카드 안에서 넘길 때만 보인다.
-                      child: _FollowUpQuestion(
-                        key: ValueKey(card.cardId),
-                        question: state.currentFollowUp ?? '',
-                        index: state.followUpCount == 0
-                            ? 0
-                            : state.followUpIndex % state.followUpCount,
-                        turn: state.followUpIndex,
-                        count: state.followUpCount,
-                        onTap: controller.nextFollowUp,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              // 두 영역의 경계 한가운데에 이전, 다음 버튼을 나란히 놓는다.
-              Positioned.fill(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final scaler = MediaQuery.textScalerOf(context);
+              // 사진 버튼이 차지한 높이와 큰 글자를 고려해 질문 칸을 확보한다.
+              if (box.maxHeight < scaler.scale(320)) {
+                return SingleChildScrollView(
+                  child: Column(
                     children: [
-                      Semantics(
-                        sortKey: const OrdinalSortKey(2),
-                        child: _CardStepButton(
-                          forward: false,
-                          // 끝에서 처음으로 돌아가므로 카드가 두 장 이상이면
-                          // 늘 누를 수 있다.
-                          enabled: state.cards.length > 1,
-                          onTap: controller.previousCard,
-                        ),
+                      _MainQuestion(card: card),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: AppSpacing.md,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          _CardStepButton(
+                            forward: false,
+                            enabled: state.cards.length > 1,
+                            onTap: controller.previousCard,
+                          ),
+                          _CardStepButton(
+                            forward: true,
+                            enabled: state.cards.length > 1,
+                            onTap: controller.nextCard,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppSpacing.md),
-                      Semantics(
-                        sortKey: const OrdinalSortKey(3),
-                        child: _CardStepButton(
-                          forward: true,
-                          enabled: state.cards.length > 1,
-                          onTap: controller.nextCard,
+                      SizedBox(
+                        height: scaler.scale(170) + 100,
+                        child: _FollowUpQuestion(
+                          key: ValueKey(card.cardId),
+                          question: state.currentFollowUp ?? '',
+                          index: state.followUpCount == 0
+                              ? 0
+                              : state.followUpIndex % state.followUpCount,
+                          turn: state.followUpIndex,
+                          count: state.followUpCount,
+                          onTap: controller.nextFollowUp,
                         ),
                       ),
                     ],
                   ),
-                ),
-              ),
-            ],
+                );
+              }
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    children: [
+                      // 화면 낭독기는 메인 질문, 꼬리 질문, 이전, 다음 순서로
+                      // 읽는다. 버튼이 두 영역 경계에 걸쳐 있어 위치만으로 두면
+                      // 꼬리 질문보다 먼저 읽힐 수 있다.
+                      Expanded(
+                        child: Semantics(
+                          sortKey: const OrdinalSortKey(0),
+                          child: _MainQuestion(card: card),
+                        ),
+                      ),
+                      Expanded(
+                        child: Semantics(
+                          sortKey: const OrdinalSortKey(1),
+                          // 카드를 바꾸면 꼬리 질문 넘김 효과 없이 바로 바꾼다.
+                          // 밀려 나가는 효과는 같은 카드 안에서 넘길 때만 보인다.
+                          child: _FollowUpQuestion(
+                            key: ValueKey(card.cardId),
+                            question: state.currentFollowUp ?? '',
+                            index: state.followUpCount == 0
+                                ? 0
+                                : state.followUpIndex % state.followUpCount,
+                            turn: state.followUpIndex,
+                            count: state.followUpCount,
+                            onTap: controller.nextFollowUp,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // 두 영역의 경계 한가운데에 이전, 다음 버튼을 나란히 놓는다.
+                  Positioned.fill(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Semantics(
+                            sortKey: const OrdinalSortKey(2),
+                            child: _CardStepButton(
+                              forward: false,
+                              // 끝에서 처음으로 돌아가므로 카드가 두 장 이상이면
+                              // 늘 누를 수 있다.
+                              enabled: state.cards.length > 1,
+                              onTap: controller.previousCard,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Semantics(
+                            sortKey: const OrdinalSortKey(3),
+                            child: _CardStepButton(
+                              forward: true,
+                              enabled: state.cards.length > 1,
+                              onTap: controller.nextCard,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
 
@@ -430,114 +484,92 @@ class _CardBarSegment extends StatelessWidget {
   }
 }
 
-/// 위쪽 절반. 흰 바탕에 어르신께 여쭙는 문장을 크게 둔다.
-///
-/// 사진에서 나온 카드는 소제목 위에 그 사진을 작게 둔다([CardSourcePhoto]).
-/// 사진은 소제목과 메인 질문을 제 크기로 놓고 남는 높이만 쓰며 120 을 넘지
-/// 않는다. 남는 높이가 48 보다 작으면(작은 화면, 큰 글자) 질문을 줄이지 않도록
-/// 사진을 두지 않는다. 곁눈질로 읽는 질문이 먼저다.
-class _MainQuestion extends StatelessWidget {
-  const _MainQuestion({required this.card});
-
-  final ConversationCard card;
-
-  static const _photoMax = CardSourcePhoto.largestHeight;
-  static const _photoMin = 48.0;
-  static const _questionWidth = 340.0;
-
-  /// 바닥에 둔 채 곁눈질로 읽으므로 다른 화면보다 크게 둔다.
-  static final _questionStyle = AppTypography.screenTitle.copyWith(
-    fontSize: 32,
-    height: 1.4,
-  );
-
-  /// 사진에 줄 수 있는 높이. 소제목과 메인 질문을 제 크기로 놓고 남는 높이에서
-  /// 사진 아래 여백을 뺀다.
-  double _photoRoom(BuildContext context, BoxConstraints box) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final direction = Directionality.of(context);
-    double heightOf(String text, TextStyle style, double width) {
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textAlign: TextAlign.center,
-        textDirection: direction,
-        textScaler: scaler,
-      )..layout(maxWidth: width);
-      final height = painter.height;
-      painter.dispose();
-      return height;
-    }
-
-    final title = heightOf(
-      '[ ${card.cardTitle} ]',
-      AppTypography.sub,
-      box.maxWidth,
-    );
-    final question = heightOf(
-      card.primaryQuestion,
-      _questionStyle,
-      _questionWidth,
-    );
-    return box.maxHeight - title - AppSpacing.lg - question - AppSpacing.md;
-  }
+/// 확대 화면에서도 같은 면회 상태를 읽는다. 이 위젯은 녹음 장치를 제어하지 않는다.
+class _PhotoVisitStatus extends ConsumerWidget {
+  const _PhotoVisitStatus({required this.sessionId});
+  final String? sessionId;
 
   @override
-  Widget build(BuildContext context) {
-    final cardTitle = card.cardTitle;
-    final question = card.primaryQuestion;
-    return Container(
-      width: double.infinity,
-      color: HomeColors.background,
-      // 소제목과 메인 질문 묶음이 위 막대와 아래 이전·다음 버튼 사이의
-      // 가운데에 오게 한다. 막대는 이 칸 위쪽 20 지점에서 끝나고(누르는
-      // 자리 48 중 아래 20), 버튼은 이 칸 아래쪽 32 지점에서 시작한다(높이
-      // 64의 절반). 그래서 아래 여백을 위보다 52 더 두어 둘 사이의 가운데에
-      // 맞춘다.
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.screen,
-        0,
-        AppSpacing.screen,
-        52,
-      ),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final photo = card.evidenceSource == 'photo'
-              ? math.min(_photoMax, _photoRoom(context, box))
-              : 0.0;
-          return Column(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(visitControllerProvider).asData?.value;
+    if (state == null || state.sessionId != sessionId) {
+      return const Text('녹음 상태를 확인하지 못했어요', style: AppTypography.sub);
+    }
+    final problem = state.problem != null;
+    final label = problem
+        ? '녹음 상태를 확인해 주세요'
+        : state.recording
+        ? '녹음 중'
+        : state.started
+        ? '녹음 중 아님'
+        : '녹음 전';
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.xs,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: label,
+          excludeSemantics: true,
+          child: Text(
+            label,
+            style: AppTypography.bodyStrong.copyWith(
+              color: problem ? AppColors.danger : HomeColors.accent,
+            ),
+          ),
+        ),
+        Text(state.elapsedLabel, style: AppTypography.sub),
+      ],
+    );
+  }
+}
+
+/// 사진은 고정된 상단 버튼으로 연다. 질문 영역에는 사진을 넣지 않는다.
+class _MainQuestion extends StatelessWidget {
+  const _MainQuestion({required this.card});
+  final ConversationCard card;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    color: HomeColors.background,
+    padding: const EdgeInsets.fromLTRB(
+      AppSpacing.screen,
+      0,
+      AppSpacing.screen,
+      52,
+    ),
+    child: LayoutBuilder(
+      builder: (context, box) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: box.hasBoundedHeight ? box.maxHeight : 0,
+          ),
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (photo >= _photoMin)
-                CardSourcePhoto(
-                  card: card,
-                  maxHeight: photo,
-                  alignment: Alignment.center,
-                ),
               Text(
-                '[ $cardTitle ]',
+                '[ ${card.cardTitle} ]',
                 style: AppTypography.sub,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.lg),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _questionWidth),
-                    child: Text(
-                      question,
-                      style: _questionStyle,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+              Text(
+                card.primaryQuestion,
+                style: AppTypography.screenTitle.copyWith(
+                  fontSize: 32,
+                  height: 1.4,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
-          );
-        },
+          ),
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// 아래쪽 절반. 회색 바탕으로 위와 구분하고, 누르면 다음 꼬리 질문으로 넘어간다.
