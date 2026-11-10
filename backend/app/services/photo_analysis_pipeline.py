@@ -1,9 +1,11 @@
 """사진 대기열을 설명 생성 함수에 연결한다. 외부 호출 중 DB 트랜잭션을 잡지 않는다."""
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 from photo_analysis import PhotoDescription
+from common.retry import retry_scope
 from photo_analysis.generate import PROMPT_VERSION
 from psycopg.errors import LockNotAvailable, QueryCanceled
 
@@ -12,6 +14,7 @@ from app.core.errors import AppError
 from app.services.card_sets import lock_profile
 from app.services.image_storage import ImageStorage
 from app.services.photo_analysis_jobs import PhotoAnalysisJob
+from app.services.llm_retry_guard import retry_guard
 
 AnalyzePhoto = Callable[[str], PhotoDescription]
 
@@ -78,7 +81,26 @@ class PhotoAnalysisProcessor:
                 raise TimeoutError
             async with asyncio.timeout_at(deadline):
                 # 스레드가 늦게 끝나도 DB를 직접 수정하지 못한다.
-                result = await asyncio.to_thread(self.analyze, download.url)
+                retry_end = time.monotonic() + max(0.0, deadline - asyncio.get_running_loop().time())
+
+                async def check_retry() -> None:
+                    if download.expires_at <= datetime.now(UTC):
+                        raise AppError(status_code=503, error_code="IMAGE_URL_EXPIRED",
+                                       message="사진 조회 주소가 만료됐습니다.")
+                    active = await (await connection.execute(
+                        "SELECT 1 FROM photos WHERE photo_id=%s AND profile_id=%s "
+                        "AND session_id IS NULL AND analysis_status='processing' "
+                        "AND attempt_count=%s AND lease_expires_at > clock_timestamp() "
+                        "AND " + _PHOTO_ANALYSIS_CONSENTED,
+                        (job.photo_id, job.profile_id, job.attempt_count),
+                    )).fetchone()
+                    if active is None:
+                        raise AppError(status_code=503, error_code="IMAGE_ANALYSIS_CANCELLED",
+                                       message="사진 분석을 계속할 수 없습니다.")
+
+                with retry_scope(before_retry=retry_guard(check_retry),
+                                 remaining=lambda: retry_end - time.monotonic()):
+                    result = await asyncio.to_thread(self.analyze, download.url)
                 result = PhotoDescription.model_validate(result)
         except (TimeoutError, LockNotAvailable, QueryCanceled):
             raise AppError(status_code=503, error_code="IMAGE_ANALYSIS_TIMEOUT",

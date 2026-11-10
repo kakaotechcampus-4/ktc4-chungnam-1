@@ -1298,12 +1298,19 @@ WAV/PCM 16-bit/16kHz/mono, 최대 5분이다. 앱이 5분 타이머로 녹음을
 `SPEECH_TRANSCRIPTION_IN_PROGRESS` 429(`retryable: true`)로 거절한다. 앞 요청이 끝나면 다시 보낼
 수 있다. 다른 계정의 요청은 기다리지 않는다(2026-11-09 PM 결정).
 
+서버 설정 `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_TOTAL`을 넣으면 서버 전체 동시 처리 수도 제한하며,
+다 차 있으면 S3 저장과 STT 호출 없이 `SPEECH_TRANSCRIPTION_BUSY` 503(`retryable: true`)로 거절한다.
+기본은 제한 없음이며 켜기 전에 PM 확인이 필요하다. STT 응답은 `SAEROK_SHORT_TRANSCRIPTION_TIMEOUT_SECONDS`
+(기본 90초, 잠정)까지 기다리고 넘으면 `AI_SERVER_TIMEOUT` 504(`retryable: true`)다. 앱의 2분 제한보다
+짧게 둔 값이다.
+
 | HTTP | `errorCode` | 언제 |
 | --- | --- | --- |
 | 403 | `SPEECH_PROCESSING_CONSENT_REQUIRED` | 필수 동의 누락 |
 | 413 | `AUDIO_TOO_LARGE` | 크기 또는 5분 초과 |
 | 422 | `INVALID_AUDIO_FORMAT`, `INVALID_AUDIO` | 형식이 다르거나 손상됨 |
 | 429 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 같은 계정의 6-6이 이미 2건 처리 중 |
+| 503 | `SPEECH_TRANSCRIPTION_BUSY` | 서버 전체 한도를 설정했고 다 참 |
 
 원본은 S3에 암호화해 임시 저장하고 요청이 끝나면 삭제를 시도한다. 삭제 대기열에 키를
 먼저 기록하며 처리 중 조기 삭제를 막는다. 전사 결과는 DB와 로그에 남기지 않는다.
