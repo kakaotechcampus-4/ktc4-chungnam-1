@@ -1,68 +1,82 @@
-# 이전 보안 점검 26건의 최종 처리 상태
+# 보안 점검에서 찾은 항목과 처리 결과
 
-작성일: 2026-11-11, KST. [최종 보고서](README.md), [남은 작업](follow-up.md).
+11월 8일 점검에서는 시험으로 확인한 문제 4개와 추가 확인 후보 22개를 기록했다. 이 문서는 그 26개가 어떻게 처리됐는지 설명한다. [최종 보고서](README.md), [남은 작업](follow-up.md).
 
-## 판정과 집계 기준
+당시 시험으로 확인한 문제는 로그인 전 큰 파일 수신, 짧은 음성 파일 재검사, STT 강제 종료 후 임시 파일 잔존, WAV 파일 해석 차이였다. 이 중 큰 파일 수신에는 수정 코드와 서버 제한 적용 기록이 있다. 나머지 3개는 원인 코드가 남아 있다. 최신 운영 환경에서 다시 시험한 결과는 아니다.
 
-11월 8일 run-2의 commit `42938250d87b6e6273d368ba4127af729cc95ea8`에서 기록한 확정 문제 4건과 조건부 확인 22건을 소스 스냅샷 `951307b9dfc8862f38673fb57e469a175807f110` 및 날짜가 있는 수정 기록과 대조했다. 게시 전 #317의 병합을 확인해 14번 설명을 갱신했다. 이후 앱 UX, 카드 v3와 LLM 재시도의 전체 보안 재검토는 별도다.
+아래는 항목을 처리 상태별로 나눈 표다. 같은 항목을 두 곳에 넣지 않았으며 합계는 26개다.
 
-이 표는 기존 지적의 처리 이력이다. 새 공격 재현을 하지 않았으므로 과거 심각도를 현재 운영 환경에 그대로 부여하지 않는다. 번호 하나당 최종 분류 하나만 적용한다.
+## 수정 코드가 병합된 항목 7개
 
-| 최종 분류 | 건수 | 번호 |
-|---|---:|---|
-| 직접 경로 수정 병합 | 7 | 03, 05, 07, 09, 10, 11, 14 |
-| 일부 보완 | 3 | 06, 08, 26 |
-| 기존 원인 코드 잔존 | 3 | 13, 22, 23 |
-| 조건부 확인 | 6 | 02, 04, 12, 16, 21, 25 |
-| PM 보류 | 1 | 15 |
-| 팀 수정 범위 제외 | 4 | 01, 17, 19, 24 |
-| 현재 추가 수정 없음 | 2 | 18, 20 |
-| 합계 | 26 | 당시 확정 4, 조건부 22 |
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 로그인 확인 전에 큰 파일을 계속 받는 문제 | #278에서 파일을 해석하기 전 로그인 정보와 실제 받은 크기를 검사하도록 수정했다. 서버 앞단의 크기 제한도 11월 9일 적용 기록이 있다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/api/body_limits.py) |
+| 순서를 기다리는 카드 작업을 실패로 처리 | #286에서 아직 시작하지 않은 작업과 실행 중인 작업을 구분했다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_generation_jobs.py) |
+| 사진 분석 동의를 철회해도 AI 설명을 다시 사용 | #288에서 저장된 AI 설명을 지우고 호출 전 동의를 재확인한다. #291은 삭제된 근거를 새 카드 입력에서 제외한다. 과거 카드에 이미 들어간 문장까지 전부 지우는 기능은 별도다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/photo_analysis_pipeline.py) |
+| 잘못된 로그인 정보가 반복 조회와 DB 연결을 차지 | #290에서 로그인 검사를 DB 연결보다 먼저 수행한다. Google 공개키의 동시 조회를 합치고, 유효한 저장 키가 있을 때 모르는 키를 다시 조회하는 간격을 제한한다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/google_identity.py) |
+| 한 계정에 알림 받을 기기를 계속 추가 | #285에서 계정별 5대로 제한하고 동시에 등록해도 한도를 검사한다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/push_devices.py) |
+| 리포트 작업을 새로 만들면 재시도 횟수가 초기화 | #285에서 작업 번호 대신 면회를 기준으로 3회까지 재요청하도록 바꿨다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_analysis_jobs.py) |
+| 한 계정이 짧은 음성 변환을 동시에 계속 요청 | #285에서 계정별 동시 2개로 제한했다. #317은 11월 11일 02:15 KST 병합됐으며 대기 기본값 90초와 선택적 서버 전체 상한을 추가했다. 전체 상한은 기본적으로 꺼져 있다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/account_slots.py) |
 
-확정 4건 중 03번은 관련 수정이 병합됐고 Caddy 적용 기록도 있다. 13, 22, 23번은 과거 재현 원인이 소스에 남아 있다. 조건부 22건의 현재 분류는 수정 6, 일부 보완 3, 조건부 6, PM 보류 1, 제외 4, 현재 추가 수정 없음 2건이다.
+## 수정이 남은 음성 파일 처리 문제 3개
 
-## 항목별 근거
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 짧은 음성 파일의 두 번째 검사로 요청 처리가 지연 | 최초 검사는 별도 작업 흐름에서 처리하지만, 다시 WAV를 읽는 부분은 요청 처리 흐름을 붙잡을 수 있다. 이 부분의 수정이 남아 있다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_transcription.py) |
+| STT 강제 종료 후 임시 녹음이 남음 | 정상 종료 때는 임시 파일을 지운다. 강제 종료 후 남은 파일을 재시작 때 정리하는 처리는 확인되지 않았다. 일반 서버가 만든 음성 조각과는 다른 위치의 파일이다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/providers.py) |
+| 음성 파일 검사와 실제 해석 결과가 다름 | 형식 정보가 중복된 비정상 WAV를 검사 도구와 실제 음성 처리 도구가 다르게 해석하는 문제다. 이 차이를 해결한 변경은 확인되지 않았다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/validation.py) |
 
-| 번호 | 이전 지적 | 11월 8일 판정 | 최종 분류 | 수정과 남은 조건 |
-|---|---|---|---|---|
-| 01 | 로컬 시뮬레이션의 Host/Origin 제한 | 당시 검증 필요 | 팀 수정 범위 제외 | PM이 11월 9일 팀 제품 코드의 이번 수정 대상에서 제외. 고쳤다는 뜻은 아님. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/ai/simulation/web.py) |
-| 02 | 외부 Android intent와 내부 재시도 경로 | 당시 검증 필요 | 조건부 확인 | Manifest에는 MAIN/LAUNCHER만 있고 VIEW/BROWSABLE은 없음. 다른 설치 앱의 명시 intent, Flutter 전달, 로그인/선택 프로필 유지와 자동 요청 조합은 실행 검증 필요. 일반 웹링크나 무인증 공격으로 단정하지 않음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/app/lib/app/router.dart) |
-| 03 | 인증 전 multipart 무제한 수신 | 당시 확인 | 직접 경로 수정 병합 | #278이 본문 해석 전 토큰 검사와 실제 수신 바이트 제한을 추가. Caddy 제한도 11월 9일 적용 기록 있음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/api/body_limits.py) |
-| 04 | 중단된 S3 multipart 조각 잔존 가능성 | 당시 검증 필요 | 조건부 확인 | 완료 전 multipart part는 객체 삭제와 별도. 11월 8일 lifecycle은 없었지만 잔존 part는 0개였음. 현재 잔존 여부와 중단 후 자동 정리 범위는 미확인. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/audio_storage.py) |
-| 05 | 대기 카드 작업의 잘못된 기한 만료 | 당시 검증 필요 | 직접 경로 수정 병합 | #286이 worker 실행 중 상태와 미선점 대기를 구분. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_generation_jobs.py) |
-| 06 | 원문 생성 로그와 무제한 입력 확대 | 당시 검증 필요 | 일부 보완 | #291 원문 제거/과거 행 변환, #282 입력 상한. 로그 전체 누적량/보관기한은 별도. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_generation_log.py) |
-| 07 | 사진 AI 철회 후 저장 설명 재사용 | 당시 검증 필요 | 직접 경로 수정 병합 | #288 저장 AI 설명 삭제/호출 전 재확인, #291 삭제 근거 제외. 과거 카드의 파생 문장까지 전부 지우는 것은 아님. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/photo_analysis_pipeline.py) |
-| 08 | 계정별 카드 생성 예산 없음 | 당시 검증 필요 | 일부 보완 | 입력 수/길이, 턴/시간 제한은 있으나 계정별 일일 호출량/금액 상한 없음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_sets.py) |
-| 09 | unknown kid 재조회와 DB 연결 점유 | 당시 검증 필요 | 직접 경로 수정 병합 | #290 인증을 DB 앞에 이동하고 공개키 조회 공유/유효 캐시 재조회 간격 적용. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/google_identity.py) |
-| 10 | 계정별 푸시 기기 무제한 | 당시 검증 필요 | 직접 경로 수정 병합 | #285 계정별 기기 5개 제한과 동시 등록 보호. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/push_devices.py) |
-| 11 | 리포트 새 작업 ID로 재시도 한도 초기화 | 당시 검증 필요 | 직접 경로 수정 병합 | #285 면회별 3회 한도로 변경. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_analysis_jobs.py) |
-| 12 | 빠른 음성 삭제의 완료 확인/버전 처리 | 당시 검증 필요 | 조건부 확인 | 면회 음성의 빠른 경로는 DeleteObject 후 상태 기록. 짧은 전사는 삭제 성공 후에도 대기열을 유지해 일반 실행기의 HEAD 404 확인을 거침. 11월 8일 음성 버킷 NeverEnabled로 당시 버전 잔존 조건은 없었음. 현재 설정은 미조회. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_analysis_pipeline.py) |
-| 13 | 짧은 STT의 동기 WAV 파싱 | 당시 확인 | 기존 원인 코드 잔존 | 기존 confirmed의 원인 존속. 최초 검사는 스레드로 넘기지만 짧은 전사의 async 함수에서 동기 wave.open 재검사를 함. #285 동시 2건 제한과 별개. 이번에는 재현하지 않음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_transcription.py) |
-| 14 | 짧은 STT의 계정별 무제한 동시 요청 | 당시 검증 필요 | 직접 경로 수정 병합 | #285 계정별 2건. #317은 11월 11일 02:15 KST 병합됐으며 짧은 대기 기본값 90초와 선택적 전역 상한을 추가했다. 전역 상한 기본값은 제한 없음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/account_slots.py) |
-| 15 | S3 삭제 실행기 자동 실행 없음 | 당시 검증 필요 | PM 보류 | 삭제 큐/도구 구현. PM이 시험 자료 보존을 위해 실행과 예약을 출시 전 처리로 보류. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/workers/storage_deletion.py) |
-| 16 | 과거 DB 복원 시 탈퇴/철회/폐기 재적용 | 당시 검증 필요 | 조건부 확인 | 자동 복원 금지와 사전 승인 절차는 있음. 승인한 과거 백업을 복원할 때 이후의 탈퇴/철회/토큰 폐기를 재적용하는 자동 절차는 미구현. 실제 개인정보 부활 사건을 확인한 것은 아님. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/docs/release-safety.md) |
-| 17 | 운영진 AWS 배포 역할의 관리 범위 | 당시 검증 필요 | 팀 수정 범위 제외 | AWS는 운영진 관리 영역으로 팀 수정 범위에서 제외했다. 설정 확인 후보를 팀 미해결 취약점으로 집계하지 않는다. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/deploy.yml) |
-| 18 | develop의 미검토 배포 로직 사용 가능성 | 당시 검증 필요 | 현재 추가 수정 없음 | 기존 PM 승인, main/develop 배포 범위와 본인 승인 허용을 유지한다. 이번 보고서로 새 강제 승인 규칙을 추가하지 않는다. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/deploy.yml) |
-| 19 | 운영자 PAT의 팀 workflow 접근 | 당시 검증 필요 | 팀 수정 범위 제외 | 운영진 관리 토큰으로 팀 보안 이슈에서 제외한다. 값이나 상세 설정을 이 문서에 싣지 않는다. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/assign-mentor.yml) |
-| 20 | 업로드 서명키와 비검토 빌드 | 당시 검증 필요 | 현재 추가 수정 없음 | 11월 11일 저장소, production 환경과 저장소에 제공되는 조직 시크릿 목록에 ANDROID_UPLOAD 키가 없었다. 실제 키 유출 근거 없음. 키 누락 시 debug 서명 경고와 모드 표시가 있다. APK가 서명되지 않았다는 뜻은 아니다. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/release-build.yml) |
-| 21 | STT 오류 로그의 presigned URL | 당시 검증 필요 | 조건부 확인 | 다운로드 오류의 cause가 원래 URL을 보유하는 경로는 남음. 실제 운영 로그 노출은 이번에 확인하지 않음. BE 로그 개선과 STT 예외 체인을 구분. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/providers.py) |
-| 22 | STT 강제 종료 후 임시 음성 잔존 | 당시 확인 | 기존 원인 코드 잔존 | 기존 confirmed. 정상 finally 정리는 있어도 강제 종료/재시작 정리 경로는 확인되지 않음. BE 조각 정리와 다른 저장 위치. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/providers.py) |
-| 23 | WAV 중복 fmt의 검증/디코더 해석 차이 | 당시 확인 | 기존 원인 코드 잔존 | 기존 confirmed. Python 검증과 실제 디코더 해석 차이를 해결한 변경 없음. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/validation.py) |
-| 24 | STT API의 호출자 인증/네트워크 접근 | 당시 검증 필요 | 팀 수정 범위 제외 | 11월 11일 AWS worker의 Tailscale 기본 주소, worker 실행과 GPU peer 온라인을 확인했다. PM은 기존 사설망 운영을 유지하기로 했다. 접근 우회나 공개 노출을 확인한 것이 아니며 GPU ACL 전수 검증 완료로 바꾸어 기록하지 않는다. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/main.py) |
-| 25 | 모델의 고정되지 않은 revision/체크포인트 로딩 | 당시 검증 필요 | 조건부 확인 | 모델 revision의 불변 SHA 고정 확인 안 됨. CK offline 설정은 있으나 주 서버 캐시/다운로드 정책 미확인. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/main.py) |
-| 26 | 호출자 timeout 후에도 GPU 작업 계속 | 당시 검증 필요 | 일부 보완 | 요청 시작 전 만료와 24시간 초과 검사, #299 긴 음성 분할은 있음. 잠금 대기 이후/실행 중 기한 재확인과 호출자 취소의 작업 중단 전파가 남은 범위. [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/stt/service.py) |
+## 일부 보완했고 추가 작업이 있는 항목 3개
 
-수정 병합 7건은 지적한 직접 경로의 조치다. 모든 파생 사본, 운영 설정과 실패 조건까지 해결했다는 뜻은 아니다. 예를 들어 사진 AI 설명 재사용 차단은 과거 카드의 문장 삭제와, 계정별 동시 수 제한은 일일 금액 제한과 구분한다.
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 생성 로그에 원문이 쌓이고 입력 자료가 계속 커짐 | #291에서 원문을 로그에서 제거하고 과거 기록을 바꾸는 처리를 추가했다. #282에서 입력 상한을 뒀다. 로그 전체 보관기한과 누적량 제한은 남아 있다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_generation_log.py) |
+| 하루 동안 반복 사용하는 AI 비용에 상한이 없음 | 입력 수와 길이, AI 호출 단계와 대기 시간은 제한한다. 계정별 하루 생성 횟수나 금액 제한은 별도다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/card_sets.py) |
+| 요청이 끝나도 GPU가 계속 음성을 처리할 수 있음 | 작업 시작 전 만료와 24시간 초과 검사, 긴 음성 분할은 있다. 실행 순서를 기다린 뒤의 재확인과 처리 중 취소 전달은 보완할 범위다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/stt/service.py) |
 
-## 구분해서 읽을 항목
+## 문제가 생기는 조건을 더 확인할 항목 6개
 
-- 백업 정리 timer는 11월 9일 적용 기록이 있다. S3 삭제 실행기의 자동 운영은 PM 보류다.
-- 사진 AI 설명 삭제, 원본 객체 삭제와 이전 버전 삭제는 서로 다른 작업이다.
-- BE 임시 조각과 STT 다운로드 임시 파일은 저장 위치와 프로세스가 다르다.
-- STT 파일 처리 3건과 Tailscale 연결은 별개다. 기존 사설망 운영은 이번 수정 대상에서 제외했다.
-- GitHub 배포 승인 절차 유지와 운영진 관리 항목의 범위 제외를 새 보안 수정으로 세지 않는다.
-- 범위 제외와 현재 추가 수정 없음은 취약점 수정 완료를 뜻하지 않는다.
-- 제품 CI와 합성 E2E는 현재 외부 서비스의 안전성을 전부 입증하지 않는다.
-- 프롬프트 인젝션 저항성과 가족 관계 및 사진 설명의 사실 정확성은 별도 평가다.
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 다른 앱이 새록의 내부 화면을 열어 요청할 가능성 | 일반 웹링크를 받는 설정은 없고 로그인과 선택한 프로필이 필요하다. 다른 설치 앱이 특정 화면을 직접 열었을 때 실제 요청까지 이어지는지는 확인해야 한다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/app/lib/app/router.dart) |
+| 중간에 끊긴 큰 파일 업로드 조각이 남을 가능성 | 파일을 여러 조각으로 나누어 올리다 중단되면 완성 파일과 별도로 정리해야 한다. 11월 8일 조회에서는 조각이 0개였으며 현재 잔존을 확인한 것은 아니다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/audio_storage.py) |
+| 음성 삭제 요청 성공 후 파일이 정말 없어졌는지 확인 | 면회 음성의 빠른 삭제는 삭제 요청 성공 뒤 상태를 기록한다. 짧은 음성 변환은 별도 삭제 목록을 남겨 파일이 없다는 응답까지 확인한다. 11월 8일 음성 저장소에는 이전 버전 보관이 꺼져 있었고 현재 설정은 재조회하지 않았다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/services/speech_analysis_pipeline.py) |
+| 예전 백업 복원 후 탈퇴와 동의 철회를 다시 반영 | 복원은 사전 승인이 필요하다. 다만 백업 이후의 탈퇴, 동의 철회와 로그인 정보 폐기를 자동으로 다시 반영하는 절차가 없다. 실제 삭제 자료가 되살아난 사건을 확인한 것은 아니다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/docs/release-safety.md) |
+| STT 오류 기록에 임시 파일 접근 주소가 남을 가능성 | 다운로드 오류의 원인 정보에 원래 주소가 남는 코드가 있다. 운영 로그에 그 주소가 실제로 출력되는지는 확인되지 않았다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/providers.py) |
+| 음성 모델을 어떤 버전으로 설치하는지 고정 | 학교 CK 예비 서버에는 이미 받은 모델을 쓰는 설정이 있다. 승인한 모델 버전이나 파일 확인값을 고정하는지, 주 서버가 어떻게 내려받는지는 별도 확인이다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/main.py) |
 
-11월 8일 점검은 commit `42938250d87b6e6273d368ba4127af729cc95ea8`을 대상으로 확정 4건과 조건부 22건을 기록했다. 이 표에는 항목과 현재 코드 근거를 남겼고, 개인 환경의 재현 원본과 설정 조회 기록은 공개 저장소에 싣지 않았다. 관련 수정의 작성자와 병합 시각은 [PR 이력](pr-history.md)에서 확인한다.
+## PM 결정으로 보류한 작업 1개
+
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 저장소 파일 삭제를 자동으로 실행 | 삭제 목록과 실행 도구는 구현됐다. 시험 자료를 보존하기 위해 PM이 실제 실행과 예약을 출시 전 처리로 보류했다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/workers/storage_deletion.py) |
+
+## 이번 팀 수정 범위에서 제외한 항목 4개
+
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 개인 PC에서 사용하는 AI 시험 도구 | PM이 11월 9일 팀 제품의 이번 수정 범위에서 제외했다. 코드가 수정됐다는 뜻은 아니다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/ai/simulation/web.py) |
+| 운영진이 관리하는 AWS 배포 권한 | 운영진 관리 영역으로 팀 수정 범위에서 제외했다. 설정 확인 후보를 팀 미해결 취약점으로 집계하지 않는다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/deploy.yml) |
+| 운영진 자동화에 사용하는 공용 토큰 | 운영진 관리 항목으로 팀 보안 이슈에서 제외했다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/assign-mentor.yml) |
+| Tailscale로 연결한 STT 서버 | 기존 사설망 연결과 서버 온라인 상태를 확인했으며 PM 결정에 따라 운영 방식을 유지한다. 공개 노출이나 우회가 확인된 것이 아니며 모든 접근 규칙을 시험한 것도 아니다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/main.py) |
+
+## 현재 추가 수정이 없는 항목 2개
+
+| 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
+|---|---|---|
+| 누가 어떤 브랜치를 배포할 수 있는지 | 기존 PM 승인과 main/develop 배포 범위를 유지한다. 이 보고서로 새 승인 규칙을 추가하지 않는다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/deploy.yml) |
+| 앱 업로드 서명키의 노출 가능성 | 11월 11일 확인한 GitHub 비밀 설정에는 업로드 키가 없었다. 키가 없으면 개발용 서명 사용을 경고하고 표시한다. 현재 키 유출 문제로 보지 않으며 향후 등록할 때 접근 범위를 확인한다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/.github/workflows/release-build.yml) |
+
+## 혼동하기 쉬운 부분
+
+- **백업 정리와 음성 파일 삭제**: 백업 정리 예약 작업은 11월 9일 적용 기록이 있다. S3 파일 삭제 자동 운영은 보류다.
+- **사진 설명 삭제와 원본 삭제**: 분석 동의를 끄면 AI 설명을 지우는 것과, 저장소의 사진 및 이전 버전을 삭제하는 것은 다른 작업이다.
+- **동시 요청 수와 하루 비용**: 동시에 두 개만 처리해도 하루 종일 반복하면 비용이 쌓인다.
+- **인젝션 시험과 사실 정확성**: 자료 속 명령을 따르지 않는 것과 가족 관계나 사진을 정확히 설명하는 것은 별도로 평가한다.
+- **수정 병합과 배포**: 변경을 develop에 합친 시점과 실제 앱 또는 서버에 적용한 시점을 구분한다.
+
+## 근거를 확인하는 방법
+
+각 행의 코드 링크는 검토한 버전 `951307b9`에 고정돼 있다. 최초 점검 버전은 `42938250`이다. 짧은 음성 대기와 전체 동시 수 제한은 이후 병합된 #317의 설명을 반영했다. 추가 앱 화면 변경, 카드 프롬프트 3판과 LLM 재시도의 전체 보안 재검토는 별도다.
+
+작성자와 병합 날짜는 [관련 PR 이력](pr-history.md)에 있다. 개인 환경의 재현 원본, 실제 사용자 자료와 설정 조회 기록은 공개 저장소에 싣지 않았다.
