@@ -153,6 +153,8 @@ class _StepBody extends StatelessWidget {
     return PhotoUploadStep(
       name: state.draft.name,
       photos: state.draft.photos,
+      // 앱을 다시 켜기 전에 올린 사진. 단말 초안에서 가져온 수만큼 덜 고른다.
+      existing: state.draft.uploadedBefore,
       canEdit: state.draft.canEditPhotos,
       onAdded: controller.addPhotos,
       onRemoved: controller.removePhoto,
@@ -254,9 +256,7 @@ class _ActionsState extends ConsumerState<_Actions> {
       // 사진을 올렸으면 홈 아래에 사진 준비 안내가 뜬다. 알림 띠가 그 안내의
       // 아랫줄을 가려(2026-11-10 E2E) 이때는 띄우지 않는다. 새 분의 이름은 홈
       // 제목과 위 알약에 바로 보인다.
-      final photoNotice = draft.photos.any(
-        (photo) => photo.status == PhotoUploadStatus.uploaded,
-      );
+      final photoNotice = draft.uploadedPhotoCount > 0;
       if (addingId != null && !photoNotice) {
         messenger
           ..hideCurrentSnackBar()
@@ -270,6 +270,16 @@ class _ActionsState extends ConsumerState<_Actions> {
       await controller.uploadPhotos();
     }
 
+    // 앱을 다시 켜기 전에 올린 사진이 있으면 건너뛰는 것이 아니라 올린 채로
+    // 마친다. 모두 올렸을 때와 같은 버튼이다.
+    if (!draft.hasPhoto && draft.uploadedBefore > 0) {
+      return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '홈으로',
+        onPressed: finish,
+      );
+    }
     if (!draft.hasPhoto) {
       return SecondaryButton(
         borderColor: HomeColors.outline,

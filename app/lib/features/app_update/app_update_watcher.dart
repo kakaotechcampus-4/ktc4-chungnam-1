@@ -42,15 +42,9 @@ abstract final class AppUpdateMessages {
   static const update = '업데이트';
 }
 
-/// 업데이트 안내를 미루는 면회 흐름의 화면이다.
-const _visitFlowPaths = {
-  AppRoutes.visitPhoto,
-  AppRoutes.visitRecord,
-  AppRoutes.visitAddCards,
-  AppRoutes.visitReview,
-  AppRoutes.visitReviewDone,
-  AppRoutes.visitUpload,
-};
+/// 업데이트 안내를 미루는 면회 흐름의 화면이다. 세션을 잃었을 때 먼저 알리는
+/// 화면과 같은 목록을 쓴다.
+const _visitFlowPaths = AppRoutes.visitFlow;
 
 class AppUpdateWatcher extends ConsumerStatefulWidget {
   const AppUpdateWatcher({

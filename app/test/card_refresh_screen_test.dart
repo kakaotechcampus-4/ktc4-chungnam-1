@@ -95,7 +95,7 @@ void main() {
   void expectSentHome(FakeCardApi api) {
     expect(find.textContaining('어르신 정보가 바뀌었어요'), findsOneWidget);
     expect(find.text('홈으로 가기'), findsOneWidget);
-    expect(find.text('눌러서 질문 보기'), findsNothing, reason: '옛 카드는 감춘다');
+    expect(find.text('질문 보기'), findsNothing, reason: '옛 카드는 감춘다');
     expect(find.text('대화 시작하기'), findsNothing, reason: '옛 카드로 시작하지 못한다');
     expect(find.text('다음 대화 준비하기'), findsNothing, reason: '홈 버튼이 맡는다');
     expect(api.calls, isNot(contains('request')), reason: '카드 화면에서 만들지 않는다');
