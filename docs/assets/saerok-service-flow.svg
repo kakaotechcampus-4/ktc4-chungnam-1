@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 820" width="1600" height="820" role="img" aria-label="새록 서비스 흐름">
+<defs>
+<marker id="ak" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0.5 L12 6 L0 11.5 z" fill="#25292A"/></marker>
+<marker id="ag" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0.5 L12 6 L0 11.5 z" fill="#2E7D5B"/></marker>
+<style>text{font-family:'Noto Sans KR','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;}.title{font-size:30px;font-weight:800;fill:#25292A;}.subtitle{font-size:14.5px;fill:#767D7A;}.phase{font-size:17px;font-weight:700;fill:#25292A;}.phased{font-size:14px;fill:#767D7A;}.bt{font-size:21px;font-weight:700;}.bb{font-size:14.5px;}.num{font-size:13px;font-weight:700;}.pill{font-size:12.5px;font-weight:700;}.el{font-size:14.5px;font-weight:600;paint-order:stroke;stroke-width:6px;stroke-linejoin:round;}.nt{font-size:17px;font-weight:700;fill:#2E7D5B;}.nb{font-size:14.5px;fill:#4B5250;}.lg{font-size:14px;fill:#4B5250;}.chip{font-size:13.5px;font-weight:700;}</style></defs>
+<rect width="1600" height="820" fill="#FFFFFF"/>
+<text x="40" y="56" class="title" text-anchor="start">새록 서비스 흐름</text>
+<text x="40" y="86" class="subtitle" text-anchor="start">면회 한 번이 다음 면회 준비로 이어지는 순환 · develop 기준 · 2026.11</text>
+<rect x="40" y="112" width="730" height="290" rx="18" fill="#FFFFFF" stroke="#25292A" stroke-width="1.6"/>
+<text x="62" y="142" class="phase" text-anchor="start">면회 전</text>
+<text x="132.56" y="142" class="phased" text-anchor="start">프로필을 바탕으로 대화를 준비합니다</text>
+<rect x="810" y="112" width="750" height="290" rx="18" fill="#FFFFFF" stroke="#25292A" stroke-width="1.6"/>
+<text x="832" y="142" class="phase" text-anchor="start">면회 날</text>
+<text x="902.56" y="142" class="phased" text-anchor="start">대화에 집중하고 소감을 남깁니다</text>
+<rect x="40" y="450" width="1520" height="290" rx="18" fill="#FFFFFF" stroke="#25292A" stroke-width="1.6"/>
+<text x="62" y="480" class="phase" text-anchor="start">면회 후</text>
+<text x="132.56" y="480" class="phased" text-anchor="start">리포트를 보고, 확인한 이야기만 남깁니다</text>
+<rect x="70" y="168" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="94" cy="192" r="13" fill="#25292A"/>
+<text x="94" y="197" class="num" text-anchor="middle" style="fill:#FFFFFF">1</text>
+<rect x="293" y="181" width="55" height="22" rx="11" fill="#FFFFFF" stroke="#25292A" stroke-width="1.2"/>
+<text x="320.5" y="196.5" class="pill" text-anchor="middle" style="fill:#25292A">보호자</text>
+<g transform="translate(197.6 188) scale(1.45)" fill="none" stroke="#4A7BD8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 3.6-7 8-7s8 2.8 8 7"/></g>
+<text x="215.0" y="256" class="bt" text-anchor="middle" style="fill:#25292A">프로필·사진 입력</text>
+<text x="215.0" y="286" class="bb" text-anchor="middle" style="fill:#4B5250">기본 정보와 세부 정보 4칸</text>
+<text x="215.0" y="309" class="bb" text-anchor="middle" style="fill:#4B5250">하시던 일 · 고향 · 취미 · 가족</text>
+<text x="215.0" y="332" class="bb" text-anchor="middle" style="fill:#4B5250">사진 최대 5장</text>
+<rect x="460" y="168" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="484" cy="192" r="13" fill="#25292A"/>
+<text x="484" y="197" class="num" text-anchor="middle" style="fill:#FFFFFF">2</text>
+<rect x="698" y="181" width="40" height="22" rx="11" fill="#7B5CE0"/>
+<text x="718.0" y="196.5" class="pill" text-anchor="middle" style="fill:#FFFFFF">AI</text>
+<g transform="translate(587.6 188) scale(1.45)" fill="none" stroke="#7B5CE0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="14" rx="2"/><path d="M8 3h11a2 2 0 0 1 2 2v12"/></g>
+<text x="605.0" y="256" class="bt" text-anchor="middle" style="fill:#25292A">대화 카드 생성</text>
+<text x="605.0" y="286" class="bb" text-anchor="middle" style="fill:#4B5250">카드 12장 · 첫 질문과 꼬리 질문</text>
+<text x="605.0" y="309" class="bb" text-anchor="middle" style="fill:#4B5250">1~9번에서 골라 면회 시작</text>
+<text x="605.0" y="332" class="bb" text-anchor="middle" style="fill:#4B5250">10~12번은 면회 중 보충</text>
+<rect x="850" y="168" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="874" cy="192" r="13" fill="#25292A"/>
+<text x="874" y="197" class="num" text-anchor="middle" style="fill:#FFFFFF">3</text>
+<rect x="1073" y="181" width="55" height="22" rx="11" fill="#FFFFFF" stroke="#25292A" stroke-width="1.2"/>
+<text x="1100.5" y="196.5" class="pill" text-anchor="middle" style="fill:#25292A">보호자</text>
+<g transform="translate(977.6 188) scale(1.45)" fill="none" stroke="#E8812F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></g>
+<text x="995.0" y="256" class="bt" text-anchor="middle" style="fill:#25292A">면회</text>
+<text x="995.0" y="286" class="bb" text-anchor="middle" style="fill:#4B5250">대화를 녹음하면서</text>
+<text x="995.0" y="309" class="bb" text-anchor="middle" style="fill:#4B5250">화면을 올려 카드 꺼내기</text>
+<text x="995.0" y="332" class="bb" text-anchor="middle" style="fill:#4B5250">면회 사진 1장 남기기</text>
+<rect x="1240" y="168" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="1264" cy="192" r="13" fill="#25292A"/>
+<text x="1264" y="197" class="num" text-anchor="middle" style="fill:#FFFFFF">4</text>
+<rect x="1463" y="181" width="55" height="22" rx="11" fill="#FFFFFF" stroke="#25292A" stroke-width="1.2"/>
+<text x="1490.5" y="196.5" class="pill" text-anchor="middle" style="fill:#25292A">보호자</text>
+<g transform="translate(1367.6 188) scale(1.45)" fill="none" stroke="#4A7BD8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></g>
+<text x="1385.0" y="256" class="bt" text-anchor="middle" style="fill:#25292A">소감 입력</text>
+<text x="1385.0" y="286" class="bb" text-anchor="middle" style="fill:#4B5250">만족도 · 어르신 반응</text>
+<text x="1385.0" y="309" class="bb" text-anchor="middle" style="fill:#4B5250">카드별 사용 여부와 반응</text>
+<text x="1385.0" y="332" class="bb" text-anchor="middle" style="fill:#4B5250">소감을 저장한 뒤 녹음 전송</text>
+<rect x="1240" y="506" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="1264" cy="530" r="13" fill="#25292A"/>
+<text x="1264" y="535" class="num" text-anchor="middle" style="fill:#FFFFFF">5</text>
+<rect x="1478" y="519" width="40" height="22" rx="11" fill="#7B5CE0"/>
+<text x="1498.0" y="534.5" class="pill" text-anchor="middle" style="fill:#FFFFFF">AI</text>
+<g transform="translate(1367.6 526) scale(1.45)" fill="none" stroke="#7B5CE0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></g>
+<text x="1385.0" y="594" class="bt" text-anchor="middle" style="fill:#25292A">리포트와 이야기 후보</text>
+<text x="1385.0" y="624" class="bb" text-anchor="middle" style="fill:#4B5250">면회 음성 분석 → 리포트</text>
+<text x="1385.0" y="647" class="bb" text-anchor="middle" style="fill:#4B5250">이야기 후보 · 주제 조정 제안</text>
+<text x="1385.0" y="670" class="bb" text-anchor="middle" style="fill:#4B5250">완료되면 푸시 알림</text>
+<rect x="850" y="506" width="290" height="200" rx="14" fill="#EAF4EE" stroke="#2E7D5B" stroke-width="2.6"/>
+<circle cx="874" cy="530" r="13" fill="#2E7D5B"/>
+<text x="874" y="535" class="num" text-anchor="middle" style="fill:#FFFFFF">6</text>
+<rect x="1073" y="519" width="55" height="22" rx="11" fill="#FFFFFF" stroke="#25292A" stroke-width="1.2"/>
+<text x="1100.5" y="534.5" class="pill" text-anchor="middle" style="fill:#25292A">보호자</text>
+<g transform="translate(977.6 526) scale(1.45)" fill="none" stroke="#2E7D5B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></g>
+<text x="995.0" y="594" class="bt" text-anchor="middle" style="fill:#25292A">보호자 확인</text>
+<text x="995.0" y="624" class="bb" text-anchor="middle" style="fill:#4B5250">AI가 만든 후보와 제안을</text>
+<text x="995.0" y="647" class="bb" text-anchor="middle" style="fill:#4B5250">직접 고치거나 빼고 승인</text>
+<rect x="900.0" y="666" width="66" height="26" rx="13" fill="#FFFFFF" stroke="#2E7D5B" stroke-width="1.4"/>
+<text x="933.0" y="684" class="chip" text-anchor="middle" style="fill:#2E7D5B">고치기</text>
+<rect x="974.0" y="666" width="52" height="26" rx="13" fill="#FFFFFF" stroke="#2E7D5B" stroke-width="1.4"/>
+<text x="1000.0" y="684" class="chip" text-anchor="middle" style="fill:#2E7D5B">빼기</text>
+<rect x="1034.0" y="666" width="56" height="26" rx="13" fill="#2E7D5B"/>
+<text x="1062.0" y="684" class="chip" text-anchor="middle" style="fill:#FFFFFF">승인</text>
+<rect x="460" y="506" width="290" height="200" rx="14" fill="#F3F5F3" stroke="#25292A" stroke-width="1.4"/>
+<circle cx="484" cy="530" r="13" fill="#25292A"/>
+<text x="484" y="535" class="num" text-anchor="middle" style="fill:#FFFFFF">7</text>
+<g transform="translate(587.6 526) scale(1.45)" fill="none" stroke="#2E7D5B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H2z"/><path d="M22 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z"/></g>
+<text x="605.0" y="594" class="bt" text-anchor="middle" style="fill:#25292A">일대기와 프로필</text>
+<text x="605.0" y="624" class="bb" text-anchor="middle" style="fill:#4B5250">승인한 이야기만 기록</text>
+<text x="605.0" y="647" class="bb" text-anchor="middle" style="fill:#4B5250">가족 · 고향 · 취미 · 일 · 친구 · 여행</text>
+<text x="605.0" y="670" class="bb" text-anchor="middle" style="fill:#4B5250">주제별 앨범으로 다시 보기</text>
+<rect x="70" y="506" width="290" height="200" rx="14" fill="#FFFFFF" stroke="#2E7D5B" stroke-width="1.6" stroke-dasharray="7 5"/>
+<text x="94" y="544" class="nt" text-anchor="start">다음 카드에 들어가는 것</text>
+<circle cx="100" cy="575" r="3.2" fill="#2E7D5B"/>
+<text x="114" y="580" class="nb" text-anchor="start">승인한 이야기</text>
+<circle cx="100" cy="605" r="3.2" fill="#2E7D5B"/>
+<text x="114" y="610" class="nb" text-anchor="start">더 듣고 싶은 주제</text>
+<circle cx="100" cy="635" r="3.2" fill="#2E7D5B"/>
+<text x="114" y="640" class="nb" text-anchor="start">줄이거나 뺄 주제</text>
+<circle cx="100" cy="665" r="3.2" fill="#2E7D5B"/>
+<text x="114" y="670" class="nb" text-anchor="start">바로잡은 프로필과 일대기</text>
+<path d="M362 268 L458 268" fill="none" stroke="#2E7D5B" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ag)"/>
+<text x="410" y="256" class="el" text-anchor="middle" style="stroke:#FFFFFF;fill:#2E7D5B">생성 요청</text>
+<path d="M752 268 L848 268" fill="none" stroke="#25292A" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<text x="790" y="256" class="el" text-anchor="middle" style="stroke:#FFFFFF;fill:#25292A">시작</text>
+<path d="M1142 268 L1238 268" fill="none" stroke="#25292A" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<text x="1190" y="256" class="el" text-anchor="middle" style="stroke:#FFFFFF;fill:#25292A">면회 끝</text>
+<path d="M1385 370 L1385 504" fill="none" stroke="#2E7D5B" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ag)"/>
+<text x="1397" y="432" class="el" text-anchor="start" style="stroke:#FFFFFF;fill:#2E7D5B">녹음 전송 → 음성 분석</text>
+<path d="M1238 606 L1142 606" fill="none" stroke="#25292A" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<text x="1190" y="594" class="el" text-anchor="middle" style="stroke:#FFFFFF;fill:#25292A">푸시 알림</text>
+<path d="M848 606 L752 606" fill="none" stroke="#2E7D5B" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ag)"/>
+<text x="800" y="594" class="el" text-anchor="middle" style="stroke:#FFFFFF;fill:#2E7D5B">승인한 것만</text>
+<path d="M605 504 L605 370" fill="none" stroke="#2E7D5B" stroke-width="3" stroke-linejoin="round" marker-end="url(#ag)"/>
+<text x="617" y="432" class="el" text-anchor="start" style="stroke:#FFFFFF;fill:#2E7D5B">다음 면회 준비</text>
+<path d="M362 606 L458 606" fill="none" stroke="#2E7D5B" stroke-width="1.6" stroke-dasharray="4 4"/>
+<line x1="40" y1="778" x2="76" y2="778" stroke="#25292A" stroke-width="2.2"/>
+<text x="86" y="783" class="lg" text-anchor="start">보호자가 하는 일</text>
+<line x1="230" y1="778" x2="266" y2="778" stroke="#2E7D5B" stroke-width="2.4"/>
+<text x="276" y="783" class="lg" text-anchor="start">AI가 처리하거나 기록에 반영되는 흐름</text>
+<rect x="540" y="767" width="40" height="22" rx="11" fill="#7B5CE0"/>
+<text x="560" y="782.5" class="pill" text-anchor="middle" style="fill:#FFFFFF">AI</text>
+<text x="590" y="783" class="lg" text-anchor="start">AI가 만드는 단계 (엘리스 ML API)</text>
+<text x="1560" y="783" class="lg" text-anchor="end" style="fill:#2E7D5B;font-weight:700">AI 제안은 보호자가 승인하기 전에는 프로필과 일대기에 반영되지 않습니다</text>
+</svg>
