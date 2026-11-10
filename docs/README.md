@@ -13,6 +13,7 @@
 | 카드·리포트 생성과 이미지 분석 | [AI README](../ai/README.md) | [이미지 분석 실험](../ai/docs/image_tagging/README.md) |
 | STT와 화자 분리 서버 | [STT 서버 README](../stt-server/README.md) | [STT 파이프라인 설계](../stt-server/docs/stt-pipeline.md) |
 | 평가 자료와 실행 상태 | [평가 README](../evals/README.md) | `evals/cases/`, `evals/expected/` |
+| AI 품질 개선, 안전 검사와 실패 복구 자료 | [AI 품질 개선과 안전성 검증 자료](pm/ai-quality-safety-evidence-20261111.md) | 모델 비교, 실제 생성 시험, 수정 전후 결과와 관련 PR |
 | PR 자동 테스트와 범위 | [제품 테스트 CI](product-tests.md) | 테스트 DB 격리, 실행 명령과 미검증 범위 |
 | 배포 후보 빌드와 승인 배포 workflow | [배포 workflow](deploy-workflows.md) | 자동화 범위, 설정할 시크릿과 변수, 되돌리기 |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
