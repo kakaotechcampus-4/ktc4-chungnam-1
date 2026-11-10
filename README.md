@@ -1,7 +1,14 @@
 
 # 💬 새록: 똑똑한 면회 도구
 
-![Saerok Banner](./docs/assets/feature-1024x500.png)
+<div align="center">
+     
+<!-- ![Saerok Banner](./docs/assets/feature-1024x500.png) -->
+
+
+<img width="500" height="625" alt="image" src="https://github.com/user-attachments/assets/a0bdf7fd-8eaa-46bc-aefa-b719601c9fc8" />
+
+</div>
 
 <!-- 📐 배너: 플레이콘솔업로드용/feature-1024x500.png를 옮겨 둔 것. 반영 전에 webp로 바꾸면 용량이 줄어든다. -->
 
@@ -15,7 +22,7 @@
 <!-- 📐 배지 줄: Play 게시 전에는 "Play 검토 중", 게시 뒤 스토어 링크로 바꾼다. 원스토어는 공개 링크(m.onestore.co.kr), 최신 develop APK가 필요하면 GitHub Releases 링크를 따로 단다. 수상 배지는 결과가 나온 뒤에만 단다. -->
 ![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Google Play](https://img.shields.io/badge/Google_Play-검토_중-lightgrey?style=flat-square&logo=googleplay&logoColor=white)
-[![ONE store](https://img.shields.io/badge/ONE_store-내려받기-4F6146?style=flat-square)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+[![ONE store](https://img.shields.io/badge/ONE_store-설치-4F6146?style=flat-square)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
 ![KTC](https://img.shields.io/badge/카카오테크캠퍼스-4기-FFCD00?style=flat-square)
 
 </div>
@@ -28,7 +35,7 @@
 > **새록은 보호자를 위한 면회 대화 지원 도구이며, 의료 서비스가 아닙니다.**
 >
 > - 🩺 진단, 치료, 기억 회복을 제공하지 않습니다.
-> - 🗂 보호자가 면회 대화를 준비하고 기록하도록 돕습니다.
+> - 📄 보호자가 면회 대화를 준비하고 기록하도록 돕습니다.
 > - 📖 보호자가 확인한 이야기만 어르신의 일대기로 모아 줍니다.
 
 <div align="center">
@@ -54,7 +61,7 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 
 ---
 
-### 💡새록이 주는 가치
+### 💡새록의 기능
 
 <!-- 📐 핵심 가치 표: 문구 출처는 플레이콘솔업로드용/스토어등록정보_문구.txt의 첫 문단과 "이런 분께 필요해요". 대상 범위는 PM 제품 기준과 맞는지 PM 확인. -->
 
@@ -64,11 +71,24 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 |     **대화에만 집중합니다**       | 녹음하면서도 준비한 카드를 바로 꺼내 보고, 새록은 대화에 끼어들지 않음       |
 | **보호자가 확인한 것만 남깁니다** | 면회 리포트와 이야기 후보 중 보호자가 확인한 것만 일대기와 다음 대화에 반영  |
 
+<img width="600" height="375" alt="image" src="https://github.com/user-attachments/assets/ab650e48-c325-449b-9022-86637a1da764" />
+
+
 ---
 
 **개발기간**: 2026년 9월 ~ 2026년 11월 (3개월)
 
 </div>
+
+---
+
+## 바로가기 링크
+
+- 🚀 **배포**: [원스토어](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+
+- 🗂️ **협업 공간**: [팀 노션 페이지](https://app.notion.com/p/elice-track/2-32a2bb98425783f789d581889bd816e4?p=3bb2bb98425780578cf2e7b7ba204ba9&pm=s)
+  
+- 📋 **가이드 문서**: [개발자 가이드](https://saerok-docs.vercel.app/docs/portal/)
 
 ---
 
@@ -343,8 +363,9 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 6. 전사가 끝나면 음성 분석 프로세스가 음성 원본 삭제를 요청하고, 전사 내용으로 리포트와 이야기 후보를 만든 뒤 알림 수신에 동의한 보호자의 앱으로 **Firebase Cloud Messaging** 완료 알림을 보냅니다.
 7. 각 프로세스는 역할별 Docker 컨테이너로 나눠 **AWS EC2**에서 운영하고, 코드는 **GitHub**에서 검토를 마친 것만 서버에 반영합니다.
 
-<details>
-<summary><b>면회 음성이 리포트가 되기까지 (시퀀스 다이어그램)</b></summary>
+---
+
+## 기능 흐름(시퀀스 다이어그램)
 
 <!-- 📐 접어 두는 선택 다이어그램: docs/assets/saerok-speech-sequence.svg (1600×1176). 기존 mermaid 시퀀스와 순서가 같다(13단계).
      순서와 주체는 backend/docs/async-speech-analysis.md와 맞는지 BE 확인. -->
@@ -352,8 +373,6 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 <p align="center">
   <img src="./docs/assets/saerok-speech-sequence.svg" alt="면회 음성이 리포트가 되기까지: 1) 새록 앱이 소감을 저장하고 면회 음성을 올리면 API 서버가 음성 파일을 AWS S3에 저장하고 PostgreSQL 17에 음성 분석 작업을 등록한다. 2) 음성 분석 worker가 작업을 가져가 Tailscale 사설망의 STT 서버에 전사를 요청하고, STT 서버는 임시 링크로 음성을 내려받아 전사와 화자 구분 결과를 돌려준다. 음성 분석 worker는 음성 원본 삭제를 요청한다. 3) 엘리스 ML API로 리포트를 만들어 결과를 저장하고 Firebase 푸시로 완료 알림을 보내면, 보호자가 앱에서 리포트를 조회하고 확인한다." width="100%" />
 </p>
-
-</details>
 
 ---
 
