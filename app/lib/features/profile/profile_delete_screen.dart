@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
+import '../../data/profile_birth_input_store.dart';
 import '../../data/profile_relationship_store.dart';
 import '../../data/providers.dart';
 import '../../data/selected_profile_store.dart';
@@ -14,6 +15,7 @@ import '../../widgets/app_surfaces.dart';
 import '../auth/auth_messages.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
+import '../local_photos/local_photos.dart';
 import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_draft_keeper.dart';
 import '../visit/pending_uploads.dart';
@@ -88,9 +90,11 @@ class _BodyState extends ConsumerState<_Body> {
     final accountId = ref.read(sessionProvider)?.account.accountId;
     final uploads = ref.read(pendingUploadsProvider);
     final photos = ref.read(visitPhotosProvider);
+    final localPhotos = ref.read(localPhotosProvider);
     final share = ref.read(recordingShareProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
     final relationships = ref.read(profileRelationshipStoreProvider);
+    final birthInputs = ref.read(profileBirthInputStoreProvider);
     final setupDrafts = ref.read(setupDraftKeeperProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
@@ -123,10 +127,18 @@ class _BodyState extends ConsumerState<_Body> {
       } on Exception {
         // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
       }
+      // 프로필 설정과 일대기에서 넣은, 이 기기에만 둔 사진도 지운다.
+      try {
+        await localPhotos.forgetAccount(accountId);
+      } on Exception {
+        // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
+      }
       // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
       await selectedProfile.clear(accountId);
       // 단말에만 둔 관계도 지운다. 저장소가 실패를 삼킨다.
       await relationships.clear(accountId);
+      // 나이로 입력했다는 표시도 지운다. 저장소가 실패를 삼킨다.
+      await birthInputs.clear(accountId);
       // 등록하다 멈춘 세부 정보 초안도 지운다. 저장소가 실패를 삼킨다.
       await setupDrafts.clearAccount(accountId);
     }

@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_birth_input_store.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
@@ -28,6 +29,7 @@ import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
 import 'package:saerok/features/auth/google_sign_in_panel.dart';
 import 'package:saerok/features/auth/splash_screen.dart';
+import 'package:saerok/features/local_photos/local_photos.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
@@ -37,10 +39,12 @@ import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/recording_share.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
 
+import 'fake_local_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_recording_share.dart';
 import 'fake_report_server.dart';
+import 'fake_profile_birth_input_store.dart';
 import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
 import 'fake_setup_draft_store.dart';
@@ -211,6 +215,7 @@ Widget _app({
   bool skipGoogleLogin = false,
   PendingUploads? uploads,
   VisitPhotos? photos,
+  LocalPhotos? localPhotos,
   RecordingShare? share,
   SelectedProfileStore? selectedProfile,
   SetupDraftStore? setupDrafts,
@@ -283,6 +288,8 @@ Widget _app({
       // 기기의 녹음 폴더를 건드리지 않는다.
       pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      // 기기의 사진 폴더를 건드리지 않는다.
+      localPhotosProvider.overrideWithValue(localPhotos ?? FakeLocalPhotos()),
       // 앱 캐시의 공유 사본 폴더를 건드리지 않는다.
       recordingShareProvider.overrideWithValue(share ?? FakeRecordingShare()),
       selectedProfileStoreProvider.overrideWithValue(
@@ -290,6 +297,9 @@ Widget _app({
       ),
       profileRelationshipStoreProvider.overrideWithValue(
         FakeProfileRelationshipStore(),
+      ),
+      profileBirthInputStoreProvider.overrideWithValue(
+        FakeProfileBirthInputStore(),
       ),
       setupDraftStoreProvider.overrideWithValue(
         setupDrafts ?? FakeSetupDraftStore(),
@@ -1052,6 +1062,8 @@ void main() {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
       final photos = FakeVisitPhotos();
+      final localPhotos = FakeLocalPhotos()
+        ..saved[localPhotoKey('p1', LocalPhotoSlot.avatar)] = '/fake/a.jpg';
       final share = FakeRecordingShare();
       final selectedProfile = FakeSelectedProfileStore()
         ..values[_signedIn().account.accountId] = 'p-remembered'
@@ -1076,6 +1088,7 @@ void main() {
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
           photos: photos,
+          localPhotos: localPhotos,
           share: share,
           selectedProfile: selectedProfile,
           setupDrafts: setupDrafts,
@@ -1093,6 +1106,9 @@ void main() {
       expect(photos.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 면회 사진을 지운다');
+      expect(localPhotos.forgottenAccounts, [
+        _signedIn().account.accountId,
+      ], reason: '탈퇴한 계정이 이 기기에 넣은 어르신 사진과 이야기 사진을 지운다');
       expect(selectedProfile.values, {
         'account-other': 'p-other',
       }, reason: '탈퇴한 계정이 고른 어르신 기억만 지운다');

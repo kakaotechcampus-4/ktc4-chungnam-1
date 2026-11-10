@@ -110,7 +110,11 @@ class _ProfileHeader extends StatelessWidget {
             border: Border.all(color: HomeColors.bubbleLine),
             boxShadow: AppShadows.low,
           ),
-          child: ProfileAvatar(gender: profile.gender, size: 112),
+          child: ProfileAvatar(
+            gender: profile.gender,
+            size: 112,
+            profileId: profile.profileId,
+          ),
         ),
         const SizedBox(height: AppSpacing.lg),
         Text(
@@ -120,7 +124,7 @@ class _ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          birthDateLabel(profile.birthDate),
+          birthDateLabel(profile.birthDate, byAge: profile.birthByAge),
           style: AppTypography.sub,
           textAlign: TextAlign.center,
         ),

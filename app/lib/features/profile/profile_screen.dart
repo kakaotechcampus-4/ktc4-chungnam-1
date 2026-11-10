@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/birth_date.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -13,6 +14,8 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
+import '../local_photos/local_photo_sheet.dart';
+import '../local_photos/local_photos.dart';
 import '../profile_setup/photo_picker.dart';
 import '../profile_setup/setup_steps.dart';
 import 'profile_gallery.dart';
@@ -22,6 +25,9 @@ import 'profile_gallery.dart';
 /// 피그마에는 `MYPAGE` 로 되어 있으나 화면 이름은 프로필 설정이다. 지금 고른
 /// 어르신의 사진, 기본 정보, 세부 정보와 갤러리를 보여준다. 계정 약관 동의,
 /// 로그아웃과 회원탈퇴는 설정 탭으로 옮겼다(2026-11-06 디자인 리뉴얼).
+///
+/// 맨 위 사진은 오른쪽 아래 카메라 버튼으로 바꾼다. 이 기기에만 두는
+/// 사진이다(`LocalPhotos`).
 ///
 /// 이름과 생년월일은 계약상 `localOnly` 라 단말에만 두며 외부 요청에 담지 않는다.
 ///
@@ -79,7 +85,6 @@ class _Body extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 사진은 바탕과 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
             Container(
               // 이름 줄은 연필 버튼(48) 높이라 글자 아래가 그만큼 더 비어 보인다.
               // 그 몫을 빼서 글자 아래 간격이 사진 위 간격(32)과 같아 보이게 한다.
@@ -91,16 +96,7 @@ class _Body extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: HomeColors.bubbleLine),
-                      boxShadow: AppShadows.low,
-                    ),
-                    child: ProfileAvatar(gender: profile.gender, size: 120),
-                  ),
+                  _Avatar(profile: profile),
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -168,7 +164,11 @@ class _Body extends StatelessWidget {
                           _InfoRow(label: '관계', value: relationship),
                         _InfoRow(
                           label: '생년월일',
-                          value: _dateLabel(profile.birthDate),
+                          // 나이로 입력한 분은 `82세(나이로 입력)` 다.
+                          value: birthDateText(
+                            profile.birthDate,
+                            byAge: profile.birthByAge,
+                          ),
                         ),
                         _InfoRow(
                           label: '연령대',
@@ -224,20 +224,81 @@ class _Body extends StatelessWidget {
     _ => raw,
   };
 
-  /// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다.
-  static String _dateLabel(String isoDate) {
-    final parts = isoDate.split('-');
-    if (parts.length != 3) return isoDate;
-    final year = int.tryParse(parts[0]);
-    final month = int.tryParse(parts[1]);
-    final day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) return isoDate;
-    return '$year년 $month월 $day일';
-  }
-
   /// `80s` 를 `80대` 로 바꾼다.
   static String _ageLabel(String raw) =>
       raw.endsWith('s') ? '${raw.substring(0, raw.length - 1)}대' : raw;
+}
+
+/// 맨 위의 어르신 사진. 바탕과 구분되게 흰 테를 두르고 얇은 선과 그림자를 준다.
+///
+/// 오른쪽 아래 카메라 버튼으로 앨범 사진을 넣거나 기본 사진으로 되돌린다.
+/// 웹 미리보기는 사진을 둘 곳이 없어 버튼을 두지 않는다.
+class _Avatar extends ConsumerWidget {
+  const _Avatar({required this.profile});
+
+  final Profile profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final avatar = Container(
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        shape: BoxShape.circle,
+        border: Border.all(color: HomeColors.bubbleLine),
+        boxShadow: AppShadows.low,
+      ),
+      child: ProfileAvatar(
+        gender: profile.gender,
+        size: 120,
+        profileId: profile.profileId,
+      ),
+    );
+    if (!ref.watch(localPhotosProvider).supported) return avatar;
+
+    return Stack(
+      children: [
+        avatar,
+        // 누름 영역(48)은 지키고 보이는 원은 작게 둔다. 둥근 사진의 오른쪽
+        // 아래 모서리 빈 곳에 두어 사진을 덜 가린다. Stack 밖으로 내밀면 내민
+        // 곳은 눌리지 않으므로 안쪽에 둔다.
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: IconButton(
+            onPressed: () => changeLocalPhoto(
+              context,
+              ref,
+              profileId: profile.profileId,
+              slot: LocalPhotoSlot.avatar,
+              resetLabel: '기본 사진으로 되돌리기',
+            ),
+            tooltip: '사진 바꾸기',
+            constraints: const BoxConstraints.tightFor(
+              width: AppSizes.minTouch,
+              height: AppSizes.minTouch,
+            ),
+            padding: EdgeInsets.zero,
+            icon: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: HomeColors.accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.background, width: 2),
+                boxShadow: AppShadows.low,
+              ),
+              child: const Icon(
+                Icons.photo_camera_outlined,
+                size: 18,
+                color: AppColors.background,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// 갤러리의 사진. 서버에 저장한 분은 서버의 사진(2-3)을, 로그인 없이 들어온

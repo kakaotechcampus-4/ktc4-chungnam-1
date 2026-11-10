@@ -871,7 +871,11 @@ class _ProfileSwitcher extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ProfileAvatar(gender: profile.gender, size: _photo),
+                  ProfileAvatar(
+                    gender: profile.gender,
+                    size: _photo,
+                    profileId: profile.profileId,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   ConstrainedBox(
                     // 이름이 길어도 알림 아이콘을 밀어내지 않게 폭을 묶는다.
