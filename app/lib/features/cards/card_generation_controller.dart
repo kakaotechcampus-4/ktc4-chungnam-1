@@ -56,12 +56,18 @@ class CardGenerationController extends AsyncNotifier<CardGenerationStatus?> {
   Future<void> start() => _begin((api, run) => _check(api, run));
 
   /// 홈 재진입은 이미 접수한 작업만 이어받고 새 작업을 만들지 않는다.
-  Future<void> resume() => _begin((api, run) async {
-    final status = await _readStatus(api, run);
-    return status == CardGenerationStatus.running
-        ? _wait(api, run, status)
-        : status;
-  });
+  ///
+  /// [prepare] 처럼 만드는 중인 작업을 기다렸으면 `true` 를 돌려준다. 홈은
+  /// 기다린 작업의 결과만 알린다.
+  Future<bool> resume() async {
+    await _begin((api, run) async {
+      final status = await _readStatus(api, run);
+      return status == CardGenerationStatus.running
+          ? _wait(api, run, status)
+          : status;
+    });
+    return ref.mounted && _stage != CardMaking.checking;
+  }
 
   Future<void> resolvePhotos(String action) => _begin((api, run) async {
     final photos = ref.read(cardPhotoPreparationProvider(profileId));
@@ -244,7 +250,8 @@ final cardGenerationProvider =
 /// 생성 흐름이 어디까지 왔는지. 홈 버튼의 모양과 아래 안내에 쓴다.
 enum CardMaking {
   /// 4-2 로 상태를 묻는 중이다. 이미 준비됐으면 곧 끝나므로 버튼 글자를
-  /// 바꾸지 않는다. 바꾸면 깜빡인다.
+  /// 바로 바꾸지 않는다. 바꾸면 깜빡인다. 답이 늦으면 홈 버튼이 확인 중으로
+  /// 바꾼다(`home_screen.dart` 의 `_CardButtonState.slowCheck`).
   checking,
 
   /// 4-1 을 보냈거나 `running` 을 기다린다.
@@ -284,7 +291,8 @@ final cardsBeingMadeProvider = Provider.family<bool, String>((ref, profileId) {
 });
 
 /// 홈 버튼 아래에 남기는 실패 안내다. 알림창은 버튼을 가려서 글로 둔다. 다 만든
-/// 것은 다른 화면에서도 보이게 알림창으로 알리므로 여기 두지 않는다.
+/// 것은 다른 화면에서도 보이게 알림창으로 알리므로 여기 두지 않는다. 앱을 다시
+/// 켜거나 돌아와 이어 물은 작업이 실패해도 같은 안내를 남긴다.
 enum CardNotice {
   /// 만들다 실패했다(4-2 `failed`).
   failed,

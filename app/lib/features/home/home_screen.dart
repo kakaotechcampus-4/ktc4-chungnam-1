@@ -148,11 +148,16 @@ class HomeScreen extends ConsumerWidget {
                                   },
                                 ),
                                 // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
+                                // 만드는 중에 묻지 못해도 이 배너로 바꾼다. 다시
+                                // 묻는 동안에는 배너를 지우지 않고 도는 표시를 둔다.
                                 ReportNotice.checkFailed => _ResumeNotice(
-                                  date: null,
+                                  date: date,
                                   icon: Icons.refresh,
                                   title: '리포트 상태를 확인하지 못했어요',
-                                  hint: '눌러서 다시 확인하기',
+                                  hint: info?.rechecking ?? false
+                                      ? '다시 확인하고 있어요'
+                                      : '눌러서 다시 확인하기',
+                                  busy: info?.rechecking ?? false,
                                   onTap: () => ref
                                       .read(reportNoticeProvider.notifier)
                                       .retry(),
@@ -302,8 +307,9 @@ class _HillsPainter extends CustomPainter {
 /// 바로 쓸 묶음이 있으면 카드 화면으로 간다. 만들어야 하면(처음, 다 쓴 뒤,
 /// 받은 뒤 정보를 고친 뒤) 이 버튼이 도는 표시로 바뀌고, 그동안 일대기나
 /// 프로필을 볼 수 있다. 다 되면 알림창으로 알리고 카드 화면으로 데려가지
-/// 않는다. 보호자가 다른 화면에 있을 수 있어서다. 다시 누르면 들어간다.
-/// 실패는 버튼 아래 빨간 글로 남긴다. 알림창은 버튼을 가린다.
+/// 않는다. 보호자가 다른 화면에 있을 수 있어서다. 알림창의 `카드 보기` 나
+/// 이 버튼을 다시 누르면 들어간다. 실패는 버튼 아래 빨간 글로 남긴다.
+/// 알림창은 버튼을 가린다. 앱을 다시 켜 이어 물은 작업도 같이 알린다.
 ///
 /// 받은 뒤 정보를 고친 묶음이면 옛 카드를 보여주지 않고 12장을 모두 새로
 /// 만든다(2026-11-01 #171 에서 PM 확인). 만드는 동안 버튼 아래 회색 상자에
@@ -325,7 +331,19 @@ class _CardButton extends ConsumerStatefulWidget {
 
 class _CardButtonState extends ConsumerState<_CardButton>
     with WidgetsBindingObserver {
+  /// 상태를 묻는 동안 이만큼 지나도 답이 없으면 버튼을 확인 중으로 바꾼다.
+  /// 그 전에 답이 오면 바꾸지 않는다. 이미 준비됐으면 곧 카드 화면으로 가므로
+  /// 바꾸면 깜빡인다. 신호가 약하면 4-2 가 15초까지 걸려 그동안 눌리지 않은
+  /// 것처럼 보였다(2026-11-10 UX 점검 6번).
+  static const slowCheck = Duration(milliseconds: 400);
+
   String? _seenProfile;
+
+  /// 상태를 묻기 시작하고 [slowCheck] 를 재는 시계.
+  Timer? _checkTimer;
+
+  /// 상태를 [slowCheck] 넘게 묻고 있다.
+  bool _checkingLong = false;
 
   @override
   void initState() {
@@ -335,20 +353,41 @@ class _CardButtonState extends ConsumerState<_CardButton>
 
   @override
   void dispose() {
+    _checkTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  void _resume() {
+  /// 앱을 다시 켜거나 돌아오면 이미 접수한 작업을 이어받고, 그 결과를 누른
+  /// 때와 같이 알린다. 실패하고도 시작 버튼으로 조용히 돌아가면, 앱을 닫아도
+  /// 계속된다는 안내를 본 보호자는 준비된 줄 알았다(2026-11-10 UX 점검 11번).
+  Future<void> _resume() async {
     final id = ref.read(serverProfileIdProvider).value;
-    if (id != null && ref.read(cardApiProvider) is PhotoPreparationApi) {
-      unawaited(ref.read(cardGenerationProvider(id).notifier).resume());
+    if (id == null || ref.read(cardApiProvider) is! PhotoPreparationApi) {
+      return;
     }
+    final name = ref.read(profileProvider).value?.profile.name;
+    final waited = await ref.read(cardGenerationProvider(id).notifier).resume();
+    if (!mounted) return;
+    _announce(id, name, waited: waited, resumed: true);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _resume();
+    if (state == AppLifecycleState.resumed) unawaited(_resume());
+  }
+
+  /// 상태를 묻는 동안 [slowCheck] 를 잰다. 묻기가 끝나면 시계를 멈춘다.
+  void _followCheck(bool checking) {
+    if (!checking) {
+      _checkTimer?.cancel();
+      _checkTimer = null;
+      _checkingLong = false;
+      return;
+    }
+    _checkTimer ??= Timer(slowCheck, () {
+      if (mounted) setState(() => _checkingLong = true);
+    });
   }
 
   @override
@@ -357,7 +396,7 @@ class _CardButtonState extends ConsumerState<_CardButton>
     if (_seenProfile != profileId) {
       _seenProfile = profileId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _resume();
+        if (mounted) unawaited(_resume());
       });
     }
     final photos = profileId == null
@@ -369,10 +408,13 @@ class _CardButtonState extends ConsumerState<_CardButton>
     final loading = generation?.isLoading ?? false;
     // 상태를 묻는 짧은 동안은 모양을 바꾸지 않는다. 이미 준비됐으면 곧 카드
     // 화면으로 가므로 바꾸면 깜빡인다. 그동안 다시 눌러도 생성 흐름이 무시한다.
+    // [slowCheck] 를 넘기면 확인 중으로 바꾼다.
     final stage = loading
         ? ref.watch(cardMakingProvider(profileId!))
         : CardMaking.checking;
     final making = stage != CardMaking.checking;
+    _followCheck(loading && !making);
+    final checkingLong = _checkingLong;
     // 만드는 동안은 지난 결과를 보이지 않는다.
     final notice = profileId == null || loading
         ? null
@@ -387,8 +429,10 @@ class _CardButtonState extends ConsumerState<_CardButton>
                 ? '사진을 준비하고 있어요'
                 : making
                 ? '대화 카드를 만들고 있어요'
+                : checkingLong
+                ? '카드를 확인하고 있어요'
                 : '오늘의 대화카드 받기',
-            loading: making,
+            loading: making || checkingLong,
             color: HomeColors.accent,
             loadingColor: HomeColors.accentLoading,
             onPressed: () => widget.hasProfile
@@ -397,7 +441,7 @@ class _CardButtonState extends ConsumerState<_CardButton>
           ),
         if (photos != null) ...[
           const SizedBox(height: AppSpacing.md),
-          PhotoPreparationView(profileId: profileId!),
+          PhotoPreparationView(profileId: profileId!, recheck: _resume),
         ] else if (stage == CardMaking.remaking) ...[
           const SizedBox(height: AppSpacing.md),
           const _RemakingNotice(),
@@ -418,12 +462,29 @@ class _CardButtonState extends ConsumerState<_CardButton>
         await ref.read(serverProfileIdProvider.future);
     if (profileId == null || !context.mounted) return;
     final name = ref.read(profileProvider).value?.profile.name;
-    final provider = cardGenerationProvider(profileId);
-    final notice = ref.read(cardNoticeProvider(profileId).notifier)..set(null);
+    ref.read(cardNoticeProvider(profileId).notifier).set(null);
 
-    final waited = await ref.read(provider.notifier).prepare();
+    final waited = await ref
+        .read(cardGenerationProvider(profileId).notifier)
+        .prepare();
     if (!context.mounted) return;
-    final result = ref.read(provider);
+    _announce(profileId, name, waited: waited);
+  }
+
+  /// 생성 흐름이 끝난 뒤 결과를 알린다.
+  ///
+  /// [resumed] 면 보호자가 누르지 않고 이어 물은 결과다(앱을 다시 켰거나 돌아옴).
+  /// 그때는 카드 화면으로 데려가지 않고, 이미 있던 묶음을 확인만 했으면 알리지
+  /// 않는다. 서버에 묻지 못한 것도 기다리던 작업을 놓쳤을 때만 알리고, 알릴 것이
+  /// 없으면 앞의 안내를 지우지 않는다. 4-2 의 `failed` 는 기다리지 않았어도
+  /// 알린다. 앱을 닫은 사이 실패했을 수 있다.
+  void _announce(
+    String profileId,
+    String? name, {
+    required bool waited,
+    bool resumed = false,
+  }) {
+    final result = ref.read(cardGenerationProvider(profileId));
     // 다른 흐름이 이어서 묻는 중이거나, 로그아웃으로 지웠다.
     if (result.isLoading || !result.hasValue && !result.hasError) return;
 
@@ -433,28 +494,62 @@ class _CardButtonState extends ConsumerState<_CardButton>
         (status == CardGenerationStatus.ready ||
             status == CardGenerationStatus.inVisit);
     final stillSelected = ref.read(serverProfileIdProvider).value == profileId;
-    if (opens && !waited && stillSelected) {
+    if (opens && !waited && !resumed && stillSelected) {
       unawaited(context.push(AppRoutes.cards));
       return;
     }
 
     // 다 만든 것은 알림창으로 알린다. 기다리는 동안 다른 화면에 있어도 보인다.
     if (opens) {
-      final who = name == null ? '' : '$name 어르신의 ';
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('$who대화 카드가 준비됐어요.')));
+      if (waited || !resumed) {
+        _showReady(profileId, name, canOpen: stillSelected);
+      }
       return;
     }
 
     // 실패는 버튼 아래에 빨간 글로 남긴다. 알림창은 버튼을 가려 "다시 누르면"
     // 이라고 하는 동안 누를 버튼이 보이지 않았다.
-    notice.set(switch (result) {
+    final notice = switch (result) {
       AsyncError(error: ApiNetworkFailure()) => CardNotice.offline,
       AsyncError() => CardNotice.error,
       _ when status == CardGenerationStatus.failed => CardNotice.failed,
       _ => null,
-    });
+    };
+    if (resumed && (notice == null || result.hasError && !waited)) return;
+    ref.read(cardNoticeProvider(profileId).notifier).set(notice);
+  }
+
+  /// 카드가 준비됐다는 알림창. 알림창을 놓쳐도 홈 버튼 글자는 시작 전과 같아
+  /// 할 일을 알기 어려워 `카드 보기` 를 붙인다(2026-11-10 UX 점검 11번).
+  ///
+  /// 버튼이 있어도 변경 사항 확인의 `되돌리기` 알림창처럼 저절로 닫는다
+  /// (`changes_screen.dart`). 떠 있는 동안 홈 버튼을 가리므로 닫히지 않으면
+  /// 홈 버튼을 누를 수 없다. 닫힌 뒤에는 홈 말풍선의 `대화 카드가 완성됐어요!`
+  /// 가 남아 알린다. 기다리는 동안 다른 분으로 바꿨으면 그분의 카드 화면을 열게
+  /// 되므로 버튼을 두지 않는다([canOpen]).
+  void _showReady(String profileId, String? name, {required bool canOpen}) {
+    final who = name == null ? '' : '$name 어르신의 ';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$who대화 카드가 준비됐어요.'),
+          persist: false,
+          action: canOpen
+              ? SnackBarAction(
+                  label: '카드 보기',
+                  onPressed: () => _openCards(profileId),
+                )
+              : null,
+        ),
+      );
+  }
+
+  /// 알림창의 `카드 보기`. 그사이 다른 분으로 바꿨으면 열지 않는다.
+  void _openCards(String profileId) {
+    if (!mounted) return;
+    if (ref.read(serverProfileIdProvider).value != profileId) return;
+    unawaited(context.push(AppRoutes.cards));
   }
 }
 
@@ -869,6 +964,7 @@ class _ResumeNotice extends StatelessWidget {
     required this.onTap,
     this.icon = Icons.history,
     this.reason,
+    this.busy = false,
   });
 
   final String? date;
@@ -880,10 +976,13 @@ class _ResumeNotice extends StatelessWidget {
   final VoidCallback onTap;
   final IconData icon;
 
+  /// 누른 일을 하는 중이다. 화살표 자리에 도는 표시를 두고 누름을 받지 않는다.
+  final bool busy;
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: busy ? null : onTap,
       borderRadius: BorderRadius.circular(AppRadius.card),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -904,7 +1003,20 @@ class _ResumeNotice extends StatelessWidget {
                 hint: hint,
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textSub),
+            if (busy)
+              // 만드는 중 배너의 도는 표시와 같다. 글 줄이 바뀌지 않게 화살표
+              // 아이콘(24)과 같은 폭을 차지한다.
+              const SizedBox.square(
+                dimension: 24,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                ),
+              )
+            else
+              const Icon(Icons.chevron_right, color: AppColors.textSub),
           ],
         ),
       ),

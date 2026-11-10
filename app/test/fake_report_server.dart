@@ -5,6 +5,7 @@
 // 요청이 나가지 않도록 이 서버를 `reportApiProvider` 에 넣는다. 값은 모두
 // 합성이다.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -50,6 +51,13 @@ class FakeReportServer {
   /// 정해 두면 그 요청에 이 오류로 답한다. 키는 `METHOD path` 다.
   final failures = <String, ({int status, String errorCode})>{};
 
+  /// 정해 두면 그 요청에 공통 `ErrorResponse` 없이 이 상태 코드로만 답한다.
+  /// 앞단 프록시가 돌려주는 본문 없는 502, 504 를 흉내 낸다. 키는 `METHOD path` 다.
+  final bareFailures = <String, int>{};
+
+  /// 채워 두면 끝날 때까지 답하지 않는다. 다시 묻는 동안의 화면을 볼 때 쓴다.
+  Completer<void>? hold;
+
   /// 연결이 끊긴 것처럼 모든 요청을 실패시킨다.
   bool offline = false;
 
@@ -74,10 +82,13 @@ class FakeReportServer {
     final body = request.body.isEmpty ? null : jsonDecode(request.body);
     final path = request.url.path;
     requests.add((method: request.method, path: path, body: body));
+    await hold?.future;
     if (offline) throw http.ClientException('오프라인');
 
     final failure = failures['${request.method} $path'];
     if (failure != null) return _error(failure.status, failure.errorCode);
+    final bare = bareFailures['${request.method} $path'];
+    if (bare != null) return http.Response('', bare);
 
     final s = request.url.pathSegments;
     // /api/v1/profiles/{id}/visit-sessions, /api/v1/profiles/{id}/reports
