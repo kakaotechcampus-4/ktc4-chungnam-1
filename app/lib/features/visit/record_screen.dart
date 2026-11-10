@@ -209,16 +209,6 @@ const recordingRetentionNotice =
     '녹음은 리포트와 다음 대화 준비에만 써요.\n'
     '서버에서는 분석 후 지우고, 휴대폰에만 남겨요.';
 
-/// E-1 녹음 전 안내의 녹음 이어짐 문구.
-///
-/// 2026-11-10 PM 결정: 앱을 떠나거나 화면이 꺼져도 녹음은 이어 간다(마이크
-/// 포그라운드 서비스). 보호자가 휴대폰을 잠그면 녹음이 멈출까 걱정하지 않게, 그리고
-/// 녹음을 마치는 방법이 `만남 끝내기` 하나라는 것을 미리 알린다. 보관 문구와 따로
-/// 둔다. 보관 문구는 동의 화면과 함께 PM 확인을 받은 문구라 건드리지 않는다.
-const recordingContinuesNotice =
-    '화면이 꺼지거나 다른 앱을 써도 녹음은 이어져요.\n'
-    '마치려면 만남 끝내기를 눌러주세요.';
-
 /// E-1. 녹음 전 안내.
 ///
 /// 회차마다 피보호자 동의를 확인하지 않는다. 녹음과 음성 처리 동의는 가입 때
@@ -258,20 +248,12 @@ class _Intro extends ConsumerWidget {
             style: AppTypography.sub,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.md),
-          // 보관 안내보다 진한 글자로 둔다. 보호자가 녹음 중에 화면을 끄거나
-          // 다른 앱을 써도 되는지 알아야 해서다.
-          Text(
-            recordingContinuesNotice,
-            style: AppTypography.sub.copyWith(
-              color: AppColors.ink,
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
+          // 실기기에서 보고 마이크 원을 16 더 내렸다(2026-11-07). 녹음 이어짐
+          // 안내 두 줄은 녹음 중 알림과 `만남 끝내기` 버튼이 같은 것을 알려 주어
+          // 빼고 원래 간격으로 되돌렸다(2026-11-10 PM 확인).
+          const SizedBox(
+            height: AppSpacing.xxxl * 2 + AppSpacing.xxl + AppSpacing.lg,
           ),
-          // 실기기에서 보고 마이크 원을 16 더 내렸다(2026-11-07). 이어짐 안내 두
-          // 줄이 들어온 만큼(2026-11-10) 그 아래 간격을 줄여 원의 자리를 지킨다.
-          const SizedBox(height: AppSpacing.xxxl * 2),
 
           Center(
             child: Container(
