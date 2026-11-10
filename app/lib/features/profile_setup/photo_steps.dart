@@ -34,7 +34,8 @@ class PhotoUploadStep extends ConsumerStatefulWidget {
   /// 사진을 더하거나 뺄 수 있는지. 올리는 중에는 막는다.
   final bool canEdit;
 
-  /// 이미 서버에 올린 사진 수. 등록 뒤 사진을 더할 때 쓴다. 이만큼 덜 고른다.
+  /// 이미 서버에 올린 사진 수. 등록 뒤 사진을 더할 때와 앱을 다시 켜 등록을
+  /// 이어 갈 때 쓴다. 이만큼 덜 고른다.
   final int existing;
 
   final ValueChanged<List<PickedPhoto>> onAdded;
