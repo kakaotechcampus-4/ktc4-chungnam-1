@@ -520,25 +520,29 @@ class _InputMethodChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _MethodButton(
-            // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
-            icon: Icons.record_voice_over_outlined,
-            label: '말로 답하기',
-            onTap: onVoice,
+    // 글자를 키워 한쪽 이름이 두 줄이 되어도 두 버튼 높이를 맞춘다.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _MethodButton(
+              // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
+              icon: Icons.record_voice_over_outlined,
+              label: '말로 답하기',
+              onTap: onVoice,
+            ),
           ),
-        ),
-        const SizedBox(width: AppSpacing.item),
-        Expanded(
-          child: _MethodButton(
-            icon: Icons.chat_bubble_outline,
-            label: '글로 답하기',
-            onTap: onText,
+          const SizedBox(width: AppSpacing.item),
+          Expanded(
+            child: _MethodButton(
+              icon: Icons.chat_bubble_outline,
+              label: '글로 답하기',
+              onTap: onText,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -627,15 +631,20 @@ class _MethodButtonState extends State<_MethodButton>
             ),
           );
         },
-        child: SizedBox(
-          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다.
-          height: 96,
+        child: ConstrainedBox(
+          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다. 글자를 키워
+          // 이름이 두 줄이 되면 잘리지 않게 그만큼 높아진다.
+          constraints: const BoxConstraints(minHeight: 96),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(widget.icon, size: 44, color: HomeColors.accent),
               const SizedBox(height: AppSpacing.lg),
-              Text(widget.label, style: AppTypography.bodyStrong),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyStrong,
+              ),
             ],
           ),
         ),

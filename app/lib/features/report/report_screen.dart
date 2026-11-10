@@ -242,7 +242,6 @@ class _BodyState extends ConsumerState<_Body> {
       ref.watch(reportSelectedCardIdsProvider(report.reportId)).value,
     );
     final countText = cards.countText;
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
     // 이 기기에 녹음이 남은 회차에만 공유를 둔다. 찾는 중이거나 찾지 못하면 두지
     // 않는다.
     final recordingPath = ref
@@ -258,24 +257,14 @@ class _BodyState extends ConsumerState<_Body> {
         ? !proposal.nothingPending
         : proposals.hasError;
 
-    // ScreenBody 의 bottom 슬롯이 차지하는 높이다. 그 위에 버튼을 띄운다.
-    final slotHeight = hasChanges
-        ? AppSpacing.lg + AppSizes.control + AppSpacing.xxl
-        : AppSpacing.xxl;
-
-    return Stack(
+    // 쉬운 모드 버튼은 본문 칸의 오른쪽 아래, 변경 사항 버튼 바로 위에 띄운다.
+    // 예전에는 버튼 높이를 56으로 셈해 화면 바닥에서 띄웠는데, 글자를 키워 변경
+    // 사항 버튼이 두 줄로 높아지면 둘이 겹쳤다. 본문 칸 안에 두면 아래 버튼
+    // 높이와 상관없이 그 위에 선다. 아래 버튼과 여백은 [ScreenBody] 와 같다.
+    final body = Stack(
       children: [
         ScreenBody(
           scrollable: true,
-          bottom: !hasChanges
-              ? null
-              : PrimaryButton(
-                  color: HomeColors.accent,
-                  loadingColor: HomeColors.accentLoading,
-                  label: '변경 사항 확인하기',
-                  onPressed: () =>
-                      context.push(AppRoutes.reportChangesOf(report.reportId)),
-                ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -358,13 +347,38 @@ class _BodyState extends ConsumerState<_Body> {
 
         Positioned(
           right: AppSpacing.screen,
-          bottom: bottomInset + slotHeight + AppSpacing.lg,
+          // 아래 버튼이 없으면 화면 바닥에서 조금 더 띄운다.
+          bottom: AppSpacing.lg + (hasChanges ? 0 : AppSpacing.xxl),
           child: _EasyModeButton(
             on: _easy,
             onChanged: (value) => setState(() => _easy = value),
           ),
         ),
       ],
+    );
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(child: body),
+          if (hasChanges)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.lg,
+                AppSpacing.screen,
+                AppSpacing.xxl,
+              ),
+              child: PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
+                label: '변경 사항 확인하기',
+                onPressed: () =>
+                    context.push(AppRoutes.reportChangesOf(report.reportId)),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
