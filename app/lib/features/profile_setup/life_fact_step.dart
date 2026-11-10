@@ -8,6 +8,7 @@ import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
+import '../../widgets/recording_pulse.dart';
 import '../profile/profile_dialogs.dart';
 import 'setup_steps.dart';
 import 'speech_input.dart';
@@ -841,6 +842,10 @@ class _MicArea extends StatelessWidget {
     final listening = phase == _Phase.listening;
     final transcribing = phase == _Phase.transcribing;
 
+    // 녹음이 실제로 시작된 뒤다. 마이크를 누른 직후 권한을 묻는 동안에는
+    // 아직 녹음하지 않으므로 녹음 중 표시를 하지 않는다.
+    final recording = listening && onFinish != null;
+
     // 듣는 중에는 마이크를 다시 눌러도 녹음을 끝낸다. 옮기는 중에는 누를 수 없다.
     // 보내지 못했을 때도 막는다. 할 일을 재시도 하나로 두기 위해서다. 다시
     // 말하려면 글로 답할게요 → 말로 답할게요로 간다.
@@ -936,46 +941,56 @@ class _MicArea extends StatelessWidget {
 
     return Column(
       children: [
-        SizedBox(
-          width: _micSize,
-          height: _micSize,
-          // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
-          // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
-          // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
-          child: ExcludeSemantics(
-            excluding: onTap == null,
-            child: Semantics(
-              button: true,
-              label: listening ? '음성 입력 종료' : '음성 입력 시작',
-              child: InkWell(
-                onTap: onTap,
-                customBorder: const CircleBorder(),
-                // 대기, 듣는 중, 옮기는 중 모두 같은 크기와 두께의 원이다.
-                // 색만 바뀐다.
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: failed
-                          ? AppColors.danger
-                          : listening
-                          ? HomeColors.accent
-                          : HomeColors.outline,
-                      width: 2,
+        // 녹음하는 동안 원 둘레로 물결이 퍼진다. 원 밖에 그려 자리를 차지하지
+        // 않으므로 원과 글자가 오르내리지 않는다.
+        RecordingPulse(
+          active: recording,
+          child: SizedBox(
+            width: _micSize,
+            height: _micSize,
+            // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
+            // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
+            // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
+            child: ExcludeSemantics(
+              excluding: onTap == null,
+              child: Semantics(
+                button: true,
+                label: listening ? '음성 입력 종료' : '음성 입력 시작',
+                child: InkWell(
+                  onTap: onTap,
+                  customBorder: const CircleBorder(),
+                  // 대기, 듣는 중, 옮기는 중 모두 같은 크기와 두께의 원이다.
+                  // 색만 바뀐다. 녹음하는 동안에는 E-2 녹음 화면처럼 초록 면에
+                  // 흰 아이콘으로 채워, 움직임 줄이기가 켜져 있어도 대기와
+                  // 구분된다.
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: recording ? HomeColors.accent : null,
+                      border: Border.all(
+                        color: failed
+                            ? AppColors.danger
+                            : listening
+                            ? HomeColors.accent
+                            : HomeColors.outline,
+                        width: 2,
+                      ),
                     ),
-                  ),
-                  child: Center(
-                    child: SizedBox.square(
-                      dimension: _iconSize,
-                      child: transcribing
-                          ? const CircularProgressIndicator(strokeWidth: 3)
-                          : Icon(
-                              Icons.mic,
-                              size: _iconSize,
-                              color: failed
-                                  ? AppColors.danger
-                                  : HomeColors.accent,
-                            ),
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: _iconSize,
+                        child: transcribing
+                            ? const CircularProgressIndicator(strokeWidth: 3)
+                            : Icon(
+                                Icons.mic,
+                                size: _iconSize,
+                                color: failed
+                                    ? AppColors.danger
+                                    : recording
+                                    ? AppColors.background
+                                    : HomeColors.accent,
+                              ),
+                      ),
                     ),
                   ),
                 ),

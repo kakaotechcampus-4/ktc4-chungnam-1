@@ -15,6 +15,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart' show AppSurfaceBox;
+import '../../widgets/recording_pulse.dart';
 import '../profile/profile_dialogs.dart' show showChoiceDialog;
 import 'stop_recording_dialog.dart';
 import 'visit_cards_sheet.dart';
@@ -548,26 +549,31 @@ class _Recording extends ConsumerWidget {
 
                 const SizedBox(height: AppSpacing.xxxl),
 
+                // 녹음하는 동안 원 둘레로 물결이 퍼진다. 원 밖에 그려 자리를
+                // 차지하지 않으므로 위의 [_statusHeight] 계산은 그대로다.
                 Center(
-                  child: Container(
-                    width: 112,
-                    height: 112,
-                    decoration: BoxDecoration(
-                      color: state.recording
-                          ? HomeColors.accent
-                          : HomeColors.bubble,
-                      shape: BoxShape.circle,
-                      // 멈춘 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
-                      border: state.recording
-                          ? null
-                          : Border.all(color: HomeColors.outline, width: 2),
-                    ),
-                    child: Icon(
-                      state.recording ? Icons.mic : Icons.pause,
-                      size: 46,
-                      color: state.recording
-                          ? AppColors.background
-                          : AppColors.textSub,
+                  child: RecordingPulse(
+                    active: state.recording,
+                    child: Container(
+                      width: 112,
+                      height: 112,
+                      decoration: BoxDecoration(
+                        color: state.recording
+                            ? HomeColors.accent
+                            : HomeColors.bubble,
+                        shape: BoxShape.circle,
+                        // 멈춘 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
+                        border: state.recording
+                            ? null
+                            : Border.all(color: HomeColors.outline, width: 2),
+                      ),
+                      child: Icon(
+                        state.recording ? Icons.mic : Icons.pause,
+                        size: 46,
+                        color: state.recording
+                            ? AppColors.background
+                            : AppColors.textSub,
+                      ),
                     ),
                   ),
                 ),
@@ -795,9 +801,8 @@ class _CardPeekState extends State<_CardPeek>
     });
   }
 
-  /// 시트 높이. 시트는 화면 높이의 [visitCardsSheetHeightFactor] 만큼이다.
-  double get _sheetHeight =>
-      MediaQuery.sizeOf(context).height * visitCardsSheetHeightFactor;
+  /// 시트 높이. 진짜 시트와 같다([visitCardsSheetHeight]).
+  double get _sheetHeight => visitCardsSheetHeight(context);
 
   /// 끌기 시작하면 녹음 화면 위에 그린 시트가 손가락을 따라오게 한다.
   void _startFollow() {

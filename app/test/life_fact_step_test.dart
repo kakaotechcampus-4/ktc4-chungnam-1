@@ -17,6 +17,7 @@ import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
+import 'package:saerok/widgets/recording_pulse.dart';
 
 import 'fake_mic_settings.dart';
 import 'fake_screen_awake.dart';
@@ -95,6 +96,23 @@ class _FixedRecording implements SpeechRecording {
 
   @override
   Future<void> cancel() async => _speech.cancelled += 1;
+}
+
+/// [started] 를 완료할 때까지 녹음을 시작하지 않는다. 마이크 권한을 묻는
+/// 동안처럼 마이크를 눌렀지만 아직 녹음하지 않는 때를 본다.
+class _SlowStartSpeech extends _FixedSpeech {
+  _SlowStartSpeech() : super(const SpeechNotHeard(), Duration.zero);
+
+  final started = Completer<void>();
+
+  @override
+  Future<SpeechRecording> start({
+    required String category,
+    required int attempt,
+  }) async {
+    await started.future;
+    return super.start(category: category, attempt: attempt);
+  }
 }
 
 final _step = lifeFactSteps.first;
@@ -1496,6 +1514,115 @@ void main() {
 
       expect(find.byType(TextField), findsOneWidget);
       expect(screen.calls, isEmpty);
+    });
+  });
+
+  // PM이 녹음 버튼을 누른 뒤 녹음이 시작됐는지 알 수 없었다(2026-11-10).
+  // 녹음이 시작된 뒤 듣는 동안에만 마이크 원 둘레로 물결이 퍼진다. 물결
+  // 자체(움직임, 고정 고리)는 `recording_pulse_test.dart` 에서 본다.
+  group('녹음 중 표시', () {
+    bool pulsing(WidgetTester tester) =>
+        tester.widget<RecordingPulse>(find.byType(RecordingPulse)).active;
+
+    /// 누른 자리의 잉크 번짐이 끝날 때까지 흘린다. 그 움직임과 물결을 섞지
+    /// 않으려는 것이다.
+    Future<void> afterTap(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+    }
+
+    testWidgets('듣는 동안만 물결이 퍼지고 옮기는 중에는 멈춘다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechHeard('합성 문장입니다'),
+          delay: const Duration(seconds: 3),
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await afterTap(tester);
+      expect(pulsing(tester), isFalse, reason: '마이크를 누르기 전이다');
+      expect(tester.hasRunningAnimations, isFalse);
+
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isTrue);
+      expect(tester.hasRunningAnimations, isTrue, reason: '잉크가 끝나도 물결은 이어진다');
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isFalse, reason: '글로 옮기는 중에는 녹음하지 않는다');
+
+      await tester.pumpAndSettle();
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+      expect(find.byType(RecordingPulse), findsNothing);
+    });
+
+    testWidgets('알아듣지 못하면 물결 없이 다시 누르기를 기다린다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+
+      await _choose(tester, '말로 답하기');
+      await _speak(tester);
+
+      expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
+      expect(pulsing(tester), isFalse);
+    });
+
+    testWidgets('마이크를 누른 뒤 녹음이 시작되기 전에는 물결이 없다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      final speech = _SlowStartSpeech();
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+      // 권한을 묻는 동안처럼 녹음 시작을 기다리고 있다.
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isFalse, reason: '아직 녹음하지 않는다');
+      expect(tester.hasRunningAnimations, isFalse);
+
+      speech.started.complete();
+      await afterTap(tester);
+      expect(pulsing(tester), isTrue);
+      expect(tester.hasRunningAnimations, isTrue);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pumpAndSettle();
+      expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
+    });
+
+    testWidgets('움직임 줄이기가 켜져 있으면 듣는 중에도 움직이지 않는다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData.fromView(
+            tester.view,
+          ).copyWith(disableAnimations: true),
+          child: _wrap(outcome: const SpeechNotHeard()),
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isTrue, reason: '고정된 고리로 듣는 중임을 알린다');
+      expect(tester.hasRunningAnimations, isFalse);
     });
   });
 }
