@@ -391,12 +391,15 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 | 환경 변수 | 설명 |
 | --- | --- |
 | `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT` | 한 계정이 동시에 보낼 수 있는 6-6 수, 기본 2. 1 이상. 앱은 앞 전사가 끝나기 전에 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있으므로 1로 내리면 그 녹음이 거절된다 |
+| `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_TOTAL` | 서버 전체에서 동시에 처리하는 6-6 수. 비워 두면(기본) 제한 없음. 넣으면 계정 한도를 통과한 요청만 세고, 다 차 있으면 S3 저장과 STT 호출 없이 `503 SPEECH_TRANSCRIPTION_BUSY`(`retryable: true`)로 거절한다. 값은 STT 서버가 동시에 처리하는 수를 확인한 뒤 정한다. 다른 계정 요청도 거절하게 되므로 켜기 전에 PM 확인이 필요하다 |
+| `SAEROK_SHORT_TRANSCRIPTION_TIMEOUT_SECONDS` | 6-6이 STT 응답을 기다리는 시간, 기본 90초(잠정). 앱이 업로드를 포함해 2분에 포기하므로 그보다 짧게 둔다. `SAEROK_AI_SERVER_TIMEOUT_SECONDS`보다 길면 그 값을 쓴다. 넘으면 `504 AI_SERVER_TIMEOUT`. 실제 처리 시간 측정 뒤 #138에서 정한다 |
 | `SAEROK_PUSH_DEVICES_PER_ACCOUNT` | 계정당 푸시 받을 기기 수, 기본 5. 1 이상 |
 | `SAEROK_REPORT_RETRIES_PER_SESSION` | 면회 회차당 6-5 수, 기본 3. 1 이상. 자동 재시도는 여전히 없다 |
 
 | `errorCode` | HTTP | 언제 |
 | --- | --- | --- |
 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 429 | 6-6. 같은 계정의 앞 요청이 한도만큼 아직 처리 중. 앞 요청이 끝난 뒤 다시 보낸다 |
+| `SPEECH_TRANSCRIPTION_BUSY` | 503 | 6-6. 서버 전체 한도(`SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_TOTAL`, 설정했을 때만)가 다 참. 잠시 뒤 다시 보낸다 |
 | `REPORT_RETRY_LIMIT_EXCEEDED` | 409 | 6-5. 이 회차의 재요청 횟수를 모두 썼고 다시 쓸 전사가 남아 있음. 전사 기한이 지나면 같은 요청이 `RECORDING_REQUIRED`가 된다 |
 
 - 한도에 닿은 회차에 전사가 남아 있는 동안은 6-2도 `REPORT_RETRY_AVAILABLE`로 녹음 재제출을 받지 않는다. 전사 기한(최초 STT부터 24시간)이 지나면 6-5는 `RECORDING_REQUIRED`로 답하고, 앱이 기기 녹음을 6-2로 다시 보내면 기존 규칙대로 새 작업을 받는다. 이 재제출은 재요청 횟수에 넣지 않는다(2026-11-09 PM 결정). 재제출한 작업의 리포트가 다시 실패하면 그 전사로 하는 6-5에는 같은 한도가 적용된다.
