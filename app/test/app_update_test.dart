@@ -10,8 +10,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:saerok/app/routes.dart';
+import 'package:saerok/data/card_api.dart';
+import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/models.dart';
+import 'package:saerok/data/providers.dart';
+import 'package:saerok/design/theme.dart';
+import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/app_update/app_update.dart';
 import 'package:saerok/features/app_update/app_update_watcher.dart';
+import 'package:saerok/features/cards/card_generation_controller.dart';
+import 'package:saerok/features/cards/cards_screen.dart';
+import 'package:saerok/features/visit/visit_photos.dart';
+import 'package:saerok/widgets/app_buttons.dart';
+import 'package:saerok/widgets/app_scaffold.dart';
+
+import 'fake_card_api.dart';
+import 'fake_visit_photos.dart';
+import 'sample_profile.dart';
+
+/// 미리 읽어 둔 목 묶음을 돌려준다. 테스트 안에서 자산을 읽으면 끝나지 않는다.
+class _PreloadedCardApi extends FakeCardApi {
+  _PreloadedCardApi(this.set);
+
+  final CardSet set;
+
+  @override
+  Future<CardSet> current(String profileId) async => set;
+}
 
 class FakeAppUpdateGateway implements AppUpdateGateway {
   FakeAppUpdateGateway({this.status = AppUpdateStatus.none});
@@ -359,21 +384,97 @@ void main() {
       expect(gateway.installs, 1);
     });
 
-    testWidgets('면회 중에 업데이트가 필요해 보이면 알리기만 하고 홈에서 업데이트를 권한다', (tester) async {
+    testWidgets('면회 중에 업데이트가 필요해 보여도 띄우지 않고 홈에서 업데이트를 권한다', (tester) async {
       final gateway = await pumpApp(tester, status: AppUpdateStatus.none);
       await startVisit(tester);
       gateway.status = AppUpdateStatus.available;
 
       await controllerOf(tester).suspectOutdated();
       await tester.pumpAndSettle();
-      expect(find.text(AppUpdateMessages.neededInVisit), findsOneWidget);
-      expect(find.text(AppUpdateMessages.update), findsNothing);
+      expect(
+        find.byIcon(Icons.close),
+        findsNothing,
+        reason: '면회 화면에는 알림을 띄우지 않는다',
+      );
+      expect(find.textContaining('새 버전'), findsNothing);
       expect(gateway.downloads, 0);
 
       await finishVisit(tester);
-      expect(find.text(AppUpdateMessages.neededInVisit), findsNothing);
       expect(find.text(AppUpdateMessages.needed), findsOneWidget);
       expect(find.text(AppUpdateMessages.update), findsOneWidget);
+    });
+
+    testWidgets('서버가 업데이트를 요구해도 면회 중에는 띄우지 않고 홈에서 스토어를 안내한다', (tester) async {
+      await pumpApp(tester, status: AppUpdateStatus.none);
+      await startVisit(tester);
+
+      await controllerOf(tester).suspectOutdated(certain: true);
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.close), findsNothing);
+      expect(find.textContaining('새 버전'), findsNothing);
+
+      await finishVisit(tester);
+      expect(find.text(AppUpdateMessages.neededFromStore), findsOneWidget);
+    });
+
+    testWidgets('버튼 없는 알림을 띄운 채 면회를 시작해도 닫고 홈에서 다시 알린다', (tester) async {
+      await pumpApp(tester, status: AppUpdateStatus.none);
+      await controllerOf(tester).suspectOutdated(certain: true);
+      await tester.pumpAndSettle();
+      expect(find.text(AppUpdateMessages.neededFromStore), findsOneWidget);
+
+      await startVisit(tester);
+      expect(find.text(AppUpdateMessages.neededFromStore), findsNothing);
+
+      await finishVisit(tester);
+      expect(find.text(AppUpdateMessages.neededFromStore), findsOneWidget);
+    });
+
+    testWidgets('다른 화면이 아래 알림창을 띄워도 업데이트 알림은 닫히지 않는다', (tester) async {
+      await pumpApp(tester, status: AppUpdateStatus.downloaded);
+      expect(find.text(AppUpdateMessages.ready), findsOneWidget);
+
+      // 화면들은 알림창을 띄우기 전에 떠 있던 알림창을 닫는다.
+      ScaffoldMessenger.of(tester.element(find.text(AppRoutes.home)))
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('이야기를 담았어요.')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('이야기를 담았어요.'), findsOneWidget);
+      expect(find.text(AppUpdateMessages.ready), findsOneWidget);
+    });
+
+    testWidgets('화면 낭독기는 알림이 뜨면 읽고 닫기 버튼 이름을 읽는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpApp(tester, status: AppUpdateStatus.downloaded);
+
+      expect(
+        tester.getSemantics(find.text(AppUpdateMessages.ready)),
+        isSemantics(isLiveRegion: true),
+      );
+      // 화면 맨 위에 있으므로 화면 내용보다 먼저 읽는다.
+      final labels = [
+        for (final node in tester.semantics.simulatedAccessibilityTraversal())
+          if (node.label.isNotEmpty) node.label,
+      ];
+      expect(
+        labels.indexWhere((l) => l.contains(AppUpdateMessages.ready)),
+        allOf(
+          greaterThanOrEqualTo(0),
+          lessThan(labels.indexOf(AppRoutes.home)),
+        ),
+      );
+      final close = find.bySemanticsLabel('알림 닫기');
+      expect(close, findsOneWidget);
+      expect(
+        tester.getSemantics(close),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+
+      tester.semantics.tap(find.semantics.byLabel('알림 닫기'));
+      await tester.pumpAndSettle();
+      expect(find.text(AppUpdateMessages.ready), findsNothing);
+      handle.dispose();
     });
 
     testWidgets('서버가 업데이트를 요구했는데 받을 새 버전이 없으면 스토어를 안내한다', (tester) async {
@@ -392,7 +493,200 @@ void main() {
       await controllerOf(tester).suspectOutdated();
       await tester.pumpAndSettle();
 
+      expect(find.byType(AppUpdateBanner), findsNothing);
       expect(find.byType(SnackBar), findsNothing);
     });
+  });
+
+  // 카드 고르기의 `대화 시작하기` 는 화면 아래에 있다. 예전 알림 줄은 아래에 떠서
+  // 이 버튼을 덮었다(UX 점검 2026-11-10, 10번). 글자 1.3배는 이 화면의 `최대
+  // 9개까지` 줄이 이 변경 전부터 넘쳐(UX 점검 12번) 아래 그룹에서 같은 모양의
+  // 화면으로 본다.
+  group('카드 화면의 업데이트 알림', () {
+    late CardSet mockSet;
+
+    setUpAll(() async {
+      mockSet = await const MockRepository().loadCardSet();
+    });
+
+    Future<void> openCards(
+      WidgetTester tester, {
+      required Size size,
+      FakeAppUpdateGateway? gateway,
+    }) async {
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      final router = GoRouter(
+        initialLocation: AppRoutes.cards,
+        routes: [
+          GoRoute(
+            path: AppRoutes.cards,
+            builder: (context, state) => const CardsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.visitPhoto,
+            builder: (context, state) =>
+                const Scaffold(body: Center(child: Text(AppRoutes.visitPhoto))),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            withSampleProfile,
+            cardApiProvider.overrideWithValue(_PreloadedCardApi(mockSet)),
+            visitPhotosProvider.overrideWith((ref) => FakeVisitPhotos()),
+            serverProfileIdProvider.overrideWith(
+              (ref) async => 'server-profile-1',
+            ),
+            cardPollIntervalProvider.overrideWithValue(Duration.zero),
+            appUpdateGatewayProvider.overrideWithValue(
+              gateway ??
+                  FakeAppUpdateGateway(status: AppUpdateStatus.downloaded),
+            ),
+          ],
+          child: MaterialApp.router(
+            theme: buildAppTheme(),
+            routerConfig: router,
+            builder: (context, child) =>
+                AppUpdateWatcher(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    for (final size in const [Size(360, 640), Size(390, 844)]) {
+      final tag = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('알림이 떠도 대화 시작하기를 가리지 않고, 면회를 시작하면 닫는다 ($tag)', (
+        tester,
+      ) async {
+        await openCards(tester, size: size);
+        final toggle = find.bySemanticsLabel(
+          cardSelectLabel(mockSet.cards.first.cardTitle),
+        );
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        final notice = find.text(AppUpdateMessages.ready);
+        final start = find.text('대화 시작하기');
+        expect(notice, findsOneWidget);
+        expect(start.hitTestable(), findsOneWidget, reason: '알림이 버튼을 덮지 않는다');
+        expect(
+          tester.getRect(notice).bottom,
+          lessThanOrEqualTo(tester.getRect(find.byType(AppBar)).top),
+          reason: '알림은 상단바 위, 화면 맨 위에 둔다',
+        );
+
+        await tester.tap(start);
+        await tester.pumpAndSettle();
+        expect(find.text(AppRoutes.visitPhoto), findsOneWidget);
+        expect(notice, findsNothing, reason: '면회 화면에는 띄우지 않는다');
+      });
+    }
+
+    testWidgets('카드를 고른 뒤 알림이 떠도 고른 카드가 남는다', (tester) async {
+      final gateway = FakeAppUpdateGateway(status: AppUpdateStatus.available);
+      await openCards(tester, size: const Size(360, 640), gateway: gateway);
+      expect(find.text(AppUpdateMessages.ready), findsNothing);
+      await tester.tap(
+        find.bySemanticsLabel(cardSelectLabel(mockSet.cards.first.cardTitle)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1개 선택함'), findsOneWidget);
+
+      gateway.downloading.complete(true);
+      await tester.pumpAndSettle();
+
+      expect(find.text(AppUpdateMessages.ready), findsOneWidget);
+      expect(find.text('1개 선택함'), findsOneWidget, reason: '화면을 새로 만들지 않는다');
+
+      await tester.tap(find.bySemanticsLabel('알림 닫기'));
+      await tester.pumpAndSettle();
+      expect(find.text(AppUpdateMessages.ready), findsNothing);
+      expect(find.text('1개 선택함'), findsOneWidget);
+    });
+  });
+
+  // 가장 긴 문구와 버튼이 함께 뜨는 경우다. 카드 고르기처럼 위에 상단바, 아래에
+  // 주 버튼이 있는 화면에 띄운다.
+  group('글자를 키운 화면의 업데이트 알림', () {
+    for (final size in const [Size(360, 640), Size(390, 844)]) {
+      final tag = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('글자 1.3배에서도 알림이 넘치지 않고 아래 주 버튼을 가리지 않는다 ($tag)', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * 3;
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        var started = 0;
+        final gateway = FakeAppUpdateGateway();
+        final router = GoRouter(
+          initialLocation: AppRoutes.cards,
+          routes: [
+            GoRoute(
+              path: AppRoutes.cards,
+              builder: (context, state) => Scaffold(
+                appBar: const AppTopBar(title: '오늘의 대화 카드'),
+                body: ScreenBody(
+                  scrollable: true,
+                  bottom: PrimaryButton(
+                    label: '대화 시작하기',
+                    onPressed: () => started++,
+                  ),
+                  child: const Text('카드 목록', style: AppTypography.body),
+                ),
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [appUpdateGatewayProvider.overrideWithValue(gateway)],
+            child: MaterialApp.router(
+              theme: buildAppTheme(),
+              routerConfig: router,
+              builder: (context, child) =>
+                  AppUpdateWatcher(router: router, child: child!),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        gateway.status = AppUpdateStatus.available;
+        await ProviderScope.containerOf(
+          tester.element(find.byType(AppUpdateWatcher)),
+        ).read(appUpdateControllerProvider.notifier).suspectOutdated();
+        await tester.pumpAndSettle();
+
+        expect(find.text(AppUpdateMessages.needed), findsOneWidget);
+        expect(
+          find.text(AppUpdateMessages.update).hitTestable(),
+          findsOneWidget,
+        );
+        expect(find.bySemanticsLabel('알림 닫기').hitTestable(), findsOneWidget);
+        expect(
+          tester.getRect(find.byType(AppBar)).top,
+          greaterThanOrEqualTo(
+            tester.getRect(find.text(AppUpdateMessages.needed)).bottom,
+          ),
+        );
+
+        await tester.tap(find.text('대화 시작하기'));
+        await tester.pump();
+        expect(started, 1, reason: '알림이 버튼을 덮지 않는다');
+      });
+    }
   });
 }
