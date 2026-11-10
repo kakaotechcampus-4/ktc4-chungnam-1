@@ -504,6 +504,7 @@ final careProfilesProvider =
 class CareProfileSummary {
   const CareProfileSummary({
     required this.id,
+    required this.profileId,
     required this.name,
     required this.gender,
     required this.selected,
@@ -512,6 +513,10 @@ class CareProfileSummary {
   });
 
   final String id;
+
+  /// [Profile.profileId] 와 같은 값. 서버에 저장한 분은 서버 ID 다. 이 기기에
+  /// 둔 사진을 찾는 데 쓴다(`LocalPhotos`).
+  final String profileId;
 
   /// 입력 중인 분은 비어 있다. 이름은 입력 흐름이 들고 있다.
   final String name;
@@ -536,6 +541,7 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
     for (final entry in profiles.entries)
       CareProfileSummary(
         id: entry.id,
+        profileId: entry.remoteId ?? entry.id,
         name: entry.basicInfo?.name ?? '',
         gender: entry.basicInfo?.gender ?? '',
         relationship: entry.basicInfo?.relationship,
