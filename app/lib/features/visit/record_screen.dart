@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/mic_settings.dart';
 import '../../app/routes.dart';
 import '../../app/screen_awake.dart';
 import '../../data/providers.dart';
@@ -15,6 +16,8 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/app_surfaces.dart' show AppSurfaceBox;
+import '../../widgets/recording_pulse.dart';
 import '../profile/profile_dialogs.dart' show showChoiceDialog;
 import 'recording_stopped_alert.dart';
 import 'stop_recording_dialog.dart';
@@ -59,16 +62,19 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
 
   /// 사진 업로드 결과를 알린다. 녹음 화면이 뜨기 전에 끝나도 놓치지 않게
   /// 녹음 전 안내부터 지켜본다. 만남을 끝내면(참여자 수 확인) 닫는다.
+  ///
+  /// 녹음 파일을 닫은 끝낸 면회([_Finished])에서는 알림 띠를 띄우지 않는다. 띠가
+  /// 아래 `평가 이어서 하기` 를 닫을 때까지 덮어서, 그 화면은 본문 안에
+  /// [_PhotoNotice] 로 알린다(2026-11-10 UX 점검 2차). 띠가 떠 있는 사이 파일을
+  /// 닫아도 띠를 닫는다.
   void _onPhotoUpload(
-    (VisitPhotoUpload?, bool)? previous,
-    (VisitPhotoUpload?, bool) next,
+    (VisitPhotoUpload?, bool, bool)? previous,
+    (VisitPhotoUpload?, bool, bool) next,
   ) {
-    final (upload, stopped) = next;
+    final (upload, stopped, finalized) = next;
     _closePhotoNotice();
-    if (stopped) return;
-    if (upload == VisitPhotoUpload.failed ||
-        upload == VisitPhotoUpload.rejected ||
-        upload == VisitPhotoUpload.missing) {
+    if (stopped || finalized) return;
+    if (_photoNoticeShown(upload)) {
       _photoNotice = _showPhotoNotice(
         context,
         upload: upload!,
@@ -116,12 +122,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   /// 확인 창에서 나가기를 골랐다. 이때는 다시 묻지 않고 나간다.
   bool _leaving = false;
 
-  /// 녹음을 시작했고 아직 만남을 끝내지 않았는지. 잠시 멈춘 때도 포함한다.
+  /// 녹음을 시작했고 아직 파일을 닫지 않았는지. 잠시 멈춘 때도 포함한다.
   ///
   /// 이때 뒤로 나가면 녹음이 멈추고, 지금은 같은 카드로 회차를 다시 만들 수
-  /// 없어(서버 `CARD_SET_ALREADY_USED`) 한 번 더 묻는다.
+  /// 없어(서버 `CARD_SET_ALREADY_USED`) 한 번 더 묻는다. 만남을 끝냈거나 앞서
+  /// 나가며 파일을 닫았으면 멈출 녹음이 없어 묻지 않는다.
   bool _inProgress(VisitState? state) =>
-      state != null && state.started && state.participantCount == null;
+      state != null && state.started && !state.recordingFinalized;
 
   Future<void> _confirmLeave() async {
     final leave = await showChoiceDialog(
@@ -147,7 +154,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     }
     ref.listen(
       visitControllerProvider.select(
-        (v) => (v.value?.photoUpload, v.value?.participantCount != null),
+        (v) => (
+          v.value?.photoUpload,
+          v.value?.participantCount != null,
+          v.value?.recordingFinalized ?? false,
+        ),
       ),
       _onPhotoUpload,
     );
@@ -182,9 +193,20 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
             error: (error, _) => const ErrorStateView(
               message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.',
             ),
-            // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
-            data: (state) =>
-                state.started ? _Recording(state: state) : const _Intro(),
+            // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다. 파일을 닫은 뒤
+            // 다시 들어오면 이어서 녹음 대신 끝낸 면회로 보여준다.
+            //
+            // 끝내기는 이 화면의 context 로 묻고 넘어간다. 파일을 닫으면
+            // [_Recording] 이 [_Finished] 로 바뀌어 그 context 가 사라지므로,
+            // 그 context 로는 닫은 뒤 소감 화면을 열지 못할 수 있다.
+            data: (state) => state.recordingFinalized
+                ? _Finished(state: state)
+                : state.started
+                ? _Recording(
+                    state: state,
+                    onStop: () => _confirmStop(context, ref, _controller, state),
+                  )
+                : const _Intro(),
           ),
         ),
       ),
@@ -324,8 +346,10 @@ Future<void> _confirmStop(
 /// 녹음이 되지 않았을 때 그 자리에서 알린다.
 ///
 /// 성공 화면만 두지 않는다(`app/CLAUDE.md`). 권한을 대신 켜 줄 수는 없으므로
-/// 무엇을 해야 하는지만 적는다.
-class _ProblemNotice extends StatelessWidget {
+/// 무엇을 해야 하는지만 적는다. 마이크 권한이 없으면 휴대전화 설정의 새록
+/// 화면을 여는 `설정 열기` 를 함께 둔다. 설정에서 켜고 돌아와 `네, 좋아요` 를
+/// 다시 누르면 녹음을 시작한다.
+class _ProblemNotice extends ConsumerWidget {
   const _ProblemNotice({required this.problem});
 
   final VisitRecordingProblem problem;
@@ -345,10 +369,12 @@ class _ProblemNotice extends StatelessWidget {
     VisitRecordingProblem.interrupted => '녹음이 멈췄어요.\n이어서 녹음을 눌러주세요.',
     VisitRecordingProblem.recorderStopped =>
       '녹음이 멈췄어요.\n만남 끝내기를 누르면 지금까지 녹음한 것을 저장해요.',
+    VisitRecordingProblem.recordingClosed =>
+      '이 면회의 녹음은 이미 끝났어요.\n이어서 녹음할 수 없어요.',
   };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -362,11 +388,104 @@ class _ProblemNotice extends StatelessWidget {
           const Icon(Icons.mic_off_outlined, size: 22, color: AppColors.danger),
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Text(
-              _message,
-              style: AppTypography.body.copyWith(color: AppColors.danger),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _message,
+                  style: AppTypography.body.copyWith(color: AppColors.danger),
+                ),
+                if (problem == VisitRecordingProblem.permissionDenied) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  SecondaryButton(
+                    label: '설정 열기',
+                    icon: Icons.settings_outlined,
+                    borderColor: HomeColors.outline,
+                    expand: false,
+                    onPressed: () => openMicSettings(context, ref),
+                  ),
+                ],
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 사진 업로드 결과 중 알려야 하는 실패인지.
+bool _photoNoticeShown(VisitPhotoUpload? upload) =>
+    upload == VisitPhotoUpload.failed ||
+    upload == VisitPhotoUpload.rejected ||
+    upload == VisitPhotoUpload.missing;
+
+/// 사진을 올리지 못한 까닭이다. 녹음이 이어지는지는 말하지 않는다.
+String _photoFailureMessage(VisitPhotoUpload upload) => switch (upload) {
+  VisitPhotoUpload.failed => '사진을 올리지 못했어요.',
+  VisitPhotoUpload.missing => '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.',
+  _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+};
+
+/// 끝낸 면회 화면([_Finished])의 사진 업로드 실패 안내다(API 5-2).
+///
+/// 끝내지 않고 나간 뒤 사진을 다시 찍고 돌아왔는데 올리지 못한 드문 경우다.
+/// 알림 띠는 화면 아래의 `평가 이어서 하기` 를 닫을 때까지 덮어서, 본문 안
+/// 문구 바로 아래에 둔다(2026-11-10 UX 점검 2차). 녹음 실패가 아니므로 붉은
+/// 경고 상자가 아니라 연초록 면에 둔다. 다시 올릴 수 있는 실패에만
+/// `사진 다시 올리기` 를 단다. 나타날 때 화면 낭독기가 읽는다.
+///
+/// 올리는 중([VisitPhotoUpload.uploading])에도 상자를 두고 `사진을 올리고
+/// 있어요.` 만 적는다. 다시 올리기를 누르면 상자가 사라지고 끝났다는 체크 원이
+/// 잠깐 보였다가, 또 실패하면 상자가 돌아와 다 올린 것처럼 보였다.
+class _PhotoNotice extends StatelessWidget {
+  const _PhotoNotice({required this.upload, required this.onRetry});
+
+  final VisitPhotoUpload upload;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSurfaceBox(
+      color: HomeColors.bubble,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ExcludeSemantics(
+                  child: Icon(
+                    upload == VisitPhotoUpload.uploading
+                        ? Icons.photo_camera_outlined
+                        : Icons.no_photography_outlined,
+                    size: 22,
+                    color: AppColors.ink,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    upload == VisitPhotoUpload.uploading
+                        ? '사진을 올리고 있어요.'
+                        : _photoFailureMessage(upload),
+                    style: AppTypography.body,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (upload == VisitPhotoUpload.failed) ...[
+            const SizedBox(height: AppSpacing.md),
+            SecondaryButton(
+              label: '사진 다시 올리기',
+              icon: Icons.refresh,
+              borderColor: HomeColors.outline,
+              onPressed: onRetry,
+            ),
+          ],
         ],
       ),
     );
@@ -379,6 +498,9 @@ class _ProblemNotice extends StatelessWidget {
 /// 스크롤해야 보인다. 녹음은 그대로 이어지므로 녹음 실패보다 약하게 알린다.
 /// 다시 올릴 수 있는 실패는 버튼을 달아 닫을 때까지 남기고, 받지 않는 거절은
 /// 잠시 보여주고 사라진다. 사진 파일을 찾지 못했을 때도 다시 올릴 수 없다.
+///
+/// 녹음 파일을 닫은 끝낸 면회 화면([_Finished])에서는 쓰지 않는다. 그 화면은
+/// [_PhotoNotice] 로 본문 안에 알린다.
 ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
   BuildContext context, {
   required VisitPhotoUpload upload,
@@ -391,7 +513,7 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
         VisitPhotoUpload.failed => '사진을 올리지 못했어요.\n녹음은 그대로 이어져요.',
         VisitPhotoUpload.missing =>
           '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.\n녹음은 그대로 이어져요.',
-        _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+        _ => _photoFailureMessage(upload),
       }),
       action: retryable
           ? SnackBarAction(label: '사진 다시 올리기', onPressed: onRetry)
@@ -403,9 +525,12 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
 
 /// E-2. 녹음 중.
 class _Recording extends ConsumerWidget {
-  const _Recording({required this.state});
+  const _Recording({required this.state, required this.onStop});
 
   final VisitState state;
+
+  /// `만남 끝내기` 를 눌렀다. 녹음 화면이 [_confirmStop] 으로 묻고 끝낸다.
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -452,12 +577,7 @@ class _Recording extends ConsumerWidget {
   ) => switch (alert) {
     RecordingAlert.interrupted ||
     RecordingAlert.resumeFailed => controller.startRecording,
-    RecordingAlert.deviceStopped => () => _confirmStop(
-      context,
-      ref,
-      controller,
-      state,
-    ),
+    RecordingAlert.deviceStopped => onStop,
     RecordingAlert.saveFailed => () => context.push(AppRoutes.visitReview),
   };
 
@@ -521,26 +641,31 @@ class _Recording extends ConsumerWidget {
 
                 const SizedBox(height: AppSpacing.xxxl),
 
+                // 녹음하는 동안 원 둘레로 물결이 퍼진다. 원 밖에 그려 자리를
+                // 차지하지 않으므로 위의 [_statusHeight] 계산은 그대로다.
                 Center(
-                  child: Container(
-                    width: 112,
-                    height: 112,
-                    decoration: BoxDecoration(
-                      color: state.recording
-                          ? HomeColors.accent
-                          : HomeColors.bubble,
-                      shape: BoxShape.circle,
-                      // 멈춘 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
-                      border: state.recording
-                          ? null
-                          : Border.all(color: HomeColors.outline, width: 2),
-                    ),
-                    child: Icon(
-                      state.recording ? Icons.mic : Icons.pause,
-                      size: 46,
-                      color: state.recording
-                          ? AppColors.background
-                          : AppColors.textSub,
+                  child: RecordingPulse(
+                    active: state.recording,
+                    child: Container(
+                      width: 112,
+                      height: 112,
+                      decoration: BoxDecoration(
+                        color: state.recording
+                            ? HomeColors.accent
+                            : HomeColors.bubble,
+                        shape: BoxShape.circle,
+                        // 멈춘 연초록 원이 오프화이트 바탕에 묻히지 않게 테두리를 둔다.
+                        border: state.recording
+                            ? null
+                            : Border.all(color: HomeColors.outline, width: 2),
+                      ),
+                      child: Icon(
+                        state.recording ? Icons.mic : Icons.pause,
+                        size: 46,
+                        color: state.recording
+                            ? AppColors.background
+                            : AppColors.textSub,
+                      ),
                     ),
                   ),
                 ),
@@ -564,8 +689,7 @@ class _Recording extends ConsumerWidget {
                       _ControlButton(
                         icon: Icons.stop,
                         label: '만남 끝내기',
-                        onTap: () =>
-                            _confirmStop(context, ref, controller, state),
+                        onTap: onStop,
                       ),
                   ],
                 ),
@@ -587,6 +711,115 @@ class _Recording extends ConsumerWidget {
           onOpen: (sheet) => showVisitCardsSheet(context, controller: sheet),
         ),
       ],
+    );
+  }
+}
+
+/// 녹음 파일을 닫은 회차에 다시 들어왔을 때(2026-11-10 UX 점검 1번).
+///
+/// 소감 화면에서 뒤로 오거나, 끝내지 않고 나간 뒤 사진 화면에서 다시 시작하면
+/// 같은 회차로 이 화면에 돌아온다. 닫은 파일에는 이어 쓸 수 없고 `record` 는
+/// 그때의 이어 가기를 오류 없이 무시하므로 `이어서 녹음` 을 두지 않고, 다음 할
+/// 일 하나만 둔다.
+///
+/// - 만남을 끝냈으면(참여자 수 확인) `소감 쓰기`. 끝내기 뒤에 열린 소감 화면이다.
+/// - 끝내지 않고 나갔으면 `평가 이어서 하기`. 카드 화면과 홈의 같은 이름 버튼처럼
+///   그 회차의 평가(`/visit/review?session=<회차 ID>`)로 간다.
+///
+/// 제목과 원은 녹음 안내([_Intro])와 같은 자리에 둔다.
+class _Finished extends ConsumerWidget {
+  const _Finished({required this.state});
+
+  final VisitState state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ended = state.participantCount != null;
+    final sessionId = state.sessionId;
+    // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
+    final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
+    // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리는 중이거나 올리지 못했다.
+    // 만남을 끝낸 뒤에는 녹음 화면도 알리지 않았으므로 같게 둔다.
+    final photoNotice =
+        !ended &&
+        (_photoNoticeShown(state.photoUpload) ||
+            state.photoUpload == VisitPhotoUpload.uploading);
+
+    return ScreenBody(
+      scrollable: true,
+      bottom: PrimaryButton(
+        label: ended ? '소감 쓰기' : '평가 이어서 하기',
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        onPressed: () => context.push(
+          ended || sessionId == null
+              ? AppRoutes.visitReview
+              : AppRoutes.visitReviewOf(sessionId),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: AppSpacing.visitTitleTop),
+          const Text(
+            '이미 끝낸 면회예요',
+            style: AppTypography.screenTitle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xs),
+          Text(
+            [
+              '녹음은 이어서 할 수 없어요.',
+              // 녹음이 없으면 리포트를 만든다고 하지 않는다.
+              if (!saveFailed)
+                ended ? '소감을 쓰면 리포트를 만들어요.' : '평가를 마치면 리포트를 만들어요.',
+            ].join('\n'),
+            style: AppTypography.sub,
+            textAlign: TextAlign.center,
+          ),
+
+          // 저장하지 못했거나 사진을 올리지 못했으면 끝났다는 체크 원 대신 그
+          // 안내를 문구 바로 아래에 둔다. 360x640 에서 원 아래에 두면 글자
+          // 1배에서도 첫 화면 밖이다.
+          if (saveFailed) ...[
+            const SizedBox(height: AppSpacing.xxl),
+            const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
+          ],
+          if (photoNotice) ...[
+            SizedBox(height: saveFailed ? AppSpacing.lg : AppSpacing.xxl),
+            _PhotoNotice(
+              upload: state.photoUpload,
+              onRetry: ref
+                  .read(visitControllerProvider.notifier)
+                  .retryPhotoUpload,
+            ),
+          ],
+          if (!saveFailed && !photoNotice) ...[
+            const SizedBox(height: AppSpacing.xxl * 2),
+            Center(
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: const BoxDecoration(
+                  color: HomeColors.bubble,
+                  shape: BoxShape.circle,
+                  border: Border.fromBorderSide(
+                    BorderSide(color: HomeColors.outline, width: 2),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check,
+                  size: 56,
+                  color: HomeColors.accent,
+                ),
+              ),
+            ),
+          ],
+
+          const Spacer(),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xxl),
+        ],
+      ),
     );
   }
 }
@@ -683,9 +916,8 @@ class _CardPeekState extends State<_CardPeek>
     });
   }
 
-  /// 시트 높이. 시트는 화면 높이의 [visitCardsSheetHeightFactor] 만큼이다.
-  double get _sheetHeight =>
-      MediaQuery.sizeOf(context).height * visitCardsSheetHeightFactor;
+  /// 시트 높이. 진짜 시트와 같다([visitCardsSheetHeight]).
+  double get _sheetHeight => visitCardsSheetHeight(context);
 
   /// 끌기 시작하면 녹음 화면 위에 그린 시트가 손가락을 따라오게 한다.
   void _startFollow() {

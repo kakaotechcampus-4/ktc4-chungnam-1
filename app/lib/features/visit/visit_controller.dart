@@ -44,6 +44,11 @@ enum VisitRecordingProblem {
   /// 카드를 받은 뒤 프로필이나 일대기를 고쳐 5-1 이 그 묶음을 받지 않았다
   /// (`CARD_SET_NEEDS_REFRESH`). 다시 눌러도 같으므로 카드를 다시 준비해야 한다.
   cardsOutdated,
+
+  /// 파일을 이미 닫은 회차에서 이어서 녹음하려 했다. 같은 파일에 다시 쓸 수
+  /// 없고, `record` 는 닫은 뒤의 이어 가기를 오류 없이 무시하므로 녹음 중으로
+  /// 바꾸지 않고 실패로 둔다(2026-11-10 UX 점검 1번).
+  recordingClosed,
 }
 
 /// 면회 전에 찍은 사진을 회차에 올린 상태다(API 5-2).
@@ -86,6 +91,7 @@ class VisitState {
     this.participantCount,
     this.photoUpload = VisitPhotoUpload.none,
     this.addedCardIds = const {},
+    this.recordingFinalized = false,
   });
 
   /// 면회에서 다룰 카드. 선택 화면에서 고른 것에 보충한 카드가 뒤에 붙는다.
@@ -101,6 +107,13 @@ class VisitState {
 
   final bool recording;
   final Duration elapsed;
+
+  /// 이 회차의 녹음 파일을 닫았는지. 만남 끝내기와 녹음 화면을 떠날 때 닫는다.
+  ///
+  /// 저장에 실패했어도 닫은 것으로 본다. 닫은 파일에는 이어 쓸 수 없으므로 녹음
+  /// 화면은 `이어서 녹음` 대신 끝낸 면회로 보여준다. 소감 화면에서 뒤로 오거나
+  /// 나간 뒤 사진 화면에서 다시 시작하면 같은 회차로 돌아오기 때문이다.
+  final bool recordingFinalized;
 
   /// 서버가 만든 회차(API 5-1). 녹음을 처음 시작할 때 생긴다.
   ///
@@ -163,6 +176,7 @@ class VisitState {
     int? participantCount,
     VisitPhotoUpload? photoUpload,
     Set<String>? addedCardIds,
+    bool? recordingFinalized,
 
     /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
     bool clearProblem = false,
@@ -179,6 +193,7 @@ class VisitState {
     participantCount: participantCount ?? this.participantCount,
     photoUpload: photoUpload ?? this.photoUpload,
     addedCardIds: addedCardIds ?? this.addedCardIds,
+    recordingFinalized: recordingFinalized ?? this.recordingFinalized,
   );
 }
 
@@ -273,6 +288,8 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 조용히 돌아간다. 화면이 [VisitState.problem] 을 보고 안내한다. 회차를
   /// 만든 뒤 장치가 열리지 않았으면 회차는 그대로 두고, 다시 누를 때 같은
   /// 회차로 녹음만 다시 시작한다.
+  ///
+  /// 파일을 닫았거나 닫는 중이면 이어 가지 않는다([VisitRecordingProblem.recordingClosed]).
   Future<void> startRecording() async {
     final current = state.value;
     if (current == null || current.recording || _creatingSession) return;
@@ -281,6 +298,13 @@ class VisitController extends AsyncNotifier<VisitState> {
     if (current.problem == VisitRecordingProblem.recorderStopped) return;
 
     if (current.started) {
+      // 시작한 뒤 파일이 열려 있지 않으면 이미 닫았거나 닫는 중이다. `record`
+      // 는 그때의 이어 가기를 오류 없이 무시해서, 그대로 두면 녹음되는 것 없이
+      // `녹음 중이에요` 와 흐르는 시간만 보인다.
+      if (current.recordingFinalized || !_fileOpen) {
+        _failClosed();
+        return;
+      }
       return _resumeRecording();
     }
 
@@ -621,6 +645,8 @@ class VisitController extends AsyncNotifier<VisitState> {
           participantCount: participantCount,
           problem: problem,
           clearProblem: problem == null,
+          // 저장하지 못했어도 장치는 닫았다. 같은 파일에 이어 쓸 수 없다.
+          recordingFinalized: true,
         ),
       );
       if (saved == null && startedPath != null) {
@@ -741,6 +767,21 @@ class VisitController extends AsyncNotifier<VisitState> {
     _stopTicker();
     _fail(problem);
     _service.interrupted();
+  }
+
+  /// 닫은 파일을 이어 가려 했다. 장치는 부르지 않는다.
+  ///
+  /// 저장 실패는 덮지 않는다. 그 값이 살리지 못한 파일을 다시 보낼 목록에
+  /// 넣지 않게 막는다([_rememberUpload]).
+  void _failClosed() {
+    _update(
+      (now) => now.copyWith(
+        recording: false,
+        problem: now.problem == VisitRecordingProblem.saveFailed
+            ? now.problem
+            : VisitRecordingProblem.recordingClosed,
+      ),
+    );
   }
 
   /// 기다리는 사이에 상태가 바뀌었을 수 있으므로 그때의 값에 얹는다.

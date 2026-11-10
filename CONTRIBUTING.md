@@ -35,12 +35,21 @@
 ```text
 main                 멘토 리뷰와 최종 통합, 직접 push 금지
 └─ develop            기본 브랜치, 팀 내부 통합
-   ├─ feature/*       기능 개발
-   └─ refactor/*      멘토 피드백 반영
+   └─ <종류>/<작업명>  작업 브랜치
 ```
 
 - 작업 브랜치는 최신 `develop`에서 생성한다.
-- 기능 작업은 `feature/<작업명>`을 사용하고 멘토 피드백은 `refactor/<내용>`을 사용한다.
+- 브랜치 이름은 `<종류>/<작업명>`으로 쓴다. 종류는 커밋 메시지의 종류와 같다.
+
+| 종류 | 쓰는 경우 |
+| --- | --- |
+| `feature`, `feat` | 기능 추가 |
+| `fix` | 버그 수정, 동작 보완 |
+| `docs` | 문서만 바꾸는 작업 |
+| `test` | 테스트 추가와 보완 |
+| `refactor` | 동작을 바꾸지 않는 구조 변경, 멘토 피드백 반영 |
+| `ci`, `chore`, `ops` | CI, 빌드, 저장소 설정과 운영 작업 |
+
 - Issue 번호는 브랜치 이름의 필수 조건이 아니다.
 - PR 하나에는 하나의 목적만 포함한다.
 - 공식 저장소 설정에 맞춰 Merge commit을 사용한다.
@@ -57,7 +66,7 @@ main                 멘토 리뷰와 최종 통합, 직접 push 금지
 - AI는 작업 전에 이 원칙을 읽는다. 구현과 검증 권한을 댓글 게시, push, PR 생성, 병합과 재리뷰 요청 권한으로 확대하지 않는다.
 
 ```text
-feature/* 또는 refactor/*
+작업 브랜치
 → develop PR
 → 같은 영역 팀원 1명 이상 리뷰
 → 리뷰 의견 반영
@@ -100,6 +109,34 @@ PR에는 다음 내용을 작성한다.
 | `docs/legal/` | PM 확인 필수, 필요한 경우 외부 검토 |
 
 여러 영역에 영향이 있으면 관련 담당자 모두에게 검토를 요청한다. 기술 검토가 끝난 뒤 주 PM 김영석 또는 부 PM 이예은이 병합을 관리한다.
+
+## 커밋 메시지
+
+`<종류>(<영역>): <무엇을 바꿨는지>` 형식으로 쓴다. 설명은 한국어나 영어로 짧게 쓴다.
+
+```text
+fix(backend): 짧은 음성 전사 대기 시간 줄이기
+docs(app): 꼬리 질문 화면 설명 갱신
+test(ai): 리포트 의료 표현 검사 사례 추가
+```
+
+- 종류는 `feat`(또는 `feature`), `fix`, `docs`, `test`, `refactor`, `ci`, `chore`, `ops`, `style` 중에서 고른다.
+- 영역은 바꾼 폴더나 파트로 쓴다. 예: `app`, `FE`, `backend`, `ai`, `stt`, `evals`, `pm`, `portal`.
+- 되돌릴 때는 `git revert`가 만든 메시지를 그대로 둔다.
+
+## 코드 검사
+
+`develop`이나 `main` 대상 PR을 열거나 새 커밋을 올리면 [제품 테스트 CI](docs/product-tests.md)가 아래 검사를 실행한다.
+
+| 영역 | 기준 | 검사 |
+| --- | --- | --- |
+| `app/` | `app/analysis_options.yaml`(`flutter_lints` 기본 규칙) | `flutter analyze`, `flutter test` |
+| `backend/`, `ai/`, `stt-server/` | 문법 오류와 정의되지 않은 이름 | `ruff check --select E9,F63,F7,F82` |
+| `backend/` | PostgreSQL을 붙인 테스트 | `pytest`. 타입 검사(`mypy`)는 결과만 보여 주고 막지 않는다 |
+| `ai/`, `stt-server/` | 모델을 부르지 않는 테스트 | `pytest` |
+| 앱과 백엔드 | 합성 데이터로 앱부터 서버까지 이어 본 흐름 | `scripts/run_app_server_e2e.py` |
+
+- 포매터와 그 밖의 린트 규칙은 저장소에서 강제하지 않는다. 바꾼 파일은 주변 코드의 형식을 따른다.
 
 ## 문서 갱신
 

@@ -42,6 +42,7 @@ from card_generation.contract import (
     TopicOut,
 )
 from common.llm import ENDPOINTS, ChatConfig, chat_model, llm_down
+from common.retry import RetryBlocked
 
 _MAX_REFILLS = 2  # 판정 뒤 주제가 모자랄 때 다시 찾게 하는 횟수
 _SOURCE = {"factId": "lifeFact", "photoId": "photo", "profileField": "profile"}
@@ -118,6 +119,8 @@ def generate_cards(request: GenerationRequest, *, api_key: str, time_limit: floa
 
     try:
         rec, drafts, texts, first_problems = deadline.run(work)
+    except RetryBlocked as blocked:
+        raise blocked.original
     except CardGenerationError:
         raise
     except WritingFailed as error:
