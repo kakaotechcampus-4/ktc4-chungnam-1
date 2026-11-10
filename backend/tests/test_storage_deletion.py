@@ -105,6 +105,32 @@ def test_delete_confirmed_audio_marks_success_and_removes_queue(migrated_databas
     assert backend.calls == [(TARGETS[0], job.object_key)]
 
 
+def test_a_held_speech_part_is_deleted_only_after_its_hold(migrated_database_url):
+    # 30분 조각은 작업 행에 없어 쓰이는 중인지 실행기가 모른다. worker가 전체 전사가 끝날 때까지
+    # 보류(not_before)를 임대와 함께 늘리므로 그동안은 건너뛰고, worker가 죽어 보류가 끝나면 지운다.
+    db = _Db(migrated_database_url)
+    _, session = db.seed_session()
+    job = _accept(db, session)
+    run(db.repository.claim_next(lease_seconds=900))
+    part = f"temporary/speech/{uuid4()}.wav"
+    run(db.repository.queue_part_deletion(object_key=part, defer=True))
+    backend = FakeDelete()
+    result = process(migrated_database_url, backend, apply=True)
+    assert (result["inspected"], backend.calls) == (0, [])
+
+    db.execute(
+        "UPDATE storage_deletion_request_queue "
+        "SET not_before = now() - interval '1 second' WHERE s3_object_key = %s",
+        (part,),
+    )
+    result = process(migrated_database_url, backend, apply=True)
+    assert result["deleted"] == 1
+    assert backend.calls == [(TARGETS[0], part)]
+    assert db.execute("SELECT * FROM storage_deletion_request_queue") == []
+    # 같은 작업의 원본(처리 중)은 대기열에 없고 건드리지 않았다.
+    assert db.job_row(job.analysis_id)["audio_deleted_at"] is None
+
+
 def test_failures_remain_and_do_not_starve_later_requests(migrated_database_url):
     db = _Db(migrated_database_url)
     first, second = f"photos/{uuid4()}.jpg", f"photos/{uuid4()}.png"

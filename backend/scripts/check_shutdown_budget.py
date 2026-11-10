@@ -31,6 +31,9 @@ def check(config):
         if lease < 60:
             raise ValueError("작업 임대 시간 설정이 올바르지 않습니다.")
         # STT 완료 후 리포트 단계에서 임대를 다시 부여하므로 두 단계 합으로 계산.
+        # 30분을 넘는 녹음은 조각마다 임대를 다시 늘리지만, 종료 요청을 받으면 진행 중인 조각만
+        # 마치고 작업을 대기열에 되돌린다(speech_analysis_pipeline._before_part). 그래서 기다리는
+        # 시간은 조각 수와 관계없이 마지막 조각(임대 1회)과 리포트(임대 1회)까지다.
         required = phases * lease + 60
         actual = duration_seconds(worker.get("stop_grace_period", "10s"))
         okay = (

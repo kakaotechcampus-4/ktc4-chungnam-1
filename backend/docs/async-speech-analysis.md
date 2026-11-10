@@ -13,6 +13,12 @@
 > 아픈 기억 표시를 저장하며(migration `9c4e2b7a1f63`), 작업이 끝나거나 실패할 때 처리 기록 한 줄을
 > 남긴다(10.6절).
 >
+> 브랜치 `fix/long-recording-30min-stt`(2026-11-10, 미병합, 운영 아님)는 30분을 넘는 녹음을 30분
+> 이하 조각으로 나눠 전사하고(5.1절, PM 결정, 조각은 전사가 끝난 뒤 원본과 함께 지움), 실패로 끝난
+> 작업도 푸시로 알린다(11/10 E2E 문제 9,
+> [API 명세 1-7](../../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합)). 앱과 STT
+> 서버는 바꾸지 않는다.
+>
 > 다음 변경은 2026-11-09 develop에 병합됐고 같은 날 Deploy run 42568179490(develop `59190ba7`)으로
 > 운영에 들어갔다. 그 전 운영 BE는 11/8 Deploy run 42485750502가 배포한 develop `9c2b8276`이었다.
 >
@@ -231,13 +237,86 @@ Content-Type: application/json
 BE는 성공 응답 스키마와, 요청과 응답의 `analysisId`가 같은지 검증한다. AI 오류 본문은
 앱에 그대로 노출하거나 로그에 기록하지 않는다.
 
+### 5.1 30분을 넘는 녹음의 조각 전사
+
+2026-11-10 PM 결정: 긴 녹음은 30분 단위로 전사한다. 한 번의 STT 호출은
+`SAEROK_AI_SERVER_TIMEOUT_SECONDS`(기본 600초, 예비 서버 전환을 포함한 전체)를 넘길 수 없는데,
+11/10 E2E에서 71분 합성 음성은 전사 단계에 정확히 600초 머문 뒤 `AI_SERVER_TIMEOUT`으로 실패했고
+실제 88분 녹음도 두 번 실패했다. 예비 STT 서버 실측은 88분에 1,016초(ASR 220초, 화자 분리
+794초), 71분에 690초였다. 실패하면 원본을 지우므로 다시 보내도 같은 이유로 실패했다.
+
+- 판단: 접수 때 저장한 `size_bytes`에서 최소 헤더 44바이트를 뺀 값이 30분 PCM(16kHz mono
+  16-bit, 57,600,000바이트) 이하이면 확실히 30분 이하이므로 내려받지 않고 지금처럼 원본 하나로
+  부른다. 넘으면 원본을 임시 파일로 스트리밍해 받고(`AudioStorage.download`) WAV 헤더의 프레임
+  수로 실제 길이를 본다. data 뒤 메타데이터 청크 때문에 크기만 컸다면 원본 하나로 부른다.
+- 임시 파일: worker 컨테이너의 임시 디렉터리(`saerok-speech-*`)에 원본 사본과 지금 조각 하나만
+  두고 작업이 끝나면 디렉터리째 지운다(최대 원본 크기 + 약 57.6 MB). 강제 종료로 남은 디렉터리는
+  worker 시작 때와 다음 조각 나누기 전에 임대 시간의 3배보다 오래된 것을 지운다. compose의 재시작은
+  컨테이너를 다시 만들지 않아 /tmp가 남기 때문이다. 경로와 객체 키는 로그에 남기지 않는다.
+- 자르기(`app/services/audio_split.py`, 표준 라이브러리만): 각 조각의 끝은 그 조각 시작부터
+  30분이 되는 지점 직전 40초(29분 40초 ± 20초) 안에서 100ms 프레임의 에너지(표본 제곱의 합)가
+  가장 작은 프레임의 가운데다. 그래서 어떤 조각도 30분을 넘지 않는다. 마지막 조각이 60초보다
+  짧아지면 앞 끝을 당긴다. 조각마다 새 헤더를 쓴 정상 WAV를 만든다.
+- 조각 객체: 원본과 같은 버킷과 접두사(같은 Lifecycle) 아래 `<UUID>.wav`이며 UUID는 업로드마다
+  새로 만든다(`uuid4`). 삭제 실행기는 접두사 아래 UUID 형식의 WAV만 버킷을 알아보므로
+  (`storage_deletion.resolve_target`) `<analysisId>-part1.wav` 같은 이름은 쓰지 않는다. 작업 ID에서
+  만들면 다시 시도할 때 같은 키가 되어, 앞 시도에서 지우지 못해 남은 삭제 요청이 새로 올린 조각을
+  STT가 받는 동안 지울 수 있다.
+- 삭제 시점(2026-11-10 PM 정정): 조각은 그 조각의 STT가 끝나도 지우지 않고, 원본과 같은 때에
+  같은 방식으로 지운다(`PartObjects`, `_delete_audio_or_queue`). 성공하면 합친 전사를 저장한 직후
+  원본 삭제와 같은 자리(리포트 생성 전)에서, 실패하면 실패 처리(`SpeechAnalysisQueue.fail`)에서
+  원본과 함께, 조각 사이에 임대를 잃고 멈추면 멈출 때 원본과 함께 지운다. 방식도 원본과 같아 삭제
+  요청을 바로 지울 수 있게 바꾸고 S3에서 지운 뒤 대기열에서 뺀다. S3 삭제만 실패하면 요청이
+  대기열에 남아 삭제 실행기가 처리한다. 종료 요청으로 작업을 `queued`로 되돌릴 때는 원본은 남기지만
+  이 시도의 조각은 지운다. 다음 worker가 처음부터 새 키로 다시 나누므로 다시 쓰이지 않기
+  때문이다. 그래서 조각은 원본보다 오래 남지 않는다. 대신 S3에는 전사가 끝날 때까지 원본과 함께
+  그때까지 올린 조각이 모두(최대 원본 크기만큼) 더 있다.
+- 삭제 대기열(안전망): 조각을 올리기 전에 키를 삭제 대기열에 넣되 `not_before`를 임대 시간 뒤로
+  둔다(보류). 조각 키는 작업 행에 없어 행 삭제 trigger와 임대 정리가 대기열에 넣지 못하고, 삭제
+  실행기도 그 조각이 쓰이는 중인지 알 수 없기 때문이다(짧은 음성 전사와 같은 방식). 조각 사이에
+  임대를 늘릴 때 앞 조각들의 보류도 지금부터 임대 시간으로 함께 늘리므로, 조각이 많아 임대를 여러 번
+  늘려도 성공이나 실패 처리 전에는 삭제 실행기가 지우지 않는다. worker가 중간에 죽으면(두 번째 종료
+  신호, 강제 종료) 실패 처리를 거치지 않으므로 조각을 지우지 않고, 보류가 임대와 비슷한 때 끝난 뒤
+  삭제 실행기가 지운다(원본은 임대 정리가 대기열에 넣는다). 업로드 중에 작업이 취소된 경우도 같다.
+  업로드 스레드가 계속 올릴 수 있어 먼저 지우면 끝난 업로드가 조각을 다시 만들기 때문이다. 운영에서는
+  삭제 실행기의 예약 실행과 실제 삭제가 아직 보류 중이므로([S3 삭제 대기열 실행](storage-deletion.md))
+  이 경우의 조각은 실행기를 돌리거나 같은 접두사의 Lifecycle이 지울 때까지 남는다.
+- 호출: 조각은 순서대로 하나씩 보낸다. 요청은 5절과 같고 `analysisId`, `speakerCount`,
+  `dataExpiresAt`은 원본 작업의 값, `sizeBytes`와 `sha256`은 그 조각의 값이다. 제한 시간은 호출마다
+  따로 적용된다. 하나라도 실패하면 작업은 그 오류 코드로 `failed`이고 실패 처리에서 원본과 그때까지
+  올린 조각을 함께 지운다.
+- 합치기: 구간의 `startMs`, `endMs`(단어 시각 포함)를 조각 시작 시각만큼 옮기고 조각 순서대로
+  잇는다. `durationMs`는 원본 헤더의 길이다. 알려진 무음 문장 거르기와 `EMPTY_TRANSCRIPT` 확인은
+  합친 결과에 한다(조각 경계에 걸친 문장도 이어서 본다).
+- 화자 라벨: 조각이 둘 이상이면 라벨 앞에 조각 번호를 붙인다(`PART2_SPEAKER_00`, `null`은 그대로).
+  화자 분리는 조각 파일마다 따로 돌아 조각마다 `SPEAKER_00`이 같은 사람이라는 보장이 없고, 계약도
+  라벨을 "파일 안의 화자 군집"으로 정한다. 리포트와 변경 제안 프롬프트(`ai/report_generation`,
+  `ai/proposal_generation`)는 같은 라벨을 같은 사람의 단서로 읽어 화자와 경험의 주체를 추론하므로,
+  그대로 두면 앞 조각의 어르신 말과 뒤 조각의 보호자 말을 한 사람의 말로 묶어 이야기 후보를 잘못
+  귀속할 수 있다. 라벨 수가 입력 인원보다 많아지는 경우는 프롬프트가 이미 다룬다("라벨 수는 실제
+  사람 수의 증명이 아니다"). 조각 사이 화자를 다시 잇는 일은 AI 담당 후속이다.
+- 임대: 조각마다 STT 전에 임대를 지금부터 `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`(기본 900초)로
+  다시 늘리고 앞 조각들의 삭제 보류도 함께 늘린다(`extend_lease`, `queue_part_deletion`). 조각
+  하나(파일 쓰기, 업로드, STT 제한 600초, 마지막이면 전사 저장과 원본, 조각 삭제)는 늘린 임대 하나
+  안에 끝나야 하므로, worker는 STT 제한 시간 + 60초가 임대보다 길면 시작하지 않는다. 임대를
+  늘리지 못하면(임대 정리가 먼저 실패로 끝냈거나 작업 행이 지워짐) 전사를 저장하지 않고 멈춘다
+  (`stopped`). 처음 내려받기와 자르기는 작업을 가져올 때 잡은 임대 안에서 한다.
+- 종료: worker가 종료 요청을 받으면 다음 조각을 시작하지 않고 작업을 `queued`로 되돌린다
+  (`requeue`, 원본 유지, 이 시도의 조각은 삭제, 처리 기록 `requeued`). 다음 worker가 처음 조각부터
+  새 키로 다시 전사한다. 그래서 종료 유예 1860초(전사 임대 + 리포트 임대 + 60초)가 조각 수와
+  관계없이 맞다([배포 문서](deployment.md#worker-종료와-유예-시간)).
+- 그대로인 것: 30분 이하 녹음의 한 번 호출, STT 서버와 8-1 계약, 앱. 보호자가 공유하는 녹음은 기기에
+  남은 전체 WAV이며 조각과 관계없다. 긴 녹음은 여전히 worker 하나를 오래 붙잡으므로 그 뒤의 짧은
+  녹음이 기다릴 수 있다(11/10 E2E 문제 2, 이 변경 범위 밖).
+
 ## 6. 주요 구현 파일
 
 | 파일 | 역할 |
 | --- | --- |
 | `app/api/routes/speech_analyses.py` | multipart 제출, 상태 조회와 실패 분석 재요청 API |
 | `app/services/audio_validation.py` | 크기, SHA-256, WAV 규격과 음성 데이터 누락 검사 |
-| `app/services/audio_storage.py` | S3 업로드, Presigned GET과 삭제 |
+| `app/services/audio_storage.py` | S3 업로드, 내려받기(긴 녹음 나누기), Presigned GET과 삭제 |
+| `app/services/audio_split.py` | 30분을 넘는 녹음의 조각 위치(조용한 100ms 프레임)와 조각 WAV 쓰기 |
 | `app/services/speech_analysis_jobs.py` | 작업 모델, 메모리 테스트 저장소와 PostgreSQL 저장소 |
 | `app/services/speech_analysis_pipeline.py` | 제출 서비스, 음성 대기열과 STT 처리 함수 |
 | `app/services/speech_analysis_stats.py` | 작업이 끝나거나 실패할 때 남기는 처리 기록 한 줄(`speech_analysis_finished`) |
@@ -247,6 +326,7 @@ BE는 성공 응답 스키마와, 요청과 응답의 `analysisId`가 같은지 
 | `alembic/versions/f8fd6d0e862c_initial_schema.py` | 작업 테이블을 포함한 initial migration |
 | `database/init.sql` | 빈 개발 DB용 최신 bootstrap 스키마 |
 | `tests/test_speech_analyses.py` | API, 중복 제출, worker와 AI 계약 테스트 |
+| `tests/test_audio_split.py`, `tests/test_long_speech_analysis.py` | 조각 위치와 헤더, 조각 전사의 시각 옮기기, 순서, 삭제, 임대와 종료 처리 |
 | `tests/test_audio_storage.py` | S3 암호화, URL 수명과 삭제 어댑터 테스트 |
 
 ## 7. 데이터베이스
@@ -492,11 +572,12 @@ worker는 작업 하나가 끝나거나 실패할 때 `speech_analysis_finished`
 
 | 필드 | 뜻 |
 | --- | --- |
-| `outcome`, `error_code` | `completed`, `sttCompleted`(`--stt-only`), `stopped`(다른 처리가 먼저 끝냄), `failed`와 실패 코드 |
+| `outcome`, `error_code` | `completed`, `sttCompleted`(`--stt-only`), `stopped`(다른 처리가 먼저 끝냄), `requeued`(조각 전사 중 종료 요청으로 대기열에 되돌림), `failed`와 실패 코드 |
 | `analysis_id` | 작업 ID |
-| `stt_server` | 결과를 돌려준 STT 서버(`primary`, `backup`). 리포트만 다시 만든 작업은 `null` |
+| `stt_server` | 결과를 돌려준 STT 서버(`primary`, `backup`). 조각으로 나눴으면 한 조각이라도 예비 서버가 받았을 때 `backup`. 리포트만 다시 만든 작업은 `null` |
 | `audio_seconds`, `last_segment_end_seconds` | 녹음 길이와 마지막 전사 구간이 끝난 시각(초). 둘의 차이가 크면 전사가 일찍 끊긴 것이다 |
-| `transcript_segments`, `transcript_chars`, `speaker_labels` | 전사 구간 수, 글자 수, 서로 다른 화자 라벨 수 |
+| `transcript_segments`, `transcript_chars`, `speaker_labels` | 전사 구간 수, 글자 수, 서로 다른 화자 라벨 수(조각으로 나눴으면 조각별 라벨 수의 합) |
+| `stt_parts`, `stt_part_audio_seconds`, `stt_part_elapsed_seconds` | STT에 보낸 30분 조각 수, 조각마다 녹음 길이와 STT 호출에 걸린 시간(초, 조각 파일 쓰기와 업로드 제외). 실패하면 실패한 STT 호출까지(업로드에서 실패한 조각은 세지 않음). 나누지 않은 작업은 `null` |
 | `report_body_chars` | 리포트 본문 글자 수 |
 | `life_story_proposals_returned`, `life_story_proposals_kept` | 모델이 낸 이야기 후보 수와 AI 쪽에서 거르고 자른 뒤 남은 수 |
 | `story_categories`, `sensitive_proposals` | 남은 후보의 분류별 수와 아픈 기억 표시 수 |
@@ -649,6 +730,13 @@ error_code = null
 | 업로드가 끝나기 전에 업로드 임대 만료나 계정, 프로필 삭제로 작업 행이 지워짐 | 503 `AUDIO_STORAGE_UNAVAILABLE`, 202 반환 안 함. 올라간 원본 키는 행이 없어도 삭제 대기열에 기록 |
 | AI 연결 실패 | 작업 `failed`, `AI_SERVER_UNAVAILABLE` |
 | AI 시간 초과(STT 응답 대기, 리포트 생성 전체 제한) | 작업 `failed`, `AI_SERVER_TIMEOUT`, 리포트 저장 없음 |
+| 30분을 넘는 녹음 | 30분 이하 조각으로 나눠 차례로 STT, 조각마다 임대 연장, 결과를 시각을 옮겨 합침, 조각 객체는 합친 전사 저장 뒤 원본과 함께 삭제(11/10 PM 정정) |
+| 조각 하나의 STT 실패 | 작업 `failed`, 그 조각의 오류 코드, 실패 처리에서 올린 조각과 원본을 함께 삭제, 뒤 조각은 올리지 않음 |
+| 조각 사이에 임대를 늘리지 못함(임대 정리가 먼저 끝냄) | 전사 저장과 리포트 생성 없음, 원본과 올린 조각 삭제, 처리 기록 `stopped` |
+| 조각 전사 중 worker 종료 요청 | 진행 중인 조각만 마치고 작업 `queued`, 원본 유지, 이 시도의 조각은 삭제, 다음 worker가 처음 조각부터 새 키로 다시 전사 |
+| 조각 전사 중 worker 강제 종료(두 번째 종료 신호 등) | 조각은 지우지 않음, 삭제 대기열의 보류(임대와 함께 늘림)가 끝난 뒤 삭제 실행기가 지움, 원본은 임대 정리가 대기열에 넣음 |
+| 조각 S3 삭제만 실패 | 전사와 리포트는 계속, 조각 키는 삭제 대기열에 남음 |
+| 작업이 `failed`로 끝남 | 알림 동의와 등록 기기가 있으면 `리포트를 만들지 못했어요` 푸시(`reportFailed`). 다른 worker의 임대 정리와 전사 기한 정리로 끝난 작업은 보내지 않음 |
 | STT 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 전사문 저장과 리포트 생성 없음 |
 | 리포트 생성 중 임대 만료 | 작업 `failed`, `WORKER_LEASE_EXPIRED`, 늦게 온 결과 저장 없음 |
 | 전사 저장 뒤 리포트 시작 전 worker 중단 | 인계 임대 동안 `sttCompleted` 유지. 끝나면 다음 worker가 같은 작업 ID로 리포트 생성, STT 반복 없음, 빠진 원본 삭제 요청은 대기열에 기록 |
