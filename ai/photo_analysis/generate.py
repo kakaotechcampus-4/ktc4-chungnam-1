@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from common.llm import ChatConfig, ENDPOINTS, chat_model, llm_down
 
 PROMPT = Path(__file__).parent / "prompts" / "description.md"
-PROMPT_VERSION = "photo-1"
+PROMPT_VERSION = "photo-2"
 
 
 class PhotoDescription(BaseModel):
