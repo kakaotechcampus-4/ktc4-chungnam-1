@@ -368,6 +368,10 @@ String _photoFailureMessage(VisitPhotoUpload upload) => switch (upload) {
 /// 문구 바로 아래에 둔다(2026-11-10 UX 점검 2차). 녹음 실패가 아니므로 붉은
 /// 경고 상자가 아니라 연초록 면에 둔다. 다시 올릴 수 있는 실패에만
 /// `사진 다시 올리기` 를 단다. 나타날 때 화면 낭독기가 읽는다.
+///
+/// 올리는 중([VisitPhotoUpload.uploading])에도 상자를 두고 `사진을 올리고
+/// 있어요.` 만 적는다. 다시 올리기를 누르면 상자가 사라지고 끝났다는 체크 원이
+/// 잠깐 보였다가, 또 실패하면 상자가 돌아와 다 올린 것처럼 보였다.
 class _PhotoNotice extends StatelessWidget {
   const _PhotoNotice({required this.upload, required this.onRetry});
 
@@ -386,9 +390,11 @@ class _PhotoNotice extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ExcludeSemantics(
+                ExcludeSemantics(
                   child: Icon(
-                    Icons.no_photography_outlined,
+                    upload == VisitPhotoUpload.uploading
+                        ? Icons.photo_camera_outlined
+                        : Icons.no_photography_outlined,
                     size: 22,
                     color: AppColors.ink,
                   ),
@@ -396,7 +402,9 @@ class _PhotoNotice extends StatelessWidget {
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
-                    _photoFailureMessage(upload),
+                    upload == VisitPhotoUpload.uploading
+                        ? '사진을 올리고 있어요.'
+                        : _photoFailureMessage(upload),
                     style: AppTypography.body,
                   ),
                 ),
@@ -610,9 +618,12 @@ class _Finished extends ConsumerWidget {
     final sessionId = state.sessionId;
     // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
     final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
-    // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리지 못했다. 만남을 끝낸 뒤에는
-    // 녹음 화면도 알리지 않았으므로 같게 둔다.
-    final photoFailed = !ended && _photoNoticeShown(state.photoUpload);
+    // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리는 중이거나 올리지 못했다.
+    // 만남을 끝낸 뒤에는 녹음 화면도 알리지 않았으므로 같게 둔다.
+    final photoNotice =
+        !ended &&
+        (_photoNoticeShown(state.photoUpload) ||
+            state.photoUpload == VisitPhotoUpload.uploading);
 
     return ScreenBody(
       scrollable: true,
@@ -654,7 +665,7 @@ class _Finished extends ConsumerWidget {
             const SizedBox(height: AppSpacing.xxl),
             const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
           ],
-          if (photoFailed) ...[
+          if (photoNotice) ...[
             SizedBox(height: saveFailed ? AppSpacing.lg : AppSpacing.xxl),
             _PhotoNotice(
               upload: state.photoUpload,
@@ -663,7 +674,7 @@ class _Finished extends ConsumerWidget {
                   .retryPhotoUpload,
             ),
           ],
-          if (!saveFailed && !photoFailed) ...[
+          if (!saveFailed && !photoNotice) ...[
             const SizedBox(height: AppSpacing.xxl * 2),
             Center(
               child: Container(

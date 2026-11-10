@@ -438,6 +438,40 @@ void main() {
       });
     }
 
+    // 예전에는 누르면 상자가 사라지고 끝났다는 체크 원이 보였다가, 또 실패하면
+    // 상자가 돌아왔다.
+    testWidgets('끝낸 면회 화면에서 다시 올리는 동안 체크 원 대신 올리는 중이라고 알린다', (
+      tester,
+    ) async {
+      final api = FakeVisitApi()
+        ..photoFailures.addAll([
+          const ApiNetworkFailure(),
+          const ApiNetworkFailure(),
+        ]);
+      final container = _container(api);
+      await openFinished(tester, container, size: const Size(360, 640));
+      expect(find.text('사진 다시 올리기'), findsOneWidget);
+
+      final gate = api.photoGate = Completer<void>();
+      api.photoFailures.add(const ApiNetworkFailure());
+      await tester.tap(find.text('사진 다시 올리기'));
+      await tester.runAsync(pumpEventQueue);
+      await tester.pump();
+
+      expect(_read(container).photoUpload, VisitPhotoUpload.uploading);
+      expect(find.text('사진을 올리고 있어요.'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.text('사진 다시 올리기'), findsNothing);
+
+      gate.complete();
+      await tester.runAsync(pumpEventQueue);
+      await tester.pump();
+
+      expect(_read(container).photoUpload, VisitPhotoUpload.failed);
+      expect(find.text('사진을 올리지 못했어요.'), findsOneWidget);
+      expect(find.text('사진 다시 올리기'), findsOneWidget);
+    });
+
     testWidgets('녹음 파일을 닫은 뒤 다시 찍은 사진을 받지 않으면 다시 올리기 없이 본문에 알린다', (
       tester,
     ) async {
