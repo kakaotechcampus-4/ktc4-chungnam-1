@@ -665,3 +665,76 @@ def test_story_proposal_category_and_sensitive_columns(alembic_config, test_data
         assert (again.story_category, again.sensitive) == ("other", False)
     finally:
         engine.dispose()
+
+
+def test_life_fact_sensitive_column_copies_the_proposal_mark(alembic_config, test_database_url):
+    """이야기의 아픈 기억 표시(5d2e8b1c9a47).
+
+    이미 승인해 만든 이야기는 출처 제안의 표시를 옮기고, 출처가 없거나 표시가 없던 이야기는 `false`다.
+    `null`은 받지 않는다. downgrade는 열을 지우고 다시 upgrade할 수 있다.
+    """
+    command.upgrade(alembic_config, "a926d137e405")
+    engine = sa.create_engine(test_database_url)
+    try:
+        with engine.begin() as conn:
+            _, profile_id = _insert_profile(conn)
+            session_id = _insert_visit_session(conn, profile_id)
+
+            def proposal(sensitive: bool) -> uuid.UUID:
+                return conn.execute(
+                    sa.text(
+                        "INSERT INTO life_fact_proposals "
+                        "(session_id, profile_id, title, content, reason, sensitive, status) "
+                        "VALUES (:session_id, :profile_id, '합성 제목', '합성 내용', '합성 이유', "
+                        " :sensitive, 'settled') RETURNING proposal_id"
+                    ),
+                    {"session_id": session_id, "profile_id": profile_id, "sensitive": sensitive},
+                ).scalar_one()
+
+            def fact(title: str, source: uuid.UUID | None) -> None:
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO life_facts (profile_id, title, content, source_proposal_id) "
+                        "VALUES (:profile_id, :title, '합성 내용', :source)"
+                    ),
+                    {"profile_id": profile_id, "title": title, "source": source},
+                )
+
+            fact("아픈 기억 승인", proposal(True))
+            fact("보통 승인", proposal(False))
+            fact("직접 담음", None)
+            # 표시가 있던 제안이지만 승인하지 않아 이야기가 없음. 이야기가 새로 생기지 않는다.
+            proposal(True)
+
+        command.upgrade(alembic_config, "head")
+
+        def marks() -> dict[str, bool]:
+            with engine.begin() as conn:
+                rows = conn.execute(sa.text("SELECT title, sensitive FROM life_facts")).all()
+            return {row.title: row.sensitive for row in rows}
+
+        assert marks() == {"아픈 기억 승인": True, "보통 승인": False, "직접 담음": False}
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(sa.text("UPDATE life_facts SET sensitive = NULL"))
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO life_facts (profile_id, title, content) "
+                    "VALUES (:profile_id, '기본값', '합성 내용')"
+                ),
+                {"profile_id": profile_id},
+            )
+        assert marks()["기본값"] is False
+
+        command.downgrade(alembic_config, "a926d137e405")
+        with engine.begin() as conn:
+            columns = {c["name"] for c in sa.inspect(conn).get_columns("life_facts")}
+            assert conn.execute(sa.text("SELECT count(*) FROM life_facts")).scalar_one() == 4
+        assert "sensitive" not in columns
+
+        command.upgrade(alembic_config, "head")
+        assert marks() == {
+            "아픈 기억 승인": True, "보통 승인": False, "직접 담음": False, "기본값": False,
+        }
+    finally:
+        engine.dispose()

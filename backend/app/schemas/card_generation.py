@@ -95,6 +95,9 @@ class LifeFact(CamelModel):
     created_at: datetime
     # visit: 면회 뒤 제안을 승인해 생긴 이야기, caregiver: 보호자가 직접 넣은 이야기
     source: Literal["visit", "caregiver"]
+    # 아픈 기억일 수 있는 이야기(`life_facts.sensitive`). 카드 생성 2판은 이 이야기를 근거로 한 카드를
+    # 아픈 경험 카드(`sensitive`)로 냄(2026-11-10 PM 결정)
+    sensitive: bool
 
 
 class Photo(CamelModel):

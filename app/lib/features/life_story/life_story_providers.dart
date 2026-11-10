@@ -285,6 +285,8 @@ class LifeStoryEditsNotifier extends Notifier<Map<String, LifeStoryEdits>> {
       content: draft.content,
       imageNumber: draft.imageNumber,
       createdAt: story.createdAt,
+      // 입력 화면은 이 표시를 고치지 않는다. 고쳐도 그대로 둔다.
+      sensitive: story.sensitive,
     );
     state = {...state, profileId: _of(profileId)._update(updated)};
     return updated;

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
+import '../cards/sensitive_card_badge.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
 
@@ -91,7 +92,19 @@ class _TocItem extends StatelessWidget {
                   ),
                 ),
               ),
-              Expanded(child: Text(story.title, style: AppTypography.body)),
+              Expanded(
+                child: story.sensitive
+                    // 아픈 기억일 수 있는 이야기는 제목 아래에 작은 표시를 단다.
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(story.title, style: AppTypography.body),
+                          const SizedBox(height: AppSpacing.xs),
+                          const SensitiveCardBadge(),
+                        ],
+                      )
+                    : Text(story.title, style: AppTypography.body),
+              ),
               if (story.createdAt case final createdAt?) ...[
                 const SizedBox(width: AppSpacing.sm),
                 Text(shortDateLabel(createdAt), style: AppTypography.caption),
