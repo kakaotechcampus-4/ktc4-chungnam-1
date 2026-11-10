@@ -92,12 +92,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   /// 확인 창에서 나가기를 골랐다. 이때는 다시 묻지 않고 나간다.
   bool _leaving = false;
 
-  /// 녹음을 시작했고 아직 만남을 끝내지 않았는지. 잠시 멈춘 때도 포함한다.
+  /// 녹음을 시작했고 아직 파일을 닫지 않았는지. 잠시 멈춘 때도 포함한다.
   ///
   /// 이때 뒤로 나가면 녹음이 멈추고, 지금은 같은 카드로 회차를 다시 만들 수
-  /// 없어(서버 `CARD_SET_ALREADY_USED`) 한 번 더 묻는다.
+  /// 없어(서버 `CARD_SET_ALREADY_USED`) 한 번 더 묻는다. 만남을 끝냈거나 앞서
+  /// 나가며 파일을 닫았으면 멈출 녹음이 없어 묻지 않는다.
   bool _inProgress(VisitState? state) =>
-      state != null && state.started && state.participantCount == null;
+      state != null && state.started && !state.recordingFinalized;
 
   Future<void> _confirmLeave() async {
     final leave = await showChoiceDialog(
@@ -147,9 +148,20 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
             error: (error, _) => const ErrorStateView(
               message: '면회를 시작하지 못했어요.\n잠시 후 다시 시도해주세요.',
             ),
-            // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다.
-            data: (state) =>
-                state.started ? _Recording(state: state) : const _Intro(),
+            // 한 번 시작하면 잠시 멈춰도 녹음 화면에 머문다. 파일을 닫은 뒤
+            // 다시 들어오면 이어서 녹음 대신 끝낸 면회로 보여준다.
+            //
+            // 끝내기는 이 화면의 context 로 묻고 넘어간다. 파일을 닫으면
+            // [_Recording] 이 [_Finished] 로 바뀌어 그 context 가 사라지므로,
+            // 그 context 로는 닫은 뒤 소감 화면을 열지 못할 수 있다.
+            data: (state) => state.recordingFinalized
+                ? _Finished(state: state)
+                : state.started
+                ? _Recording(
+                    state: state,
+                    onStop: () => _confirmStop(context, _controller, state),
+                  )
+                : const _Intro(),
           ),
         ),
       ),
@@ -298,6 +310,8 @@ class _ProblemNotice extends StatelessWidget {
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
     VisitRecordingProblem.cardsOutdated =>
       '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
+    VisitRecordingProblem.recordingClosed =>
+      '이 면회의 녹음은 이미 끝났어요.\n이어서 녹음할 수 없어요.',
   };
 
   @override
@@ -356,9 +370,12 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
 
 /// E-2. 녹음 중.
 class _Recording extends ConsumerWidget {
-  const _Recording({required this.state});
+  const _Recording({required this.state, required this.onStop});
 
   final VisitState state;
+
+  /// `만남 끝내기` 를 눌렀다. 녹음 화면이 [_confirmStop] 으로 묻고 끝낸다.
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -464,7 +481,7 @@ class _Recording extends ConsumerWidget {
                     _ControlButton(
                       icon: Icons.stop,
                       label: '만남 끝내기',
-                      onTap: () => _confirmStop(context, controller, state),
+                      onTap: onStop,
                     ),
                   ],
                 ),
@@ -485,6 +502,98 @@ class _Recording extends ConsumerWidget {
           onOpen: (sheet) => showVisitCardsSheet(context, controller: sheet),
         ),
       ],
+    );
+  }
+}
+
+/// 녹음 파일을 닫은 회차에 다시 들어왔을 때(2026-11-10 UX 점검 1번).
+///
+/// 소감 화면에서 뒤로 오거나, 끝내지 않고 나간 뒤 사진 화면에서 다시 시작하면
+/// 같은 회차로 이 화면에 돌아온다. 닫은 파일에는 이어 쓸 수 없고 `record` 는
+/// 그때의 이어 가기를 오류 없이 무시하므로 `이어서 녹음` 을 두지 않고, 다음 할
+/// 일 하나만 둔다.
+///
+/// - 만남을 끝냈으면(참여자 수 확인) `소감 쓰기`. 끝내기 뒤에 열린 소감 화면이다.
+/// - 끝내지 않고 나갔으면 `평가 이어서 하기`. 카드 화면과 홈의 같은 이름 버튼처럼
+///   그 회차의 평가(`/visit/review?session=<회차 ID>`)로 간다.
+///
+/// 제목과 원은 녹음 안내([_Intro])와 같은 자리에 둔다.
+class _Finished extends StatelessWidget {
+  const _Finished({required this.state});
+
+  final VisitState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final ended = state.participantCount != null;
+    final sessionId = state.sessionId;
+    // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
+    final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
+
+    return ScreenBody(
+      scrollable: true,
+      bottom: PrimaryButton(
+        label: ended ? '소감 쓰기' : '평가 이어서 하기',
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        onPressed: () => context.push(
+          ended || sessionId == null
+              ? AppRoutes.visitReview
+              : AppRoutes.visitReviewOf(sessionId),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: AppSpacing.visitTitleTop),
+          const Text(
+            '이미 끝낸 면회예요',
+            style: AppTypography.screenTitle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xs),
+          Text(
+            [
+              '녹음은 이어서 할 수 없어요.',
+              // 녹음이 없으면 리포트를 만든다고 하지 않는다.
+              if (!saveFailed)
+                ended ? '소감을 쓰면 리포트를 만들어요.' : '평가를 마치면 리포트를 만들어요.',
+            ].join('\n'),
+            style: AppTypography.sub,
+            textAlign: TextAlign.center,
+          ),
+
+          // 저장하지 못했으면 끝났다는 체크 원 대신 그 안내를 문구 바로 아래에
+          // 둔다. 360x640 에서 원 아래에 두면 글자 1배에서도 첫 화면 밖이다.
+          if (saveFailed) ...[
+            const SizedBox(height: AppSpacing.xxl),
+            const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
+          ] else ...[
+            const SizedBox(height: AppSpacing.xxl * 2),
+            Center(
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: const BoxDecoration(
+                  color: HomeColors.bubble,
+                  shape: BoxShape.circle,
+                  border: Border.fromBorderSide(
+                    BorderSide(color: HomeColors.outline, width: 2),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check,
+                  size: 56,
+                  color: HomeColors.accent,
+                ),
+              ),
+            ),
+          ],
+
+          const Spacer(),
+          const SizedBox(height: AppSpacing.lg + AppSpacing.xxl),
+        ],
+      ),
     );
   }
 }
