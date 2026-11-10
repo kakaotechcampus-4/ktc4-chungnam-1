@@ -29,6 +29,8 @@ class FakeVisitRecorder implements VisitRecorder {
   /// 끝냈는데 파일이 없는 경우.
   bool losesFile;
 
+  /// 있으면 끝날 때까지 장치가 열리지 않는다. 장치를 여는 중을 흉내 낸다.
+  Completer<void>? startGate;
   /// 멈춘 녹음을 이어 가지 못하는 경우.
   bool failOnResume;
 
@@ -63,6 +65,8 @@ class FakeVisitRecorder implements VisitRecorder {
   @override
   Future<VisitRecording> start() async {
     calls.add('start');
+    final gate = startGate;
+    if (gate != null) await gate.future;
     if (failOnStart) throw Exception('장치를 열지 못했다');
     _files++;
     _states.add(VisitRecorderState.recording);

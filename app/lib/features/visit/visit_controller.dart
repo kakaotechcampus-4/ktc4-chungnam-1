@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
+import '../../data/card_api.dart' show cardApiProvider;
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
@@ -38,13 +39,26 @@ enum VisitRecordingProblem {
   /// `만남 끝내기` 로 지금까지의 녹음을 저장하게 한다.
   recorderStopped,
 
-  /// 서버에 회차를 만들지 못했다(API 5-1). 녹음을 시작하지 않는다.
+  /// 서버에 닿지 못해 회차를 만들지 못했다(API 5-1). 연결 실패와 시간 초과다.
+  /// 녹음을 시작하지 않는다.
   sessionFailed,
+
+  /// 서버가 회차를 만들지 못했다(5-1 의 5xx, 읽지 못한 응답). 잠시 뒤 다시
+  /// 누르면 될 수 있다. 녹음을 시작하지 않는다.
+  sessionServerError,
+
+  /// 서버가 이 카드로는 회차를 만들지 않는다고 거절했다(5-1 의 4xx, 평가까지
+  /// 마친 묶음). 다시 눌러도 같으므로 홈에서 카드를 새로 받아야 한다.
+  sessionRefused,
 
   /// 카드를 받은 뒤 프로필이나 일대기를 고쳐 5-1 이 그 묶음을 받지 않았다
   /// (`CARD_SET_NEEDS_REFRESH`). 다시 눌러도 같으므로 카드를 다시 준비해야 한다.
   cardsOutdated,
 
+  /// 이 카드 묶음으로 이미 시작한 평가 전 회차가 있다(`CARD_SET_ALREADY_USED`).
+  /// 이번 시도에서 만든 회차가 아니라 녹음을 이을 수 없으므로 그 회차의 평가로
+  /// 보낸다. 회차는 [VisitState.existingSessionId] 에 있다.
+  visitAlreadyStarted,
   /// 파일을 이미 닫은 회차에서 이어서 녹음하려 했다. 같은 파일에 다시 쓸 수
   /// 없고, `record` 는 닫은 뒤의 이어 가기를 오류 없이 무시하므로 녹음 중으로
   /// 바꾸지 않고 실패로 둔다(2026-11-10 UX 점검 1번).
@@ -91,6 +105,8 @@ class VisitState {
     this.participantCount,
     this.photoUpload = VisitPhotoUpload.none,
     this.addedCardIds = const {},
+    this.starting = false,
+    this.existingSessionId,
     this.recordingFinalized = false,
   });
 
@@ -139,6 +155,14 @@ class VisitState {
   /// 면회 중에 보충해 더한 카드. 카드 번호 칩을 다른 색으로 그리는 데 쓴다.
   final Set<String> addedCardIds;
 
+  /// 녹음을 처음 시작하는 중인지. 마이크 권한 확인, 회차 만들기(5-1, 최대
+  /// 15초)와 장치 열기 동안 `true` 다. 화면은 버튼을 돌게 하고 다시 받지 않는다.
+  final bool starting;
+
+  /// [VisitRecordingProblem.visitAlreadyStarted] 일 때 이 묶음을 쓰는 평가 전
+  /// 회차. 화면이 그 회차의 평가로 보낸다. 그 밖에는 `null` 이다.
+  final String? existingSessionId;
+
   ConversationCard? get currentCard =>
       currentIndex < cards.length ? cards[currentIndex] : null;
 
@@ -176,9 +200,12 @@ class VisitState {
     int? participantCount,
     VisitPhotoUpload? photoUpload,
     Set<String>? addedCardIds,
+    bool? starting,
+    String? existingSessionId,
     bool? recordingFinalized,
 
-    /// [problem] 을 지운다. `null` 은 "그대로 두기" 라서 따로 둔다.
+    /// [problem] 과 [existingSessionId] 를 지운다. `null` 은 "그대로 두기" 라서
+    /// 따로 둔다.
     bool clearProblem = false,
   }) => VisitState(
     cards: cards ?? this.cards,
@@ -193,6 +220,10 @@ class VisitState {
     participantCount: participantCount ?? this.participantCount,
     photoUpload: photoUpload ?? this.photoUpload,
     addedCardIds: addedCardIds ?? this.addedCardIds,
+    starting: starting ?? this.starting,
+    existingSessionId: clearProblem
+        ? null
+        : (existingSessionId ?? this.existingSessionId),
     recordingFinalized: recordingFinalized ?? this.recordingFinalized,
   );
 }
@@ -208,6 +239,16 @@ class VisitController extends AsyncNotifier<VisitState> {
 
   /// 회차를 만드는 중인지. 두 번 눌러 회차가 둘 생기지 않게 막는다.
   bool _creatingSession = false;
+
+  /// 이번 면회에서 보낸 5-1 이 서버에 회차를 만들었을 수 있는데 그 회차를
+  /// 들고 있지 않은지. 응답을 받지 못했거나(시간 초과 등) 회차를 받은 뒤 5-3
+  /// 이 실패한 경우다. 다음 5-1 이 `CARD_SET_ALREADY_USED` 로 거절되면 그
+  /// 회차를 이어 받아 녹음한다([_continueUsedSet]).
+  bool _sessionMayExist = false;
+
+  /// 녹음을 시작하는 사이 녹음 화면을 떠났다. 장치를 열지 않고, 이미 여는
+  /// 중이었으면 열린 뒤 바로 닫는다.
+  bool _leftWhileStarting = false;
 
   /// 녹음 파일을 연 뒤 세션을 붙잡아 두었는지([sessionHoldProvider]). 파일을
   /// 닫고 기록을 마치거나 이 provider 가 정리되면 놓는다.
@@ -245,6 +286,8 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _fileOpen = false;
     _creatingSession = false;
+    _sessionMayExist = false;
+    _leftWhileStarting = false;
     _photoQueue = Future.value();
     _holdingSession = false;
     final sessionHold = ref.read(sessionHoldProvider.notifier);
@@ -289,10 +332,17 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 만든 뒤 장치가 열리지 않았으면 회차는 그대로 두고, 다시 누를 때 같은
   /// 회차로 녹음만 다시 시작한다.
   ///
-  /// 파일을 닫았거나 닫는 중이면 이어 가지 않는다([VisitRecordingProblem.recordingClosed]).
+  /// 처음 시작하는 동안은 [VisitState.starting] 이 `true` 이고, 그동안 다시
+  /// 불러도 아무것도 하지 않는다. 권한 창이나 5-1 을 기다리는 사이 두 번 눌러
+  /// 5-1 이 두 번 나가지 않게 한다.
   Future<void> startRecording() async {
     final current = state.value;
-    if (current == null || current.recording || _creatingSession) return;
+    if (current == null ||
+        current.recording ||
+        current.starting ||
+        _creatingSession) {
+      return;
+    }
     // 장치가 파일을 닫았다. 이어서 녹음하면 소리 없이 시간만 흐르므로 받지 않는다.
     // 화면은 `만남 끝내기` 만 보인다.
     if (current.problem == VisitRecordingProblem.recorderStopped) return;
@@ -308,6 +358,18 @@ class VisitController extends AsyncNotifier<VisitState> {
       return _resumeRecording();
     }
 
+    _leftWhileStarting = false;
+    // 앞 시도의 안내는 지운다. 이번 시도가 실패하면 그 이유로 다시 채운다.
+    _update((now) => now.copyWith(starting: true, clearProblem: true));
+    try {
+      await _startNew(current);
+    } finally {
+      if (ref.mounted) _update((now) => now.copyWith(starting: false));
+    }
+  }
+
+  /// 처음 녹음을 시작한다. 마이크 권한 → 회차(5-1) → 새 파일 순서다.
+  Future<void> _startNew(VisitState current) async {
     final bool allowed;
     try {
       allowed = await _recorder.hasPermission();
@@ -319,14 +381,29 @@ class VisitController extends AsyncNotifier<VisitState> {
       _fail(VisitRecordingProblem.permissionDenied);
       return;
     }
+    if (_leftWhileStarting || !ref.mounted) return;
 
     if (current.sessionId == null && !await _createSession()) return;
+    // 회차를 기다리는 사이 화면을 떠났다. 보이지 않는 곳에서 녹음하지 않는다.
+    // 만든 회차는 그대로 두며, 카드 화면과 홈이 `평가 이어서 하기` 로 잇는다.
+    if (_leftWhileStarting || !ref.mounted) return;
 
+    final recorder = _recorder;
     final VisitRecording recording;
     try {
-      recording = await _recorder.start();
+      recording = await recorder.start();
     } on Exception {
       _fail(VisitRecordingProblem.startFailed);
+      return;
+    }
+    // 장치를 여는 사이 화면을 떠났다. 떠날 때는 아직 닫을 파일이 없었으므로
+    // 여기서 바로 닫는다. 같은 회차로 다시 누르면 새 파일로 녹음한다.
+    if (_leftWhileStarting || !ref.mounted) {
+      try {
+        await recorder.stop();
+      } on Exception {
+        // 닫지 못해도 이 파일은 보낼 목록에 없어 쓰이지 않는다.
+      }
       return;
     }
 
@@ -345,6 +422,7 @@ class VisitController extends AsyncNotifier<VisitState> {
       (now) => now.copyWith(
         started: true,
         recording: true,
+        starting: false,
         recordingPath: recording.path,
         clearProblem: true,
       ),
@@ -363,6 +441,11 @@ class VisitController extends AsyncNotifier<VisitState> {
   ///
   /// 5-1 은 선택 화면의 카드(`position` 1~9)만 받는다. 녹음 전에 보충 카드를
   /// 더했다면 회차를 만든 뒤 5-3 으로 따로 더한다.
+  ///
+  /// 실패는 서버에 닿지 못한 경우([VisitRecordingProblem.sessionFailed]),
+  /// 서버가 처리하지 못한 경우([VisitRecordingProblem.sessionServerError]),
+  /// 다시 눌러도 받지 않는 거절([VisitRecordingProblem.sessionRefused])로 나눠
+  /// 안내한다. 이미 회차에 쓴 묶음이라는 거절은 [_continueUsedSet] 이 잇는다.
   Future<bool> _createSession() async {
     _creatingSession = true;
     try {
@@ -371,26 +454,35 @@ class VisitController extends AsyncNotifier<VisitState> {
       final api = ref.read(visitApiProvider);
       bool chosen(ConversationCard c) =>
           c.position <= CardRules.selectableCount;
-
-      final session = await api.createSession(
-        setId: set.setId,
-        selectedCardIds: [
-          for (final c in cards)
-            if (chosen(c)) c.cardId,
-        ],
-      );
       final supplements = [
         for (final c in cards)
           if (!chosen(c)) c.cardId,
       ];
+
+      final VisitSession session;
+      try {
+        session = await api.createSession(
+          setId: set.setId,
+          selectedCardIds: [
+            for (final c in cards)
+              if (chosen(c)) c.cardId,
+          ],
+        );
+      } on ApiFailure catch (failure) {
+        if (failure case ApiServerFailure(errorCode: 'CARD_SET_ALREADY_USED')) {
+          return _continueUsedSet(set, supplements);
+        }
+        // 요청이 서버에 닿아 회차가 생겼는데 응답만 받지 못했을 수 있다.
+        if (_mayHaveCreated(failure)) _sessionMayExist = true;
+        rethrow;
+      }
+      // 회차가 생겼다. 아래 5-3 이 실패해도 서버에는 남는다.
+      _sessionMayExist = true;
       if (supplements.isNotEmpty) {
         await api.addCards(session.sessionId, supplements);
       }
 
-      _update((now) => now.copyWith(sessionId: session.sessionId));
-      _announceVisit(session);
-      // 녹음은 사진을 기다리지 않는다.
-      unawaited(_uploadPhoto(retryOnce: true));
+      _beginSession(session.sessionId, startedAt: session.startedAt);
       return true;
     } on ApiFailure catch (failure) {
       if (failure case ApiServerFailure(errorCode: 'CARD_SET_NEEDS_REFRESH')) {
@@ -406,7 +498,7 @@ class VisitController extends AsyncNotifier<VisitState> {
           );
         }
       } else {
-        _fail(VisitRecordingProblem.sessionFailed);
+        _fail(_sessionProblemOf(failure));
       }
       return false;
     } finally {
@@ -414,23 +506,116 @@ class VisitController extends AsyncNotifier<VisitState> {
     }
   }
 
+  /// 5-1 이 이미 회차에 쓴 묶음이라고 거절했다(`CARD_SET_ALREADY_USED`).
+  /// 이어서 녹음할 회차를 받았으면 `true` 다.
+  ///
+  /// 같은 거절이 되풀이되지 않게 지금 묶음(4-3)을 새로 읽어 이 묶음을 쓰는
+  /// 평가 전 회차(`usedBySessionId`)를 찾는다. 받아 둔 묶음은 회차를 만들기
+  /// 전에 받은 것이라 그 회차를 모른다. 받아 둔 묶음을 버리면 면회 상태가 다시
+  /// 만들어지므로 provider 를 거치지 않고 묻는다.
+  ///
+  /// - 이번 면회에서 보낸 5-1 이 회차를 만들었을 수 있으면([_sessionMayExist])
+  ///   그 회차를 이어 받아 녹음한다. 첫 요청이 서버에 닿고 응답만 늦어 시간
+  ///   초과로 끝난 경우다.
+  /// - 아니면 앱을 다시 켜기 전이나 다른 기기에서 시작한 면회다. 그 녹음에
+  ///   이을 수 없으므로 그 회차의 평가로 보낸다
+  ///   ([VisitRecordingProblem.visitAlreadyStarted]).
+  /// - 묶음을 쓰는 평가 전 회차가 없으면 평가까지 마친 묶음이다. 홈에서 카드를
+  ///   새로 받게 한다([VisitRecordingProblem.sessionRefused]).
+  ///
+  /// 여기서 난 실패는 [_sessionMayExist] 를 바꾸지 않는다. 5-1 을 보낸 결과가
+  /// 아니기 때문이다.
+  Future<bool> _continueUsedSet(CardSet set, List<String> supplements) async {
+    try {
+      final profileId = await ref.read(serverProfileIdProvider.future);
+      String? sessionId;
+      if (profileId != null) {
+        try {
+          final fresh = await ref.read(cardApiProvider).current(profileId);
+          if (fresh.setId == set.setId) sessionId = fresh.usedBySessionId;
+        } on ApiServerFailure catch (failure) {
+          // 쓸 묶음이 없다(`CARD_GENERATION_NOT_FOUND`). 평가까지 마친 경우다.
+          if (failure.statusCode != 404) rethrow;
+        }
+      }
+      if (!ref.mounted) return false;
+      if (sessionId == null) {
+        _fail(VisitRecordingProblem.sessionRefused);
+        return false;
+      }
+
+      if (!_sessionMayExist) {
+        _announceVisit(sessionId);
+        _fail(
+          VisitRecordingProblem.visitAlreadyStarted,
+          existingSessionId: sessionId,
+        );
+        return false;
+      }
+
+      // 5-3 은 이미 더한 카드를 무시하므로 다시 보내도 된다.
+      if (supplements.isNotEmpty) {
+        await ref.read(visitApiProvider).addCards(sessionId, supplements);
+      }
+      if (!ref.mounted) return false;
+      _beginSession(sessionId);
+      return true;
+    } on ApiFailure catch (failure) {
+      if (ref.mounted) _fail(_sessionProblemOf(failure));
+      return false;
+    }
+  }
+
+  /// 서버에 회차가 생겼다. 상태에 담고 알리며 찍어 둔 사진을 올린다.
+  void _beginSession(String sessionId, {String? startedAt}) {
+    _sessionMayExist = false;
+    _update((now) => now.copyWith(sessionId: sessionId));
+    _announceVisit(sessionId, startedAt: startedAt);
+    // 녹음은 사진을 기다리지 않는다.
+    unawaited(_uploadPhoto(retryOnce: true));
+  }
+
+  /// 5-1 이 이렇게 끝났으면 서버에 회차가 생겼을 수 있다. 4xx 거절은 회차를
+  /// 만들지 않고, 로그인이 없으면 요청이 나가지 않는다.
+  static bool _mayHaveCreated(ApiFailure failure) => switch (failure) {
+    ApiNetworkFailure() || ApiUnexpectedResponseFailure() => true,
+    ApiServerFailure(:final statusCode) => statusCode >= 500,
+    ApiSignedOutFailure() => false,
+  };
+
+  /// 회차를 만들지 못한 이유를 안내로 옮긴다. 서버에 닿지 못한 것과 서버의
+  /// 거절을 나눈다. 거절도 다시 눌러 될 수 있는 것(5xx, `retryable`)과 다시
+  /// 눌러도 같은 것(그 밖의 4xx)을 나눈다.
+  static VisitRecordingProblem _sessionProblemOf(ApiFailure failure) =>
+      switch (failure) {
+        ApiNetworkFailure() => VisitRecordingProblem.sessionFailed,
+        ApiServerFailure(:final statusCode, :final retryable)
+            when statusCode < 500 && !retryable =>
+          VisitRecordingProblem.sessionRefused,
+        _ => VisitRecordingProblem.sessionServerError,
+      };
+
   /// 회차가 생겨 서버가 이 카드 묶음을 면회 중(`inVisit`)으로, 이 회차를 평가
   /// 전으로 본다. 카드 화면과 홈이 서버에 다시 묻지 않아도 그 상태를 보게 한다.
   ///
   /// 그러지 않으면 녹음 화면에서 뒤로 나왔을 때 카드 화면은 고르기와
   /// `대화 시작하기` 를 그대로 보여주고(다시 누르면 `CARD_SET_ALREADY_USED`),
   /// 홈은 앱을 다시 켜기 전까지 `평가 이어서 하기` 를 띄우지 않는다(#234).
-  void _announceVisit(VisitSession session) {
+  ///
+  /// [startedAt] 은 5-1 이 준 `startedAt` 이다. 5-1 응답 없이 4-3 으로 찾은
+  /// 회차는 시작 시각을 모르므로, 홈 알림은 서버의 가장 최근 회차(5-4)를 다시
+  /// 물어 정한다.
+  void _announceVisit(String sessionId, {String? startedAt}) {
     final profileId = ref.read(serverProfileIdProvider).value;
     if (profileId != null) {
       ref.read(cardGenerationProvider(profileId).notifier).visitStarted();
     }
-    ref
-        .read(reportNoticeProvider.notifier)
-        .visitStarted(
-          sessionId: session.sessionId,
-          startedAt: session.startedAt,
-        );
+    final notice = ref.read(reportNoticeProvider.notifier);
+    if (startedAt == null) {
+      notice.retry();
+    } else {
+      notice.visitStarted(sessionId: sessionId, startedAt: startedAt);
+    }
   }
 
   /// 올리지 못한 면회 사진을 다시 올린다. 녹음 화면의 버튼이 부른다.
@@ -569,8 +754,14 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// Riverpod 이 `Tried to modify a provider while the widget tree was
   /// building` 을 던진다. 파일을 닫은 뒤의 상태 변경은 `await` 다음이라 이미
   /// 정리가 끝난 뒤다.
-  Future<void> stopRecordingOnLeave() =>
-      _stop(participantCount: null, deferStateChange: true);
+  ///
+  /// 녹음을 시작하는 중([VisitState.starting])이었으면 기다리던 일이 끝나도
+  /// 장치를 열지 않고, 여는 중이었으면 열린 뒤 바로 닫는다. 화면이 없는 곳에서
+  /// 마이크가 켜지지 않게 하려는 것이다.
+  Future<void> stopRecordingOnLeave() {
+    if (state.value?.starting ?? false) _leftWhileStarting = true;
+    return _stop(participantCount: null, deferStateChange: true);
+  }
 
   Future<void> _stop({
     required int? participantCount,
@@ -734,8 +925,14 @@ class VisitController extends AsyncNotifier<VisitState> {
     _ticker = null;
   }
 
-  void _fail(VisitRecordingProblem problem) {
-    _update((now) => now.copyWith(recording: false, problem: problem));
+  /// [existingSessionId] 는 [VisitRecordingProblem.visitAlreadyStarted] 일 때만
+  /// 준다. 앞 안내의 회차가 남지 않게 먼저 지운다.
+  void _fail(VisitRecordingProblem problem, {String? existingSessionId}) {
+    _update(
+      (now) => now
+          .copyWith(recording: false, clearProblem: true)
+          .copyWith(problem: problem, existingSessionId: existingSessionId),
+    );
   }
 
   /// 녹음 장치의 상태가 바뀌었다. 앱이 부르지 않은 멈춤만 본다.
