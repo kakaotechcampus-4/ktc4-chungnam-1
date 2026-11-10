@@ -204,7 +204,8 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                 : state.started
                 ? _Recording(
                     state: state,
-                    onStop: () => _confirmStop(context, ref, _controller, state),
+                    onStop: () =>
+                        _confirmStop(context, ref, _controller, state),
                   )
                 : const _Intro(),
           ),
@@ -738,6 +739,12 @@ class _Finished extends ConsumerWidget {
     final sessionId = state.sessionId;
     // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
     final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
+    final reviewLabel = ended ? '소감 쓰기' : '평가 이어서 하기';
+    void openReview() => context.push(
+      ended || sessionId == null
+          ? AppRoutes.visitReview
+          : AppRoutes.visitReviewOf(sessionId),
+    );
     // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리는 중이거나 올리지 못했다.
     // 만남을 끝낸 뒤에는 녹음 화면도 알리지 않았으므로 같게 둔다.
     final photoNotice =
@@ -747,16 +754,14 @@ class _Finished extends ConsumerWidget {
 
     return ScreenBody(
       scrollable: true,
-      bottom: PrimaryButton(
-        label: ended ? '소감 쓰기' : '평가 이어서 하기',
-        color: HomeColors.accent,
-        loadingColor: HomeColors.accentLoading,
-        onPressed: () => context.push(
-          ended || sessionId == null
-              ? AppRoutes.visitReview
-              : AppRoutes.visitReviewOf(sessionId),
-        ),
-      ),
+      bottom: saveFailed
+          ? null
+          : PrimaryButton(
+              label: reviewLabel,
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              onPressed: openReview,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -783,7 +788,12 @@ class _Finished extends ConsumerWidget {
           // 1배에서도 첫 화면 밖이다.
           if (saveFailed) ...[
             const SizedBox(height: AppSpacing.xxl),
-            const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
+            RecordingStoppedAlert(
+              key: const Key('recordingStoppedAlert'),
+              alert: RecordingAlert.saveFailed,
+              actionLabel: reviewLabel,
+              onAction: openReview,
+            ),
           ],
           if (photoNotice) ...[
             SizedBox(height: saveFailed ? AppSpacing.lg : AppSpacing.xxl),
