@@ -21,6 +21,7 @@
 | 기술 결정과 변경 이유 | [ADR 목록](architecture/decisions/README.md) | 개별 ADR |
 | 개인정보와 동의 | [법률 검토](legal/README.md) | [동의안](legal/consent-draft.md), [기능 대응표](legal/consent-mapping.md) |
 | 이슈 작성과 Git, PR 절차, 커밋 메시지와 코드 검사 | [협업 규칙](../CONTRIBUTING.md) | PR 템플릿 |
+| 멘토 리뷰와 팀 리뷰에서 다룬 것 | [주요 PR 코드 리뷰 기록](pm/code-review-record.md) | GitHub PR 리뷰 링크 |
 | 채널, 작업 공유, 회의, 피드백 같은 팀 기본 규칙 | [팀 그라운드룰](pm/ground-rules.md) | 개발 규칙은 협업 규칙 |
 | 발표 준비 | [발표 예상 질문](pm/presentation-qna.md) | 과거 준비 자료, 현재 구현 정본 아님 |
 
