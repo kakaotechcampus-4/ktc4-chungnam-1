@@ -67,6 +67,25 @@ def test_topics_follow_106_rules():
     assert kept == [("id-1", "more"), ("id-3", "more"), ("id-4", "exclude")]
 
 
+def test_more_is_never_proposed_for_a_card_the_caregiver_rated_poorly():
+    """11/10 E2E 문제 12: 아쉬웠어요(negative)로 평가한 카드에 '더 자주'가 미리 골라져 나옴.
+    그 more는 버리고, 같은 카드의 다음 조정(less, exclude)은 받음. 다른 반응의 more는 그대로."""
+    req = request("negative", "negative", "neutral", "positive")
+    out = _Topics(topic_proposals=[
+        _TopicProposal(card="c1", suggested_action="more", reason="이야기가 길게 이어짐"),
+        _TopicProposal(card="c2", suggested_action="more", reason="이야기가 길게 이어짐"),
+        _TopicProposal(card="c2", suggested_action="less", reason="대답이 짧아지심"),
+        _TopicProposal(card="c3", suggested_action="more", reason="즐거워하심"),
+        _TopicProposal(card="c4", suggested_action="more", reason="즐거워하심")])
+    kept = [(t.card_id, t.suggested_action) for t in _topics(out, req, card_refs(req))]
+    assert kept == [("id-2", "less"), ("id-3", "more"), ("id-4", "more")]
+
+
+def test_topic_prompt_forbids_more_for_poorly_rated_cards():
+    _, topic_prompt = _prompts()
+    assert "reaction이 negative인 카드(보호자가 아쉬웠다고 평가한 카드)에는 more를 내지 않는다" in topic_prompt
+
+
 def test_topic_with_blank_reason_is_dropped():
     """#106은 reason이 빈 조정이 하나라도 있으면 응답 전체를 거절함. 빈 것은 버리고 같은 카드의 다음 조정을 씀."""
     req = request("positive")
@@ -199,7 +218,7 @@ def test_category_and_sensitive_reach_the_106_response(monkeypatch):
          "storyCategory": "hometown", "sensitive": True},
         {"title": "손주와 여행 계획", "content": "합성 경험 내용", "reason": "합성 이유",
          "storyCategory": "travel", "sensitive": False}]
-    assert out["promptVersion"] == "report-6+proposals-8"
+    assert out["promptVersion"] == "report-6+proposals-9"
     assert "tokenUsage" not in out and "lifeFactProposalsReturned" not in out
 
 

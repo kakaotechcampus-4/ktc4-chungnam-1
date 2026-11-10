@@ -5,7 +5,10 @@
 데이터다.
 """
 
+from app.core.database import connect
+from app.services.card_sets import build_context
 from app.services.life_facts import LIFE_FACT_LIMIT
+from tests.support import run
 from tests.visit_records import Records
 
 
@@ -220,3 +223,51 @@ def test_accepted_life_fact_takes_the_proposed_category_unless_the_caregiver_cha
     # 일대기(2-3)에도 그 분류로 보인다.
     profile = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}").json()
     assert sorted(f["storyCategory"] for f in profile["lifeFacts"]) == ["hometown", "travel"]
+
+
+def test_accepted_life_fact_keeps_the_proposals_sensitive_mark(migrated_database_url):
+    """2026-11-10 PM 결정: 아픈 기억일 수 있다고 표시된 후보를 승인하면 이야기에도 표시가 남는다.
+
+    11/10 E2E에서 7-4가 표시를 버려 일대기와 카드 생성에 전해지지 않았다. 보호자가 분류나 글을 고쳐도
+    표시는 제안의 값이다. 일대기(2-3)와 다음 카드 생성 입력(4-1)에도 표시가 간다.
+    """
+    records = Records(migrated_database_url)
+    user_id, profile_id, visit = _reported(records)
+    painful = records.life_fact_proposal(visit, title="합성 사별 이야기", sensitive=True)
+    plain = records.life_fact_proposal(visit, title="합성 장터 이야기")
+
+    response = records.call(
+        user_id,
+        "POST",
+        _review_path(visit),
+        json={
+            "lifeFacts": [
+                {**_accept(painful), "title": "합성 최종 사별", "storyCategory": "family"},
+                {**_accept(plain), "title": "합성 최종 장터"},
+            ],
+            "topics": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert records.query(
+        "SELECT title, sensitive, source_proposal_id FROM life_facts ORDER BY title"
+    ) == [
+        {"title": "합성 최종 사별", "sensitive": True, "source_proposal_id": painful},
+        {"title": "합성 최종 장터", "sensitive": False, "source_proposal_id": plain},
+    ]
+    profile = records.call(user_id, "GET", f"/api/v1/profiles/{profile_id}").json()
+    assert sorted((f["title"], f["sensitive"]) for f in profile["lifeFacts"]) == [
+        ("합성 최종 사별", True),
+        ("합성 최종 장터", False),
+    ]
+
+    async def context():
+        async with connect(migrated_database_url) as connection:
+            return await build_context(connection, profile_id)
+
+    sent = run(context()).model_dump(mode="json", by_alias=True)["lifeFacts"]
+    assert sorted((f["title"], f["sensitive"]) for f in sent) == [
+        ("합성 최종 사별", True),
+        ("합성 최종 장터", False),
+    ]

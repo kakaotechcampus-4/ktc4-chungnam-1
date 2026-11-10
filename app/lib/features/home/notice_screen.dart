@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart' show analysisFailureReason;
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import 'failed_report_sheet.dart';
 
 /// 알림. 홈의 왼쪽 상단 알림 아이콘을 누르면 뜬다(피그마 설계 없음).
 ///
@@ -48,6 +50,9 @@ class NoticeScreen extends ConsumerWidget {
                   ? _NoticeRow(
                       date: info!.visitDate,
                       notice: notice,
+                      reason: notice == ReportNotice.failed
+                          ? analysisFailureReason(info.failureCode)
+                          : null,
                       onOpen: () {
                         final id = info.reportId;
                         // 회차 상태를 묻지 못했으면 다시 묻는다.
@@ -56,6 +61,17 @@ class NoticeScreen extends ConsumerWidget {
                           return;
                         }
                         if (id == null) return;
+                        // 홈 배너와 같이 녹음이 남았으면 공유도 고르게 한다.
+                        if (notice == ReportNotice.failed &&
+                            info.analysisId != null) {
+                          openFailedReport(
+                            context,
+                            ref,
+                            sessionId: id,
+                            analysisId: info.analysisId!,
+                          );
+                          return;
+                        }
                         context.push(switch (notice) {
                           // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
                           ReportNotice.evaluationPending =>
@@ -63,13 +79,8 @@ class NoticeScreen extends ConsumerWidget {
                           ReportNotice.audioPending => AppRoutes.visitUploadOf(
                             id,
                           ),
-                          ReportNotice.failed =>
-                            info.analysisId == null
-                                ? AppRoutes.home
-                                : AppRoutes.analysisRetryOf(
-                                    id,
-                                    info.analysisId!,
-                                  ),
+                          // 작업 ID 를 모르면 다시 요청할 수 없다.
+                          ReportNotice.failed => AppRoutes.home,
                           _ => AppRoutes.reportOf(id),
                         });
                       },
@@ -103,11 +114,15 @@ class _NoticeRow extends StatelessWidget {
     required this.date,
     required this.notice,
     required this.onOpen,
+    this.reason,
   });
 
   final String? date;
   final ReportNotice notice;
   final VoidCallback onOpen;
+
+  /// 제목 아래에 덧붙이는 실패 이유. 홈 배너와 같은 문구다.
+  final String? reason;
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +172,10 @@ class _NoticeRow extends StatelessWidget {
                         const SizedBox(height: AppSpacing.xs),
                       ],
                       Text(title, style: AppTypography.sectionTitle),
+                      if (reason != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(reason!, style: AppTypography.sub),
+                      ],
                       const SizedBox(height: AppSpacing.md),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,

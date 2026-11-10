@@ -131,7 +131,11 @@ class SecondaryButton extends StatelessWidget {
                 children: [
                   Icon(icon, size: 20),
                   const SizedBox(width: AppSpacing.sm),
-                  text,
+                  // 좁은 화면에서 글자를 키우면 아이콘과 한 줄에 들어가지
+                  // 않는다. 버튼 높이가 정해져 있어 줄을 바꾸지 않고 줄인다.
+                  Flexible(
+                    child: FittedBox(fit: BoxFit.scaleDown, child: text),
+                  ),
                 ],
               ),
       ),

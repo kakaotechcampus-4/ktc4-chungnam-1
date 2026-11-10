@@ -8,6 +8,10 @@ import '../../design/tokens.dart';
 /// 병 같은)으로 카드를 만들 수 있고, 그때 카드에 표시를 단다(2026-11-09 PM
 /// 결정). 고를지는 보호자가 정한다. 카드 고르기와 면회 중 카드 추가 화면이 같이
 /// 쓴다. 색만으로 알리지 않도록 아이콘과 글을 함께 둔다.
+///
+/// 일대기의 최근 이야기, 목차와 이야기 화면도 아픈 기억일 수 있는 이야기
+/// (`LifeFact.sensitive`)에 같은 표시를 단다(2026-11-10 PM 결정). 그 이야기로
+/// 만든 카드와 같은 말이라 보호자가 둘을 이어 볼 수 있다.
 class SensitiveCardBadge extends StatelessWidget {
   const SensitiveCardBadge({super.key});
 

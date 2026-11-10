@@ -48,6 +48,8 @@ class HomeAfterVisit extends Notifier<bool> {
 /// 한다([homeAfterVisitProvider]). 다른 화면에서 홈으로 돌아올 때, 마스코트를
 /// 눌러 반응할 때, `오늘의 대화카드 받기` 를 누를 때 일대기 이야기 하나를
 /// 무작위로 골라 보여준다. 이야기가 없거나 아직 읽는 중이면 인사말을 바꾼다.
+/// 아픈 기억일 수 있는 이야기([LifeStory.sensitive])는 밝은 말과 함께 권하지
+/// 않도록 고르지 않는다(2026-11-10 PM 결정). 그런 이야기만 있으면 인사말이다.
 /// 같은 이야기, 같은 말은 연달아 고르지 않는다. 이야기 말풍선을 누르면 그
 /// 이야기 화면으로 간다.
 ///
@@ -130,7 +132,11 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
   }
 
   _Line _nextLine() {
-    final stories = ref.read(lifeStoryBookProvider).value?.stories ?? const [];
+    final book = ref.read(lifeStoryBookProvider).value;
+    final stories = [
+      for (final story in book?.stories ?? const <LifeStory>[])
+        if (!story.sensitive) story,
+    ];
     if (stories.isEmpty) {
       return _Line.greeting(
         _pick(greetingsFor(DateTime.now()), _line.greeting),
@@ -190,8 +196,9 @@ class _HomeTalkState extends ConsumerState<HomeTalk> {
     var story = _line.story;
     if (story != null && book != null) {
       story = book.find(story.id);
-      // 보여주던 이야기를 지웠으면 인사말로 돌아간다.
-      if (story == null) {
+      // 보여주던 이야기를 지웠거나 아픈 기억 표시가 붙었으면 인사말로 돌아간다.
+      if (story == null || story.sensitive) {
+        story = null;
         _line = _Line.greeting(_pick(greetingsFor(DateTime.now()), null));
       }
     }

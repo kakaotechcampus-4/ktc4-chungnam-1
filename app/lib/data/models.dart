@@ -177,6 +177,7 @@ class LifeFact {
     required this.content,
     required this.imageNumber,
     required this.createdAt,
+    this.sensitive = false,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
@@ -186,6 +187,8 @@ class LifeFact {
     content: json['content'] as String,
     imageNumber: json['imageNumber'] as int,
     createdAt: json['createdAt'] as String,
+    // 이 값을 주기 전의 서버와 목 데이터에는 표시가 없다.
+    sensitive: json['sensitive'] as bool? ?? false,
   );
 
   final String factId;
@@ -201,6 +204,12 @@ class LifeFact {
   /// 분류별 기본 그림 번호. 1~5 다.
   final int imageNumber;
   final String createdAt;
+
+  /// 아픈 기억(사별, 전쟁, 사고, 병 같은)일 수 있는 이야기다. 변경 사항 확인에서
+  /// 승인한 이야기는 AI 가 붙인 표시를 그대로 받는다(api-spec 7-4). 일대기는
+  /// 작은 표시를 달고, 홈 말풍선은 이 이야기를 고르지 않는다(2026-11-10 PM
+  /// 결정). 서버가 주지 않으면 `false` 다.
+  final bool sensitive;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.

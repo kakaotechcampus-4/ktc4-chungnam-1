@@ -496,6 +496,7 @@ ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토
 - `title`: 100자 이하. `content`: 5,000자 이하(2026-11-09 PM 결정). `title`과 `content`는 비울 수 없다. 글자 수는 유니코드 코드 포인트 수로 센다.
 - `imageNumber`: 분류별 기본 그림 번호. 1~5 정수. 그림 파일은 앱에 있고 서버는 번호만 저장한다.
 - 네 필드 모두 필수다. `storyCategory`, `imageNumber`의 필드 이름은 임시다([미정 사항](#미정-사항) 11).
+- 아픈 기억 표시(`sensitive`)는 받지 않는다. 이 경로로 담은 이야기는 `false`이고 2-7로 켠다.
 - 프로필 하나의 이야기는 300개까지다(2026-11-09 PM 결정). 변경 제안 승인(7-4)으로 만든 이야기도 함께 센다. 이미 300개면 저장하지 않고 `409 LIFE_FACT_LIMIT_EXCEEDED`이며, 이야기를 지우면(2-9) 다시 추가할 수 있다.
 
 응답 `201` — [LifeFact](#lifefact)
@@ -516,9 +517,10 @@ ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토
 { "content": "수선집에 오래 다닌 단골손님이 많았고 시장 상인들과도 친하셨어요." }
 ```
 
-- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`. 규칙은 2-6과 같고(`title` 100자, `content` 5,000자 이하) `null`로 지울 수 없다. 이야기 수는 바뀌지 않으므로 300개 상한은 보지 않는다.
+- 받는 필드: `storyCategory`, `title`, `content`, `imageNumber`, `sensitive`. 규칙은 2-6과 같고(`title` 100자, `content` 5,000자 이하) `null`로 지울 수 없다. 이야기 수는 바뀌지 않으므로 300개 상한은 보지 않는다.
+- `sensitive`: 아픈 기억일 수 있는 이야기라는 표시(`true`, `false`만 받음). 보호자가 켜고 끈다(2026-11-10 PM 결정). 지금 앱은 보내지 않는다.
 - 분류를 바꿔도 `imageNumber`와 `createdAt`은 그대로다.
-- `title`, `content`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 두 값은 고칠 수 없다.
+- `title`, `content`, `sensitive`가 실제로 바뀌면 아직 면회에 안 쓴 카드 묶음은 `needsRefresh`가 `true`가 된다(4절). 카드를 만드는 중이면 이 세 값은 고칠 수 없다.
 
 응답 `200` — [LifeFact](#lifefact)
 
@@ -752,7 +754,8 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
         "title": "단골손님",
         "content": "수선집에 오래 다닌 단골손님이 많았어요.",
         "createdAt": "2026-08-21T15:00:00+09:00",
-        "source": "visit"
+        "source": "visit",
+        "sensitive": false
       }
     ],
     "photos": [
@@ -801,6 +804,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
 - `schemaVersion`: 요청과 결과 JSON 형식의 버전. 받는 쪽은 모르는 버전을 거절한다.
 - `ageRange`: BE가 생년월일로 계산한 `{십 단위 나이}s` (예: `70s`, `80s`). 이름, 성별, 생년월일, 인지 상태, 증상 메모는 넣지 않는다. 카드 생성은 `10s` 이상만 받으므로 2-2, 2-4가 만 10세가 안 된 생년월일을 저장하지 않는다. 그 검사 전에 저장된 프로필은 고치기 전까지 `INVALID_CONTEXT`로 실패한다.
 - `lifeFacts.source`: 면회 제안을 승인해 생긴 이야기는 `visit`, 직접 넣은 이야기는 `caregiver`
+- `lifeFacts.sensitive`: 아픈 기억일 수 있는 이야기([LifeFact](#lifefact)의 `sensitive`). 보호자가 지우지 않은 아픈 이야기도 빼지 않고 넣는다(2026-11-10 PM 결정). 카드 생성 2판은 이 이야기를 근거로 한 카드를 늘 `sensitive`로 낸다. 1판은 보지 않는다.
 - `photos`: 프로필 사진(`session_id`가 없음)의 설명. 보호자가 고친 설명(3-3)이 있으면 그 값, 없으면 분석이 끝난 AI 설명이며 둘 다 없는 사진은 넣지 않는다. 별도 내용 승인 없이 사용하고, 사용자가 원하면 앨범에서 수정한다(3-3). 사진 분석 동의 확인은 별도로 유지한다.
 - `topics`: 이 프로필의 기존 주제와 승인된 주제 피드백(`topic_feedback`)이다. 승인 전 제안은 넣지 않는다. 첫 생성에는 빈 배열이다. 근거(`evidence`)에서는 입력에 없는 이야기와 사진(지운 것, 설명이 없어 `photos`에 넣지 않는 사진, 제외한 주제의 근거)을 뺀다. 빼고 나서 근거가 하나도 남지 않은 주제는 넣지 않는다(PM 결정 2026-11-08). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 `exclude`를 고른 주제는 근거 이야기와 사진이 제외 규칙으로 늘 입력에서 빠지므로, 보낸 입력이 아니라 DB에 남은 이야기와 `photos`에 넣을 수 있는 사진으로 정한다. 하나라도 남아 있으면 같은 이야기로 새 주제를 만들지 않도록 근거만 빼고 넣는다. 보호자가 모두 지웠으면 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있으므로 넣지 않는다(PM 결정 2026-11-09). 세부 정보 칸 근거가 있는 제외 주제는 이야기와 사진을 모두 지워도 다른 주제처럼 넣는다. AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음, 1-6)도 `photos`에 넣지 않으므로, 근거가 그런 사진뿐인 주제는 제외 여부와 상관없이 넣지 않고 다시 분석이 끝나면 넣는다. 저장된 주제와 근거는 지우지 않는다.
 - `visits`: 평가까지 끝난 회차(`evaluated_at` 있음)만, 시간순. 녹음을 시작했다가 그만둔 회차는 넣지 않는다.
@@ -860,7 +864,7 @@ worker가 다른 계정의 작업을 차례로 처리하는 동안에는 오래 
 - 카드는 12장이다. `position` 1~9가 선택용, 10~12가 보충용이며 `followUpQuestions`는 카드마다 3개다.
 - `topic`: 기존 주제면 `topicId`, 새 주제면 `title`, `description`, `evidence`. 새 주제는 BE가 `profile_topics`에 만든다. 한 묶음 안에서 같은 `topicId`는 두 번 나오지 않는다.
 - `evidenceSource`: `lifeFact`, `photo`, `profile`, `none`. `none`이면 `evidence`는 빈 배열이고 나머지는 하나 이상이다. 근거 항목은 `{"factId": ...}`, `{"photoId": ...}`, `{"profileField": "occupation" | "hometown" | "hobby" | "family"}` 중 하나이며, 카드의 근거 항목은 모두 `evidenceSource`와 같은 종류다(`lifeFact`는 `factId`, `photo`는 `photoId`, `profile`은 `profileField`). `profileField`는 context의 `profileFacts`에서 값이 있는 항목만 가리킨다.
-- `sensitive`: 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)만 `true`를 낼 수 있고 1판은 늘 `false`다. BE는 `conversation_cards.sensitive`로 저장해 [CardSet](#cardset)에 담는다.
+- `sensitive`: 저장된 이야기나 세부 정보에 담긴 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드면 `true`다(2026-11-09 PM 결정). 카드 생성 2판(`promptVersion` 2)만 `true`를 낼 수 있고 1판은 늘 `false`다. 2판은 근거 이야기 중 `lifeFacts[].sensitive`가 `true`인 것이 있으면 모델이 무엇을 적든 `true`로 낸다(2026-11-10 PM 결정, 코드로 보장). BE는 `conversation_cards.sensitive`로 저장해 [CardSet](#cardset)에 담는다.
 - `extra`, `log`: 생성 쪽이 자유롭게 채우는 객체다. BE는 화면과 결과 검증에 쓰지 않고, `generation_log`에는 정해진 값과 숫자만 남긴다(아래 '카드 생성 기록').
 - `cardId`와 새 주제의 `topicId`는 백엔드가 부여한다.
 
@@ -1448,7 +1452,7 @@ worker는 남은 전사 기한이 리포트 생성 단계 임대 시간(기본 9
 서버 처리
 
 - 모든 제안을 `settled`로 바꾼다.
-- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 분류는 요청의 `storyCategory`이고 없으면 제안의 `storyCategory`이며, 그림 번호는 서버가 1~5 중에 고른다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`, `story_category`, `sensitive`는 바꾸지 않는다.
+- `accepted`인 생애 정보 제안은 요청의 `title`, `content`로 생애 정보를 만든다. 분류는 요청의 `storyCategory`이고 없으면 제안의 `storyCategory`이며, 그림 번호는 서버가 1~5 중에 고른다. 아픈 기억 표시(`sensitive`)는 제안의 값을 그대로 옮긴다(2026-11-10 PM 결정). 요청으로 바꾸지 않고, 만든 뒤 2-7로 바꾼다. 생애 정보의 `source_proposal_id`가 그 제안이다. 제안(`life_fact_proposals`)의 `title`, `content`, `reason`, `story_category`, `sensitive`는 바꾸지 않는다.
 - `accepted`인 주제 제안은 요청의 `action`을 `topic_feedback.action`에 기록하고 다음 카드 생성(4-1)의 `topics`에 반영한다. 제안의 `suggested_action`은 바꾸지 않는다.
 - `rejected` 항목은 반영하지 않는다.
 - `accepted` 주제 항목이 하나라도 있으면 다음 카드 생성에서 주제를 고르는 기준이 바뀐다. 2-4, 2-7, 2-9와 같이 프로필을 잠그고, 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`로 거절하며 아무것도 저장하지 않는다. 만드는 중이 아니면 아직 면회에 안 쓴 완료 묶음은 `needsRefresh`가 `true`가 된다([4절](#사실-정정-후-카드-갱신-기준)). 카드 생성이 끝난 뒤 같은 요청을 다시 보내면 된다. 생애 정보만 승인한 확인은 이야기 추가(2-6)처럼 거절하지도 표시하지도 않는다.
@@ -1641,6 +1645,7 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
 - `topicProposals`는 요청의 `cards` 안에서 카드당 최대 1개다. `suggestedAction`: `more`, `less`, `exclude`
 - `lifeFactProposals`는 30개까지다(2026-11-09 PM 결정, AI 쪽이 먼저 자름). 항목마다 AI가 고른 일대기 분류 `storyCategory`(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 아픈 기억일 수 있는지 `sensitive`가 있어야 하며, 어기면 `INVALID_AI_RESPONSE`다. 두 값은 `life_fact_proposals`에 저장하고 7-3에 담는다. 11/10 배포(develop `83695093`)부터 운영에 있다.
 - 카드를 쓰지 않았거나 답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는다(2026-09-19 PM 결정).
+- 보호자가 `negative`(아쉬웠어요)로 평가한 카드에는 `more`를 제안하지 않는다(`proposals-9`, 11/10 E2E 문제 12). 앱이 AI 제안을 미리 골라 두기 때문이다. AI 쪽 코드가 그 `more`를 버리고 보내므로 BE 검증 규칙은 바꾸지 않았다.
 - `mood`는 AI가 만들지 않는다. 백엔드가 `conversationSatisfaction`으로 계산한다(1~2 `hard`, 3 `normal`, 4~5 `good`).
 - `proposalId`는 백엔드가 부여한다.
 
@@ -1746,10 +1751,12 @@ AI 서버를 거치지 않으므로 4-1의 처리 과정으로 옮겼다([4-1 �
   "title": "단골손님",
   "content": "수선집에 오래 다닌 단골손님이 많았어요.",
   "imageNumber": 3,
+  "sensitive": false,
   "createdAt": "2026-08-21T12:10:00+09:00"
 }
 ```
 
+- `sensitive`: 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 이야기면 `true`(2026-11-10 PM 결정, migration `5d2e8b1c9a47`). 7-4로 만든 이야기는 승인한 제안의 표시를 옮기고, 2-6으로 담은 이야기는 `false`이며, 보호자가 2-7로 바꾼다. 이 열을 더하기 전에 승인한 이야기는 migration이 출처 제안의 표시를 옮겼다. 보호자가 지우지 않는 한 아픈 이야기도 일대기와 카드 생성(4-1 `lifeFacts[].sensitive`)에 쓴다. 앱은 일대기에 `조심스러운 이야기` 표시를 달고 홈 말풍선의 이야기 추천에서 뺀다. 이 필드를 모르는 클라이언트는 무시하면 되고, 앱은 없으면 `false`로 읽는다. 운영 배포 전이다.
 - `storyCategory`, `imageNumber`: 2-6과 같다. 7-4로 만든 생애 정보의 분류는 보호자가 승인 때 고른 값이고, 고르지 않았으면 AI가 제안에 붙인 분류다(2026-11-09 PM 결정, [미정 사항](#미정-사항) 13). 만든 뒤에는 2-7로 바꿀 수 있다. 번호는 서버가 1~5 중에 고른다.
 
 ### ProfilePhoto

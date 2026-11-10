@@ -7,7 +7,9 @@
 /// 곧 만료되면 [ApiClient] 가 이것을 부른다.
 ///
 /// 다시 받지 못해 로그인부터 해야 하면 [sessionLossProvider] 로 알리고, 앱의
-/// 맨 위가 그 화면으로 보낸다. 요청 코드는 화면을 옮기지 않는다.
+/// 맨 위가 그 화면으로 보낸다. 요청 코드는 화면을 옮기지 않는다. 면회를
+/// 녹음하는 동안이면 세션을 지우지 않고 녹음이 끝날 때까지 미룬다
+/// ([sessionHoldProvider]).
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +18,7 @@ import '../../data/api_client.dart';
 import '../../data/auth_api.dart';
 import 'auth_messages.dart';
 import 'auth_providers.dart';
+import 'auth_session.dart';
 
 /// 세션을 다시 받지 못해 로그인부터 해야 하는 이유다.
 sealed class SessionLoss {
@@ -48,6 +51,31 @@ final sessionLossProvider = NotifierProvider<SessionLossNotifier, SessionLoss?>(
   SessionLossNotifier.new,
 );
 
+/// 세션을 잃어도 지금은 지우지 않고 기다리게 한다. 면회를 녹음하는 동안 녹음이
+/// 켜고 끈다(`VisitController`).
+///
+/// 세션을 지우면 단말의 어르신 목록이 비면서 녹음 화면이 닫히고, 닫힐 때 녹음이
+/// 멈춘다. 2026-11-10 E2E 에서 녹음 중 매시간 뜨는 구글 계정 선택 창을 취소하면
+/// 로그인 화면으로 가서 녹음이 끊길 수 있었다(다른 계정을 고른 경우도 같다).
+/// 그래서 켜져 있는 동안 다시 받지 못하면 세션을 그대로 두고 기다렸다가, 녹음이
+/// 끝나 끄면 그때 지우고 로그인 화면으로 보낸다([SessionRefresher]). 운영 세션
+/// 수명을 30일로 늘린 뒤에도(2026-11-10) 이 보호는 둔다.
+class SessionHold extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void hold() => state = true;
+
+  /// 녹음을 정리하면서 미뤄 부를 수 있어, 앱이 이미 정리됐으면 아무것도 하지 않는다.
+  void release() {
+    if (ref.mounted) state = false;
+  }
+}
+
+final sessionHoldProvider = NotifierProvider<SessionHold, bool>(
+  SessionHold.new,
+);
+
 /// 세션을 다시 받아 본 결과다.
 sealed class _Renewal {
   const _Renewal();
@@ -73,9 +101,20 @@ final class _TryLater extends _Renewal {
 }
 
 class SessionRefresher {
-  SessionRefresher(this._ref);
+  SessionRefresher(this._ref) {
+    _ref.listen(sessionHoldProvider, (_, held) {
+      if (!held) _releaseHeldLoss();
+    });
+  }
 
   final Ref _ref;
+
+  /// 녹음하는 동안([sessionHoldProvider]) 잃은 세션. 녹음이 끝나면 알린다.
+  SessionLoss? _heldLoss;
+
+  /// [_heldLoss] 를 잃은 때의 세션. 그 사이 로그아웃했거나 다시 로그인했으면
+  /// 녹음이 끝나도 알리지 않는다.
+  AuthSession? _heldSession;
 
   /// 지금 다시 받는 중인 작업이다. 여러 요청이 함께 401 을 받아도 한 번만 받는다.
   Future<_Renewal>? _running;
@@ -135,8 +174,11 @@ class SessionRefresher {
   /// 다시 보내지 않는다.
   Future<bool> refresh() async => await _renew() is _Renewed;
 
-  Future<_Renewal> _renew() =>
-      _running ??= _refresh().whenComplete(() => _running = null);
+  Future<_Renewal> _renew() {
+    // 녹음하는 동안 이미 잃은 세션이다. 계정 선택 창을 다시 띄우지 않는다.
+    if (_heldLoss != null) return Future.value(const _NotRenewed());
+    return _running ??= _refresh().whenComplete(() => _running = null);
+  }
 
   /// 세션이 1분 안에 만료되면 미리 새로 받는다. 세션이 없으면 아무것도 하지 않는다.
   Future<void> refreshIfExpiring() async {
@@ -210,8 +252,28 @@ class SessionRefresher {
   }
 
   Future<void> _lose(SessionLoss loss) async {
+    if (_ref.read(sessionHoldProvider)) {
+      // 녹음 중이다. 세션을 그대로 두고 녹음이 끝나면 알린다. 처음 잃은 이유를
+      // 남긴다.
+      if (_heldLoss == null) {
+        _heldLoss = loss;
+        _heldSession = _ref.read(sessionProvider);
+      }
+      return;
+    }
     await _ref.read(sessionProvider.notifier).discard();
     _ref.read(sessionLossProvider.notifier).report(loss);
+  }
+
+  Future<void> _releaseHeldLoss() async {
+    final loss = _heldLoss;
+    final session = _heldSession;
+    _heldLoss = null;
+    _heldSession = null;
+    if (loss == null) return;
+    // 녹음하는 동안 로그아웃했거나 다시 로그인했으면 그 세션을 건드리지 않는다.
+    if (!identical(_ref.read(sessionProvider), session)) return;
+    await _lose(loss);
   }
 }
 

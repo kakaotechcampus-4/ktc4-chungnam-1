@@ -9,7 +9,8 @@
 
 생애 정보 제안에는 AI가 고른 일대기 분류(`story_category`)와 아픈 기억일 수 있다는
 표시(`sensitive`)가 있다(2026-11-09 PM 결정, #139). 승인한 이야기는 보호자가 7-4에서 고른
-분류로, 고르지 않았으면 제안의 분류로 만든다. 그림 번호는 서버가 고른다.
+분류로, 고르지 않았으면 제안의 분류로 만든다. 아픈 기억 표시는 제안의 값을 그대로 옮긴다
+(2026-11-10 PM 결정). 그림 번호는 서버가 고른다.
 
 승인한 주제 피드백(`more`, `less`, `exclude`)은 다음 카드 생성(4-1)에서 주제를 고르는 기준을
 바꾼다. 그래서 주제 제안을 하나라도 승인하면 2-4, 2-7, 2-9처럼 카드를 만드는 중에는 거절하고,
@@ -76,7 +77,7 @@ async def review_proposals(
         await card_sets.lock_profile(connection, profile_id)
         await _require_report(connection, session_id, lock=True)
         cursor = await connection.execute(
-            "SELECT proposal_id, status, story_category FROM life_fact_proposals "
+            "SELECT proposal_id, status, story_category, sensitive FROM life_fact_proposals "
             "WHERE session_id = %s",
             (session_id,),
         )
@@ -122,7 +123,7 @@ async def review_proposals(
             "WHERE session_id = %s AND status = 'pending'",
             (session_id,),
         )
-        proposed_categories = {row["proposal_id"]: row["story_category"] for row in life_rows}
+        proposed = {row["proposal_id"]: row for row in life_rows}
         for review in accepted_facts:
             await create_life_fact(
                 connection,
@@ -132,7 +133,9 @@ async def review_proposals(
                 source_proposal_id=review.proposal_id,
                 # 보호자가 고른 분류가 없으면 AI가 고른 제안의 분류다.
                 story_category=review.story_category
-                or proposed_categories[review.proposal_id],
+                or proposed[review.proposal_id]["story_category"],
+                # 아픈 기억 표시는 7-4에서 바꾸지 않고 제안의 값을 옮긴다. 일대기에서 2-7로 바꾼다.
+                sensitive=proposed[review.proposal_id]["sensitive"],
             )
         topic_ids = {row["proposal_id"]: row["topic_id"] for row in topic_rows}
         for review in accepted_topics:
