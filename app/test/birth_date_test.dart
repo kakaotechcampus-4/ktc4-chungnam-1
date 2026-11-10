@@ -114,6 +114,12 @@ List<int> _choices(WidgetTester tester, int index) => [
 ];
 
 void main() {
+  test('복원한 초안의 날짜나 나이를 바꿔도 이미 올린 사진 수를 유지한다', () {
+    final draft = _base.copyWith(uploadedBefore: 3);
+    expect(draft.withBirthPart(year: 1944).uploadedBefore, 3);
+    expect(draft.withAgeText('82').uploadedBefore, 3);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('날짜 계산', () {

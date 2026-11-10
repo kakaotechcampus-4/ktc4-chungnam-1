@@ -219,6 +219,7 @@ class SetupDraft {
       stage: stage,
       facts: facts,
       photos: photos,
+      uploadedBefore: uploadedBefore,
     );
   }
 
@@ -236,6 +237,7 @@ class SetupDraft {
     stage: stage,
     facts: facts,
     photos: photos,
+    uploadedBefore: uploadedBefore,
   );
 
   SetupDraft copyWith({
