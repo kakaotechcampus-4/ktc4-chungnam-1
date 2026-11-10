@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/features/auth/auth_messages.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
@@ -338,6 +339,81 @@ void main() {
     });
   });
 
+  // UX 점검 8번(2026-11-10): 면회 흐름에서는 로그인 화면으로 옮기기 전에 이유를
+  // 알리고 확인을 받는다. 확인할 때까지 세션을 지우지 않아 뒤 화면이 그대로다.
+  group('확인을 먼저 받는 화면에서 잃은 세션', () {
+    SessionLoss? unconfirmed(_Harness h) =>
+        h.container.read(unconfirmedSessionLossProvider);
+
+    test('세션을 지우지 않고 확인을 기다리다 확인하면 지우고 알린다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      h.refresher.needsConfirmation = () => true;
+
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.session!.accessToken, 'old-token', reason: '뒤 화면을 그대로 둔다');
+      expect(h.loss, isNull, reason: '아직 화면을 옮기지 않는다');
+      expect(unconfirmed(h), isA<SessionSignedOut>());
+
+      await h.refresher.confirmLoss();
+
+      expect(h.session, isNull);
+      expect(h.store.stored, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+      expect(unconfirmed(h), isNull);
+    });
+
+    test('확인을 기다리는 동안 계정 선택 창을 다시 띄우지 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      h.refresher.needsConfirmation = () => true;
+
+      expect(await h.refresher.refresh(), isFalse);
+      expect(
+        await h.refresher.retryAfterUnauthorized('Bearer old-token'),
+        isFalse,
+      );
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.google.silentCalls, 1);
+    });
+
+    test('녹음이 끝나 놓은 세션도 확인을 먼저 받는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      h.refresher.needsConfirmation = () => true;
+      h.container.read(sessionHoldProvider.notifier).hold();
+      expect(await h.refresher.refresh(), isFalse);
+      expect(unconfirmed(h), isNull, reason: '녹음 중에는 묻지 않는다');
+
+      h.container.read(sessionHoldProvider.notifier).release();
+      await pumpEventQueue();
+
+      expect(h.session, isNotNull);
+      expect(unconfirmed(h), isA<SessionSignedOut>());
+      await h.refresher.confirmLoss();
+      expect(h.session, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+    });
+
+    test('확인을 먼저 받지 않는 화면이면 바로 지운다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      h.refresher.needsConfirmation = () => false;
+
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.session, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+      expect(unconfirmed(h), isNull);
+    });
+  });
+
   group('다시 받는 동안 바뀐 것', () {
     test('계정 선택 창에서 다른 계정을 고르면 바꾸지 않고 로그인부터 하게 한다', () async {
       final h = _Harness(
@@ -624,14 +700,17 @@ void main() {
       return container;
     }
 
-    testWidgets('로그인부터 해야 하면 로그인 화면으로 간다', (tester) async {
+    testWidgets('로그인부터 해야 하면 로그인 화면으로 가서 풀린 이유를 알린다', (tester) async {
       final container = await openApp(tester);
+      expect(find.text(sessionLostSignInNotice), findsNothing);
+
       container
           .read(sessionLossProvider.notifier)
           .report(const SessionSignedOut());
       await tester.pumpAndSettle();
 
       expect(find.byType(GoogleSignInButton), findsOneWidget);
+      expect(find.text(sessionLostSignInNotice), findsOneWidget);
       expect(container.read(sessionLossProvider), isNull, reason: '한 번만 옮긴다');
     });
 
