@@ -1,7 +1,10 @@
 package app.saerok.android
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -10,6 +13,10 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var screenAwakeChannel: MethodChannel? = null
+    private var recordingServiceChannel: MethodChannel? = null
+
+    // 알림 권한 창의 답을 기다리는 요청들. 창은 한 번만 띄우고 답을 모두에게 준다.
+    private val notificationPermissionResults = mutableListOf<MethodChannel.Result>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +59,33 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        // 새 엔진에는 녹음 중인 면회가 없다. 앞 엔진이 남긴 녹음 알림을 내린다.
+        RecordingService.hide(this)
+        recordingServiceChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            RECORDING_SERVICE_CHANNEL,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    SHOW_RECORDING -> {
+                        val title = call.argument<String>("title")
+                        val text = call.argument<String>("text")
+                        if (title == null || text == null) {
+                            result.error("BAD_ARGUMENT", "title 이나 text 값이 없다", null)
+                        } else {
+                            result.success(RecordingService.show(this, title, text))
+                        }
+                    }
+                    HIDE_RECORDING -> {
+                        RecordingService.hide(this)
+                        result.success(null)
+                    }
+                    REQUEST_NOTIFICATION_PERMISSION -> requestNotificationPermission(result)
+                    else -> result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -59,6 +93,11 @@ class MainActivity : FlutterActivity() {
         screenAwakeChannel?.setMethodCallHandler(null)
         screenAwakeChannel = null
         setKeepScreenOn(false)
+        // 엔진과 함께 녹음도 멈춘다. 녹음 알림이 남지 않게 내린다.
+        recordingServiceChannel?.setMethodCallHandler(null)
+        recordingServiceChannel = null
+        RecordingService.hide(this)
+        finishNotificationPermission(false)
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -72,10 +111,57 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // 녹음 알림이 보이도록 알림 권한을 묻는다(`lib/features/visit/recording_service.dart`).
+    // 안드로이드 12 이하는 권한 없이 보이고, 이미 받았으면 묻지 않는다. 거절해도 녹음과
+    // 서비스는 그대로이며 알림만 알림창에 보이지 않는다.
+    private fun requestNotificationPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(true)
+            return
+        }
+        notificationPermissionResults.add(result)
+        if (notificationPermissionResults.size > 1) return
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            NOTIFICATION_PERMISSION_REQUEST,
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        // 다른 플러그인(마이크, 푸시)의 권한 창 답은 FlutterActivity 가 넘겨준다.
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
+        finishNotificationPermission(
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    private fun finishNotificationPermission(granted: Boolean) {
+        val waiting = notificationPermissionResults.toList()
+        notificationPermissionResults.clear()
+        waiting.forEach { it.success(granted) }
+    }
+
     private companion object {
         // Dart 의 `MethodChannelScreenAwake.channel`, `.method` 와 같아야 한다.
         const val SCREEN_AWAKE_CHANNEL = "app.saerok.android/screen_awake"
         const val SET_KEEP_SCREEN_ON = "setKeepScreenOn"
         const val REPORT_CHANNEL_ID = "report_ready"
+
+        // Dart 의 `MethodChannelRecordingService` 와 같아야 한다.
+        const val RECORDING_SERVICE_CHANNEL = "app.saerok.android/recording_service"
+        const val SHOW_RECORDING = "show"
+        const val HIDE_RECORDING = "hide"
+        const val REQUEST_NOTIFICATION_PERMISSION = "requestNotificationPermission"
+
+        // 다른 플러그인의 권한 요청 번호(record 1001 등)와 겹치지 않게 고른 값이다.
+        const val NOTIFICATION_PERMISSION_REQUEST = 7302
     }
 }

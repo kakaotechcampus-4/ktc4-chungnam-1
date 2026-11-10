@@ -12,6 +12,7 @@
 // | 카메라, 갤러리, 면회 사진 보관 | 기존 `test/fake_visit_*.dart` |
 // | 녹음 재전송 기록, 고른 어르신 기억 | 기존 메모리 대역 |
 // | 화면 켜짐 플랫폼 채널 | `FakeScreenAwakePlatform` |
+// | 녹음 알림 포그라운드 서비스 채널 | `FakeRecordingServicePlatform` |
 //
 // 분석과 카드 생성을 기다리는 간격만 짧게 바꾼다. 화면 동작은 같고 기다리는
 // 시간만 줄인다.
@@ -47,6 +48,7 @@ import 'package:saerok/features/visit/visit_recorder.dart';
 import 'package:saerok/main.dart';
 
 import '../fake_pending_uploads.dart';
+import '../fake_recording_service.dart';
 import '../fake_screen_awake.dart';
 import '../fake_profile_relationship_store.dart';
 import '../fake_selected_profile_store.dart';
@@ -136,6 +138,7 @@ class JourneyDriver {
     visitCameraProvider.overrideWithValue(FakeVisitCamera()),
     visitGalleryProvider.overrideWithValue(FakeVisitGallery()),
     FakeScreenAwakePlatform().asOverride,
+    FakeRecordingServicePlatform().asOverride,
     reportPollIntervalProvider.overrideWithValue(
       const Duration(milliseconds: 200),
     ),

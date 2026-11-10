@@ -27,8 +27,9 @@ import 'visit_recorder.dart';
 /// 소유하므로(`app/CLAUDE.md`) 이 화면은 형식을 알지 못하고, 시작, 멈춤, 끝내기와
 /// 실패 안내만 다룬다. STT 연결과 서버 업로드는 아직 없다.
 ///
-/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 앱이
-/// 백그라운드로 내려간 뒤의 녹음은 보장하지 않는다(`app/README.md`).
+/// 녹음하는 동안에는 [KeepScreenOn] 으로 화면이 저절로 꺼지지 않게 한다. 화면을
+/// 끄거나 다른 앱으로 옮긴 뒤의 녹음은 [VisitController] 가 띄우는 마이크
+/// 포그라운드 서비스가 맡는다(`recording_service.dart`, `app/README.md`).
 class RecordScreen extends ConsumerStatefulWidget {
   const RecordScreen({super.key});
 

@@ -11,6 +11,7 @@ import '../auth/session_refresher.dart';
 import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
+import 'recording_service.dart';
 import 'visit_camera.dart';
 import 'visit_photos.dart';
 import 'visit_recorder.dart';
@@ -193,6 +194,9 @@ class VisitController extends AsyncNotifier<VisitState> {
 
   VisitRecorder get _recorder => ref.read(visitRecorderProvider);
 
+  /// 녹음 파일이 열려 있는 동안 띄우는 포그라운드 서비스와 알림이다.
+  RecordingService get _service => ref.read(recordingServiceProvider);
+
   @override
   Future<VisitState> build() async {
     final all = await ref.watch(conversationCardsProvider.future);
@@ -208,11 +212,15 @@ class VisitController extends AsyncNotifier<VisitState> {
     _photoQueue = Future.value();
     _holdingSession = false;
     final sessionHold = ref.read(sessionHoldProvider.notifier);
+    final recordingService = ref.read(recordingServiceProvider);
     ref.onDispose(() {
       _ticker?.cancel();
       // 녹음을 마무리하지 못한 채 정리됐다. 세션을 계속 붙잡아 두지 않는다.
       // 정리하는 중에는 다른 provider 를 바꾸지 않도록 미룬다.
       if (_holdingSession) Future.microtask(sessionHold.release);
+      // 면회가 끝났다. 녹음 알림을 남기지 않는다. 파일을 닫는 중이면 닫은 뒤
+      // [_stop] 이 내린다.
+      if (_fileOpen) recordingService.hide();
     });
 
     // 회차를 만든 뒤 사진을 다시 찍었으면 새 사진을 올린다. 5-2 는 다시 올리면
@@ -287,6 +295,10 @@ class VisitController extends AsyncNotifier<VisitState> {
       ),
     );
     _startTicker();
+    // 화면을 끄거나 다른 앱으로 옮겨도 녹음이 이어지게 마이크 포그라운드 서비스를
+    // 알림과 함께 띄운다. 안드로이드는 앱이 앞에 있을 때만 띄우게 하므로 녹음
+    // 버튼을 누른 지금 띄운다. 파일을 닫으면 내린다([_stop]).
+    _service.show(recording: true);
     // 녹음 중에 앱이 죽어도 다시 켰을 때 이 회차의 파일을 찾도록 바로 적어 둔다.
     // 끝내지 못한 파일의 머리글은 보내기 전에 고친다(repairUnfinishedRecording).
     unawaited(_rememberUpload());
@@ -456,6 +468,8 @@ class VisitController extends AsyncNotifier<VisitState> {
 
     _update((now) => now.copyWith(recording: true, clearProblem: true));
     _startTicker();
+    // 열린 파일에 이어 쓸 때만 알림을 녹음 중으로 되돌린다.
+    if (_fileOpen) _service.show(recording: true);
   }
 
   /// 녹음과 시간을 함께 멈춘다. 파일은 닫지 않고 이어서 쓴다.
@@ -467,6 +481,8 @@ class VisitController extends AsyncNotifier<VisitState> {
     state = AsyncData(current.copyWith(recording: false));
     if (!_fileOpen) return;
 
+    // 파일은 열려 있으므로 서비스는 그대로 두고 알림 문구만 바꾼다.
+    _service.show(recording: false);
     try {
       await _recorder.pause();
     } on Exception {
@@ -524,6 +540,8 @@ class VisitController extends AsyncNotifier<VisitState> {
     }
     final current = state.value!;
     _fileOpen = false;
+    // 파일을 닫는 사이 provider 가 정리돼도 내릴 수 있게 미리 받아 둔다.
+    final service = _service;
 
     try {
       VisitRecording? saved;
@@ -567,6 +585,8 @@ class VisitController extends AsyncNotifier<VisitState> {
       }
       await _rememberUpload();
     } finally {
+      // 파일을 닫았다. 마지막 소리까지 파일에 쓴 뒤 녹음 알림과 서비스를 내린다.
+      service.hide();
       // 녹음이 끝났다. 그 사이 잃은 세션이 있으면 이제 로그인 화면으로 보낸다.
       // 파일을 닫은 뒤 기기 기록까지 마친 다음이다.
       if (ref.mounted && _holdingSession) {
