@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/router.dart';
@@ -302,8 +303,13 @@ void main() {
           await tester.pump();
           await tester.pump();
           expect(tester.takeException(), isNull);
-          expect(find.text('사진 분석 다시 시도'), findsOneWidget);
-          if (capture && reason == 'consentRequired') {
+          final consent = reason == 'consentRequired';
+          // 동의가 꺼져 있으면 서버가 다시 시도를 늘 거절하므로 두지 않는다.
+          expect(
+            find.text('사진 분석 다시 시도'),
+            consent ? findsNothing : findsOneWidget,
+          );
+          if (capture && consent) {
             await expectLater(
               find.byType(MaterialApp),
               matchesGoldenFile(
@@ -313,7 +319,9 @@ void main() {
               ),
             );
           }
-          final proceed = find.text('완료된 사진으로 카드 만들기');
+          final proceed = find.text(
+            consent ? '준비된 설명으로 카드 만들기' : '완료된 사진으로 카드 만들기',
+          );
           await tester.ensureVisible(proceed);
           await tester.tap(proceed);
           await tester.pump();
@@ -322,6 +330,10 @@ void main() {
             find.byType(OutlinedButton),
           );
           expect(buttons.every((b) => b.onPressed == null), isTrue);
+          final primaries = tester.widgetList<FilledButton>(
+            find.byType(FilledButton),
+          );
+          expect(primaries.every((b) => b.onPressed == null), isTrue);
           api.pendingResolve!.complete(
             const CardGenerationSnapshot(_ready, null),
           );
@@ -331,4 +343,131 @@ void main() {
       }
     }
   }
+
+  // 2026-11-10 UX 점검 18번. 동의가 꺼져 있으면 '사진 분석 다시 시도' 는 늘
+  // 거절되고 설정으로 가는 길이 없었다. 초록 주 버튼도 숨어 같은 무게의 테두리
+  // 버튼 둘만 남았다.
+  group('AI 사진 분석 동의가 꺼져 있으면', () {
+    Future<(ProviderContainer, GoRouter)> openHome(
+      WidgetTester tester,
+      PhotoApi api,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _container(api);
+      addTearDown(c.dispose);
+      final router = buildRouter()..go(AppRoutes.home);
+      addTearDown(router.dispose);
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: MaterialApp.router(
+              theme: buildAppTheme(),
+              routerConfig: router,
+            ),
+          ),
+        );
+        await c.read(serverProfileIdProvider.future);
+      });
+      await tester.pump();
+      await tester.pump();
+      return (c, router);
+    }
+
+    String location(GoRouter router) =>
+        router.routerDelegate.currentConfiguration.last.matchedLocation;
+
+    testWidgets('준비된 설명으로 만들기를 주 버튼, 설정에서 동의 켜기를 보조 버튼으로 둔다', (tester) async {
+      final api = PhotoApi([_snapshot(reason: 'consentRequired')]);
+      await openHome(tester, api);
+
+      expect(find.text('사진 분석 다시 시도'), findsNothing);
+      expect(
+        find.widgetWithText(FilledButton, '준비된 설명으로 카드 만들기'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(OutlinedButton, '설정에서 동의 켜기'), findsOneWidget);
+      expect(find.byType(FilledButton), findsOneWidget, reason: '주 버튼은 하나');
+      expect(find.textContaining('다시 시도하거나'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('준비된 설명이 없으면 사진 없이 만들기를 주 버튼으로 둔다', (tester) async {
+      final api = PhotoApi([
+        _snapshot(reason: 'consentRequired', completed: 0),
+      ]);
+      await openHome(tester, api);
+
+      expect(find.widgetWithText(FilledButton, '사진 없이 카드 만들기'), findsOneWidget);
+      expect(find.text('준비된 설명으로 카드 만들기'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('설정에서 동의 켜기는 계정 약관 동의를 열고 돌아오면 상태를 다시 읽는다', (tester) async {
+      final api = PhotoApi([
+        _snapshot(reason: 'consentRequired'),
+        // 동의를 켜고 돌아오면 서버가 남은 사진을 분석한다.
+        _snapshot(choice: false, completed: 4),
+        const CardGenerationSnapshot(_ready, null),
+      ]);
+      final (_, router) = await openHome(tester, api);
+      expect(api.calls, ['snapshot']);
+
+      await tester.tap(find.text('설정에서 동의 켜기'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(location(router), AppRoutes.settingsConsents);
+      expect(api.actions, isEmpty, reason: '거절될 다시 시도를 보내지 않는다');
+
+      router.pop();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(location(router), AppRoutes.home);
+      expect(api.calls, ['snapshot', 'snapshot', 'snapshot']);
+      expect(find.text('설정에서 동의 켜기'), findsNothing);
+      expect(
+        find.textContaining('대화 카드가 준비됐어요'),
+        findsOneWidget,
+        reason: '돌아와 이어 물은 작업도 다 되면 알린다',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    // 주 버튼으로 만든 카드도 홈 버튼을 누른 때와 같이 알린다. 알리지 않으면
+    // 다 되거나 실패해도 홈 버튼이 시작 전 글자로 조용히 돌아간다(UX 점검 11번).
+    for (final (status, expected) in const [
+      (_ready, '대화 카드가 준비됐어요'),
+      (CardGenerationStatus.failed, '대화 카드를 만들지 못했어요'),
+    ]) {
+      testWidgets('준비된 설명으로 만들기를 눌러 기다린 결과 $status 를 알린다', (tester) async {
+        final api =
+            PhotoApi([
+                _snapshot(reason: 'consentRequired'),
+                const CardGenerationSnapshot(_running, null),
+                CardGenerationSnapshot(status, null),
+              ])
+              ..pendingResolve = (Completer<CardGenerationSnapshot>()
+                ..complete(const CardGenerationSnapshot(_running, null)));
+        final (_, router) = await openHome(tester, api);
+
+        await tester.tap(find.text('준비된 설명으로 카드 만들기'));
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        await tester.pump(const Duration(milliseconds: 750));
+
+        expect(api.actions, ['$_id/set-1/continue']);
+        expect(find.textContaining(expected), findsOneWidget);
+        if (status == _ready) {
+          expect(find.widgetWithText(SnackBarAction, '카드 보기'), findsOneWidget);
+        }
+        expect(location(router), AppRoutes.home, reason: '기다린 뒤라 데려가지 않는다');
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    }
+  });
 }
