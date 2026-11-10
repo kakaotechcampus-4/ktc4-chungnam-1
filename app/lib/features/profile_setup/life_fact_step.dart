@@ -197,6 +197,9 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
         attempt: _attempt + 1,
       );
     } on SpeechStartFailure catch (failure) {
+      // 권한 창이 떠 있는 동안 화면을 벗어났을 수 있다. 벗어난 뒤에 `ref` 를
+      // 쓰면 던진다.
+      if (!mounted) return;
       final micDenied = failure.problem == SpeechStartProblem.micDenied;
       // 안드로이드가 권한 창을 더 띄우지 않는지 넘어가기 전에 알아 둔다. 넘어간
       // 뒤에 알면 `다시 녹음하기` 가 잠깐 보였다가 바뀐다.
@@ -758,11 +761,19 @@ class _SwitchMethodButton extends StatelessWidget {
             children: [
               Icon(icon, size: 20, color: HomeColors.accent),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                label,
-                style: AppTypography.sub.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w600,
+              // 긴 이름(`설정에서 마이크 켜기`)은 좁은 화면에서 글자를 키우면
+              // 한 줄에 들어가지 않는다. 높이가 정해져 있어 줄을 바꾸지 않고
+              // 줄인다. 아이콘이 있는 보조 버튼과 같다.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: AppTypography.sub.copyWith(
+                      color: AppColors.ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],

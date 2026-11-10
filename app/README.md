@@ -716,8 +716,9 @@ AI [PR #66](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/66)이 검
 - 패키지를 더하지 않았다. `record`는 권한이 있는지만 알려 주고 설정을 열거나 다시 묻지 않는 상태를 알려 주지 않는다. [MainActivity.kt](android/app/src/main/kotlin/app/saerok/android/MainActivity.kt)의 MethodChannel `app.saerok.android/mic_settings`가 `openAppSettings`(앱 정보 화면 `ACTION_APPLICATION_DETAILS_SETTINGS`를 열고 열었는지 돌려줌)와 `isMicPermanentlyDenied`(권한이 없고 `shouldShowRequestPermissionRationale`도 거짓)를 받는다. 화면 켜짐 채널과 같은 방식이다.
 - Dart 쪽은 [mic_settings.dart](lib/app/mic_settings.dart)에 있다. 채널이 없거나 실패하면 `false`로 본다. 설정을 열지 못하면 아래 알림 띠에 `설정을 열지 못했어요.`와 휴대전화 설정에서 새록을 찾으라는 안내를 띄운다. 테스트는 `micSettingsPlatformProvider`를 대역으로 바꾼다.
 - `isMicPermanentlyDenied`는 한 번도 묻지 않았을 때와 구분하지 못하므로 `record`가 권한을 물어 거부된 뒤에만 부른다. 안드로이드 11 이상에서 권한 창을 고르지 않고 바깥을 눌러 닫으면 다시 묻는 상태인데도 다시 묻지 않는 상태로 보일 수 있다. 그때도 `설정에서 마이크 켜기`로 켤 수 있다.
-- 세부 정보 화면은 앱으로 돌아올 때(`resumed`) 다시 묻는다. E-1은 다시 묻지 않고 `네, 좋아요`가 그대로 권한을 확인한다.
-- 검증은 `mic_settings_test.dart`(채널 이름, 실패 시 `false`), `record_mic_settings_test.dart`(E-1의 설정 열기, 열지 못함, 권한이 아닌 실패, 360 x 640과 390 x 844, 글자 1.3배), `life_fact_step_test.dart`의 `마이크 권한과 설정 열기`(다시 묻는 상태와 다시 묻지 않는 상태, 켜고 돌아옴, 열지 못함, 360 x 640 글자 1.3배)다. 모두 대역을 쓴 로컬 테스트이며 실기기에서 설정 화면이 열리는지, 다시 묻지 않는 상태 판정은 확인하지 않았다.
+- 세부 정보 화면은 앱으로 돌아올 때(`resumed`) 다시 묻는다. E-1은 다시 묻지 않고 `네, 좋아요`가 그대로 권한을 확인한다. 권한 창이 떠 있는 동안 세부 정보 화면을 벗어났으면 거부되어도 묻지 않고 끝낸다.
+- 알약 글자가 한 줄에 들어가지 않으면 줄을 바꾸지 않고 글자를 줄인다. 360 x 640과 390 x 844에서 글자 2배면 `설정에서 마이크 켜기`가 넘쳤다. 높이가 정해진 아이콘 보조 버튼과 같은 방식이다. 한 줄에 들어가는 알약은 모양이 그대로다.
+- 검증은 `mic_settings_test.dart`(채널 이름, 실패 시 `false`), `record_mic_settings_test.dart`(E-1의 설정 열기, 열지 못함, 권한이 아닌 실패, 360 x 640과 390 x 844, 글자 1.3배), `life_fact_step_test.dart`의 `마이크 권한과 설정 열기`(다시 묻는 상태와 다시 묻지 않는 상태, 켜고 돌아옴, 열지 못함, 권한 창 중 화면 벗어남, 360 x 640 글자 1.3배와 2배, 390 x 844 글자 2배)다. 글자 2배의 답하는 방법 두 버튼 넘침(UX 점검 12번)은 이 테스트에서 비우고 본다. 모두 대역을 쓴 로컬 테스트이며 실기기에서 설정 화면이 열리는지, 다시 묻지 않는 상태 판정은 확인하지 않았다.
 
 ### 파일을 반드시 닫아야 하는 이유
 
