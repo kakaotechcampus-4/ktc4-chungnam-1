@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     card_generation_model: str = "gpt-6-luna"
     card_generation_prompt_version: int = Field(default=3, ge=1)
     ml_api_key: SecretStr = SecretStr("")
+    # 운영 동작 보존: 합성 검증 뒤 명시적으로 켠다. 횟수는 최대 1회로 고정.
+    llm_retry_enabled: bool = False
+    llm_retry_delay_seconds: float = Field(default=1.0, ge=0, le=30)
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
     card_generation_lease_seconds: int = Field(default=300, ge=60)
     # 4-1 뒤 이 시간이 지나도 worker가 가져가지 않았고, 이 시간 동안 worker가 어떤 작업도

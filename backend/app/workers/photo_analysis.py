@@ -2,6 +2,7 @@
 import argparse
 
 from common.llm import ENDPOINTS
+from common.retry import retry_scope
 from photo_analysis import PhotoAnalysisError, analyze_photo
 
 from app.core.config import Settings
@@ -31,9 +32,11 @@ def create_worker(settings: Settings):
 
     def analyze(url):
         try:
-            return analyze_photo(url, model=model,
-                                 api_key=settings.ml_api_key.get_secret_value(),
-                                 timeout_seconds=settings.photo_analysis_timeout_seconds)
+            with retry_scope(enabled=settings.llm_retry_enabled,
+                             delay_seconds=settings.llm_retry_delay_seconds):
+                return analyze_photo(url, model=model,
+                                     api_key=settings.ml_api_key.get_secret_value(),
+                                     timeout_seconds=settings.photo_analysis_timeout_seconds)
         except PhotoAnalysisError as error:
             raise AppError(status_code=503, error_code=error.code,
                            message="사진 설명을 만들지 못했습니다.") from None
