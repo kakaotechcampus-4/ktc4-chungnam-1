@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart' show analysisFailureReason;
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
@@ -48,6 +49,9 @@ class NoticeScreen extends ConsumerWidget {
                   ? _NoticeRow(
                       date: info!.visitDate,
                       notice: notice,
+                      reason: notice == ReportNotice.failed
+                          ? analysisFailureReason(info.failureCode)
+                          : null,
                       onOpen: () {
                         final id = info.reportId;
                         // 회차 상태를 묻지 못했으면 다시 묻는다.
@@ -103,11 +107,15 @@ class _NoticeRow extends StatelessWidget {
     required this.date,
     required this.notice,
     required this.onOpen,
+    this.reason,
   });
 
   final String? date;
   final ReportNotice notice;
   final VoidCallback onOpen;
+
+  /// 제목 아래에 덧붙이는 실패 이유. 홈 배너와 같은 문구다.
+  final String? reason;
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +165,10 @@ class _NoticeRow extends StatelessWidget {
                         const SizedBox(height: AppSpacing.xs),
                       ],
                       Text(title, style: AppTypography.sectionTitle),
+                      if (reason != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(reason!, style: AppTypography.sub),
+                      ],
                       const SizedBox(height: AppSpacing.md),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,

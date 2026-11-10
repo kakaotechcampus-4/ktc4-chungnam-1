@@ -8,6 +8,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../cards/card_source_photo.dart';
 import '../cards/cards_screen.dart' show cardSelectLabel;
 import '../cards/sensitive_card_badge.dart';
 import 'visit_controller.dart';
@@ -190,6 +191,8 @@ class _AddCardTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 카드 고르기 화면과 같이 사진에서 나온 카드는 그 사진을 맨 위에 둔다.
+          CardSourcePhoto(card: card),
           // 카드 고르기 화면과 같이 아픈 경험을 다루는 카드를 표시한다.
           if (card.sensitive) ...[
             const SensitiveCardBadge(),
