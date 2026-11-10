@@ -1,14 +1,17 @@
 // 면회 중 녹음 화면을 가짜 서버(JourneyServer)와 함께 실제 화면으로 돌린다.
-// 보충 카드 추가(5-3)와 녹음 중 뒤로 가기 확인 창을 본다.
+// 보충 카드 추가(5-3)와 녹음 중 뒤로 가기 확인 창, 세션을 잃었을 때의 확인 창을
+// 본다.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/features/auth/auth_messages.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
 import 'package:saerok/features/auth/session_refresher.dart';
 import 'package:saerok/features/cards/cards_screen.dart' show cardSelectLabel;
 import 'package:saerok/features/visit/visit_controller.dart';
+import 'package:saerok/features/visit/visit_signed_out_dialog.dart';
 import 'package:saerok/widgets/app_surfaces.dart';
 
 import 'journey/journey_harness.dart';
@@ -59,7 +62,10 @@ void main() {
   // 2026-11-10 E2E: 녹음 중 매시간 뜨는 계정 선택 창을 취소하면 로그인 화면으로
   // 가서 녹음 화면이 닫히고 녹음이 멈출 수 있었다. 이 여정의 구글 대역은 조용히
   // 받지 못하므로, 다시 받기가 취소된 것과 같다.
-  testWidgets('녹음 중 세션을 다시 받지 못해도 녹음을 이어 가고, 만남을 끝내면 로그인 화면으로 간다', (
+  //
+  // UX 점검 8번(2026-11-10): 만남을 끝내 파일을 닫은 뒤 바로 옮기지 않고, 녹음을
+  // 남겨 두었다는 확인 창을 띄운 뒤 로그인 화면으로 가서 풀린 이유를 알린다.
+  testWidgets('녹음 중 세션을 다시 받지 못해도 녹음을 이어 가고, 만남을 끝내면 확인 창을 거쳐 로그인 화면으로 간다', (
     tester,
   ) async {
     final (app, _) = await _recording(tester);
@@ -83,10 +89,96 @@ void main() {
     await app.waitFor(find.text('만남을 끝낼까요?'));
     await app.tap(find.text('끝내기'));
 
-    await app.waitFor(find.byType(GoogleSignInButton));
-    expect(container.read(sessionProvider), isNull);
+    await app.waitFor(find.text(VisitSignedOutMessages.title));
+    expect(find.text(VisitSignedOutMessages.recordingKept), findsOneWidget);
+    expect(
+      find.byType(GoogleSignInButton),
+      findsNothing,
+      reason: '확인 전에는 옮기지 않는다',
+    );
+    expect(container.read(sessionProvider), isNotNull, reason: '뒤 화면을 그대로 둔다');
+    expect(app.recorder.stops, 1, reason: '녹음 파일을 먼저 닫는다');
     final upload = app.uploads.saved.values.single;
     expect(upload.participantCount, 2, reason: '닫은 녹음은 다시 보낼 수 있게 남는다');
+
+    await app.tap(find.text(VisitSignedOutMessages.action));
+    await app.waitFor(find.byType(GoogleSignInButton));
+    expect(find.text(sessionLostSignInNotice), findsOneWidget);
+    expect(container.read(sessionProvider), isNull);
+    expect(app.uploads.saved.values.single.audioPath, upload.audioPath);
+    await app.close();
+  });
+
+  testWidgets('녹음 중 세션을 잃은 채 녹음 화면을 떠나면 파일을 닫은 뒤 확인 창을 띄운다', (tester) async {
+    final (app, _) = await _recording(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('녹음 중이에요')),
+    );
+    final renewed = container.read(sessionRefresherProvider).refresh();
+    await app.step();
+    expect(await renewed, isFalse);
+
+    await app.back();
+    await app.tap(find.text('그만두고 나가기'));
+
+    await app.waitFor(find.text(VisitSignedOutMessages.title));
+    expect(find.text(VisitSignedOutMessages.recordingKept), findsOneWidget);
+    expect(find.text('사진 없이 시작할게요'), findsOneWidget, reason: '떠난 앞 화면 위에 뜬다');
+    expect(app.recorder.stops, 1);
+    final upload = app.uploads.saved.values.single;
+    expect(upload.participantCount, isNull, reason: '사람 수는 보낼 때 다시 묻는다');
+
+    await app.tap(find.text(VisitSignedOutMessages.action));
+    await app.waitFor(find.byType(GoogleSignInButton));
+    expect(find.text(sessionLostSignInNotice), findsOneWidget);
+    await app.close();
+  });
+
+  testWidgets('녹음 화면에서 녹음 전에 세션을 잃으면 확인 창을 거쳐 로그인 화면으로 간다', (tester) async {
+    final server = JourneyServer();
+    final app = await JourneyDriver.launch(tester, server);
+    await app.waitFor(find.text('오늘의 대화카드 받기'), maxSteps: 300);
+    await app.tap(find.text('오늘의 대화카드 받기'));
+    await app.waitFor(find.text('오늘의 대화 카드'));
+    await app.tap(_toggle(server.cardTitlesOf(server.setIds.single).first));
+    await app.tap(find.text('대화 시작하기'));
+    await app.tap(find.text('사진 없이 시작할게요'));
+    await app.waitFor(find.text('네, 좋아요'));
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('네, 좋아요')),
+    );
+
+    final renewed = container.read(sessionRefresherProvider).refresh();
+    await app.step();
+    expect(await renewed, isFalse);
+
+    await app.waitFor(find.text(VisitSignedOutMessages.title));
+    expect(find.text(VisitSignedOutMessages.noRecording), findsOneWidget);
+    expect(find.text(VisitSignedOutMessages.recordingKept), findsNothing);
+    expect(find.text('네, 좋아요'), findsOneWidget, reason: '뒤 화면을 그대로 둔다');
+    expect(app.recorder.starts, 0);
+
+    await app.tap(find.text(VisitSignedOutMessages.action));
+    await app.waitFor(find.byType(GoogleSignInButton));
+    expect(find.text(sessionLostSignInNotice), findsOneWidget);
+    expect(container.read(sessionProvider), isNull);
+    await app.close();
+  });
+
+  testWidgets('면회 흐름 밖에서 세션을 잃으면 확인 창 없이 로그인 화면으로 가서 이유를 알린다', (tester) async {
+    final app = await JourneyDriver.launch(tester, JourneyServer());
+    await app.waitFor(find.text('오늘의 대화카드 받기'), maxSteps: 300);
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('오늘의 대화카드 받기')),
+    );
+
+    final renewed = container.read(sessionRefresherProvider).refresh();
+    await app.step();
+    expect(await renewed, isFalse);
+
+    await app.waitFor(find.byType(GoogleSignInButton));
+    expect(find.text(VisitSignedOutMessages.title), findsNothing);
+    expect(find.text(sessionLostSignInNotice), findsOneWidget);
     await app.close();
   });
 
