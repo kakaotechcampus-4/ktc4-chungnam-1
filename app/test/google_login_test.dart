@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_birth_input_store.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
@@ -43,6 +44,7 @@ import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
 import 'fake_recording_share.dart';
 import 'fake_report_server.dart';
+import 'fake_profile_birth_input_store.dart';
 import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
 import 'fake_setup_draft_store.dart';
@@ -295,6 +297,9 @@ Widget _app({
       ),
       profileRelationshipStoreProvider.overrideWithValue(
         FakeProfileRelationshipStore(),
+      ),
+      profileBirthInputStoreProvider.overrideWithValue(
+        FakeProfileBirthInputStore(),
       ),
       setupDraftStoreProvider.overrideWithValue(
         setupDrafts ?? FakeSetupDraftStore(),

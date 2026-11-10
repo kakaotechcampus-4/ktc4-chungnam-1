@@ -30,6 +30,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/auth_api.dart';
 import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_birth_input_store.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
@@ -48,6 +49,7 @@ import 'package:saerok/main.dart';
 
 import '../fake_pending_uploads.dart';
 import '../fake_screen_awake.dart';
+import '../fake_profile_birth_input_store.dart';
 import '../fake_profile_relationship_store.dart';
 import '../fake_selected_profile_store.dart';
 import '../fake_visit_camera.dart';
@@ -129,6 +131,9 @@ class JourneyDriver {
     selectedProfileStoreProvider.overrideWithValue(FakeSelectedProfileStore()),
     profileRelationshipStoreProvider.overrideWithValue(
       FakeProfileRelationshipStore(),
+    ),
+    profileBirthInputStoreProvider.overrideWithValue(
+      FakeProfileBirthInputStore(),
     ),
     visitRecorderProvider.overrideWithValue(recorder),
     pendingUploadsProvider.overrideWith((ref) => uploads),
