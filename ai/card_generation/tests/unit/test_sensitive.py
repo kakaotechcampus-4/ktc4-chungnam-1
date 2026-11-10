@@ -26,9 +26,20 @@ def _cand(no: int, kind: str = "general", sensitive: bool = False, fact: str | N
                          discover_field=None, sensitive=sensitive, reason="이유")
 
 
-def test_v2_is_latest_and_v1_is_kept():
-    assert LATEST is VERSIONS[2]
-    assert 1 in VERSIONS   # backend가 2판으로 옮기기 전까지 1판을 지우지 않음
+def test_v3_is_latest_and_older_versions_are_kept():
+    assert LATEST is VERSIONS[3]
+    assert {1, 2} <= set(VERSIONS)   # backend가 새 버전으로 옮기기 전까지 이전 버전을 지우지 않음(backend 기본은 v2)
+
+
+def test_v3_changes_only_general_description():
+    """v3는 조사 프롬프트와 같은 이야기 기준의 general 설명만 바꿈. 판정과 문안 프롬프트, 정해 둔 값은 v2와 같음."""
+    v2, v3 = VERSIONS[2], VERSIONS[3]
+    assert v3.sensitive_cards and v3.selection == v2.selection and v3.decay == v2.decay
+    for name in ("match.md", "writing_topics.md"):
+        assert (v3.prompts / name).read_text(encoding="utf-8") == (v2.prompts / name).read_text(encoding="utf-8")
+    assert "연령대에 맞는 보편적인 옛 추억" in v2.agent_prompt()
+    assert "연령대에 맞는 보편적인 옛 추억" not in v3.agent_prompt()
+    assert "모르는 생활상을 전제하지 않는다" in v3.agent_prompt()
 
 
 def test_v2_agent_prompt_allows_stored_painful_stories_as_sensitive():
