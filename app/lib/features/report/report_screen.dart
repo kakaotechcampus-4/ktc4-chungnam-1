@@ -154,6 +154,7 @@ class _CardSection {
     bool used(String cardId) =>
         reviews.any((r) => r.cardId == cardId && r.wasUsed);
     final answered = {for (final r in reviews) r.cardId};
+    final unevaluated = selectedCardIds?.where((id) => !answered.contains(id));
     return _CardSection(
       // 쓰고 평가한 카드에만 요약을 붙인다.
       summaries: [
@@ -161,16 +162,22 @@ class _CardSection {
           if (used(summary.cardId)) summary,
       ],
       notUsed: reviews.where((r) => !r.wasUsed).length,
-      unevaluated: selectedCardIds == null
-          ? 0
-          : selectedCardIds.where((id) => !answered.contains(id)).length,
-      noCardUsed: !reviews.any((r) => r.wasUsed),
+      unevaluated: unevaluated?.length ?? 0,
+      // 고른 카드마다 쓰지 않았다고 답했을 때만이다. 답하지 않은 카드는 썼을 수
+      // 있다(평가 화면의 카드 질문은 넘어가도 된다). 고른 카드를 모르면 답하지
+      // 않은 카드가 있는지도 몰라 단정하지 않는다(2026-11-10 E2E).
+      noCardUsed:
+          !reviews.any((r) => r.wasUsed) &&
+          unevaluated != null &&
+          unevaluated.isEmpty,
     );
   }
 
   final List<CardSummary> summaries;
 
-  /// 보호자의 답을 읽었고 쓴 카드가 하나도 없다.
+  /// 보호자의 답을 읽었고 쓴 카드가 하나도 없다. 고른 카드에 모두 쓰지
+  /// 않았다고 답했거나 고른 카드가 없을 때다. 답하지 않은 카드가 있으면
+  /// `false` 다.
   ///
   /// 요약이 비어도 쓴 카드가 있으면 `false` 다. 리포트가 카드 요약을 만들지
   /// 않았을 때(예: 화자를 확인하지 못한 대화) 다룬 카드가 없다고 적으면 보호자의

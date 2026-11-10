@@ -9,6 +9,7 @@ import '../../data/api_client.dart';
 import '../../data/card_api.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart' show analysisFailureReason;
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -102,6 +103,9 @@ class HomeScreen extends ConsumerWidget {
                                 ReportNotice.failed => _ResumeNotice(
                                   date: date,
                                   title: '리포트를 만들지 못했어요',
+                                  reason: analysisFailureReason(
+                                    info?.failureCode,
+                                  ),
                                   hint: '눌러서 분석 다시 요청하기',
                                   icon: Icons.error_outline,
                                   // 녹음이 남았으면 공유도 고르게 한다.
@@ -723,10 +727,14 @@ class _NoticeText extends StatelessWidget {
     required this.date,
     required this.title,
     required this.hint,
+    this.reason,
   });
 
   final String? date;
   final String title;
+
+  /// 제목 아래의 이유. 없으면 `null` 이다.
+  final String? reason;
 
   /// 할 일이 없으면 `null` 이다.
   final String? hint;
@@ -741,6 +749,10 @@ class _NoticeText extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
         ],
         Text(title, style: AppTypography.bodyStrong),
+        if (reason != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(reason!, style: AppTypography.sub),
+        ],
         if (hint != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(hint!, style: AppTypography.sub),
@@ -856,10 +868,14 @@ class _ResumeNotice extends StatelessWidget {
     required this.hint,
     required this.onTap,
     this.icon = Icons.history,
+    this.reason,
   });
 
   final String? date;
   final String title;
+
+  /// 제목 아래에 덧붙이는 이유. 분석 실패의 이유를 알 때만 있다.
+  final String? reason;
   final String hint;
   final VoidCallback onTap;
   final IconData icon;
@@ -881,7 +897,12 @@ class _ResumeNotice extends StatelessWidget {
             Icon(icon, size: 32, color: AppColors.ink),
             const SizedBox(width: AppSpacing.md),
             Expanded(
-              child: _NoticeText(date: date, title: title, hint: hint),
+              child: _NoticeText(
+                date: date,
+                title: title,
+                reason: reason,
+                hint: hint,
+              ),
             ),
             const Icon(Icons.chevron_right, color: AppColors.textSub),
           ],

@@ -81,6 +81,29 @@ enum AnalysisStatus {
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 음성 분석 작업 하나를 물은 결과(6-3).
+class AnalysisProgress {
+  const AnalysisProgress(this.status, {this.errorCode});
+
+  /// 모르는 값이면 `null` 이다.
+  final AnalysisStatus? status;
+
+  /// [AnalysisStatus.failed] 일 때 서버가 남긴 이유(`EMPTY_TRANSCRIPT`,
+  /// `AI_SERVER_TIMEOUT` 등, 명세 8절). 그 밖에는 `null` 이다.
+  final String? errorCode;
+}
+
+/// 분석 실패 이유(6-3 `errorCode`)를 홈 배너와 알림에 덧붙일 한 줄로 옮긴다.
+///
+/// 이유를 짐작할 수 있는 두 가지만 알린다(2026-11-10 E2E). 말소리가 없던
+/// 녹음과, 너무 길거나 서버가 바빠 제한 시간을 넘긴 경우다. 모르는 이유는
+/// `null` 이고 지어내지 않는다.
+String? analysisFailureReason(String? errorCode) => switch (errorCode) {
+  'EMPTY_TRANSCRIPT' => '녹음에서 말소리를 찾지 못했어요.',
+  'AI_SERVER_TIMEOUT' => '녹음이 너무 길거나 서버가 바빠 시간 안에 끝내지 못했어요.',
+  _ => null,
+};
+
 /// 리포트 기록의 한 줄(7-1).
 class ReportListItem {
   const ReportListItem({
@@ -175,9 +198,14 @@ class ReportApi {
     return id;
   }
 
-  Future<AnalysisStatus?> analysis(String analysisId) async {
+  Future<AnalysisProgress> analysis(String analysisId) async {
     final body = await _client.get('$_base/speech-analyses/$analysisId');
-    return _read(() => AnalysisStatus.parse(body['status'] as String));
+    return _read(
+      () => AnalysisProgress(
+        AnalysisStatus.parse(body['status'] as String),
+        errorCode: body['errorCode'] as String?,
+      ),
+    );
   }
 
   /// 7-1 리포트가 저장된 회차. 최근 면회부터다.

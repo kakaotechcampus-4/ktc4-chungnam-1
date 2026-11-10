@@ -7,6 +7,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../data/visit_api.dart';
+import '../auth/session_refresher.dart';
 import '../cards/card_generation_controller.dart';
 import '../cards/cards_controller.dart';
 import 'pending_uploads.dart';
@@ -183,6 +184,10 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 회차를 만드는 중인지. 두 번 눌러 회차가 둘 생기지 않게 막는다.
   bool _creatingSession = false;
 
+  /// 녹음 파일을 연 뒤 세션을 붙잡아 두었는지([sessionHoldProvider]). 파일을
+  /// 닫고 기록을 마치거나 이 provider 가 정리되면 놓는다.
+  bool _holdingSession = false;
+
   /// 사진 올리기를 차례로 잇는다([_uploadPhoto]).
   Future<void> _photoQueue = Future.value();
 
@@ -201,7 +206,14 @@ class VisitController extends AsyncNotifier<VisitState> {
     _fileOpen = false;
     _creatingSession = false;
     _photoQueue = Future.value();
-    ref.onDispose(() => _ticker?.cancel());
+    _holdingSession = false;
+    final sessionHold = ref.read(sessionHoldProvider.notifier);
+    ref.onDispose(() {
+      _ticker?.cancel();
+      // 녹음을 마무리하지 못한 채 정리됐다. 세션을 계속 붙잡아 두지 않는다.
+      // 정리하는 중에는 다른 provider 를 바꾸지 않도록 미룬다.
+      if (_holdingSession) Future.microtask(sessionHold.release);
+    });
 
     // 회차를 만든 뒤 사진을 다시 찍었으면 새 사진을 올린다. 5-2 는 다시 올리면
     // 앞 사진을 바꿔 끼운다.
@@ -262,6 +274,10 @@ class VisitController extends AsyncNotifier<VisitState> {
     }
 
     _fileOpen = true;
+    // 녹음하는 동안 세션을 잃어도 로그인 화면으로 보내지 않는다. 화면이 바뀌면
+    // 녹음 화면이 닫히며 녹음이 멈춘다. 파일을 닫으면 놓는다([_stop]).
+    _holdingSession = true;
+    ref.read(sessionHoldProvider.notifier).hold();
     _update(
       (now) => now.copyWith(
         started: true,
@@ -509,46 +525,55 @@ class VisitController extends AsyncNotifier<VisitState> {
     final current = state.value!;
     _fileOpen = false;
 
-    VisitRecording? saved;
-    var problem = current.problem;
     try {
-      saved = await _recorder.stop();
-      if (saved == null) problem = VisitRecordingProblem.saveFailed;
-    } on Exception {
-      problem = VisitRecordingProblem.saveFailed;
-    }
-    // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다.
-    final startedPath = current.recordingPath;
-    if (saved == null && startedPath != null) {
+      VisitRecording? saved;
+      var problem = current.problem;
       try {
-        if (repairUnfinishedRecording(startedPath)) {
-          saved = VisitRecording(path: startedPath);
-          problem = current.problem;
+        saved = await _recorder.stop();
+        if (saved == null) problem = VisitRecordingProblem.saveFailed;
+      } on Exception {
+        problem = VisitRecordingProblem.saveFailed;
+      }
+      // 파일을 닫지 못해도 소리가 남아 있으면 머리글을 다시 채워 살린다.
+      final startedPath = current.recordingPath;
+      if (saved == null && startedPath != null) {
+        try {
+          if (repairUnfinishedRecording(startedPath)) {
+            saved = VisitRecording(path: startedPath);
+            problem = current.problem;
+          }
+        } on FileSystemException {
+          // 고치지 못했다. 저장 실패로 둔다.
         }
-      } on FileSystemException {
-        // 고치지 못했다. 저장 실패로 둔다.
+      }
+      // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
+      // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
+      if (!ref.mounted) return;
+
+      _update(
+        (now) => now.copyWith(
+          recording: false,
+          recordingPath: saved?.path,
+          participantCount: participantCount,
+          problem: problem,
+          clearProblem: problem == null,
+        ),
+      );
+      if (saved == null && startedPath != null) {
+        // 시작할 때 적어 둔 기록을 다시 보낼 목록에서 뺀다. 살리지 못한 파일을
+        // 앱을 다시 켰을 때 보내려 들지 않게 한다.
+        await _dropUpload(startedPath);
+        return;
+      }
+      await _rememberUpload();
+    } finally {
+      // 녹음이 끝났다. 그 사이 잃은 세션이 있으면 이제 로그인 화면으로 보낸다.
+      // 파일을 닫은 뒤 기기 기록까지 마친 다음이다.
+      if (ref.mounted && _holdingSession) {
+        _holdingSession = false;
+        ref.read(sessionHoldProvider.notifier).release();
       }
     }
-    // 파일을 닫는 사이 provider 가 정리됐으면 상태와 기기 기록을 쓰지 않는다.
-    // 정리된 ref 를 쓰면 Riverpod 이 던진다. 파일은 닫혔고 남아 있다.
-    if (!ref.mounted) return;
-
-    _update(
-      (now) => now.copyWith(
-        recording: false,
-        recordingPath: saved?.path,
-        participantCount: participantCount,
-        problem: problem,
-        clearProblem: problem == null,
-      ),
-    );
-    if (saved == null && startedPath != null) {
-      // 시작할 때 적어 둔 기록을 다시 보낼 목록에서 뺀다. 살리지 못한 파일을
-      // 앱을 다시 켰을 때 보내려 들지 않게 한다.
-      await _dropUpload(startedPath);
-      return;
-    }
-    await _rememberUpload();
   }
 
   /// 살리지 못한 녹음을 다시 보낼 목록에서 뺀다. 파일과 회차 연결은 남긴다.

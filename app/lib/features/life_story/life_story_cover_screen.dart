@@ -63,58 +63,83 @@ class LifeStoryCoverScreen extends StatelessWidget {
       ),
       body: LifeStoryBookLoader(
         // 제목, 책, 편수를 한 덩어리로 묶어 화면 가운데에 둔다. 화면이 낮으면
-        // 책이 줄어든다.
+        // 책이 줄어든다. 줄인 책이 [_OpeningBook.minWidth] 보다 작아질 만큼
+        // 낮으면(가로 화면) 책을 화면 높이에 맞춰 그리고 화면을 스크롤한다.
+        // 그 전에는 가로 화면에서 책이 약 7 x 9 로 줄었다(2026-11-10 E2E).
+        // 방향은 막지 않는다.
         builder: (context, book) => Stack(
           children: [
             const Positioned.fill(child: AlbumPetals()),
             ScreenBody(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.section),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      '쌓아온 이야기',
-                      style: _coverTitle,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      '책을 눌러 펼쳐 보세요',
-                      style: AppTypography.body.copyWith(
-                        color: AppColors.textSub,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 44),
-                    Flexible(
-                      child: _OpeningBook(
-                        name: book.profile.name,
-                        gender: book.profile.gender,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          const TextSpan(text: '지금까지 '),
-                          TextSpan(
-                            text: '${book.total}편',
-                            // 편수만 앱의 초록으로 짚어 준다. 오프화이트 위 6.4:1.
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: HomeColors.accent,
-                            ),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final roomy =
+                      _OpeningBook.widthFor(
+                        box.maxWidth,
+                        box.maxHeight - _textHeight(context),
+                      ) >=
+                      _OpeningBook.minWidth;
+                  final opening = _OpeningBook(
+                    name: book.profile.name,
+                    gender: book.profile.gender,
+                    width: roomy
+                        ? null
+                        : math.max(
+                            _OpeningBook.minWidth,
+                            _OpeningBook.widthFor(box.maxWidth, box.maxHeight),
                           ),
-                          const TextSpan(text: '의 이야기가 담겨 있어요'),
-                        ],
-                      ),
-                      style: AppTypography.body,
-                      textAlign: TextAlign.center,
+                  );
+                  final group = Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.section),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          '쌓아온 이야기',
+                          style: _coverTitle,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          '책을 눌러 펼쳐 보세요',
+                          style: AppTypography.body.copyWith(
+                            color: AppColors.textSub,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: _titleGap),
+                        if (roomy) Flexible(child: opening) else opening,
+                        const SizedBox(height: _countGap),
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(text: '지금까지 '),
+                              TextSpan(
+                                text: '${book.total}편',
+                                // 편수만 앱의 초록으로 짚어 준다. 오프화이트 위 6.4:1.
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: HomeColors.accent,
+                                ),
+                              ),
+                              const TextSpan(text: '의 이야기가 담겨 있어요'),
+                            ],
+                          ),
+                          style: AppTypography.body,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                  if (roomy) return group;
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: box.maxHeight),
+                      child: group,
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -122,13 +147,48 @@ class LifeStoryCoverScreen extends StatelessWidget {
       ),
     );
   }
+
+  static const _titleGap = 44.0;
+  static const _countGap = AppSpacing.xxxl;
+
+  /// 책을 뺀 제목, 안내, 편수 줄과 사이 여백의 높이. 글자 크기를 따른다. 줄이
+  /// 꺾이면 조금 모자랄 수 있는데, 그때는 책이 조금 더 작아질 뿐 넘치지 않는다.
+  static double _textHeight(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    double line(TextStyle style) =>
+        scaler.scale(style.fontSize!) * (style.height ?? 1);
+    return line(_coverTitle) +
+        AppSpacing.sm +
+        line(AppTypography.body) * 2 +
+        _titleGap +
+        _countGap +
+        AppSpacing.section;
+  }
 }
 
 class _OpeningBook extends StatefulWidget {
-  const _OpeningBook({required this.name, required this.gender});
+  const _OpeningBook({required this.name, required this.gender, this.width});
 
   final String name;
   final String gender;
+
+  /// 책 폭을 정해 둔다. 화면이 스크롤될 때(가로 화면) 쓴다. `null` 이면 받은
+  /// 자리에 맞춰 줄어든다.
+  final double? width;
+
+  /// 책의 세로 대 가로 비율. 3:4.2 다.
+  static const heightPerWidth = 4.2 / 3;
+
+  /// 이보다 작게 줄여야 하면 줄이지 않고 화면을 스크롤한다.
+  static const minWidth = 150.0;
+
+  /// [maxWidth] x [maxHeight] 자리에 들어가는 책 폭. 폭의 72% 를 넘지 않고,
+  /// 높이가 모자라면 그에 맞춰 줄인다. 책장 두께가 오른쪽과 아래로 10 만큼
+  /// 나오므로 그만큼 빼고 잰다.
+  static double widthFor(double maxWidth, double maxHeight) => math.max(
+    0.0,
+    math.min(maxWidth * 0.72, (maxHeight - 10) / heightPerWidth),
+  );
 
   @override
   State<_OpeningBook> createState() => _OpeningBookState();
@@ -140,8 +200,7 @@ class _OpeningBookState extends State<_OpeningBook>
   static const _openDuration = Duration(milliseconds: 900);
   static const _navigateAfter = Duration(milliseconds: 650);
 
-  /// 책의 세로 대 가로 비율. 3:4.2 다.
-  static const _heightPerWidth = 4.2 / 3;
+  static const _heightPerWidth = _OpeningBook.heightPerWidth;
 
   /// 표지가 젖혀지는 최대 각도.
   static const _maxAngle = 155 * math.pi / 180;
@@ -180,13 +239,23 @@ class _OpeningBookState extends State<_OpeningBook>
 
   @override
   Widget build(BuildContext context) {
-    // 화면 폭의 72% 를 넘지 않고, 높이가 모자라면 그에 맞춰 줄인다. 책장
-    // 두께가 오른쪽과 아래로 10 만큼 나오므로 그만큼 빼고 잰다.
+    // 화면 폭의 72% 를 넘지 않고, 높이가 모자라면 그에 맞춰 줄인다
+    // ([_OpeningBook.widthFor]). 폭을 정해 받았으면 그대로 쓴다.
+    final fixed = widget.width;
+    if (fixed != null) {
+      return Center(
+        child: SizedBox(
+          width: fixed,
+          height: fixed * _heightPerWidth,
+          child: _book(fixed),
+        ),
+      );
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = math.min(
-          constraints.maxWidth * 0.72,
-          (constraints.maxHeight - 10) / _heightPerWidth,
+        final width = _OpeningBook.widthFor(
+          constraints.maxWidth,
+          constraints.maxHeight,
         );
         return Center(
           heightFactor: 1,

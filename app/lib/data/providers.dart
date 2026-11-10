@@ -467,9 +467,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
 
   void _replace(CareProfileEntry entry, {bool select = false}) {
     state = state.copyWith(
-      entries: [
-        for (final e in state.entries) e.id == entry.id ? entry : e,
-      ],
+      entries: [for (final e in state.entries) e.id == entry.id ? entry : e],
       selectedId: select ? entry.id : null,
     );
   }
@@ -692,6 +690,106 @@ final serverProfilePhotosProvider =
       List<ProfilePhoto>?
     >(ServerProfilePhotosNotifier.new);
 
+/// 사진 카드의 사진 주소를 다시 읽는 여유. 가장 먼저 만료되는 주소보다 이만큼
+/// 먼저 다시 읽고, 읽은 지 이만큼 지나지 않았으면 다시 읽지 않는다. 테스트는
+/// 바꾼다.
+final cardPhotoUrlMarginProvider = Provider<Duration>(
+  (ref) => const Duration(minutes: 1),
+);
+
+/// 사진에서 나온 카드(`evidenceSource: photo`)에 그 사진을 붙이려고 읽는 지금
+/// 어르신의 프로필 사진 주소다. 사진 ID → `imageUrl` 이다.
+///
+/// 서버에 저장한 분이면 2-3 으로 읽는다. 갤러리의 [serverProfilePhotosProvider]
+/// 와 달리 분석 상태는 묻지 않는다. 보는 화면이 없으면 버리고 다음에 새로 읽는다.
+/// 카드 화면은 녹음 화면 아래에 열린 채 남고 녹음 화면도 이 주소를 들고 있어
+/// 면회(60~90분) 내내 들고 있는다. 주소는 수명이 짧아(`imageUrlExpiresAt`, 서버
+/// 기본 15분) 가장 먼저 만료되는 주소보다 [cardPhotoUrlMarginProvider] 만큼 먼저
+/// 다시 읽는다. 휴대폰 시계가 어긋나 이미 지났다고 나와도 그 간격보다 자주 읽지
+/// 않는다. 연결이 끊겨 읽지 못했으면 같은 간격 뒤에 다시 읽는다. 다시 읽는
+/// 동안과 다시 읽지 못했을 때 화면은 이미 받은 주소를 쓰고, 처음부터 받지
+/// 못했으면 사진 없이 그린다. 그림을 열지 못하면 [imageFailed] 로 한 번 다시
+/// 읽는다. 로그인하지 않았으면 목 사진이다.
+class CardPhotoUrlsNotifier extends AsyncNotifier<Map<String, String>> {
+  /// 지금 주소를 받은 때. 받지 못했거나 다시 읽는 중이면 `null` 이다.
+  DateTime? _readAt;
+
+  @override
+  Future<Map<String, String>> build() async {
+    _readAt = null;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) {
+      final bundle = await ref.watch(profileProvider.future);
+      return {
+        for (final photo in bundle?.photos ?? const <ProfilePhoto>[])
+          photo.photoId: photo.imageUrl,
+      };
+    }
+
+    final margin = ref.watch(cardPhotoUrlMarginProvider);
+    final List<ProfilePhoto> photos;
+    try {
+      photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    } on ApiFailure catch (failure) {
+      final retryable =
+          failure is ApiNetworkFailure ||
+          (failure is ApiServerFailure && failure.retryable);
+      if (retryable && ref.mounted) _readAgainAfter(margin);
+      rethrow;
+    }
+    final urls = {for (final photo in photos) photo.photoId: photo.imageUrl};
+    // 읽는 동안 다시 읽기 시작했으면 이 응답은 버려진다.
+    if (!ref.mounted) return urls;
+
+    _readAt = DateTime.now();
+    DateTime? earliest;
+    for (final photo in photos) {
+      final at = DateTime.tryParse(photo.imageUrlExpiresAt ?? '');
+      if (at != null && (earliest == null || at.isBefore(earliest))) {
+        earliest = at;
+      }
+    }
+    if (earliest != null) {
+      final wait = earliest.difference(DateTime.now()) - margin;
+      _readAgainAfter(wait < margin ? margin : wait);
+    }
+    return urls;
+  }
+
+  void _readAgainAfter(Duration wait) {
+    final timer = Timer(wait, ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+  }
+
+  /// 이미 [imageFailed] 로 알린 주소. 화면이 다시 그려질 때마다 같은 실패를
+  /// 다시 알려도 한 번만 본다.
+  final _failedUrls = <String>{};
+
+  /// 사진 카드의 그림을 [url] 로 열지 못했다. 휴대폰이 잠들어 다시 읽을 때를
+  /// 놓쳤으면 주소가 만료됐을 수 있어 다시 읽는다. 받은 지
+  /// [cardPhotoUrlMarginProvider] 가 지나지 않은 주소로도 열지 못했으면(지운
+  /// 사진, 끊긴 연결) 다시 읽어도 같아 읽지 않는다. 여러 장이 함께 실패해도 한
+  /// 번만 읽는다.
+  void imageFailed(String url) {
+    if (!_failedUrls.add(url)) return;
+    final readAt = _readAt;
+    if (readAt == null) return;
+    final margin = ref.read(cardPhotoUrlMarginProvider);
+    if (DateTime.now().difference(readAt) < margin) return;
+    _readAt = null;
+    ref.invalidateSelf();
+  }
+}
+
+final cardPhotoUrlsProvider =
+    AsyncNotifierProvider.autoDispose<
+      CardPhotoUrlsNotifier,
+      Map<String, String>
+    >(CardPhotoUrlsNotifier.new, retry: (_, _) => null);
+
 /// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
 String ageRangeOf(String birthDate, DateTime today) {
   final birth = DateTime.parse(birthDate);
@@ -863,6 +961,7 @@ class ReportNoticeInfo {
     this.analysisId,
     this.visitDate,
     this.fromServer = false,
+    this.failureCode,
   });
 
   final ReportNotice notice;
@@ -878,6 +977,11 @@ class ReportNoticeInfo {
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
+
+  /// [ReportNotice.failed] 일 때 분석 작업(6-3)의 `errorCode`. 회차 목록(5-4)은
+  /// 이유를 주지 않아 6-3 으로 한 번 더 묻는다. 모르면 `null` 이다
+  /// ([analysisFailureReason]).
+  final String? failureCode;
 }
 
 /// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
@@ -1071,6 +1175,9 @@ class _ReportNoticesNotifier
 
       if (latest.status != VisitStatus.processing) {
         _set(key, _noticeOf(latest, latest.status));
+        if (latest.status == VisitStatus.failed) {
+          await _addFailureCode(key, round, latest);
+        }
         return;
       }
 
@@ -1110,9 +1217,9 @@ class _ReportNoticesNotifier
       await Future<void>.delayed(interval);
       if (_stale(key, round)) return true;
 
-      final AnalysisStatus? status;
+      final AnalysisProgress progress;
       try {
-        status = await api.analysis(analysisId);
+        progress = await api.analysis(analysisId);
       } on ApiFailure catch (failure) {
         if (_stale(key, round)) return true;
         if (_retryable(failure)) continue;
@@ -1123,17 +1230,48 @@ class _ReportNoticesNotifier
       }
       if (_stale(key, round)) return true;
 
-      switch (status) {
+      switch (progress.status) {
         case AnalysisStatus.completed:
           _set(key, _noticeOf(session, VisitStatus.completed));
           return true;
         case AnalysisStatus.failed:
-          _set(key, _noticeOf(session, VisitStatus.failed));
+          _set(
+            key,
+            _noticeOf(
+              session,
+              VisitStatus.failed,
+              failureCode: progress.errorCode,
+            ),
+          );
           return true;
         default:
           continue;
       }
     }
+  }
+
+  /// 회차 목록(5-4)이 실패라고 했을 때 그 분석 작업(6-3)의 실패 이유를 한 번
+  /// 물어 알림에 붙인다. 묻지 못하면 이유 없이 둔다. 실패 배너는 그 전에 이미
+  /// 띄웠다.
+  Future<void> _addFailureCode(
+    _NoticeKey key,
+    int round,
+    VisitProgress session,
+  ) async {
+    final analysisId = session.analysisId;
+    if (analysisId == null) return;
+    final AnalysisProgress progress;
+    try {
+      progress = await ref.read(reportApiProvider).analysis(analysisId);
+    } on ApiFailure {
+      return;
+    }
+    if (_stale(key, round) || progress.status != AnalysisStatus.failed) return;
+    if (progress.errorCode == null) return;
+    _set(
+      key,
+      _noticeOf(session, VisitStatus.failed, failureCode: progress.errorCode),
+    );
   }
 
   /// 서버에 닿지 못했거나 서버가 다시 시도해도 된다고 알렸다.
@@ -1143,7 +1281,11 @@ class _ReportNoticesNotifier
 
   /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
   /// `null` 이다.
-  ReportNoticeInfo? _noticeOf(VisitProgress session, VisitStatus? status) {
+  ReportNoticeInfo? _noticeOf(
+    VisitProgress session,
+    VisitStatus? status, {
+    String? failureCode,
+  }) {
     final notice = switch (status) {
       VisitStatus.evaluationPending => ReportNotice.evaluationPending,
       VisitStatus.audioPending => ReportNotice.audioPending,
@@ -1160,6 +1302,7 @@ class _ReportNoticesNotifier
       analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
+      failureCode: notice == ReportNotice.failed ? failureCode : null,
     );
   }
 

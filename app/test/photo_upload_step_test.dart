@@ -70,6 +70,7 @@ Future<ProviderContainer> _openPhotoStep(
   WidgetTester tester,
   _FakePicker picker, {
   _FakeUploader? uploader,
+  String? addingId,
 }) async {
   // 기준 화면 412 x 917 dp 다(`app/README.md`).
   tester.view.physicalSize = const Size(1236, 2751);
@@ -89,7 +90,7 @@ Future<ProviderContainer> _openPhotoStep(
     routes: [
       GoRoute(
         path: AppRoutes.profileCreate,
-        builder: (context, state) => const ProfileSetupScreen(),
+        builder: (context, state) => ProfileSetupScreen(addingId: addingId),
       ),
       GoRoute(
         path: AppRoutes.home,
@@ -236,11 +237,13 @@ void main() {
       WidgetTester tester, {
       required int count,
       required _FakeUploader uploader,
+      String? addingId,
     }) async {
       final container = await _openPhotoStep(
         tester,
         _FakePicker([_paths(count)]),
         uploader: uploader,
+        addingId: addingId,
       );
       await tester.tap(find.text('사진 추가하기'));
       await tester.pumpAndSettle();
@@ -306,6 +309,38 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('홈 화면'), findsOneWidget);
+    });
+
+    // 2026-11-10 E2E: 사진을 넣어 어르신을 더하면 홈 아래 사진 준비 안내의
+    // 아랫줄을 `지금부터 ○○님과 함께해요` 알림 띠가 가렸다.
+    testWidgets('사진을 올리고 어르신을 더하면 홈에서 알림 띠를 띄우지 않는다', (tester) async {
+      await pickAndFinish(
+        tester,
+        count: 2,
+        uploader: _FakeUploader(),
+        addingId: 'adding_test_001',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, '홈으로'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('사진 없이 어르신을 더하면 홈에서 함께한다고 알린다', (tester) async {
+      await _openPhotoStep(
+        tester,
+        _FakePicker([]),
+        addingId: 'adding_test_001',
+      );
+
+      await tester.tap(find.widgetWithText(OutlinedButton, '건너뛰기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('홈 화면'), findsOneWidget);
+      expect(find.textContaining('함께해요'), findsOneWidget);
     });
 
     testWidgets('일부가 실패하면 그 사진만 다시 올린다', (tester) async {

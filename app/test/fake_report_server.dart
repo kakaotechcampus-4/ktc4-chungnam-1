@@ -32,6 +32,9 @@ class FakeReportServer {
   /// 분석 작업마다 물을 때 차례로 돌려줄 `status`. 마지막 값은 계속 돌려준다.
   final Map<String, List<String>> analyses;
 
+  /// 분석 작업마다 `failed` 일 때 돌려줄 `errorCode`.
+  final analysisErrors = <String, String>{};
+
   /// 회차마다의 리포트(VisitReport).
   final Map<String, Map<String, Object?>> reports;
 
@@ -115,7 +118,7 @@ class FakeReportServer {
         'analysisId': s[3],
         'sessionId': 'session-of-${s[3]}',
         'status': status,
-        'errorCode': null,
+        'errorCode': status == 'failed' ? analysisErrors[s[3]] : null,
       });
     }
 

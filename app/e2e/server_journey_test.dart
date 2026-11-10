@@ -502,7 +502,7 @@ Future<AnalysisStatus?> _waitForAnalysis(
 ) async {
   final deadline = DateTime.now().add(_wait);
   while (DateTime.now().isBefore(deadline)) {
-    final status = await reports.analysis(analysisId);
+    final status = (await reports.analysis(analysisId)).status;
     if (status == AnalysisStatus.completed || status == AnalysisStatus.failed) {
       return status;
     }

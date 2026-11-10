@@ -20,6 +20,7 @@ import '../visit/visit_camera.dart';
 import '../visit/visit_controller.dart';
 import '../visit/visit_photos.dart';
 import 'card_generation_controller.dart';
+import 'card_source_photo.dart';
 import 'cards_controller.dart';
 import 'photo_preparation_view.dart';
 import 'sensitive_card_badge.dart';
@@ -526,6 +527,8 @@ class _CardTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 사진에서 나온 카드는 그 사진을 맨 위에 둔다. 찾지 못하면 그리지 않는다.
+          CardSourcePhoto(card: card),
           // 아픈 경험을 다루는 카드는 제목 위에 표시해 고르기 전에 보이게 한다.
           if (card.sensitive) ...[
             const SensitiveCardBadge(),
