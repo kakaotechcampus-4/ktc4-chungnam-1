@@ -1,18 +1,21 @@
 """엘리스 Claude 연결 준비. 운영 GPT 경로나 자동 전환에 등록하지 않는다.
 
 사용자 제공 엘리스 API 설명(2026-11-11)에서 모델 별칭, Chat Completions,
-구조화 출력과 도구 호출 지원을 확인했다. 실제 주소와 연동 동작은 미검증이다.
+구조화 출력과 도구 호출 지원을 확인했고, 사용자 제공 주소로 합성 연결 검사를 통과했다.
+카드·리포트 품질과 운영 자동 전환 검증은 별도다.
 """
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from common.llm import RetryingChatOpenAI
 
+ELICE_CLAUDE_BASE_URL = "https://mlapi.run/e488b98a-60f2-4db1-9931-49ba1a217dc4/v1"
+
 
 @dataclass(frozen=True)
 class EliceClaudeConfig:
-    base_url: str = field(repr=False)
     api_key: str = field(repr=False)
+    base_url: str = field(default=ELICE_CLAUDE_BASE_URL, repr=False)
     model: str = "anthropic/claude-haiku-5-5"
     timeout: float = 120
     max_tokens: int = 16000

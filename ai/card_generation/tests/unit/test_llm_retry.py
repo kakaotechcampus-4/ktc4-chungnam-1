@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessageChunk
 from langchain_core.outputs import ChatGenerationChunk
 from pydantic import BaseModel
 
-from common.elice_claude import EliceClaudeConfig, elice_claude_model
+from common.elice_claude import ELICE_CLAUDE_BASE_URL, EliceClaudeConfig, elice_claude_model
 from common.llm import ChatConfig, chat_model
 from common.retry import RetryBlocked, invoke_with_retry, retry_scope
 from common.structured import invoke_structured
@@ -207,6 +207,12 @@ def test_claude_uses_chat_completions_without_gpt_reasoning_settings():
     assert "stream_options" not in payload
     assert payload["max_completion_tokens"] == 16000
     assert "synthetic-only" not in repr(config)
+
+
+def test_claude_default_uses_user_provided_elice_address_without_network():
+    model = elice_claude_model(EliceClaudeConfig(api_key="synthetic-only"))
+    assert str(model.root_client.base_url).rstrip("/") == ELICE_CLAUDE_BASE_URL
+    assert model.model_name == "anthropic/claude-haiku-5-5"
 
 
 @pytest.mark.parametrize("url", ["https://api.openai.com/v1", "http://mlapi.run/id/v1",

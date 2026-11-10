@@ -43,9 +43,9 @@ STT와 화자 분리의 실행 서버는 [`stt-server/`](../stt-server/README.md
 
 동기 `invoke`(내부 스트리밍 포함)의 연결 오류, 408, 일시적 429와 5xx에 같은 경로로 최대 1회 재시도하는 공통 코드를 추가했다. SDK 자체 재시도는 계속 0이며, 형식 재시도에서도 API 오류를 다시 시도하지 않는다. 재시도는 최초 호출의 시간 예산과 작업 전체 마감을 공유한다. 인증·입력 오류와 식별 가능한 할당량 소진은 재시도하지 않는다. 백엔드의 `SAEROK_LLM_RETRY_ENABLED` 기본값은 false다. 직접 `stream`·비동기 호출에는 이 재시도를 적용하지 않는다.
 
-엘리스 Claude 연결 준비는 `common/elice_claude.py`에 분리했다. API 모델 식별자는 `anthropic/claude-haiku-5-5`이며, 제공된 설명은 `claude-haiku-5-5`도 허용한다. 주소는 아직 확인하지 않아 하드코딩하거나 운영 `ENDPOINTS`에 등록하지 않았다. 2026-11-11 사용자가 제공한 엘리스 API 설명에서 Chat Completions, 스트리밍, JSON 구조화 출력과 도구 호출 지원 및 모델 별칭을 확인했다. GPT용 Responses API·추론 옵션과 허용 목록에 없는 stream_options를 보내지 않는다. 문서상 지원 확인이며 실제 연동 동작과 품질은 미검증이다. 기존 생성 함수의 자동 전환에는 연결하지 않았다.
+엘리스 Claude 연결 준비는 `common/elice_claude.py`에 분리했다. API 모델 식별자는 `anthropic/claude-haiku-5-5`이며, 제공된 설명은 `claude-haiku-5-5`도 허용한다. 2026-11-11 사용자가 제공한 실제 주소에 `/v1`을 붙여 `common/elice_claude.py`의 기본 연결 주소로 반영했다. 운영 `ENDPOINTS`에는 등록하지 않았다. 2026-11-11 사용자가 제공한 엘리스 API 설명에서 Chat Completions, 스트리밍, JSON 구조화 출력과 도구 호출 지원 및 모델 별칭을 확인했다. GPT용 Responses API·추론 옵션과 허용 목록에 없는 stream_options를 보내지 않는다. 실제 주소에 합성 입력을 보내 스트리밍 텍스트·JSON 구조화 출력·도구 호출과 결과 전달의 왕복을 확인했다. 카드·리포트 품질과 긴 전사·이미지 입력은 미검증이다. 기존 생성 함수의 자동 전환에는 연결하지 않았다.
 
-주소를 확인한 뒤 `ai/`에서 기존 환경변수 `ML_API_KEY`를 사용해 `uv run python -m common.check_elice_claude --base-url <확인한-엘리스-v1-주소>`로 합성 텍스트·구조화 출력·도구 왕복을 수동 점검할 수 있다. 실제 모델을 호출하는 명령이며 이번 작업에서는 실행하지 않았다. 키를 명령행에 넣지 않는다. 출력은 검사 성공 여부 또는 오류 종류만 담는다. 사진 입력과 긴 전사, 카드·리포트 품질 검증을 대신하지 않는다.
+`ai/`에서 기존 환경변수 `ML_API_KEY`를 사용해 `uv run python -m common.check_elice_claude`로 합성 텍스트·구조화 출력·도구 왕복을 수동 점검할 수 있다. 실제 모델을 호출하는 명령이다. 이번에는 같은 점검 함수를 기존 로컬 키로 실행해 세 검사를 통과했다(호출 제한 30초, 출력 상한 2048, 자동 재시도 끔). 구조화 응답 직렬화에서 Pydantic 경고가 나왔지만 값 검사와 도구 왕복은 성공했다. 키를 명령행에 넣지 않는다. 출력은 검사 성공 여부 또는 오류 종류만 담는다. 사진 입력과 긴 전사, 카드·리포트 품질 검증을 대신하지 않는다.
 
 설계와 현재 구현 범위는 [LLM 장애 대응](../docs/architecture/llm-failover.md), 구조 검토는 [ADR-010](../docs/architecture/decisions/ADR-010-llm-resilience.md)을 따른다. 실제 사용자 자료 전송 전 조건은 [법률 확인 표](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)에서 관리한다.
 

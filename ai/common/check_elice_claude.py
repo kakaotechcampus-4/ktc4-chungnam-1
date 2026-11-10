@@ -6,7 +6,7 @@ import os
 from langchain_core.messages import HumanMessage, ToolMessage
 from pydantic import BaseModel, Field
 
-from common.elice_claude import EliceClaudeConfig, elice_claude_model
+from common.elice_claude import ELICE_CLAUDE_BASE_URL, EliceClaudeConfig, elice_claude_model
 
 
 class SyntheticAnswer(BaseModel):
@@ -42,7 +42,8 @@ def check(config: EliceClaudeConfig) -> dict[str, bool]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", required=True, help="콘솔에서 확인한 엘리스 /v1 주소")
+    parser.add_argument("--base-url", default=ELICE_CLAUDE_BASE_URL,
+                        help="다른 엘리스 /v1 주소를 명시할 때만 사용")
     args = parser.parse_args()
     try:
         result = check(EliceClaudeConfig(base_url=args.base_url,
