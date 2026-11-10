@@ -375,21 +375,25 @@ class _Recording extends ConsumerWidget {
         // ScreenBody 의 SafeArea 가 하단 안전영역을 한 번 더 쓰므로 카드 자리와
         // 따로 빼 둔다. 빼지 않으면 그만큼 컨트롤이 스크롤 밖으로 밀린다.
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final peekHeight = (constraints.maxHeight - _statusHeight - bottomInset)
+        final status = _StatusLayout.fit(
+          context,
+          state: state,
+          width: constraints.maxWidth - AppSpacing.screen * 2,
+          room: constraints.maxHeight - bottomInset - _CardPeek.minHeight,
+        );
+        final peekHeight = (constraints.maxHeight - status.height - bottomInset)
             .clamp(_CardPeek.minHeight, _CardPeek.maxHeight + bottomInset);
 
-        return _body(context, controller, peekHeight);
+        return _body(context, controller, peekHeight, status);
       },
     );
   }
-
-  /// 녹음 상태가 잘리지 않는 높이. 여백과 글자, 원, 컨트롤의 합에 여유를 더했다.
-  static const _statusHeight = 410.0;
 
   Widget _body(
     BuildContext context,
     VisitController controller,
     double peekHeight,
+    _StatusLayout status,
   ) {
     return Column(
       children: [
@@ -399,35 +403,30 @@ class _Recording extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: AppSpacing.xxxl),
+                SizedBox(height: status.top),
                 // 멈춤과 이어서 녹음을 누르면 바뀐 상태를 화면 낭독기가 바로
                 // 읽는다. 1초마다 바뀌는 시간은 읽지 않게 여기에만 둔다.
                 Semantics(
                   liveRegion: true,
                   child: Text(
-                    state.recording ? '녹음 중이에요' : '잠시 멈췄어요',
-                    // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
-                    style: AppTypography.screenTitle.copyWith(fontSize: 24),
+                    _StatusLayout.titleOf(state),
+                    style: _StatusLayout.titleStyle,
                     textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
                   state.elapsedLabel,
-                  style: AppTypography.screenTitle.copyWith(
-                    fontSize: 30,
-                    color: AppColors.textSub,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
+                  style: _StatusLayout.timeStyle,
                   textAlign: TextAlign.center,
                 ),
 
-                const SizedBox(height: AppSpacing.xxxl),
+                SizedBox(height: status.beforeCircle),
 
                 Center(
                   child: Container(
-                    width: 112,
-                    height: 112,
+                    width: status.circle,
+                    height: status.circle,
                     decoration: BoxDecoration(
                       color: state.recording
                           ? HomeColors.accent
@@ -440,7 +439,7 @@ class _Recording extends ConsumerWidget {
                     ),
                     child: Icon(
                       state.recording ? Icons.mic : Icons.pause,
-                      size: 46,
+                      size: status.circle * _StatusLayout.iconRatio,
                       color: state.recording
                           ? AppColors.background
                           : AppColors.textSub,
@@ -448,23 +447,33 @@ class _Recording extends ConsumerWidget {
                   ),
                 ),
 
-                const SizedBox(height: AppSpacing.xxl),
+                SizedBox(height: status.beforeControls),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _ControlButton(
-                      icon: state.recording ? Icons.pause : Icons.play_arrow,
-                      label: state.recording ? '잠시 멈춤' : '이어서 녹음',
-                      onTap: state.recording
-                          ? controller.pauseRecording
-                          : controller.startRecording,
+                    // 글자를 키워 이름이 반쪽 폭을 넘으면 띄어쓰기에서 줄을
+                    // 바꾼다. 예전에는 한 줄로 두어 360dp 글자 2.0배에서
+                    // 오른쪽으로 넘쳤다.
+                    Flexible(
+                      child: _ControlButton(
+                        icon: state.recording ? Icons.pause : Icons.play_arrow,
+                        label: _StatusLayout.toggleLabelOf(state),
+                        breakLabel: status.breakLabels,
+                        onTap: state.recording
+                            ? controller.pauseRecording
+                            : controller.startRecording,
+                      ),
                     ),
-                    const SizedBox(width: AppSpacing.xxl),
-                    _ControlButton(
-                      icon: Icons.stop,
-                      label: '만남 끝내기',
-                      onTap: () => _confirmStop(context, controller, state),
+                    const SizedBox(width: _StatusLayout.controlGap),
+                    Flexible(
+                      child: _ControlButton(
+                        icon: Icons.stop,
+                        label: _StatusLayout.stopLabel,
+                        breakLabel: status.breakLabels,
+                        onTap: () => _confirmStop(context, controller, state),
+                      ),
                     ),
                   ],
                 ),
@@ -777,11 +786,14 @@ class _PullHint extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: _blur, sigmaY: _blur),
         child: Container(
-          height: _height + bottomInset,
+          // 글자를 키워 안내가 두 줄이 되면 띠가 위로 자란다. 높이를 못 박아
+          // 두었더니 글자 2.0배에서 둘째 줄이 30 넘쳐 잘렸다.
+          constraints: BoxConstraints(minHeight: _height + bottomInset),
           padding: EdgeInsets.only(bottom: AppSpacing.xl + bottomInset),
           color: HomeColors.background.withValues(alpha: 0.72),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 width: 44,
@@ -792,7 +804,11 @@ class _PullHint extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              const Text('위로 올려서 대화 카드 꺼내기', style: AppTypography.bodyStrong),
+              const Text(
+                '위로 올려서 대화 카드 꺼내기',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyStrong,
+              ),
             ],
           ),
         ),
@@ -806,11 +822,15 @@ class _ControlButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.breakLabel = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
+  /// 이름을 띄어쓰기에서 두 줄로 나눠 보인다. 화면 낭독기는 [label] 을 읽는다.
+  final bool breakLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -829,8 +849,8 @@ class _ControlButton extends StatelessWidget {
             onTap: onTap,
             customBorder: const CircleBorder(),
             child: Container(
-              width: 64,
-              height: 64,
+              width: _StatusLayout.controlSize,
+              height: _StatusLayout.controlSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.background,
@@ -840,9 +860,140 @@ class _ControlButton extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Text(label, style: AppTypography.sub),
+          Text(
+            breakLabel ? _StatusLayout.broken(label) : label,
+            style: AppTypography.sub,
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// 녹음 상태(제목, 시간, 원, 컨트롤)의 여백과 원 크기.
+///
+/// 아래 카드 자리는 남는 높이만 받으므로, 상태가 쓸 높이를 글자 크기와 폭에
+/// 맞춰 먼저 잰다. 예전에는 410 으로 못 박아 360x640 에서는 기본 글자에서도,
+/// 390x844 에서는 글자 1.3배에서 컨트롤 이름이 스크롤 창 아래에 잘렸다. 다
+/// 들어가지 않으면 여백을 줄이고 원을 줄인다(최소 64, 누르는 버튼이 아니다).
+/// 컨트롤 버튼(64)은 줄이지 않는다. 그래도 모자라면(작은 화면에서 아주 큰 글자)
+/// 지금처럼 상태 영역이 스크롤된다.
+class _StatusLayout {
+  const _StatusLayout({
+    required this.top,
+    required this.beforeCircle,
+    required this.circle,
+    required this.beforeControls,
+    required this.breakLabels,
+    required this.height,
+  });
+
+  final double top;
+  final double beforeCircle;
+  final double circle;
+  final double beforeControls;
+
+  /// 컨트롤 이름이 반쪽 폭에 한 줄로 들어가지 않는다. 한글은 글자마다 줄을
+  /// 바꿀 수 있어 그대로 두면 `이어서 녹/음` 처럼 낱말 가운데가 끊긴다.
+  final bool breakLabels;
+
+  /// 여유를 더한 전체 높이.
+  final double height;
+
+  // 아래 카드 자리를 내주려고 다른 화면보다 작게 쓴다.
+  static final titleStyle = AppTypography.screenTitle.copyWith(fontSize: 24);
+  static final timeStyle = AppTypography.screenTitle.copyWith(
+    fontSize: 30,
+    color: AppColors.textSub,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  static String titleOf(VisitState state) =>
+      state.recording ? '녹음 중이에요' : '잠시 멈췄어요';
+  static String toggleLabelOf(VisitState state) =>
+      state.recording ? '잠시 멈춤' : '이어서 녹음';
+  static const stopLabel = '만남 끝내기';
+
+  /// 첫 띄어쓰기에서 줄을 바꾼 이름.
+  static String broken(String label) => label.replaceFirst(' ', '\n');
+
+  static const controlSize = 64.0;
+  static const controlGap = AppSpacing.xxl;
+  static const _maxCircle = 112.0;
+  static const _minCircle = 64.0;
+
+  /// 원 안 아이콘 크기의 비율. 원 112 에 아이콘 46 이다.
+  static const iconRatio = 46 / 112;
+
+  /// 글자 반올림과 글꼴 차이를 덮는 여유.
+  static const _slack = AppSpacing.sm;
+
+  static _StatusLayout fit(
+    BuildContext context, {
+    required VisitState state,
+    required double width,
+    required double room,
+  }) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final base = DefaultTextStyle.of(context).style;
+    final direction = Directionality.of(context);
+
+    double textHeight(String text, TextStyle style, double maxWidth) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: base.merge(style)),
+        textAlign: TextAlign.center,
+        textDirection: direction,
+        textScaler: scaler,
+      )..layout(maxWidth: maxWidth);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final labelWidth = (width - controlGap) / 2;
+    final names = [toggleLabelOf(state), stopLabel];
+    final oneLine = textHeight('가', AppTypography.sub, double.infinity);
+    final breakLabels = names.any(
+      (name) => textHeight(name, AppTypography.sub, labelWidth) > oneLine + 0.5,
+    );
+    final labels = [
+      for (final name in names)
+        textHeight(
+          breakLabels ? broken(name) : name,
+          AppTypography.sub,
+          labelWidth,
+        ),
+    ].reduce((a, b) => a > b ? a : b);
+    final fixed =
+        textHeight(titleOf(state), titleStyle, width) +
+        AppSpacing.md +
+        textHeight(state.elapsedLabel, timeStyle, width) +
+        controlSize +
+        AppSpacing.sm +
+        labels +
+        _slack;
+
+    const regular = AppSpacing.xxxl + AppSpacing.xxxl + AppSpacing.xxl;
+    if (fixed + regular + _maxCircle <= room) {
+      return _StatusLayout(
+        top: AppSpacing.xxxl,
+        beforeCircle: AppSpacing.xxxl,
+        circle: _maxCircle,
+        beforeControls: AppSpacing.xxl,
+        breakLabels: breakLabels,
+        height: fixed + regular + _maxCircle,
+      );
+    }
+    const compact = AppSpacing.lg * 3;
+    final circle = (room - fixed - compact).clamp(_minCircle, _maxCircle);
+    return _StatusLayout(
+      top: AppSpacing.lg,
+      beforeCircle: AppSpacing.lg,
+      circle: circle,
+      beforeControls: AppSpacing.lg,
+      breakLabels: breakLabels,
+      height: fixed + compact + circle,
     );
   }
 }
