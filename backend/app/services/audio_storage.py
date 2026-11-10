@@ -18,6 +18,10 @@ class AudioDownload:
 class AudioStorage(Protocol):
     async def upload(self, *, object_key: str, file: BinaryIO) -> None: ...
 
+    async def download(self, *, object_key: str, file: BinaryIO) -> None:
+        """객체를 `file`에 스트리밍으로 받는다. 30분을 넘는 녹음을 worker가 나눌 때만 쓴다."""
+        ...
+
     async def create_download(
         self,
         *,
@@ -63,6 +67,11 @@ class S3AudioStorage:
                 "ContentType": "audio/wav",
                 "ServerSideEncryption": self._server_side_encryption,
             },
+        )
+
+    async def download(self, *, object_key: str, file: BinaryIO) -> None:
+        await asyncio.to_thread(
+            self._client.download_fileobj, self._bucket, object_key, file
         )
 
     async def create_download(

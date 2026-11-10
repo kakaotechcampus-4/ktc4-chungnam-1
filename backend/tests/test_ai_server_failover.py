@@ -266,6 +266,8 @@ def test_speech_worker_factory_passes_backup_settings_without_connecting(monkeyp
                         ai_server_failover_connect_timeout_seconds=3)
     monkeypatch.setattr(speech_analysis, "S3AudioStorage", lambda **kwargs: object())
     monkeypatch.setattr(speech_analysis, "create_speech_worker", lambda **kwargs: kwargs)
+    # 시작 때의 남은 작업 디렉터리 정리가 실제 임시 폴더를 건드리지 않게 한다.
+    monkeypatch.setattr(speech_analysis, "remove_stale_work_dirs", lambda **kwargs: 0)
     configured = speech_analysis.create_worker(settings, stt_only=True)
     instance = configured["ai_server"]
     assert instance._base_url == settings.ai_server_url

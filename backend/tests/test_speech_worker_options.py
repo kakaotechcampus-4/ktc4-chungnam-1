@@ -6,6 +6,12 @@ from app.core.config import Settings
 from app.workers import speech_analysis as entry
 
 
+@pytest.fixture(autouse=True)
+def keep_real_temp_dirs(monkeypatch):
+    # worker 시작 때의 남은 작업 디렉터리 정리가 이 PC의 실제 임시 폴더를 건드리지 않게 한다.
+    monkeypatch.setattr(entry, 'remove_stale_work_dirs', lambda **kwargs: 0)
+
+
 @pytest.mark.parametrize('stt_only', [False, True])
 def test_report_wiring(monkeypatch, stt_only):
     monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
@@ -105,3 +111,21 @@ def test_report_push_is_wired_only_when_a_key_file_is_set(monkeypatch, tmp_path)
         entry.create_worker(absent)
     # STT만 돌릴 때는 리포트가 없으므로 키 파일을 보지 않는다.
     assert entry.create_worker(absent, stt_only=True)['report_notifier'] is None
+
+
+def test_stt_timeout_must_fit_in_the_lease(monkeypatch):
+    # 30분 조각 하나(업로드, STT 호출, 삭제, 전사 저장)는 늘린 임대 하나 안에 끝나야 한다.
+    monkeypatch.setattr(entry, 'S3AudioStorage', lambda **kwargs: object())
+    monkeypatch.setattr(entry, 'create_speech_worker', lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url='postgresql://synthetic',
+        speech_audio_s3_bucket='synthetic', ml_api_key='synthetic-key',
+        speech_analysis_lease_seconds=900, ai_server_timeout_seconds=841,
+    )
+    with pytest.raises(RuntimeError, match='SAEROK_AI_SERVER_TIMEOUT_SECONDS'):
+        entry.create_worker(settings)
+    # STT만 돌려도 같은 조건이다.
+    with pytest.raises(RuntimeError, match='SAEROK_AI_SERVER_TIMEOUT_SECONDS'):
+        entry.create_worker(settings, stt_only=True)
+    fits = settings.model_copy(update={'ai_server_timeout_seconds': 840})
+    assert entry.create_worker(fits)['report_generator'] is not None

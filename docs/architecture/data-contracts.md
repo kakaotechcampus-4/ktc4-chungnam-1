@@ -595,6 +595,7 @@ BE는 `audioPending`인 회차만 받으며, 원본을 S3에 임시 저장하고
 - 운영에서는 S3 Presigned GET URL을 사용하고, `localFile`은 개발과 테스트 환경에서만 허용한다.
 - `SPEAKER_00` 같은 값은 파일 안의 화자 군집 라벨이며 보호자 또는 피보호자 역할을 뜻하지 않는다.
 - 화자를 명확하게 배정할 수 없는 구간의 `speakerLabel`은 `null`이다.
+- 30분을 넘는 녹음은 BE가 30분 이하 조각으로 나눠 같은 `analysisId`로 차례로 보내고(조각마다 `sizeBytes`, `sha256`) 결과를 합친다(2026-11-10 PM 결정, `fix/long-recording-30min-stt`, 미병합). 조각마다 화자 분리를 따로 하므로 합친 전사의 라벨은 조각 번호를 붙인 `PART1_SPEAKER_00`, `PART2_SPEAKER_00` 꼴이며 서로 다른 조각의 라벨은 같은 사람인지 알 수 없다. 이 전사가 리포트 생성(8-3) 입력이 된다. AI 쪽 계약과 STT 서버는 바뀌지 않는다([API 명세 8-1](api-spec.md#8-1-post-internalv1speech-analyses--완료)).
 
 BE에서 AI로 보내는 운영 요청은 다음과 같다.
 

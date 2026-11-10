@@ -342,7 +342,8 @@ ID 토큰은 DB 연결을 열기 전에 검증하므로, 검증하지 못한 토
 - 알림 수신(`pushNotification`)에 동의하지 않은 계정이면 저장하지 않고 거절한다.
 - 계정당 5대(서버 설정 `SAEROK_PUSH_DEVICES_PER_ACCOUNT`)까지 둔다. 새 기기로 한도를 넘으면 등록 시각이 가장 오래된 기기, 곧 가장 오래 앱을 켜지 않은 기기의 등록을 지우고 `204`로 답한다. 오류로 알리지 않으며 방금 등록한 기기는 지우지 않는다. 지워진 기기는 앱을 다시 켜서 1-7을 보내면 다시 등록된다(2026-11-09 PM 결정).
 - 탈퇴(1-5)하면 계정과 함께 지운다.
-- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`의 리포트를 연다([PR #247](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/247). 홈 밖의 화면에서 누른 알림을 여는 것은 [PR #264](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/264)). 리포트 생성 실패는 알리지 않는다.
+- 리포트가 완료되면(6-3의 `completed`) 서버가 그 계정에 등록된 기기로 알림을 보낸다. 알림 문구는 `새록`, `리포트가 준비되었어요`로 고정이고, `data`에는 `type: "reportReady"`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`의 리포트를 연다([PR #247](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/247). 홈 밖의 화면에서 누른 알림을 여는 것은 [PR #264](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/264)).
+- 분석이 실패로 끝나면(6-3의 `failed`) 같은 조건(작업이 실제로 `failed`, 지금 알림 수신 동의, 그 계정의 등록 기기)으로 알림을 보낸다. 문구는 `새록`, `리포트를 만들지 못했어요`로 고정이고, `data`에는 `type: "reportFailed"`, `sessionId`, `analysisId`만 담는다. 실패 코드와 이유는 담지 않는다. 지금 앱은 `reportFailed`를 눌렀을 때 따로 화면을 옮기지 않고 앱만 열며, 홈의 실패 안내(5-4)가 다시 요청하기를 보여 준다. worker가 실패를 기록하는 경로에서만 보내므로, 멈춘 worker의 작업을 다른 worker의 임대 정리가 끝낸 경우(`WORKER_LEASE_EXPIRED`)와 전사 기한 정리(`TRANSCRIPT_EXPIRED`)는 알리지 않는다. 현재 구현 (2026-11-10 기준): 11/10 E2E 문제 9(실패해도 앱을 열어야 안다)를 고치는 `fix/long-recording-30min-stt` 브랜치의 변경이며 아직 병합하지 않았다. 그 전 동작은 실패를 알리지 않는다.
 
 응답 `204`
 
@@ -1261,6 +1262,7 @@ PM 결정(2026-11-08)으로 기록에는 생성에 보낸 글을 복사하지 �
 
 - `status`: `queued`, `transcribing`, `sttCompleted`, `generatingReport`, `completed`, `failed`
 - `completed`이면 리포트와 변경 제안이 저장되어 7-2, 7-3으로 조회할 수 있다.
+- 30분을 넘는 녹음은 worker가 30분 이하 조각으로 나눠 차례로 전사하므로(8-1) `transcribing`이 길어질 수 있다. 그 사이 worker가 종료 요청을 받으면 진행 중인 조각만 마치고 작업을 `queued`로 되돌리며, 다음 worker가 처음 조각부터 다시 전사한다. 응답 형식과 상태 이름은 같다(`fix/long-recording-30min-stt`, 미병합).
 
 | HTTP | `errorCode` |
 | --- | --- |
@@ -1521,6 +1523,8 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 ```
 
 worker 처리 순서: 8-1 → 전사문 임시 저장(`sttCompleted`) → 원본 삭제 요청 기록과 S3 삭제 시도 → 8-3 → 리포트와 변경 제안 저장, 전사문 삭제 → 작업 `completed`
+
+30분을 넘는 녹음(2026-11-10 PM 결정, `fix/long-recording-30min-stt`, 미병합): 한 번의 8-1은 BE 제한 시간(`SAEROK_AI_SERVER_TIMEOUT_SECONDS`, 기본 600초)을 넘길 수 없고, 11/10 E2E에서 예비 STT는 71분 녹음에 690초, 88분 녹음에 1,016초가 걸렸다. 그래서 worker는 원본을 내려받아 헤더의 실제 길이가 30분을 넘으면 30분 이하 조각(각 조각 30분 직전 40초 안의 가장 조용한 100ms에서 자름)으로 나눠 8-1을 조각마다 차례로 부른다. 요청 형식은 위와 같고 `analysisId`, `speakerCount`, `dataExpiresAt`은 원본 작업의 값, `sizeBytes`와 `sha256`은 그 조각의 값이다. 제한 시간은 호출마다 따로 적용된다. 조각은 원본과 같은 버킷과 접두사의 임시 객체이며 그 조각의 8-1이 끝나거나 실패하면 바로 지운다. 받은 결과는 조각 시작 시각만큼 `startMs`, `endMs`를 옮겨 순서대로 합치고, 화자 분리가 조각마다 따로 돌므로 `speakerLabel` 앞에 조각 번호를 붙인다(`PART2_SPEAKER_00`). 알려진 무음 문장 거르기와 빈 전사(`EMPTY_TRANSCRIPT`) 확인은 합친 결과에 한다. 조각 하나라도 실패하면 작업은 그 오류 코드로 `failed`다. 30분 이하 녹음은 지금처럼 원본 하나로 한 번 부른다. 보호자가 공유하는 녹음은 기기의 전체 WAV이며 조각과 관계없다.
 
 8-3 시작 전에 worker가 멈추면 작업은 `sttCompleted`로 남는다. 전사 저장 때 기록한 인계 임대(`SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`, 기본 900초)가 끝나면 다음 worker가 같은 작업과 저장된 전사로 8-3부터 이어 간다. 8-1과 S3 다운로드는 반복하지 않고, 원본 삭제 기록이 없으면 삭제 요청을 대기열에 남긴다. 이어받기는 작업마다 한 번이며 실패한 작업이나 남은 전사 기한이 생성 단계 임대 시간보다 짧은 작업은 이어받지 않는다. `--stt-only`로 멈춘 작업도 이어받지 않는다.
 

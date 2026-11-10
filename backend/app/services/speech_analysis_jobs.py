@@ -126,6 +126,34 @@ class SpeechAnalysisJobRepository(Protocol):
         """
         ...
 
+    async def extend_lease(self, *, analysis_id: str) -> bool:
+        """`transcribing` 작업의 임대를 지금부터 임대 시간만큼 늘린다. 늘렸으면 `True`.
+
+        30분 조각을 하나씩 STT에 보내기 전에 부른다. 임대가 이미 끝났거나(임대 정리가 실패로
+        끝냄) 작업 행이 없으면 늘리지 않는다.
+        """
+        ...
+
+    async def requeue(self, *, analysis_id: str) -> bool:
+        """임대가 남은 `transcribing` 작업을 `queued`로 되돌린다. 되돌렸으면 `True`.
+
+        worker가 종료 요청을 받았을 때 조각 사이에서만 부른다. 원본은 지우지 않으며 다음
+        worker가 처음 조각부터 다시 전사한다.
+        """
+        ...
+
+    async def queue_part_deletion(self, *, object_key: str, defer: bool) -> None:
+        """STT 조각의 키를 S3 삭제 대기열에 넣는다. 이미 있으면 삭제 가능 시각만 바꾼다.
+
+        `defer`면 임대 시간 뒤부터 지우게 한다(조각을 올리기 전 사전 등록). 아니면 바로
+        지울 수 있게 한다(STT가 끝난 뒤).
+        """
+        ...
+
+    async def forget_part_deletion(self, *, object_key: str) -> None:
+        """S3에서 조각을 지운 뒤 대기열에서 뺀다."""
+        ...
+
     async def expire_transcripts(self) -> int:
         """보관 기한이 지난 전사문을 지우고 그 작업을 실패로 바꾼다.
 
@@ -323,6 +351,25 @@ class InMemorySpeechAnalysisJobRepository:
         job = self._jobs.get(analysis_id)
         if job is None or job.audio_deleted_at is None:
             self.pending_audio_deletions.add(object_key)
+
+    async def extend_lease(self, *, analysis_id: str) -> bool:
+        # 메모리 저장소는 임대 시각을 두지 않으므로 상태만 본다.
+        job = self._jobs.get(analysis_id)
+        return job is not None and job.status == SpeechAnalysisStatus.TRANSCRIBING
+
+    async def requeue(self, *, analysis_id: str) -> bool:
+        job = self._jobs.get(analysis_id)
+        if job is None or job.status != SpeechAnalysisStatus.TRANSCRIBING:
+            return False
+        self._jobs[analysis_id] = replace(job, status=SpeechAnalysisStatus.QUEUED)
+        return True
+
+    async def queue_part_deletion(self, *, object_key: str, defer: bool) -> None:
+        del defer
+        self.pending_audio_deletions.add(object_key)
+
+    async def forget_part_deletion(self, *, object_key: str) -> None:
+        self.pending_audio_deletions.discard(object_key)
 
     async def expire_transcripts(self) -> int:
         return 0
@@ -697,6 +744,54 @@ class PostgresSpeechAnalysisJobRepository:
             ON CONFLICT (s3_object_key) DO NOTHING
             """,
             (object_key, UUID(analysis_id)),
+        )
+
+    async def extend_lease(self, *, analysis_id: str) -> bool:
+        # 끝난 임대는 늘리지 않는다. 임대 정리가 아직 돌지 않았어도 다른 worker가 그 작업을
+        # 실패로 끝낼 수 있는 상태이므로 이어 가지 않는다.
+        cursor = await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET lease_expires_at = now() + (%s * interval '1 second'),
+                   updated_at = now()
+             WHERE analysis_id = %s AND status = 'transcribing'
+               AND lease_expires_at > clock_timestamp()
+            """,
+            (self._lease_seconds, UUID(analysis_id)),
+        )
+        return cursor.rowcount > 0
+
+    async def requeue(self, *, analysis_id: str) -> bool:
+        # 접수한 원본과 크기, 해시는 그대로 두고 상태와 임대만 되돌린다. claim_next는 오래된
+        # 작업부터 가져가므로 다음 worker가 이 작업을 먼저 이어 간다.
+        cursor = await self._connection.execute(
+            """
+            UPDATE speech_analysis_jobs
+               SET status = 'queued', lease_expires_at = NULL, updated_at = now()
+             WHERE analysis_id = %s AND status = 'transcribing'
+               AND lease_expires_at > clock_timestamp()
+            """,
+            (UUID(analysis_id),),
+        )
+        return cursor.rowcount > 0
+
+    async def queue_part_deletion(self, *, object_key: str, defer: bool) -> None:
+        # 조각 키는 작업 행에 없으므로 행 삭제 trigger와 임대 정리가 대기열에 넣지 못한다.
+        # 올리기 전에 넣어 두고, 처리 중 조기 삭제는 not_before로 막는다(짧은 음성 전사와 같다).
+        # 임대가 끝나면 그 작업은 더 진행하지 않으므로 그때부터 지워도 된다.
+        await self._connection.execute(
+            """
+            INSERT INTO storage_deletion_request_queue (s3_object_key, not_before)
+            VALUES (%s, now() + (%s * interval '1 second'))
+            ON CONFLICT (s3_object_key) DO UPDATE SET not_before = EXCLUDED.not_before
+            """,
+            (object_key, self._lease_seconds if defer else 0),
+        )
+
+    async def forget_part_deletion(self, *, object_key: str) -> None:
+        await self._connection.execute(
+            "DELETE FROM storage_deletion_request_queue WHERE s3_object_key = %s",
+            (object_key,),
         )
 
     async def expire_transcripts(self) -> int:

@@ -121,7 +121,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 음성 작업이 전사 저장 뒤 리포트 시작 전에 멈추면 실패시키지 않고 인계 임대가 끝난 뒤 리포트 생성을 이어받는다([AI 음성 분석 연동](#ai-음성-분석-연동)). 실패한 작업의 자동 재시도는 하지 않는다.
-- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
+- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. 처리 함수는 `Worker.stopping`으로 종료 요청을 볼 수 있으며, 음성 worker는 30분 조각으로 나눈 긴 녹음을 전사하는 중이면 진행 중인 조각만 마치고 작업을 `queued`로 되돌린다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성은 임대가 남은 `running` 작업에만 결과를 저장한다(`card_sets.save_result`). 생성하는 동안 임대 시각이 지났으면 다음 정리를 기다리지 않고 결과를 버린 뒤 작업을 `WORKER_LEASE_EXPIRED`로 끝낸다. `CardGenerationQueue.fail`도 임대 시각이 지난 작업에는 넘겨받은 코드 대신 `WORKER_LEASE_EXPIRED`를 남기고, 이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 시각은 `clock_timestamp()`로 비교한다. 저장 트랜잭션은 프로필 잠금을 기다린 뒤 임대를 확인하는데, 트랜잭션 안의 `now()`는 시작 시각이라 기다리는 동안 끝난 임대를 남은 것으로 보기 때문이다.
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
@@ -254,7 +254,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 #### 리포트 완료 푸시
 
-음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)).
+음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)). 실패로 끝난 작업도 같은 방식으로 알린다(아래 마지막 항목).
 
 - 완료 처리(`mark_completed`)가 커밋된 다음에 보낸다. 대상은 DB에서 다시 고른다. 작업이 `completed`이고, 그 회차 계정의 현재 동의(`current_consents`)에서 알림 수신이 켜져 있고, 그 계정의 `push_devices`에 등록된 기기만이다. 임대를 잃어 리포트를 저장하지 못한 작업이나 그사이 동의를 거둔 계정에는 보내지 않는다. 대상을 읽을 때 트랜잭션을 열지 않아 발송 중 잠금을 잡지 않는다.
 - 알림은 고정 문구(`새록`, `리포트가 준비되었어요`)와 `data`의 `type: reportReady`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`로 리포트(7-2)를 다시 읽어 연다(#247, 홈이 아닌 보기 화면에서도 바로 여는 것은 #264, `app/lib/features/push/push_messaging.dart`).
@@ -262,7 +262,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 응답이 404 `UNREGISTERED`면 그 계정의 그 등록을 지운다. 400 `INVALID_ARGUMENT`는 알림 본문 문제일 수도 있어 지우지 않는다. 그 밖의 실패(429, 5xx, 연결 실패, 토큰 실패)는 이번 알림만 포기하고 다시 보내지 않는다. 알림을 놓쳐도 앱은 홈에서 회차 상태(5-4)로 리포트 도착을 보여준다.
 - 발송 실패는 리포트 작업을 실패로 만들지 않는다. 로그에는 HTTP 상태, FCM 오류 코드와 건수만 남기고 FID, 키와 접근 토큰은 남기지 않는다.
 - 설정: `SAEROK_FCM_CREDENTIALS_PATH`(키 파일 경로, 비우면 푸시 없음), `SAEROK_FCM_TIMEOUT_SECONDS`(요청 하나의 제한 시간, 기본 10초). 경로를 넣었는데 키 파일을 읽지 못하면 음성 worker가 시작하지 않는다. `--stt-only`는 리포트를 만들지 않으므로 키를 보지 않는다. 컨테이너 배포는 [배포 문서](docs/deployment.md)의 "리포트 완료 푸시 키"를 따른다.
-- 리포트 생성 실패를 알릴지는 정하지 않아 보내지 않는다(PM 확인 필요). 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
+- 실패 알림: worker가 작업을 `failed`로 기록한 뒤(`SpeechAnalysisQueue.fail`) 같은 조건(작업이 실제로 `failed`, 현재 알림 동의, 등록 기기)으로 `새록`, `리포트를 만들지 못했어요`와 `data`의 `type: reportFailed`, `sessionId`, `analysisId`만 보낸다. 실패 코드와 이유는 담지 않는다. 지금 앱은 `reportFailed`를 눌러도 화면을 옮기지 않고 앱만 열며 홈의 실패 안내가 다시 요청하기를 보여 준다. 멈춘 worker의 작업을 다른 worker의 임대 정리가 끝낸 경우(`WORKER_LEASE_EXPIRED`)와 전사 기한 정리(`TRANSCRIPT_EXPIRED`)는 여러 행을 한 문장으로 바꾸므로 알리지 않는다. 현재 구현 (2026-11-10 기준): 11/10 E2E 문제 9를 고치는 `fix/long-recording-30min-stt` 브랜치의 변경이며 아직 병합하지 않았다. 이전에는 실패를 알릴지 정하지 않아 보내지 않았으므로 병합 전에 PM이 문구와 범위를 확인한다. 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
 
 ### 세션
 
@@ -481,6 +481,14 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 삭제를 즉시 시도한다. 삭제 요청은 먼저 DB에 남기며 S3 삭제만 실패해도 리포트 생성은
 계속한다. 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
 
+30분을 넘는 녹음은 원본을 임시 파일로 내려받아 30분 이하 조각으로 나누고, 조각마다 같은
+버킷의 임시 객체로 올려 STT를 차례로 부른 뒤 결과를 합친다(2026-11-10 PM 결정, 11/10 E2E에서
+71분과 88분 녹음이 600초 제한에 걸림). 조각 사이마다 작업 임대를 다시 늘리고, 조각은 STT가
+끝나거나 실패하면 바로 지운다. 30분 이하 녹음은 지금처럼 원본 하나로 한 번 부른다. 자르는 위치,
+화자 라벨, 삭제 등록, 임대와 종료 처리는 [비동기 면회 음성 STT 5.1절](docs/async-speech-analysis.md#51-30분을-넘는-녹음의-조각-전사)에 있다.
+보호자가 공유하는 녹음은 기기의 전체 WAV이고 이 조각과 관계없다. 현재 구현 (2026-11-10 기준):
+`fix/long-recording-30min-stt` 브랜치의 변경이며 아직 병합하지 않았다.
+
 화자 라벨이 누락되거나 라벨 수가 입력 인원보다 적어도 리포트와 변경 제안 모델을
 호출한다. 빈 전사는 `EMPTY_TRANSCRIPT`로 거절한다. 프롬프트의 출처 구분과 보호자의
 이야기 승인 절차는 유지한다([화자 처리](docs/speaker-fact-boundary.md)).
@@ -532,7 +540,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | 환경 변수 | 설명 |
 | --- | --- |
 | `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
-| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초. 30분을 넘는 녹음은 조각 호출마다 따로 적용. `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_AI_SERVER_BACKUP_URL` | 선택한 예비 STT 주소. 기본은 비어 있어 기존 단일 서버 동작을 유지 |
 | `SAEROK_AI_SERVER_FAILOVER_CONNECT_TIMEOUT_SECONDS` | 예비 주소를 설정한 경우 서버별 연결 제한. 기본 5초, 0초 초과 30초 이하 |
 | `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
@@ -542,7 +550,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 기본 86100초. STT가 24시간을 넘는 기한을 거절하므로 서버 시계 차이를 감안해 86100초보다 길게 줘도 86100초로 쓴다(86400초까지 받음) |
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한. 면회 음성 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
-| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계, 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음. 리포트 생성은 남은 전사 기한이 이 값 이상일 때만 시작 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계(30분 조각으로 나눴으면 조각마다), 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음. 리포트 생성은 남은 전사 기한이 이 값 이상일 때만 시작 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
 | `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |

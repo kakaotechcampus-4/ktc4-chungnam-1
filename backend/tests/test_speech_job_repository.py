@@ -373,3 +373,82 @@ def test_jobs_whose_lease_expired_are_cleaned_up(migrated_database_url):
     row = db.job_row(stalled.analysis_id)
     assert (row["status"], row["error_code"]) == ("failed", "WORKER_LEASE_EXPIRED")
     assert row["lease_expires_at"] is None
+
+
+def test_lease_is_extended_only_while_the_transcribing_lease_is_alive(migrated_database_url):
+    # 30분 조각마다 임대를 늘린다. 끝난 임대나 다른 상태의 작업은 늘리지 않는다.
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=60))
+    before = db.job_row(accepted.analysis_id)["lease_expires_at"]
+
+    assert run(db.repository.extend_lease(analysis_id=accepted.analysis_id)) is True
+    extended = db.job_row(accepted.analysis_id)["lease_expires_at"]
+    # 저장소의 임대 시간(900초)만큼 지금부터 늘렸다.
+    assert extended - before > timedelta(seconds=800)
+
+    db.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second' "
+        "WHERE analysis_id = %s",
+        (accepted.analysis_id,),
+    )
+    assert run(db.repository.extend_lease(analysis_id=accepted.analysis_id)) is False
+    assert run(db.repository.extend_lease(analysis_id=str(uuid4()))) is False
+
+
+def test_requeue_returns_a_live_transcribing_job_to_the_queue(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+
+    assert run(db.repository.requeue(analysis_id=accepted.analysis_id)) is True
+
+    row = db.job_row(accepted.analysis_id)
+    assert (row["status"], row["lease_expires_at"]) == ("queued", None)
+    # 원본과 크기, 해시는 그대로이고 원본 삭제 요청도 만들지 않는다.
+    assert (row["size_bytes"], row["sha256"], row["audio_deleted_at"]) == (3200, "a" * 64, None)
+    assert db.execute("SELECT 1 FROM storage_deletion_request_queue") == []
+    # 다음 worker가 다시 가져간다. 이미 되돌린 작업은 다시 되돌리지 않는다.
+    assert run(db.repository.requeue(analysis_id=accepted.analysis_id)) is False
+    claimed = run(db.repository.claim_next(lease_seconds=600))
+    assert claimed.analysis_id == accepted.analysis_id
+    assert db.job_row(accepted.analysis_id)["attempt_count"] == 2
+
+
+def test_requeue_does_not_revive_a_job_whose_lease_expired(migrated_database_url):
+    db = _Db(migrated_database_url)
+    _, session_id = db.seed_session()
+    accepted = _accept(db, session_id)
+    run(db.repository.claim_next(lease_seconds=600))
+    db.execute(
+        "UPDATE speech_analysis_jobs SET lease_expires_at = now() - interval '1 second'"
+    )
+
+    assert run(db.repository.requeue(analysis_id=accepted.analysis_id)) is False
+    assert db.job_row(accepted.analysis_id)["status"] == "transcribing"
+
+
+def test_part_keys_are_held_in_the_deletion_queue_until_released(migrated_database_url):
+    db = _Db(migrated_database_url)
+    key = f"temporary/speech/{uuid4()}.wav"
+
+    def due() -> bool:
+        return db.execute(
+            "SELECT not_before <= clock_timestamp() AS due "
+            "FROM storage_deletion_request_queue WHERE s3_object_key = %s",
+            (key,),
+        )[0]["due"]
+
+    # 올리기 전 등록은 임대 시간 뒤부터 지울 수 있다. 삭제 실행기가 STT 중에 지우지 않는다.
+    run(db.repository.queue_part_deletion(object_key=key, defer=True))
+    assert due() is False
+    # STT가 끝나면 바로 지울 수 있게 하고, 같은 키를 다시 쓰면 다시 미룬다.
+    run(db.repository.queue_part_deletion(object_key=key, defer=False))
+    assert due() is True
+    run(db.repository.queue_part_deletion(object_key=key, defer=True))
+    assert due() is False
+
+    run(db.repository.forget_part_deletion(object_key=key))
+    assert db.execute("SELECT 1 FROM storage_deletion_request_queue") == []
