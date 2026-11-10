@@ -441,10 +441,27 @@ def test_part_keys_are_held_in_the_deletion_queue_until_released(migrated_databa
             (key,),
         )[0]["due"]
 
+    def held_seconds() -> float:
+        return db.execute(
+            "SELECT EXTRACT(EPOCH FROM not_before - clock_timestamp()) AS seconds "
+            "FROM storage_deletion_request_queue WHERE s3_object_key = %s",
+            (key,),
+        )[0]["seconds"]
+
     # 올리기 전 등록은 임대 시간 뒤부터 지울 수 있다. 삭제 실행기가 STT 중에 지우지 않는다.
     run(db.repository.queue_part_deletion(object_key=key, defer=True))
     assert due() is False
-    # STT가 끝나면 바로 지울 수 있게 하고, 같은 키를 다시 쓰면 다시 미룬다.
+    # 조각은 전체 전사가 끝날 때까지 남긴다. 임대를 늘릴 때 다시 부르면 보류도 지금부터 임대
+    # 시간(900초)으로 늘어난다.
+    db.execute(
+        "UPDATE storage_deletion_request_queue "
+        "SET not_before = clock_timestamp() + interval '10 seconds' WHERE s3_object_key = %s",
+        (key,),
+    )
+    assert held_seconds() < 11
+    run(db.repository.queue_part_deletion(object_key=key, defer=True))
+    assert held_seconds() > 800
+    # 원본과 함께 지울 때 바로 지울 수 있게 하고, 같은 키를 다시 쓰면 다시 미룬다.
     run(db.repository.queue_part_deletion(object_key=key, defer=False))
     assert due() is True
     run(db.repository.queue_part_deletion(object_key=key, defer=True))

@@ -60,6 +60,37 @@ class _LeaseLost(Exception):
     """조각 사이에 임대를 늘리지 못했다. 다른 처리가 작업을 이미 끝냈다."""
 
 
+class PartObjects:
+    """작업마다 S3에 올린 30분 조각의 키. 조각은 원본을 지우는 때에 함께 지운다.
+
+    2026-11-10 PM 정정: 조각은 그 조각의 STT 직후가 아니라 전체 전사가 끝난 뒤에 지운다. 처리
+    함수가 조각을 올리기 전에 키를 넣고, 원본과 같은 때에 `_delete_audio_or_queue`가 꺼내 지운다.
+    전사 저장 뒤(성공), 실패 처리(`SpeechAnalysisQueue.fail`), 임대를 잃고 멈출 때다. 실패 처리는
+    worker 골격이 대기열로 부르므로 처리 함수와 대기열이 같은 객체를 쓴다(`create_speech_worker`).
+    종료 요청으로 작업을 대기열에 되돌릴 때도 지운다. 다음 worker는 새 키로 다시 나누므로 앞
+    시도의 조각은 다시 쓰이지 않는다. 키는 로그에 남기지 않는다.
+    """
+
+    def __init__(self) -> None:
+        self._keys: dict[str, list[str]] = {}
+
+    def add(self, analysis_id: str, object_key: str) -> None:
+        self._keys.setdefault(analysis_id, []).append(object_key)
+
+    def keys(self, analysis_id: str) -> list[str]:
+        return list(self._keys.get(analysis_id, ()))
+
+    async def delete(
+        self,
+        jobs: SpeechAnalysisJobRepository,
+        audio_storage: AudioStorage,
+        analysis_id: str,
+    ) -> None:
+        """기억한 조각을 모두 지운다. 예외를 내지 않는다(원본 삭제나 원래 오류를 가리지 않게)."""
+        for object_key in self._keys.pop(analysis_id, []):
+            await _delete_part(jobs, audio_storage, analysis_id, object_key)
+
+
 class ReportGenerator(Protocol):
     async def generate(
         self,
@@ -219,11 +250,14 @@ class SpeechAnalysisQueue:
 
     def __init__(self, *, jobs_for: JobsFor, audio_storage: AudioStorage,
                  resume_reports: bool = False,
-                 report_notifier: ReportNotifier | None = None) -> None:
+                 report_notifier: ReportNotifier | None = None,
+                 part_objects: PartObjects | None = None) -> None:
         self._jobs_for = jobs_for
         self._audio_storage = audio_storage
         self._resume_reports = resume_reports
         self._report_notifier = report_notifier
+        # 처리 함수와 같은 객체다. 실패한 작업의 30분 조각을 원본과 함께 지운다.
+        self._part_objects = part_objects
 
     async def expire_leases(self, connection: DbConnection) -> int:
         jobs = self._jobs_for(connection)
@@ -240,7 +274,7 @@ class SpeechAnalysisQueue:
         self, connection: DbConnection, job: SpeechAnalysisJob, *, error_code: str
     ) -> None:
         jobs = self._jobs_for(connection)
-        await _delete_audio_or_queue(jobs, self._audio_storage, job)
+        await _delete_audio_or_queue(jobs, self._audio_storage, job, self._part_objects)
         await jobs.mark_failed(analysis_id=job.analysis_id, error_code=error_code)
         # 실패가 커밋된 뒤에 알린다. 알림 쪽이 작업이 실제로 `failed`인지 다시 확인하므로,
         # 다른 처리가 먼저 완료로 끝낸 작업에는 보내지 않는다. 실패해도 예외를 내지 않는다.
@@ -255,6 +289,7 @@ class SpeechAnalysisProcessor:
 
     30분(`part_seconds`)을 넘는 녹음은 조각으로 나눠 차례로 전사한 뒤 합친다
     (2026-11-10 PM 결정, `_transcribe_parts`). 그 이하는 원본 하나로 한 번 부른다.
+    조각 객체는 원본과 같은 때에 지운다(`PartObjects`).
     """
 
     def __init__(
@@ -268,6 +303,7 @@ class SpeechAnalysisProcessor:
         part_seconds: int = PART_SECONDS,
         stop_requested: Callable[[], bool] | None = None,
         stale_work_dir_seconds: float = 2 * 60 * 60,
+        part_objects: PartObjects | None = None,
     ) -> None:
         self._jobs_for = jobs_for
         self._audio_storage = audio_storage
@@ -275,6 +311,8 @@ class SpeechAnalysisProcessor:
         self._report_generator = report_generator
         self._report_notifier = report_notifier
         self._part_seconds = part_seconds
+        # 실패 처리에서도 조각을 지우려면 대기열과 같은 객체를 넘긴다(`create_speech_worker`).
+        self._parts = part_objects if part_objects is not None else PartObjects()
         self._stale_work_dir_seconds = stale_work_dir_seconds
         # worker가 종료 요청을 받았는지. 조각 사이에서만 본다.
         self._stop_requested = stop_requested or (lambda: False)
@@ -335,7 +373,9 @@ class SpeechAnalysisProcessor:
         try:
             speech = await self._transcribe(jobs, job, stats)
         except _Requeued:
-            # 원본은 남긴다. 다음 worker가 같은 작업을 처음 조각부터 다시 전사한다.
+            # 원본은 남긴다. 다음 worker가 같은 작업을 처음 조각부터 새 키로 다시 전사하므로
+            # 이 시도에서 올린 조각은 다시 쓰이지 않는다. 남겨 두지 않고 지금 지운다.
+            await self._parts.delete(jobs, self._audio_storage, job.analysis_id)
             logger.info(
                 "speech_analysis_requeued analysis_id=%s parts_done=%s",
                 job.analysis_id, stats.stt_parts or 0,
@@ -343,8 +383,8 @@ class SpeechAnalysisProcessor:
             return "requeued"
         except _LeaseLost:
             # 임대 정리나 작업 행 삭제가 먼저 끝냈다. 원본 삭제 요청은 그쪽도 남기지만
-            # 전사 저장 뒤 멈춘 경우와 같이 여기서도 삭제를 시도한다.
-            await _delete_audio_or_queue(jobs, self._audio_storage, job)
+            # 전사 저장 뒤 멈춘 경우와 같이 여기서도 삭제를 시도한다. 조각도 함께 지운다.
+            await _delete_audio_or_queue(jobs, self._audio_storage, job, self._parts)
             _log_stopped(job, stage=SpeechAnalysisStatus.TRANSCRIBING)
             return "stopped"
         # 처리 중 임대가 만료되면 임대 정리가 작업을 이미 실패로 끝냈다. 그 작업의
@@ -359,7 +399,8 @@ class SpeechAnalysisProcessor:
         )
         # 삭제 요청을 DB에 먼저 남긴다. S3 삭제만 실패했다면 전사는 보존하고
         # 리포트 생성을 계속한다. 이미 끝난 작업의 원본도 정리 대상이다.
-        await _delete_audio_or_queue(jobs, self._audio_storage, job)
+        # 30분 조각도 여기서(합친 전사를 저장한 뒤) 원본과 함께 지운다.
+        await _delete_audio_or_queue(jobs, self._audio_storage, job, self._parts)
         if not stored:
             _log_stopped(job, stage=SpeechAnalysisStatus.STT_COMPLETED)
             return "stopped"
@@ -465,9 +506,10 @@ class SpeechAnalysisProcessor:
     ) -> SpeechAnalysisResult:
         """원본을 임시 파일로 받아 헤더의 실제 길이를 보고, 넘으면 조각마다 차례로 전사한다.
 
-        조각은 원본과 같은 버킷과 접두사(같은 Lifecycle)에 올리고 STT가 끝나거나 실패하면 바로
-        지운다. 올리기 전에 삭제 대기열에 넣어 두므로 worker가 중간에 멈춰도 남지 않는다.
-        임시 파일은 이 함수가 끝나면 디렉터리째 지운다. 경로와 키는 로그에 남기지 않는다.
+        조각은 원본과 같은 버킷과 접두사(같은 Lifecycle)에 올리고, STT가 끝나도 지우지 않고
+        원본과 같은 때(합친 전사 저장 뒤 또는 실패 처리)에 함께 지운다(`PartObjects`). 올리기 전에
+        삭제 대기열에 보류 시각과 함께 넣어 두므로 worker가 중간에 멈춰도 남지 않는다. 임시 파일은
+        이 함수가 끝나면 디렉터리째 지운다. 경로와 키는 로그에 남기지 않는다.
         """
         # 크기와 해시가 있는 작업만 온다(`_transcribe`가 먼저 확인한다).
         await asyncio.to_thread(
@@ -514,10 +556,17 @@ class SpeechAnalysisProcessor:
             if await jobs.requeue(analysis_id=job.analysis_id):
                 raise _Requeued
             raise _LeaseLost
-        # 조각마다 임대를 다시 늘린다. 조각 하나(업로드, STT 제한 시간, 삭제)는 임대 안에
-        # 끝나야 하며 worker 시작 때 그 조건을 본다(`app/workers/speech_analysis.py`).
+        # 조각마다 임대를 다시 늘린다. 조각 하나(업로드, STT 제한 시간, 마지막이면 전사 저장과
+        # 원본, 조각 삭제)는 임대 안에 끝나야 하며 worker 시작 때 그 조건을 본다
+        # (`app/workers/speech_analysis.py`).
         if not await jobs.extend_lease(analysis_id=job.analysis_id):
             raise _LeaseLost
+        # 앞에서 올린 조각은 전체 전사가 끝날 때까지 남긴다. 삭제 실행기는 조각 키가 쓰이는
+        # 중인지 모르므로(작업 행에 없다) 삭제 대기열의 보류 시각을 임대와 함께 늘린다. 그래야
+        # 조각이 많아 임대를 여러 번 늘려도 성공이나 실패 처리 전에 지우지 않는다. worker가
+        # 죽으면 보류는 임대와 비슷한 때 끝나고 그 뒤 삭제 실행기가 지운다.
+        for object_key in self._parts.keys(job.analysis_id):
+            await jobs.queue_part_deletion(object_key=object_key, defer=True)
 
     async def _analyze_part(
         self,
@@ -531,60 +580,59 @@ class SpeechAnalysisProcessor:
         audio_seconds: float,
         stats: SpeechAnalysisStats,
     ) -> SpeechAnalysisResult:
-        # 올리기 전에 삭제 대기열에 넣는다. 임대 시간이 지나기 전에는 삭제 실행기가 건너뛴다.
+        # 올리기 전에 삭제 대기열에 넣는다(보류 시각은 임대 시간 뒤, `_before_part`가 임대와 함께
+        # 늘린다). 보류 중에는 삭제 실행기가 건너뛰고, worker가 중간에 죽으면 보류가 끝난 뒤 지운다.
+        # 업로드가 실패해도 객체가 생겼을 수 있으므로 올리기 전에 키를 기억해 원본과 함께 지운다.
         await jobs.queue_part_deletion(object_key=object_key, defer=True)
-        uploading = asyncio.create_task(self._upload_part(object_key=object_key, path=path))
+        self._parts.add(job.analysis_id, object_key)
+        # 업로드 중에 작업이 취소되면 S3 업로드 스레드는 끝까지 갈 수 있다. 취소는 실패 처리를
+        # 거치지 않으므로(원본도 그대로다) 이 조각은 지금 지우지 않고 보류가 끝난 뒤 삭제 실행기에
+        # 맡긴다. 끝나기 전에 지우면 끝난 업로드가 조각을 다시 만든다.
+        await self._upload_part(object_key=object_key, path=path)
+        # 처리 기록의 조각별 시간은 STT 호출만 잰다(조각 파일 쓰기와 업로드 제외).
+        started = time.monotonic()
         try:
-            await asyncio.shield(uploading)
-            # 처리 기록의 조각별 시간은 STT 호출만 잰다(업로드와 삭제 제외).
-            started = time.monotonic()
-            try:
-                return await self._analyze(
-                    job, object_key=object_key, size_bytes=size_bytes, sha256=sha256,
-                    stats=stats,
-                )
-            finally:
-                stats.record_part(
-                    audio_seconds=audio_seconds, elapsed_seconds=time.monotonic() - started
-                )
-        except asyncio.CancelledError:
-            # S3 업로드는 스레드에서 돌아 작업을 취소해도 끝까지 간다. 끝나기 전에 지우면 끝난
-            # 업로드가 조각을 다시 만들므로 끝나기를 기다린다(짧은 음성 전사와 같다).
-            await asyncio.wait([uploading])
-            raise
+            return await self._analyze(
+                job, object_key=object_key, size_bytes=size_bytes, sha256=sha256,
+                stats=stats,
+            )
         finally:
-            # 종료 중 업로드 작업까지 취소됐으면 스레드가 아직 올리고 있을 수 있다. 그때는 지우지
-            # 않고 올리기 전에 넣은 요청(임대 시간 뒤)을 삭제 실행기에 맡긴다.
-            if uploading.done() and not uploading.cancelled():
-                await self._delete_part(jobs, job, object_key)
+            stats.record_part(
+                audio_seconds=audio_seconds, elapsed_seconds=time.monotonic() - started
+            )
 
     async def _upload_part(self, *, object_key: str, path: Path) -> None:
         with path.open("rb") as file:
             await self._audio_storage.upload(object_key=object_key, file=file)
 
-    async def _delete_part(
-        self, jobs: SpeechAnalysisJobRepository, job: SpeechAnalysisJob, object_key: str
-    ) -> None:
-        """조각을 지운다. 여기서는 예외를 내지 않는다(전사 결과나 원래 오류를 가리지 않게).
 
-        S3 삭제가 실패하면 대기열에 남은 요청을 삭제 실행기가 처리한다. 지운 뒤에만 대기열에서
-        뺀다(원본의 `mark_audio_deleted`와 같다).
-        """
-        try:
-            await jobs.queue_part_deletion(object_key=object_key, defer=False)
-        except Exception:
-            # 올리기 전 넣은 요청이 남아 임대 시간 뒤 지울 수 있다.
-            logger.warning("speech_part_deletion_schedule_failed analysis_id=%s", job.analysis_id)
-        try:
-            await self._audio_storage.delete(object_key=object_key)
-        except Exception:
-            logger.warning("speech_part_deletion_pending analysis_id=%s", job.analysis_id)
-            return
-        try:
-            await jobs.forget_part_deletion(object_key=object_key)
-        except Exception:
-            # 이미 지운 객체다. 삭제 실행기가 HeadObject 404를 확인하고 요청을 뺀다.
-            logger.warning("speech_part_deletion_unrecorded analysis_id=%s", job.analysis_id)
+async def _delete_part(
+    jobs: SpeechAnalysisJobRepository,
+    audio_storage: AudioStorage,
+    analysis_id: str,
+    object_key: str,
+) -> None:
+    """조각 하나를 지운다. 여기서는 예외를 내지 않는다(전사 결과나 원래 오류를 가리지 않게).
+
+    원본(`_delete_audio_or_queue`)처럼 삭제 요청을 먼저 바로 지울 수 있게 바꾸고 S3에서 지운다.
+    S3 삭제가 실패하면 대기열에 남은 요청을 삭제 실행기가 처리한다. 지운 뒤에만 대기열에서
+    뺀다(원본의 `mark_audio_deleted`와 같다).
+    """
+    try:
+        await jobs.queue_part_deletion(object_key=object_key, defer=False)
+    except Exception:
+        # 올리기 전 넣은 요청이 남아 보류 시각 뒤 지울 수 있다.
+        logger.warning("speech_part_deletion_schedule_failed analysis_id=%s", analysis_id)
+    try:
+        await audio_storage.delete(object_key=object_key)
+    except Exception:
+        logger.warning("speech_part_deletion_pending analysis_id=%s", analysis_id)
+        return
+    try:
+        await jobs.forget_part_deletion(object_key=object_key)
+    except Exception:
+        # 이미 지운 객체다. 삭제 실행기가 HeadObject 404를 확인하고 요청을 뺀다.
+        logger.warning("speech_part_deletion_unrecorded analysis_id=%s", analysis_id)
 
 
 def remove_stale_work_dirs(*, older_than_seconds: float, root: Path | None = None) -> int:
@@ -682,10 +730,13 @@ def create_speech_worker(
     part_seconds: int = PART_SECONDS,
 ) -> Worker[SpeechAnalysisJob]:
     worker: Worker[SpeechAnalysisJob]
+    # 처리 함수가 올린 30분 조각을 실패 처리(대기열)에서도 원본과 함께 지우도록 같은 객체를 쓴다.
+    part_objects = PartObjects()
     worker = Worker(
         queue=SpeechAnalysisQueue(jobs_for=jobs_for, audio_storage=audio_storage,
                                   resume_reports=report_generator is not None,
-                                  report_notifier=report_notifier),
+                                  report_notifier=report_notifier,
+                                  part_objects=part_objects),
         process=SpeechAnalysisProcessor(
             jobs_for=jobs_for,
             audio_storage=audio_storage,
@@ -696,6 +747,7 @@ def create_speech_worker(
             # 조각 사이에서 종료 요청을 확인한다. worker는 아래에서 만든다.
             stop_requested=lambda: worker.stopping,
             stale_work_dir_seconds=3 * lease_seconds,
+            part_objects=part_objects,
         ),
         open_connection=open_connection,
         lease_seconds=lease_seconds,
@@ -707,7 +759,12 @@ async def _delete_audio_or_queue(
     jobs: SpeechAnalysisJobRepository,
     audio_storage: AudioStorage,
     job: SpeechAnalysisJob,
+    parts: PartObjects | None = None,
 ) -> None:
+    # 30분 조각은 원본과 같은 때에 같은 방식(요청 먼저, S3 삭제, 지운 뒤 요청 빼기)으로 지운다.
+    # 조각 삭제는 예외를 내지 않으므로 먼저 해 둔다. 아래 원본 요청 기록이 실패해도 조각은 지운다.
+    if parts is not None:
+        await parts.delete(jobs, audio_storage, job.analysis_id)
     if job.audio_deleted_at is not None:
         return
     # DB 기록 실패는 삼키지 않는다. 삭제 대기열에 남겼다고 확인하지 못한 상태를

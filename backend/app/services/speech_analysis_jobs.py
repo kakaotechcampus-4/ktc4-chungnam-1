@@ -145,8 +145,9 @@ class SpeechAnalysisJobRepository(Protocol):
     async def queue_part_deletion(self, *, object_key: str, defer: bool) -> None:
         """STT 조각의 키를 S3 삭제 대기열에 넣는다. 이미 있으면 삭제 가능 시각만 바꾼다.
 
-        `defer`면 임대 시간 뒤부터 지우게 한다(조각을 올리기 전 사전 등록). 아니면 바로
-        지울 수 있게 한다(STT가 끝난 뒤).
+        `defer`면 지금부터 임대 시간 뒤까지 지우지 않게 한다(조각을 올리기 전 사전 등록과, 조각
+        사이에 임대를 늘릴 때 앞 조각의 보류 연장). 아니면 바로 지울 수 있게 한다(원본과 함께
+        지울 때, 2026-11-10 PM 정정으로 전체 전사가 끝난 뒤나 실패 처리 때).
         """
         ...
 
@@ -778,6 +779,7 @@ class PostgresSpeechAnalysisJobRepository:
     async def queue_part_deletion(self, *, object_key: str, defer: bool) -> None:
         # 조각 키는 작업 행에 없으므로 행 삭제 trigger와 임대 정리가 대기열에 넣지 못한다.
         # 올리기 전에 넣어 두고, 처리 중 조기 삭제는 not_before로 막는다(짧은 음성 전사와 같다).
+        # 조각은 전체 전사가 끝날 때까지 남기므로 worker가 임대를 늘릴 때 not_before도 다시 늘린다.
         # 임대가 끝나면 그 작업은 더 진행하지 않으므로 그때부터 지워도 된다.
         await self._connection.execute(
             """

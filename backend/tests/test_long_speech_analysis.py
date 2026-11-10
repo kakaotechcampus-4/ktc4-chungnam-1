@@ -214,6 +214,32 @@ def count_calls(jobs, name):
     return calls
 
 
+def snapshot_before(jobs, name, storage):
+    """`jobs.<name>`을 부르는 때의 S3 객체와 그때까지 지운 키(순서대로)를 남긴다."""
+    snapshots = []
+    original = getattr(jobs, name)
+
+    async def wrapper(**kwargs):
+        snapshots.append((set(storage.objects), list(storage.deleted)))
+        return await original(**kwargs)
+
+    setattr(jobs, name, wrapper)
+    return snapshots
+
+
+class SnapshotAtFinish(logging.Handler):
+    """처리 함수가 끝날 때(처리 기록 한 줄을 남길 때) S3 객체를 남긴다. 실패 처리는 그 뒤에 돈다."""
+
+    def __init__(self, storage) -> None:
+        super().__init__()
+        self.storage = storage
+        self.objects: list[set[str]] = []
+
+    def emit(self, record) -> None:
+        if record.getMessage() == "speech_analysis_finished":
+            self.objects.append(set(self.storage.objects))
+
+
 def test_a_recording_within_one_part_keeps_the_single_call_without_download():
     jobs, storage, analysis_id, original_key = setup(synthetic_wav(("loud", 24_000)))
     ai = PartAi(storage)
@@ -308,21 +334,71 @@ def test_three_parts_are_transcribed_in_order_and_merged_with_offsets(caplog):
         assert key not in caplog.text
 
 
-def test_a_failed_part_fails_the_job_and_deletes_every_uploaded_part(caplog):
+def test_parts_stay_after_their_stt_and_go_with_the_original_after_the_transcript_is_stored():
+    # 2026-11-10 PM 정정: 조각은 그 조각의 STT 직후가 아니라 합친 전사를 저장한 뒤 원본과 같은
+    # 때에 지운다.
+    jobs, storage, analysis_id, original_key = setup(THREE_PARTS)
+    ai = PartAi(storage)
+    during_stt = []
+
+    def check(number):
+        # 앞 조각은 STT가 끝났어도 S3와 삭제 대기열에 그대로 있고, 아직 아무것도 지우지 않았다.
+        earlier = [call["key"] for call in ai.calls[: number - 1]]
+        during_stt.append((
+            all(key in storage.objects for key in earlier),
+            all(key in jobs.pending_audio_deletions for key in earlier),
+            list(storage.deleted),
+        ))
+
+    ai.during = check
+    at_store = snapshot_before(jobs, "mark_stt_completed", storage)
+    at_report = snapshot_before(jobs, "mark_generating_report", storage)
+
+    run(worker_for(jobs, storage, ai, CapturingReports()).run_once())
+
+    part_keys = [call["key"] for call in ai.calls]
+    assert during_stt == [(True, True, [])] * 3
+    # 합친 전사를 저장하는 때에도 원본과 세 조각이 모두 남아 있다.
+    assert at_store == [({original_key, *part_keys}, [])]
+    # 저장 바로 뒤(리포트 시작 전) 원본 삭제와 같은 자리에서 조각도 지웠다.
+    assert at_report == [(set(), [*part_keys, original_key])]
+    assert jobs.pending_audio_deletions == set()
+    assert job_of(jobs, analysis_id).status == SpeechAnalysisStatus.COMPLETED
+
+
+def test_a_failed_part_deletes_the_uploaded_parts_with_the_original_in_failure_handling(caplog):
     jobs, storage, analysis_id, original_key = setup(THREE_PARTS)
     capture(caplog)
     ai = PartAi(storage, fail_on=2)
     notifier = FakeNotifier()
+    before_failing = []
 
-    run(worker_for(jobs, storage, ai, CapturingReports(), notifier).run_once())
+    def check(number):
+        if number == 2:
+            # 두 번째 조각 STT가 실패하기 직전에도 첫 조각은 남아 있다.
+            before_failing.append((ai.calls[0]["key"] in storage.objects, list(storage.deleted)))
+
+    ai.during = check
+    finish = SnapshotAtFinish(storage)
+    logging.getLogger("saerok.speech_analysis").addHandler(finish)
+    at_mark_failed = snapshot_before(jobs, "mark_failed", storage)
+    try:
+        run(worker_for(jobs, storage, ai, CapturingReports(), notifier).run_once())
+    finally:
+        logging.getLogger("saerok.speech_analysis").removeHandler(finish)
 
     job = job_of(jobs, analysis_id)
     assert (job.status, job.error_code) == (SpeechAnalysisStatus.FAILED, "AI_SERVER_TIMEOUT")
     assert job.transcript is None
-    # 두 번째 조각에서 멈췄다. 올린 두 조각과 원본을 지웠고 세 번째 조각은 올리지 않았다.
+    # 두 번째 조각에서 멈췄다. 세 번째 조각은 올리지 않았다.
     part_keys = [call["key"] for call in ai.calls]
     assert len(part_keys) == 2
     assert storage.uploads == [original_key, *part_keys]
+    assert before_failing == [(True, [])]
+    # 처리 함수는 조각을 지우지 않고 끝났다. 실패 처리(SpeechAnalysisQueue.fail)가 실패를
+    # 기록하기 전에 원본과 함께 두 조각을 지웠다.
+    assert finish.objects == [{original_key, *part_keys}]
+    assert at_mark_failed == [(set(), [*part_keys, original_key])]
     assert storage.objects == {}
     assert jobs.pending_audio_deletions == set()
     # 실패도 알린다(실제 발송 조건은 알림 쪽이 DB에서 다시 확인한다).
@@ -345,16 +421,22 @@ def test_a_part_whose_s3_delete_fails_stays_in_the_deletion_queue():
             stuck.append(key)
 
     ai.during = fail_first_part_delete
+    queued = count_calls(jobs, "queue_part_deletion")
 
     run(worker_for(jobs, storage, ai, CapturingReports()).run_once())
 
-    # 전사와 리포트는 계속한다. 지우지 못한 조각만 대기열에 남아 삭제 실행기가 처리한다.
+    # 전사를 저장한 뒤 원본과 함께 지우다 S3 삭제만 실패했다. 전사와 리포트는 계속하고 지우지
+    # 못한 조각만 대기열에 남아(바로 지울 수 있는 상태) 삭제 실행기가 처리한다.
     assert job_of(jobs, analysis_id).status == SpeechAnalysisStatus.COMPLETED
     assert jobs.pending_audio_deletions == set(stuck)
     assert set(storage.objects) == set(stuck)
+    # 메모리 저장소는 보류 시각을 보지 않으므로 마지막 요청이 보류 없이 바로 지울 수 있게
+    # 바꾼 것인지 따로 본다.
+    stuck_calls = [call for call in queued if call["object_key"] == stuck[0]]
+    assert stuck_calls[-1]["defer"] is False
 
 
-def test_parts_are_registered_for_deletion_before_upload():
+def test_parts_are_registered_before_upload_and_held_with_the_lease_until_success():
     jobs, storage, _, _ = setup(THREE_PARTS)
     ai = PartAi(storage)
     seen = []
@@ -364,26 +446,52 @@ def test_parts_are_registered_for_deletion_before_upload():
         seen.append(ai.calls[number - 1]["key"] in jobs.pending_audio_deletions)
 
     ai.during = check
-    queued = count_calls(jobs, "queue_part_deletion")
+    events = []
+    for name in ("extend_lease", "queue_part_deletion", "forget_part_deletion"):
+        original = getattr(jobs, name)
+
+        async def record(*, _name=name, _original=original, **kwargs):
+            events.append((_name, kwargs.get("object_key"), kwargs.get("defer")))
+            return await _original(**kwargs)
+
+        setattr(jobs, name, record)
 
     run(worker_for(jobs, storage, ai, CapturingReports()).run_once())
 
     assert seen == [True, True, True]
-    assert [call["defer"] for call in queued] == [True, False] * 3
+    p1, p2, p3 = [call["key"] for call in ai.calls]
+    lease = ("extend_lease", None, None)
+
+    def hold(key):
+        return ("queue_part_deletion", key, True)
+
+    # 임대를 늘릴 때마다 앞 조각의 보류(삭제 실행기가 건너뛰는 시각)도 함께 늘리고, 새 조각은
+    # 올리기 전에 보류와 함께 넣는다. 바로 지울 수 있게 바꾸는 것은 전사 저장 뒤 한 번뿐이다.
+    assert events == [
+        lease, hold(p1),
+        lease, hold(p1), hold(p2),
+        lease, hold(p1), hold(p2), hold(p3),
+        ("queue_part_deletion", p1, False), ("forget_part_deletion", p1, None),
+        ("queue_part_deletion", p2, False), ("forget_part_deletion", p2, None),
+        ("queue_part_deletion", p3, False), ("forget_part_deletion", p3, None),
+    ]
 
 
 def test_a_lost_lease_between_parts_stops_without_saving_a_transcript(caplog):
-    jobs, storage, analysis_id, _ = setup(THREE_PARTS)
+    jobs, storage, analysis_id, original_key = setup(THREE_PARTS)
     capture(caplog)
     ai = PartAi(storage)
     reports = CapturingReports()
     original_extend = jobs.extend_lease
     calls = []
 
+    still_there = []
+
     async def expire_before_second_part(**kwargs):
         # 첫 조각 STT가 길어 그사이 다른 worker의 임대 정리가 작업을 실패로 끝냈다.
         calls.append(kwargs)
         if len(calls) == 2:
+            still_there.append(ai.calls[0]["key"] in storage.objects)
             await jobs.mark_failed(analysis_id=analysis_id, error_code="WORKER_LEASE_EXPIRED")
         return await original_extend(**kwargs)
 
@@ -395,6 +503,9 @@ def test_a_lost_lease_between_parts_stops_without_saving_a_transcript(caplog):
     assert (job.status, job.error_code) == (SpeechAnalysisStatus.FAILED, "WORKER_LEASE_EXPIRED")
     assert job.transcript is None and reports.speech is None
     assert len(ai.calls) == 1
+    # 멈추는 때까지 첫 조각은 남아 있었고, 멈추면서 원본과 함께 지웠다.
+    assert still_there == [True]
+    assert storage.deleted == [ai.calls[0]["key"], original_key]
     assert storage.objects == {}
     assert jobs.pending_audio_deletions == set()
     assert [r.outcome for r in finished_records(caplog)] == ["stopped"]
@@ -410,15 +521,21 @@ def test_a_stop_request_requeues_between_parts_and_keeps_the_original(caplog):
     reports = CapturingReports()
     notifier = FakeNotifier()
     worker = worker_for(jobs, storage, ai, reports, notifier)
-    ai.during = lambda number: worker.request_stop()
+    ai.during = lambda number: worker.request_stop() if number == 2 else None
+    at_requeue = snapshot_before(jobs, "requeue", storage)
 
     run(worker.run_once())
 
-    # 진행 중이던 첫 조각만 마치고 대기열에 되돌렸다. 원본은 남고 조각은 지웠다.
+    # 진행 중이던 두 번째 조각까지 마치고 대기열에 되돌렸다. 되돌리는 때까지 두 조각은 남아
+    # 있었다. 다음 worker는 처음부터 새 키로 다시 나누므로 이 시도의 조각은 되돌릴 때 지운다.
+    # 원본은 남는다.
+    part_keys = [call["key"] for call in ai.calls]
+    assert len(part_keys) == 2
+    assert at_requeue == [({original_key, *part_keys}, [])]
     job = job_of(jobs, analysis_id)
     assert job.status == SpeechAnalysisStatus.QUEUED
     assert job.audio_deleted_at is None and job.error_code is None
-    assert len(ai.calls) == 1
+    assert storage.deleted == part_keys
     assert set(storage.objects) == {original_key}
     assert jobs.pending_audio_deletions == set()
     assert notifier.failed == [] and notifier.ready == []
@@ -475,12 +592,12 @@ def test_a_stop_request_after_the_lease_was_lost_stops_and_deletes_the_original(
 
     run(worker.run_once())
 
-    # 되돌리지 못했으므로(requeue가 False) 전사를 저장하지 않고 멈추며 원본을 지운다.
+    # 되돌리지 못했으므로(requeue가 False) 전사를 저장하지 않고 멈추며 원본과 조각을 지운다.
     assert len(requeued) == 1 and len(ai.calls) == 1
     job = job_of(jobs, analysis_id)
     assert (job.status, job.error_code) == (SpeechAnalysisStatus.FAILED, "WORKER_LEASE_EXPIRED")
     assert job.transcript is None and reports.speech is None
-    assert original_key in storage.deleted
+    assert storage.deleted == [ai.calls[0]["key"], original_key]
     assert storage.objects == {}
     assert jobs.pending_audio_deletions == set()
     # 임대 정리로 끝난 작업은 알리지 않는다.
@@ -510,7 +627,8 @@ def test_a_failed_part_upload_fails_the_job_and_deletes_the_part_and_original(ca
     assert job.transcript is None
     failed_part = storage.uploads[2]
     assert len(ai.calls) == 1 and failed_part not in {call["key"] for call in ai.calls}
-    assert {failed_part, original_key} <= set(storage.deleted)
+    # 실패 처리에서 STT를 마친 첫 조각, 올리다 실패한 조각과 원본을 함께 지웠다.
+    assert storage.deleted == [ai.calls[0]["key"], failed_part, original_key]
     assert storage.objects == {}
     assert jobs.pending_audio_deletions == set()
     assert notifier.failed == [analysis_id] and notifier.ready == []
@@ -547,8 +665,6 @@ class BlockingPartUpload:
         self.original_key = original_key
         self.stored = storage.upload
         self.started = asyncio.Event()
-        self.release = asyncio.Event()
-        self.task: asyncio.Task | None = None
         self.key: str | None = None
         storage.upload = self.upload
 
@@ -557,41 +673,15 @@ class BlockingPartUpload:
         if object_key == self.original_key:
             return
         self.key = object_key
-        self.task = asyncio.current_task()
         self.started.set()
-        await self.release.wait()
+        await asyncio.Event().wait()
 
 
-def test_a_cancel_during_a_part_upload_deletes_the_part_after_the_upload_ends():
-    jobs, storage, _, original_key = setup(THREE_PARTS)
-    ai = PartAi(storage)
-    blocking = BlockingPartUpload(storage, original_key)
-    worker = worker_for(jobs, storage, ai, CapturingReports())
-
-    async def scenario():
-        task = asyncio.create_task(worker.run_once())
-        await blocking.started.wait()
-        task.cancel()
-        for _ in range(5):
-            await asyncio.sleep(0)
-        # 업로드가 끝나기 전에는 지우지 않는다(먼저 지우면 끝난 업로드가 조각을 다시 만든다).
-        assert not task.done()
-        assert blocking.key not in storage.deleted
-        blocking.release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    run(scenario())
-
-    assert ai.calls == []
-    assert blocking.key in storage.deleted
-    assert set(storage.objects) == {original_key}
-    assert jobs.pending_audio_deletions == set()
-
-
-def test_a_cancelled_part_upload_leaves_the_deferred_deletion_request():
-    # 두 번째 종료 신호면 asyncio.run이 업로드 작업까지 취소한다. 스레드는 계속 올릴 수 있다.
-    jobs, storage, _, original_key = setup(THREE_PARTS)
+def test_a_cancel_during_a_part_upload_leaves_the_part_to_the_deletion_queue():
+    # 두 번째 종료 신호처럼 처리 중인 작업이 취소되면 실패 처리를 거치지 않는다(원본도 그대로다).
+    # S3 업로드 스레드는 계속 올릴 수 있으므로 조각은 지금 지우지 않고, 올리기 전에 넣은 요청
+    # (보류 시각은 임대 시간 뒤)을 남겨 보류가 끝난 뒤 삭제 실행기가 지우게 한다.
+    jobs, storage, analysis_id, original_key = setup(THREE_PARTS)
     ai = PartAi(storage)
     blocking = BlockingPartUpload(storage, original_key)
     worker = worker_for(jobs, storage, ai, CapturingReports())
@@ -601,16 +691,55 @@ def test_a_cancelled_part_upload_leaves_the_deferred_deletion_request():
         task = asyncio.create_task(worker.run_once())
         await blocking.started.wait()
         task.cancel()
-        blocking.task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
 
     run(scenario())
 
-    # 끝났는지 모르는 조각은 지금 지우지 않고, 올리기 전에 넣은 요청(임대 시간 뒤)을 남긴다.
-    assert blocking.key not in storage.deleted
+    assert ai.calls == []
+    assert storage.deleted == []
+    assert set(storage.objects) == {original_key, blocking.key}
     assert blocking.key in jobs.pending_audio_deletions
-    assert [call["defer"] for call in queued] == [True]
+    assert [(call["object_key"], call["defer"]) for call in queued] == [(blocking.key, True)]
+    assert job_of(jobs, analysis_id).status == SpeechAnalysisStatus.TRANSCRIBING
+
+
+def test_a_worker_killed_during_a_later_part_leaves_every_part_to_the_deletion_queue():
+    # 두 번째 조각 STT 중에 worker가 죽었다. 원본은 임대 정리가 삭제 대기열에 넣고, 두 조각은
+    # 올리기 전에 넣은 요청이 남아 있다. 첫 조각의 보류는 두 번째 조각 전에 임대와 함께 늘렸으므로
+    # 성공이나 실패 처리 전에는 지워지지 않고, worker가 죽으면 임대와 비슷한 때 끝난다.
+    jobs, storage, analysis_id, original_key = setup(THREE_PARTS)
+    ai = PartAi(storage)
+    worker = worker_for(jobs, storage, ai, CapturingReports())
+    queued = count_calls(jobs, "queue_part_deletion")
+    in_second_part = asyncio.Event()
+
+    async def hang_in_second_part(number):
+        if number == 2:
+            in_second_part.set()
+            await asyncio.Event().wait()
+
+    ai.during = hang_in_second_part
+
+    async def scenario():
+        task = asyncio.create_task(worker.run_once())
+        await in_second_part.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run(scenario())
+
+    part_keys = [call["key"] for call in ai.calls]
+    assert len(part_keys) == 2
+    # 아무것도 지우지 않았고 바로 지울 수 있게 바꾼 요청도 없다. 두 조각 모두 대기열에 남는다.
+    assert storage.deleted == []
+    assert set(storage.objects) == {original_key, *part_keys}
+    assert set(part_keys) <= jobs.pending_audio_deletions
+    assert [(call["object_key"], call["defer"]) for call in queued] == [
+        (part_keys[0], True), (part_keys[0], True), (part_keys[1], True),
+    ]
+    assert job_of(jobs, analysis_id).status == SpeechAnalysisStatus.TRANSCRIBING
 
 
 def test_hallucination_filter_and_empty_check_run_on_the_merged_result():
