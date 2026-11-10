@@ -50,11 +50,7 @@
   (#273 이후 보호자에게 보이는 글에 처리 과정의 말을 쓰지 않음) 다시 캡처한 것으로 바꾼다.
 -->
 
-
-
 https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
-
-
 
 ---
 
@@ -145,7 +141,8 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 <tr>
 <td width="40%" align="center">
   <!-- 📐 영상: docs/assets/새록_대화카드준비.mp4 (5.3MB) → user-attachments 주소로 교체 -->
-  https://github.com/user-attachments/assets/d7414136-7bc9-445d-a815-8a4690103906
+
+https://github.com/user-attachments/assets/d7414136-7bc9-445d-a815-8a4690103906
 
 </td>
 <td width="60%" valign="middle">
@@ -171,7 +168,9 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 <tr>
 <td width="40%" align="center">
   <!-- 📐 영상: docs/assets/새록_면회중.mp4 (4.9MB) → user-attachments 주소로 교체 -->
-  <video src="./docs/assets/새록_면회중.mp4" width="260" controls muted playsinline></video>
+
+https://github.com/user-attachments/assets/95fd7388-a40a-44d9-a6b2-ff3a6700fba0
+
 </td>
 <td width="60%" valign="middle">
 
@@ -199,13 +198,15 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 <tr>
 <td width="50%" align="center">
   <!-- 📐 영상: docs/assets/새록_리포트_평가.mp4 (5.0MB) → user-attachments 주소로 교체 -->
-  <video src="./docs/assets/새록_리포트_평가.mp4" width="260" controls muted playsinline></video><br/>
-  <sub>면회 소감 남기기</sub>
+
+https://github.com/user-attachments/assets/991fd570-a863-4898-86f9-1d7653b32406
+
 </td>
 <td width="50%" align="center">
   <!-- 📐 영상: docs/assets/새록_리포트_결과.mp4 (8.1MB) → user-attachments 주소로 교체. 무료 플랜 첨부 한도 10MB에 가까움 -->
-  <video src="./docs/assets/새록_리포트_결과.mp4" width="260" controls muted playsinline></video><br/>
-  <sub>면회 리포트 확인</sub>
+
+https://github.com/user-attachments/assets/0483f036-c5bb-4d33-bb27-dc587568352d
+
 </td>
 </tr>
 <tr>
@@ -233,7 +234,9 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 <td width="40%" align="center">
   <!-- 📐 영상: docs/assets/새록_일대기.mp4 (2.5MB) → user-attachments 주소로 교체.
        영상에 이야기 후보 확인·승인 장면이 없다면 아래 첫 설명("이야기 후보는 확인 뒤에만")에 맞는 장면을 추가하거나 설명 순서를 바꾼다. -->
-  <video src="./docs/assets/새록_일대기.mp4" width="260" controls muted playsinline></video>
+
+https://github.com/user-attachments/assets/5a82bb5e-349f-4d12-967c-d0422fa7543c
+
 </td>
 <td width="60%" valign="middle">
 
@@ -260,13 +263,16 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 <tr>
 <td width="50%" align="center">
   <!-- 📐 영상: docs/assets/새록_대화카드_사진분석.mp4 (9.4MB) → user-attachments 주소로 교체. 무료 플랜 첨부 한도 10MB에 거의 닿음. 넘으면 720p로 다시 압축 -->
-  <video src="./docs/assets/새록_대화카드_사진분석.mp4" width="260" controls muted playsinline></video><br/>
-  <sub>사진 분석으로 만든 대화 카드</sub>
+  
+https://github.com/user-attachments/assets/551d2889-410b-4edd-bbeb-c9d2fae35fc2
+
 </td>
 <td width="50%" align="center">
   <!-- 📐 영상: docs/assets/새록_리포트_쉬운모드.mp4 (3.7MB) → user-attachments 주소로 교체 -->
-  <video src="./docs/assets/새록_리포트_쉬운모드.mp4" width="260" controls muted playsinline></video><br/>
-  <sub>쉬운 모드로 리포트 보기</sub>
+
+https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
+
+
 </td>
 </tr>
 <tr>
