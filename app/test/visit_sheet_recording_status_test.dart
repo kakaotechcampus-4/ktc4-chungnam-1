@@ -245,6 +245,15 @@ void main() {
             lessThanOrEqualTo(firstSegment.top),
             reason: '카드 막대의 누르는 자리를 덮지 않는다',
           );
+          // 손잡이(위아래 12, 높이 4)와 카드 막대 위 여백(16)은 원래대로 두고
+          // 그 사이에 끼운다. 그만큼 시트가 화면의 5분의 4보다 높다.
+          expect(status.top - sheet.top, greaterThanOrEqualTo(28));
+          expect(
+            firstSegment.top - status.bottom,
+            greaterThanOrEqualTo(16),
+            reason: '녹음 표시 줄과 카드 막대 사이 원래 간격',
+          );
+          expect(sheet.height, greaterThan(size.height * 0.8));
 
           await leave(tester, container);
           handle.dispose();

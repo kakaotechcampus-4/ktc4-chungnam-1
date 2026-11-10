@@ -568,9 +568,8 @@ class _CardPeekState extends State<_CardPeek>
     });
   }
 
-  /// 시트 높이. 시트는 화면 높이의 [visitCardsSheetHeightFactor] 만큼이다.
-  double get _sheetHeight =>
-      MediaQuery.sizeOf(context).height * visitCardsSheetHeightFactor;
+  /// 시트 높이. 진짜 시트와 같다([visitCardsSheetHeight]).
+  double get _sheetHeight => visitCardsSheetHeight(context);
 
   /// 끌기 시작하면 녹음 화면 위에 그린 시트가 손가락을 따라오게 한다.
   void _startFollow() {

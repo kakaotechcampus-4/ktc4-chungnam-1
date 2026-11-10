@@ -41,11 +41,25 @@ Future<void> showVisitCardsSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
     ),
-    builder: (context) => FractionallySizedBox(
-      // 화면의 5분의 4까지 올라온다.
-      heightFactor: visitCardsSheetHeightFactor,
+    builder: (context) => SizedBox(
+      height: visitCardsSheetHeight(context),
       child: const _SheetBody(),
     ),
+  );
+}
+
+/// 시트 높이. 화면의 5분의 4에 손잡이 아래 녹음 표시 줄 높이를 더한다.
+///
+/// 녹음 표시 줄을 손잡이와 카드 막대 사이에 끼우면서 원래 간격을 줄이니 줄이
+/// 손잡이에 붙어 답답해 보였다(2026-11-10 실기기 확인). 원래 간격은 그대로 두고
+/// 줄 높이만큼 시트를 높여 메인 질문의 자리도 줄지 않게 한다. 화면 위 안전영역은
+/// 넘지 않는다. 녹음 화면에서 끌어올리는 동안 그리는 시트도 이 높이를 쓴다.
+double visitCardsSheetHeight(BuildContext context) {
+  final screen = MediaQuery.sizeOf(context).height;
+  final top = MediaQuery.paddingOf(context).top;
+  return math.min(
+    screen * visitCardsSheetHeightFactor + _RecordingStatus.lineHeight(context),
+    screen - top,
   );
 }
 
@@ -216,9 +230,9 @@ class _CardsState extends ConsumerState<_Cards> {
 ///
 /// 시트가 화면의 5분의 4를 덮어 녹음 화면의 `녹음 중이에요` 와 시간이 가려졌다
 /// (2026-11-10 UX 점검 7번). 녹음이 이어지는지 보려고 시트를 내리지 않아도 되게
-/// 여기 작게 다시 보인다. 원래 손잡이 아래 여백과 카드 막대 위 여백을 이 줄에
-/// 내주어 글자 1배에서는 시트 안 높이가 그대로이고, 메인 질문의 자리도 줄지
-/// 않는다. 그래서 시트 높이([visitCardsSheetHeightFactor])는 바꾸지 않았다.
+/// 여기 작게 다시 보인다. 손잡이 위아래 여백과 카드 막대 위 여백은 원래대로
+/// 두고 그 사이에 이 줄을 끼운다. 줄 높이만큼 시트를 높인다
+/// ([visitCardsSheetHeight], 2026-11-10 실기기 확인).
 class _SheetTop extends StatelessWidget {
   const _SheetTop({required this.state});
 
@@ -247,9 +261,8 @@ class _DragHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 아래 녹음 표시 줄과 붙어 한 묶음으로 보이게 위아래 여백을 8로 둔다.
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Container(
         width: 44,
         height: 4,
@@ -288,6 +301,24 @@ class _RecordingStatus extends StatelessWidget {
   /// 작은 원 둘레로 물결이 퍼지는 거리. 옆 글자와의 간격(8)에 닿지 않는다.
   static const _spread = 6.0;
 
+  static final _labelStyle = AppTypography.sub.copyWith(
+    color: AppColors.ink,
+    fontWeight: FontWeight.w600,
+  );
+
+  /// 한 줄일 때 이 줄의 높이. 원과 글자 중 큰 쪽이다. 글자가 커져 시간이 다음
+  /// 줄로 내려가면 늘어난 만큼은 메인 질문 자리에서 쓴다.
+  static double lineHeight(BuildContext context) {
+    final painter = TextPainter(
+      text: TextSpan(text: '녹음 중', style: _labelStyle),
+      textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final text = painter.height;
+    painter.dispose();
+    return math.max(_dot, text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Wrap(
@@ -323,13 +354,7 @@ class _RecordingStatus extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                recording ? '녹음 중' : '잠시 멈춤',
-                style: AppTypography.sub.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text(recording ? '녹음 중' : '잠시 멈춤', style: _labelStyle),
             ],
           ),
         ),
@@ -432,11 +457,16 @@ class _CardBarState extends State<_CardBar>
     final state = widget.state;
     final count = widget.shownCount.clamp(0, state.cards.length);
 
-    // 시트 손잡이와 헷갈리지 않게 손잡이에서 떨어뜨린다. 그 사이에 녹음 표시
-    // 줄([_SheetTop])이 있고 막대 위 누르는 자리의 남는 높이(20)가 간격이
-    // 되므로 위 여백은 두지 않는다. 아래 여백도 같은 이유로 두지 않는다.
+    // 시트 손잡이와 헷갈리지 않게 손잡이에서 떨어뜨린다. 그 사이의 녹음 표시
+    // 줄([_SheetTop])과도 원래 간격(16)을 둔다. 아래 여백은 두지 않는다. 막대
+    // 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screen,
+        AppSpacing.lg,
+        AppSpacing.screen,
+        0,
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) => AnimatedBuilder(
           animation: _controller,
