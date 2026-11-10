@@ -13,6 +13,11 @@ abstract final class AppRoutes {
   /// 세션이 풀렸을 때다. 복원을 확인하지 않고 곧바로 로그인 버튼을 띄운다.
   static const signIn = '/splash?signedOut=true';
 
+  /// 쓰는 도중 세션을 다시 받지 못해 로그인부터 다시 할 때 쓴다. [signIn] 과
+  /// 같고, 로그인 버튼 위에 로그인이 풀린 이유를 알린다(UX 점검 8번).
+  static const signInAfterSessionLoss =
+      '/splash?signedOut=true&sessionLost=true';
+
   /// 구글 로그인 뒤 받는 필수 동의.
   ///
   /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다.
@@ -68,6 +73,20 @@ abstract final class AppRoutes {
 
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
+
+  /// 면회 흐름의 화면(사진, 녹음, 카드 추가, 소감, 위로, 음성 다시 보내기)이다.
+  ///
+  /// 이 화면에서는 하던 면회를 끊지 않는다. 업데이트 안내는 홈에 돌아올 때까지
+  /// 미루고(`app_update_watcher.dart`), 세션을 잃으면 로그인 화면으로 옮기기 전에
+  /// 확인 창으로 먼저 알린다(`main.dart`).
+  static const visitFlow = {
+    visitPhoto,
+    visitRecord,
+    visitAddCards,
+    visitReview,
+    visitReviewDone,
+    visitUpload,
+  };
 
   /// G 리포트. `:reportId` 를 받는다.
   static const report = '/report/:reportId';

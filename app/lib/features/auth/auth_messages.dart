@@ -20,6 +20,13 @@ void logAuthFailure(AuthFailure failure) {
   if (kDebugMode) debugPrint('[auth] $failure');
 }
 
+/// 쓰는 도중 세션을 다시 받지 못해 로그인 화면으로 왔을 때 버튼 위에 알린다
+/// (`AppRoutes.signInAfterSessionLoss`). 로그아웃과 탈퇴로 온 경우는 알리지 않는다.
+///
+/// 휴대폰 폭에서는 한 줄에 들어가지 않아 '요.'만 다음 줄로 넘어가므로 두 줄로
+/// 나눠 둔다. FE 초안이며 제품 문구로 확정하려면 PM 확인이 필요하다.
+const sessionLostSignInNotice = '로그인이 풀려\n다시 로그인이 필요해요.';
+
 String authFailureMessage(AuthFailure failure) {
   return switch (failure) {
     AuthNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
