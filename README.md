@@ -334,33 +334,12 @@
 <details>
 <summary><b>면회 음성이 리포트가 되기까지 (시퀀스 다이어그램)</b></summary>
 
-<!-- 📐 접어 두는 선택 다이어그램. 순서와 주체는 backend/docs/async-speech-analysis.md와 맞는지 BE 확인. -->
+<!-- 📐 접어 두는 선택 다이어그램: docs/assets/saerok-speech-sequence.svg (1600×1176). 기존 mermaid 시퀀스와 순서가 같다(13단계).
+     순서와 주체는 backend/docs/async-speech-analysis.md와 맞는지 BE 확인. -->
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant App as Android 앱
-  participant API as FastAPI 서버
-  participant S3 as AWS S3 Bucket
-  participant DB as PostgreSQL<br/>(작업 대기열)
-  participant SW as 음성 분석 프로세스
-  participant STT as STT 서버
-  participant ML as 엘리스 ML API
-
-  App->>API: 소감 저장
-  App->>API: 면회 음성 업로드
-  API->>S3: 음성 파일 저장
-  API->>DB: 음성 분석 작업 등록
-  SW->>DB: 작업 가져오기
-  SW->>STT: 음성 전사 요청 (사설망)
-  STT->>S3: 음성 파일 내려받기 (임시 링크)
-  STT-->>SW: 전사 + 화자 구분
-  SW->>S3: 음성 원본 삭제 요청
-  SW->>ML: 리포트 생성 요청
-  SW->>DB: 결과 저장
-  SW-->>App: 리포트 완료 알림 (Firebase Cloud Messaging)
-  App->>API: 리포트 조회, 보호자 확인
-```
+<p align="center">
+  <img src="./docs/assets/saerok-speech-sequence.svg" alt="면회 음성이 리포트가 되기까지: 1) 새록 앱이 소감을 저장하고 면회 음성을 올리면 API 서버가 음성 파일을 AWS S3에 저장하고 PostgreSQL 17에 음성 분석 작업을 등록한다. 2) 음성 분석 worker가 작업을 가져가 Tailscale 사설망의 STT 서버에 전사를 요청하고, STT 서버는 임시 링크로 음성을 내려받아 전사와 화자 구분 결과를 돌려준다. 음성 분석 worker는 음성 원본 삭제를 요청한다. 3) 엘리스 ML API로 리포트를 만들어 결과를 저장하고 Firebase 푸시로 완료 알림을 보내면, 보호자가 앱에서 리포트를 조회하고 확인한다." width="100%" />
+</p>
 
 </details>
 
