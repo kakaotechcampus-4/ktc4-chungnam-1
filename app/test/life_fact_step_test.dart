@@ -261,6 +261,135 @@ void main() {
     });
   });
 
+  // 2026-11-10 UX 점검 20. 글로 쓰던 중 말로 바꾸면 적은 글과 저장본이 확인
+  // 없이 지워졌다.
+  group('적은 글이 있을 때 말로 바꾸기', () {
+    const confirmTitle = '말로 다시 답할까요?';
+    const confirmDetail = '적은 내용이 지워져요.';
+    const typed = '마을 이장을 오래 하셨어요.';
+
+    testWidgets('먼저 묻고, 계속 적기를 고르면 적은 글을 그대로 둔다', (tester) async {
+      _useReferenceScreen(tester);
+      var cleared = 0;
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), onCleared: () => cleared += 1),
+      );
+      await _choose(tester, '글로 답하기');
+      await tester.enterText(find.byType(TextField), typed);
+      await tester.pump();
+      cleared = 0;
+
+      await tester.tap(find.text('말로 답할게요'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsOneWidget);
+      expect(find.text(confirmDetail), findsOneWidget);
+      expect(find.byIcon(Icons.mic), findsNothing, reason: '묻기 전에 바꾸지 않는다');
+
+      await tester.tap(find.text('계속 적기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsNothing);
+      expect(find.text(typed), findsOneWidget);
+      expect(find.byIcon(Icons.mic), findsNothing);
+      expect(cleared, 0, reason: '저장본도 그대로다');
+    });
+
+    testWidgets('말로 답하기를 고르면 적은 글을 지우고 녹음으로 간다', (tester) async {
+      _useReferenceScreen(tester);
+      var cleared = 0;
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), onCleared: () => cleared += 1),
+      );
+      await _choose(tester, '글로 답하기');
+      await tester.enterText(find.byType(TextField), typed);
+      await tester.pump();
+      cleared = 0;
+
+      await tester.tap(find.text('말로 답할게요'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+      expect(find.text('마이크를 누르고 말씀해주세요'), findsOneWidget);
+      expect(find.text(typed), findsNothing);
+      expect(cleared, 1);
+    });
+
+    testWidgets('창 바깥을 눌러 닫아도 적은 글을 그대로 둔다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await _choose(tester, '글로 답하기');
+      await tester.enterText(find.byType(TextField), typed);
+      await tester.pump();
+
+      await tester.tap(find.text('말로 답할게요'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsNothing);
+      expect(find.text(typed), findsOneWidget);
+      expect(find.byIcon(Icons.mic), findsNothing);
+    });
+
+    testWidgets('저장해 둔 답으로 연 입력칸에서도 먼저 묻는다', (tester) async {
+      _useReferenceScreen(tester);
+      var cleared = 0;
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          initialText: typed,
+          onCleared: () => cleared += 1,
+        ),
+      );
+
+      await tester.tap(find.text('말로 답할게요'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsOneWidget);
+      await tester.tap(find.text('계속 적기'));
+      await tester.pumpAndSettle();
+      expect(find.text(typed), findsOneWidget);
+      expect(cleared, 0);
+    });
+
+    testWidgets('실패 뒤 다시 녹음하기도 적은 글이 있으면 먼저 묻는다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await _choose(tester, '말로 답하기');
+      await _speak(tester);
+      await _speak(tester);
+      expect(find.text('다시 녹음하기'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), typed);
+      await tester.pump();
+
+      await tester.tap(find.text('다시 녹음하기'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsOneWidget);
+      await tester.tap(find.text('말로 답하기'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+      expect(find.text(typed), findsNothing);
+    });
+
+    testWidgets('입력칸이 비었거나 빈칸만 있으면 묻지 않고 바로 녹음으로 간다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+      await _choose(tester, '글로 답하기');
+      await tester.enterText(find.byType(TextField), '   ');
+      await tester.pump();
+
+      await tester.tap(find.text('말로 답할게요'));
+      await tester.pump();
+
+      expect(find.text(confirmTitle), findsNothing);
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+    });
+  });
+
   group('마이크 화면 모양', () {
     testWidgets('알아들으면 다시 녹음하기와 글로 답할게요가 나온다', (tester) async {
       _useReferenceScreen(tester);
