@@ -350,6 +350,51 @@ void main() {
       expect(find.text('사진 다시 올리기'), findsNothing);
     });
 
+    // 끝내지 않고 나간 뒤 사진 화면에서 다시 찍고 돌아온 경우다. 녹음 화면은
+    // 끝낸 면회로 보이므로 녹음이 이어진다고 하지 않는다(2026-11-10 UX 점검 1번).
+    testWidgets('녹음 파일을 닫은 뒤 다시 찍은 사진을 올리지 못하면 녹음이 이어진다고 하지 않는다', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+
+      final api = FakeVisitApi()
+        ..photoFailures.addAll([
+          const ApiNetworkFailure(),
+          const ApiNetworkFailure(),
+        ]);
+      final container = _container(api);
+      await tester.runAsync(() async {
+        final visit = await _prepare(container, photo: null);
+        await visit.startRecording();
+        await visit.stopRecordingOnLeave();
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: buildAppTheme(),
+              home: const RecordScreen(),
+            ),
+          ),
+        );
+        await container
+            .read(visitPhotoProvider.notifier)
+            .replace(_photo, inGallery: true);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(_read(container).photoUpload, VisitPhotoUpload.failed);
+      expect(find.text('이미 끝낸 면회예요'), findsOneWidget);
+      expect(find.text('사진을 올리지 못했어요.'), findsOneWidget);
+      expect(find.textContaining('녹음은 그대로 이어져요'), findsNothing);
+      expect(find.text('사진 다시 올리기'), findsOneWidget);
+    });
+
     testWidgets('받지 않는 거절이면 다시 올리기를 숨긴다', (tester) async {
       final api = FakeVisitApi()
         ..photoFailures.add(

@@ -68,6 +68,9 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       _photoNotice = _showPhotoNotice(
         context,
         upload: upload!,
+        recordingClosed:
+            ref.read(visitControllerProvider).value?.recordingFinalized ??
+            false,
         onRetry: _controller.retryPhotoUpload,
       );
     }
@@ -346,18 +349,24 @@ class _ProblemNotice extends StatelessWidget {
 /// 스크롤해야 보인다. 녹음은 그대로 이어지므로 녹음 실패보다 약하게 알린다.
 /// 다시 올릴 수 있는 실패는 버튼을 달아 닫을 때까지 남기고, 받지 않는 거절은
 /// 잠시 보여주고 사라진다. 사진 파일을 찾지 못했을 때도 다시 올릴 수 없다.
+///
+/// [recordingClosed] 면 녹음 파일을 닫은 끝낸 면회 화면([_Finished])이다. 나간
+/// 뒤 사진 화면에서 다시 찍으면 새 사진을 올리므로 이 화면에서도 알리지만,
+/// 녹음이 이어진다고는 하지 않는다.
 ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
   BuildContext context, {
   required VisitPhotoUpload upload,
+  required bool recordingClosed,
   required VoidCallback onRetry,
 }) {
   final retryable = upload == VisitPhotoUpload.failed;
+  final recordingGoesOn = recordingClosed ? '' : '\n녹음은 그대로 이어져요.';
   return ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(switch (upload) {
-        VisitPhotoUpload.failed => '사진을 올리지 못했어요.\n녹음은 그대로 이어져요.',
+        VisitPhotoUpload.failed => '사진을 올리지 못했어요.$recordingGoesOn',
         VisitPhotoUpload.missing =>
-          '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.\n녹음은 그대로 이어져요.',
+          '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.$recordingGoesOn',
         _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
       }),
       action: retryable
