@@ -7,6 +7,7 @@
 | 알고 싶은 내용 | 먼저 읽을 문서 | 상세 문서 |
 | --- | --- | --- |
 | 제품 대상, 범위와 미정 사항 | [PM 제품 기준](pm/README.md) | [테크스펙](tech-spec.md) |
+| 최초 기획 대비 구현과 변경 이유 | [서비스 개발 결과 보고서](pm/service-development-fidelity-20261110.md) | 11월 11일 기준 개발 결과, 실사용 개선과 후속 계획 |
 | 진행 중인 작업과 주간 운영 | [GitHub 이슈](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues) | [주간 운영](pm/weekly-operations.md), [12주 학습 목표](pm/12-week-team-goals.md) |
 | Flutter 구현과 실행 | [FE README](../app/README.md) | [환경 설정](../app/SETUP.md), [디자인 기준](../app/DESIGN.md) |
 | FastAPI 구현과 실행 | [BE README](../backend/README.md) | 코드와 테스트 |
