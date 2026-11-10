@@ -4,7 +4,8 @@ import '../design/tokens.dart';
 
 /// 화면에서 가장 중요한 행동 하나에만 쓴다. 검정 면에 흰 글자다.
 ///
-/// 높이는 56 이상이고, 글자를 키워 줄이 바뀌면 그만큼 높아진다.
+/// 높이는 56 이상이고, 글자를 키우면 그만큼 높아진다. 위아래 여백이 12라
+/// 한 줄이어도 글자 1.5배쯤부터 56을 넘는다.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     required this.label,
