@@ -426,6 +426,10 @@ H 일대기는 [life_story](lib/features/life_story/)에 있다. 화면은 `Life
         → status=consentRequired → 계정이 사라진 경우다. 세션을 버리고 구글 버튼
 
 따로 있던 로그인 화면(A-2)은 스플래시에 합쳤다. 로그인 버튼과 실패 안내는 `GoogleSignInPanel`이고, 스플래시가 복원 확인을 마친 뒤 로고 아래에 띄운다. 로그아웃, 탈퇴, 세션이 풀린 경우는 `/splash?signedOut=true`(`AppRoutes.signIn`)로 돌아가 2초 로고 없이 바로 버튼을 띄운다. 구글 로그인만 있다. 아이디와 비밀번호는 받지 않고 별도 회원가입 화면도 두지 않는다(ADR-007).
+
+로그인 버튼(`GoogleSignInButton`)은 구글 G 그림과 `구글 계정으로 로그인` 글자를 한 버튼에 담는다. 화면 좌우 여백 안을 채우는 흰 면에 1px `#747775` 테두리이고 높이는 56 이상, 모서리는 14다. G는 배포 이미지(`assets/signin-assets/`)를 바꾸지 않고 가운데 G 부분만 보여 준다. 그림과 글자 어디를 눌러도 로그인하고, 화면 낭독기는 `구글 계정으로 로그인` 버튼 하나로 읽는다. 로그인을 기다리는 동안은 G 자리에 도는 표시를 두고 글자를 `로그인하는 중이에요`로 바꾸며 누를 수 없다(낭독기는 누를 수 없는 버튼으로 읽는다). 좁은 화면에서 글자를 키워 한 줄에 들어가지 않으면 줄을 바꾸지 않고 글자를 줄인다. 2026-11-10 UX 점검 전에는 글자 없는 48 짜리 동그라미 그림 하나가 버튼이었고, 아래 글자는 눌리지 않았으며 낭독기가 같은 이름을 두 번 읽었다. 스플래시가 버튼 자리로 남겨 두는 높이도 버튼과 같은 56이라 버튼이 나타날 때 로고가 움직이지 않는다(글자 1배 기준). 360x640과 390x844, 글자 1.3배와 2.0배에서 넘침이 없는지 위젯 테스트(`test/google_sign_in_button_test.dart`)로 확인했고 실기기에서는 확인하지 않았다.
+
+약관의 `자세히 보기`는 가입 동의(`/consent`)와 설정의 계정 약관 동의가 함께 쓰는 아래에서 올라오는 흰 시트(`showConsentDetails`)로 동의문 전문을 보여 준다. 시트는 화면 높이의 85%까지 커지고, 그보다 긴 약관은 시트 안에서 스크롤한다. 제목과 맨 아래 `닫기`(진한 테두리 보조 버튼)는 그 자리에 있고 동의문만 움직이며, 넘칠 때는 오른쪽에 스크롤 막대가 늘 보여 아래에 글이 더 있음을 알린다. 바깥 영역은 `닫기`로 읽는다. 전에는 스크롤되지 않아 `AI 사진 분석 동의`의 보유 기간 같은 아래 줄이 360x640에서 잘렸다(2026-11-10 UX 점검). 360x640과 390x844의 글자 1배와 1.3배, 360x640의 2.0배에서 다섯 약관 모두 마지막 줄까지 읽고 `닫기`로 닫히는지 위젯 테스트(`test/consent_details_sheet_test.dart`, 설정 쪽은 `test/consent_settings_test.dart`)로 확인했다. 실기기에서는 확인하지 않았다.
 구글 인증만으로는 계정이 만들어지지 않는다. `/consent`에서 필수 동의를 제출해야
 계정과 동의 이력이 함께 만들어지고, 중간에 나가면 계정이 남지 않는다.
 
@@ -490,11 +494,11 @@ PR #117 리뷰). 녹음 파일 공유로 앱 캐시에 남은 사본도 지운�
 | `lib/features/auth/session_restore.dart` | 앱 재실행 시 복원과 자동 재인증 |
 | `lib/features/auth/session_refresher.dart` | 쓰는 도중 세션 만료 시 무음 재인증과 로그인 화면 이동 신호 |
 | `lib/features/auth/auth_messages.dart` | `errorCode`를 사용자 문구로 옮김 |
-| `lib/features/auth/consent_form.dart` | 동의 항목 UI |
+| `lib/features/auth/consent_form.dart` | 동의 항목 UI와 약관 `자세히 보기` 시트 |
 | `lib/features/auth/splash_screen.dart` | 스플래시. 복원 확인 뒤 로그인 버튼을 띄운다 |
 | `lib/features/auth/google_sign_in_panel.dart` | 스플래시의 구글 로그인 버튼과 실패 안내 |
 | `lib/features/auth/google_consent_screen.dart` | `/consent` 화면 |
-| `lib/features/auth/google_sign_in_button.dart` | 구글이 배포한 버튼 이미지 |
+| `lib/features/auth/google_sign_in_button.dart` | 구글 G 그림(배포 이미지)과 글자를 담은 로그인 버튼 |
 | `assets/signin-assets/` | 버튼 이미지와 출처 기록([README](assets/signin-assets/README.md)) |
 
 화면은 provider만 보고 SDK나 서버를 직접 부르지 않는다. 테스트는 `authApiProvider`와

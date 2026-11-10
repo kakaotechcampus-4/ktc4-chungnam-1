@@ -99,6 +99,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     );
   }
 
-  /// 로그인 버튼이 들어설 대략의 높이다.
-  static const _panelReserve = 96.0;
+  /// 로그인 버튼이 들어설 높이다. 버튼 높이와 같게 두어 버튼이 나타날 때 로고가
+  /// 움직이지 않는다(글자 1배 기준. 글자를 키워 버튼이 늘면 그만큼 움직인다).
+  static const _panelReserve = AppSizes.control;
 }

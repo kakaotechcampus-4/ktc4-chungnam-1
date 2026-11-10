@@ -22,6 +22,7 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/auth/consent_terms.dart';
 import 'package:saerok/features/auth/google_authenticator.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile_setup/onboarding_tutorial.dart';
@@ -601,6 +602,61 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+
+    // 2026-11-10 UX 점검 14번. 시트 자체는 `consent_details_sheet_test.dart` 에서 본다.
+    testWidgets('360x640 글자 1.3배에서 AI 사진 분석 동의 자세히 보기를 끝까지 읽고 닫는다', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        _FakeAccountServer(),
+        width: 360,
+        height: 640,
+        scale: 1.3,
+      );
+      await tester.ensureVisible(find.text('계정 약관 동의'));
+      await settle(tester);
+      await openConsents(tester);
+
+      final term = consentTerms.firstWhere((t) => t.key == 'photoAnalysis');
+      final details = find.text('자세히 보기');
+      expect(details, findsNWidgets(consentTerms.length));
+      final index = consentTerms.indexOf(term);
+      await tester.ensureVisible(details.at(index));
+      await settle(tester);
+      await tester.tap(details.at(index));
+      await settle(tester);
+      expect(tester.takeException(), isNull, reason: '시트가 넘치지 않는다');
+
+      final sheet = find.byType(BottomSheet);
+      final last = find.descendant(
+        of: sheet,
+        matching: find.text(term.details.last),
+      );
+      await tester.scrollUntilVisible(
+        last,
+        80,
+        scrollable: find.descendant(
+          of: sheet,
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await settle(tester);
+      final close = find.descendant(
+        of: sheet,
+        matching: find.widgetWithText(OutlinedButton, '닫기'),
+      );
+      expect(
+        tester.getRect(last).bottom,
+        lessThanOrEqualTo(tester.getRect(close).top),
+        reason: '마지막 줄이 닫기 버튼에 가리지 않는다',
+      );
+
+      await tester.tap(close);
+      await settle(tester);
+      expect(sheet, findsNothing);
+      expect(find.text('전체 동의'), findsOneWidget, reason: '시트만 닫힌다');
+    });
 
     testWidgets('계정 약관 동의에는 알림 쓰임새 문구를 두지 않는다', (tester) async {
       await open(tester, _FakeAccountServer());
