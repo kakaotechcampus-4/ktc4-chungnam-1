@@ -12,6 +12,7 @@ from typing import BinaryIO
 from uuid import UUID
 
 from fastapi import UploadFile
+import pytest
 
 from app.api.deps import get_image_storage
 from app.core.database import connect
@@ -19,8 +20,10 @@ from app.core.errors import AppError
 from app.services import profile_photos
 from app.services.image_storage import ImageDownload, UnconfiguredImageStorage
 from app.services.image_validation import ValidatedImage
+from app.services.storage_deletion import process_deletions
 from tests.db_api import Caregiver, DbApi
 from tests.support import run
+from tests.test_storage_deletion import TARGETS, FakeDelete, process
 
 JPEG = b"\xff\xd8\xff\xe0" + b"synthetic-jpeg"
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png"
@@ -98,6 +101,13 @@ def _upload(
     )
 
 
+def _deletion_queue(api: DbApi) -> list[dict]:
+    return api.query(
+        "SELECT s3_object_key, not_before <= now() AS due "
+        "FROM storage_deletion_request_queue ORDER BY s3_object_key"
+    )
+
+
 def _photo_rows(api: DbApi, profile_id: str) -> list[dict]:
     return api.query(
         "SELECT photo_id, s3_object_key, analysis_status FROM photos "
@@ -129,6 +139,7 @@ def test_uploaded_photo_is_stored_and_waits_for_analysis(migrated_database_url):
         "imageUrlExpiresAt": "2026-08-21T03:35:00Z",
         "analysisStatus": "pending",
         "description": None,
+        "descriptionSource": None,
         "error": None,
     }
     assert storage.objects == {object_key: PNG}
@@ -268,7 +279,9 @@ def test_upload_that_loses_the_last_slot_removes_its_object(migrated_database_ur
     assert storage.uploads == 1
     assert storage.objects == {}
     assert len(_photo_rows(api, profile_id)) == profile_photos.PHOTO_LIMIT
-    assert api.query("SELECT * FROM storage_deletion_request_queue") == []
+    # 바로 지웠어도 삭제 확인은 실행기에 맡기므로 요청이 남고, 기한을 기다리지 않는다.
+    [queued] = _deletion_queue(api)
+    assert queued["s3_object_key"].startswith("photos/") and queued["due"] is True
 
 
 def test_object_that_cannot_be_removed_is_queued_for_deletion(
@@ -285,8 +298,7 @@ def test_object_that_cannot_be_removed_is_queued_for_deletion(
 
     assert refused.json()["errorCode"] == "PHOTO_LIMIT_EXCEEDED"
     [left_over] = storage.objects
-    queued = api.query("SELECT s3_object_key FROM storage_deletion_request_queue")
-    assert queued == [{"s3_object_key": left_over}]
+    assert _deletion_queue(api) == [{"s3_object_key": left_over, "due": True}]
 
 
 def test_concurrent_uploads_do_not_exceed_the_limit(migrated_database_url):
@@ -379,5 +391,156 @@ def test_storage_failures_are_reported_without_saving(migrated_database_url):
     assert not_configured.json()["errorCode"] == "IMAGE_STORAGE_NOT_CONFIGURED"
     assert not_configured.json()["retryable"] is False
     assert _photo_rows(api, profile_id) == []
+    # 업로드 실패는 응답만 잃고 저장됐을 수도 있어 삭제 요청을 남긴다. 저장소가 설정되지
+    # 않았으면 객체 키를 만들기 전에 거절하므로 요청도 없다.
+    [queued] = _deletion_queue(api)
+    assert queued["due"] is True
     assert readable.status_code == 200
     assert readable.json()["photos"] == []
+
+
+def test_deleting_a_profile_photo_removes_it_and_queues_the_file(migrated_database_url):
+    storage = MemoryImageStorage()
+    api = _api(migrated_database_url, storage)
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    object_key = f"photos/{photo_id}.jpg"
+
+    response = caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 204
+    assert caregiver.call("GET", f"/api/v1/profile-photos/{photo_id}").status_code == 404
+    assert _photo_rows(api, profile_id) == []
+    # S3 원본은 트리거가 넣은 삭제 대기열로 지운다. 요청 처리 중에는 저장소를 부르지 않는다.
+    assert api.query(
+        "SELECT s3_object_key FROM storage_deletion_request_queue WHERE s3_object_key = %s",
+        (object_key,),
+    ) == [{"s3_object_key": object_key}]
+
+
+def test_another_account_cannot_delete_the_photo(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    owner = api.create_account()
+    other = api.create_account()
+    profile_id = owner.create_profile()["profileId"]
+    photo_id = _upload(owner, profile_id).json()["photoId"]
+
+    response = other.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 404
+    assert response.json()["errorCode"] == "PROFILE_PHOTO_NOT_FOUND"
+    assert len(_photo_rows(api, profile_id)) == 1
+
+
+def test_deleting_a_photo_makes_the_unused_card_set_need_refresh(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    api.query(
+        "INSERT INTO card_sets (profile_id, status, model, prompt_version, generation_log) "
+        "VALUES (%s, 'completed', 'synthetic-model', '1', '{\"input\": {}}')",
+        (profile_id,),
+    )
+
+    assert caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}").status_code == 204
+
+    status = caregiver.call("GET", f"/api/v1/profiles/{profile_id}/card-generations/status")
+    assert status.json()["needsRefresh"] is True
+
+
+def test_photo_is_kept_while_cards_are_being_generated(migrated_database_url):
+    api = _api(migrated_database_url, MemoryImageStorage())
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    photo_id = _upload(caregiver, profile_id).json()["photoId"]
+    api.query(
+        "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
+        "VALUES (%s, 'running', 'synthetic-model', '1')",
+        (profile_id,),
+    )
+
+    response = caregiver.call("DELETE", f"/api/v1/profile-photos/{photo_id}")
+
+    assert response.status_code == 409
+    assert response.json()["errorCode"] == "CARD_GENERATION_IN_PROGRESS"
+    assert len(_photo_rows(api, profile_id)) == 1
+
+
+def test_upload_keeps_a_deletion_request_only_until_the_row_is_saved(
+    migrated_database_url,
+):
+    storage = MemoryImageStorage()
+    api = _api(migrated_database_url, storage)
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+    seen = {}
+
+    async def look_during_upload() -> None:
+        async with connect(migrated_database_url) as connection:
+            cursor = await connection.execute(
+                "SELECT s3_object_key, not_before > now() + interval '50 minutes' AS later "
+                "FROM storage_deletion_request_queue"
+            )
+            seen["queue"] = await cursor.fetchall()
+            seen["runner"] = await process_deletions(
+                connection, targets=TARGETS, backend=FakeDelete()
+            )
+
+    storage.on_upload = look_during_upload
+
+    response = _upload(caregiver, profile_id)
+
+    assert response.status_code == 201
+    [object_key] = storage.objects
+    # 올리는 동안에는 키가 기한과 함께 대기열에 있고, 삭제 실행기는 기한 전이라 읽지 않는다.
+    assert seen["queue"] == [{"s3_object_key": object_key, "later": True}]
+    assert seen["runner"]["inspected"] == 0
+    # 행을 넣은 트랜잭션에서 사전 등록을 지웠다. 이후 삭제는 photos trigger가 맡는다.
+    assert _deletion_queue(api) == []
+
+
+class _Stopped(BaseException):
+    """업로드 직후 프로세스가 끝나 이후 코드가 돌지 않은 경우를 흉내 낸다."""
+
+
+def test_object_left_by_a_stopped_upload_is_reached_after_the_window(
+    migrated_database_url,
+):
+    async def stop() -> None:
+        raise _Stopped
+
+    storage = MemoryImageStorage(on_upload=stop)
+    api = _api(migrated_database_url, storage)
+    caregiver = api.create_account()
+    profile_id = caregiver.create_profile()["profileId"]
+
+    async def upload() -> None:
+        async with connect(migrated_database_url) as connection:
+            await profile_photos.add_profile_photo(
+                connection,
+                storage,
+                UUID(profile_id),
+                account_id=caregiver.account_id,
+                image=UploadFile(file=BytesIO(JPEG), filename="photo.jpg"),
+                max_size_bytes=1024,
+            )
+
+    with pytest.raises(_Stopped):
+        run(upload())
+    [object_key] = storage.objects
+    # 탈퇴해도 사진 행이 없어 trigger는 닿지 않는다. 미리 넣은 요청이 객체를 가리킨다.
+    api.query("DELETE FROM users WHERE user_id = %s", (caregiver.account_id,))
+    assert _deletion_queue(api) == [{"s3_object_key": object_key, "due": False}]
+    assert process(migrated_database_url, FakeDelete())["inspected"] == 0
+
+    api.query(
+        "UPDATE storage_deletion_request_queue SET not_before = now() - interval '1 second'"
+    )
+    backend = FakeDelete()
+    result = process(migrated_database_url, backend, apply=True)
+
+    assert result["deleted"] == 1 and result["errors"] == {}
+    assert backend.calls == [(TARGETS[1], object_key)]
+    assert _deletion_queue(api) == []

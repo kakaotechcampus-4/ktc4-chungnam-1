@@ -5,9 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../data/profile_api.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../cards/card_generation_controller.dart';
+import '../cards/sensitive_card_badge.dart';
+import '../local_photos/local_photo_sheet.dart';
+import '../local_photos/local_photos.dart';
 import '../profile/profile_dialogs.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
@@ -19,6 +24,13 @@ import 'life_story_providers.dart';
 /// 이전, 다음으로 넘겨도 화면을 새로 쌓지 않는다. 뒤로 가면 바로 목차다.
 /// 오른쪽 위의 연필로 고치고 휴지통으로 지운다. 세부 정보 이야기는 프로필
 /// 수정에서 고치므로 연필이 그 화면을 열고 휴지통은 없다.
+///
+/// 대화 카드를 만드는 동안에는 서버가 고치기와 지우기를 거절한다. 다 쓰고
+/// 저장할 때 실패하지 않게 연필과 휴지통을 누르는 순간 안내창으로 알린다.
+///
+/// 그림 오른쪽 아래의 `사진 바꾸기` 로 앨범 사진을 넣거나 기본 그림으로
+/// 되돌린다. 이 기기에만 두는 사진이라(`LocalPhotos`) 서버를 부르지 않으므로
+/// 카드를 만드는 중에도 막지 않는다. 세부 정보 이야기도 여기서 바꾼다.
 class LifeStoryStoryScreen extends ConsumerStatefulWidget {
   const LifeStoryStoryScreen({
     required this.category,
@@ -45,7 +57,24 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   /// 지우고 목차로 돌아가는 중인 이야기.
   LifeStory? _leavingWith;
 
+  /// 카드를 만드는 중이면 알리고 `true` 를 돌려준다.
+  Future<bool> _blockedByCards() async {
+    // 카드는 홈 버튼이 이 ID 를 읽은 뒤에만 만든다. 아직 읽지 않았으면 이번
+    // 실행에서 만드는 카드가 없다.
+    final profileId = ref.read(serverProfileIdProvider).value;
+    if (profileId == null || !ref.read(cardsBeingMadeProvider(profileId))) {
+      return false;
+    }
+    await showNoticeDialog(
+      context,
+      title: '대화 카드를 만들고 있어요',
+      detail: '카드를 만드는 동안에는 이야기를\n고치거나 지울 수 없어요.\n카드가 준비된 뒤 다시 눌러주세요.',
+    );
+    return true;
+  }
+
   Future<void> _edit(LifeStory story) async {
+    if (await _blockedByCards() || !mounted) return;
     if (story.isProfileDetail) {
       context.push(AppRoutes.profileEditDetails);
       return;
@@ -63,6 +92,7 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
   }
 
   Future<void> _delete(String profileId, LifeStory story) async {
+    if (await _blockedByCards() || !mounted) return;
     final confirmed = await showChoiceDialog(
       context,
       title: '이 이야기를 지울까요?',
@@ -93,14 +123,28 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
       ..showSnackBar(const SnackBar(content: Text('이야기를 지웠어요.')));
   }
 
+  Future<void> _changePhoto(String profileId, LifeStory story) =>
+      changeLocalPhoto(
+        context,
+        ref,
+        profileId: profileId,
+        slot: LocalPhotoSlot.story(story.id),
+        resetLabel: '기본 그림으로 되돌리기',
+      );
+
   @override
   Widget build(BuildContext context) {
     final book = ref.watch(lifeStoryBookProvider).value;
     final story = book?.find(_storyId) ?? _leavingWith;
+    final photos = ref.watch(localPhotoIndexProvider).value ?? const {};
+    final canChangePhoto = ref.watch(localPhotosProvider).supported;
 
+    // 홈과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
+      backgroundColor: HomeColors.background,
       appBar: AppTopBar(
         title: '목차로',
+        backgroundColor: HomeColors.background,
         actions: [
           if (book != null && story != null) ...[
             IconButton(
@@ -130,11 +174,21 @@ class _LifeStoryStoryScreenState extends ConsumerState<LifeStoryStoryScreen> {
           // 그 분류의 몇 장인지 맞게 보인다.
           final stories = book.storiesIn(story.category);
           final index = stories.indexOf(story);
+          final profileId = book.profile.profileId;
           return _StoryPage(
             // 넘길 때 맨 위부터 다시 읽게 스크롤을 새로 만든다.
             key: ValueKey(_storyId),
             story: story,
             chapter: index + 1,
+            photoPath:
+                photos[localPhotoKey(
+                  profileId,
+                  LocalPhotoSlot.story(story.id),
+                )],
+            // 지운 이야기를 떠나는 동안에는 사진을 넣지 않는다.
+            onChangePhoto: canChangePhoto && !_deleting && _leavingWith == null
+                ? () => _changePhoto(profileId, story)
+                : null,
             onPrevious: index > 0
                 ? () => setState(() => _storyId = stories[index - 1].id)
                 : null,
@@ -154,11 +208,19 @@ class _StoryPage extends StatelessWidget {
     required this.chapter,
     required this.onPrevious,
     required this.onNext,
+    required this.photoPath,
+    required this.onChangePhoto,
     super.key,
   });
 
   final LifeStory story;
   final int chapter;
+
+  /// 이 기기에 넣은 사진. 없으면 기본 그림이다.
+  final String? photoPath;
+
+  /// `null` 이면 사진 바꾸기 버튼을 두지 않는다(웹 미리보기, 지우는 중).
+  final VoidCallback? onChangePhoto;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
@@ -182,13 +244,35 @@ class _StoryPage extends StatelessWidget {
         children: [
           Text('${story.category.label} · $chapter장', style: AppTypography.sub),
           const SizedBox(height: AppSpacing.sm),
+          // 아픈 기억일 수 있는 이야기는 제목 위에 카드와 같은 작은 표시를 단다.
+          if (story.sensitive) ...[
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: SensitiveCardBadge(),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Text(story.title, style: AppTypography.screenTitle),
           if (story.createdAt case final createdAt?) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(fullDateLabel(createdAt), style: AppTypography.caption),
           ],
           const SizedBox(height: AppSpacing.xl),
-          LifeStoryImage(category: story.category, number: story.imageNumber),
+          Stack(
+            children: [
+              LifeStoryImage(
+                category: story.category,
+                number: story.imageNumber,
+                photoPath: photoPath,
+              ),
+              if (onChangePhoto case final onChangePhoto?)
+                Positioned(
+                  right: AppSpacing.sm,
+                  bottom: AppSpacing.sm,
+                  child: _PhotoButton(onPressed: onChangePhoto),
+                ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.xl),
           // 오래 읽어도 눈이 편하도록 줄 간격을 본문보다 넓힌다.
           Text(story.content, style: AppTypography.body.copyWith(height: 1.8)),
@@ -198,11 +282,42 @@ class _StoryPage extends StatelessWidget {
   }
 }
 
-/// 이전, 다음 이야기 버튼. 넘길 이야기가 있으면 검정 면에 흰 글자이고,
-/// 없으면 회색 면에 흐린 글자라 누를 수 없다는 것이 바로 보인다.
+/// 그림 위에 얹는 `사진 바꾸기` 버튼. 사진이 어둡든 밝든 읽히게 흰 면에 초록
+/// 글자이고 얕은 그림자를 준다.
+class _PhotoButton extends StatelessWidget {
+  const _PhotoButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.background,
+        foregroundColor: HomeColors.accent,
+        elevation: 2,
+        minimumSize: const Size(AppSizes.minTouch, AppSizes.minTouch),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        shape: const StadiumBorder(),
+      ),
+      icon: const Icon(Icons.photo_camera_outlined, size: 18),
+      label: Text(
+        '사진 바꾸기',
+        style: AppTypography.sub.copyWith(
+          color: HomeColors.accent,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 이전, 다음 이야기 버튼. 넘길 이야기가 있으면 초록 면에 흰 글자이고,
+/// 없으면 연초록 면에 흐린 글자라 누를 수 없다는 것이 바로 보인다.
 ///
-/// 검정 면 버튼은 화면에 하나만 두는 것이 원칙(`app/DESIGN.md`)이지만, 여기는
-/// 누를 수 있는지를 한눈에 가리는 것이 더 중요해 둘 다 검정 면으로 둔다.
+/// 주 버튼 면은 화면에 하나만 두는 것이 원칙(`app/DESIGN.md`)이지만, 여기는
+/// 누를 수 있는지를 한눈에 가리는 것이 더 중요해 둘 다 초록 면으로 둔다.
 class _PageButton extends StatelessWidget {
   const _PageButton({required this.label, required this.onPressed});
 
@@ -218,9 +333,9 @@ class _PageButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
+          backgroundColor: HomeColors.accent,
           foregroundColor: AppColors.background,
-          disabledBackgroundColor: AppColors.surface,
+          disabledBackgroundColor: HomeColors.bubble,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
           padding: const EdgeInsets.symmetric(

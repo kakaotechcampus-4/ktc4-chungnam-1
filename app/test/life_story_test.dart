@@ -15,6 +15,7 @@ import 'package:saerok/features/life_story/life_story.dart';
 import 'package:saerok/features/life_story/life_story_image.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 import 'package:saerok/widgets/app_surfaces.dart';
+import 'package:saerok/widgets/profile_avatar.dart';
 
 import 'sample_profile.dart';
 
@@ -29,6 +30,25 @@ class _ProfileWithDetails extends CareProfilesNotifier {
         details: EnteredDetails(
           occupation: '수선집을 하셨어요.',
           family: '딸 둘과 아들 하나를 두셨어요.',
+        ),
+      ),
+    ],
+    selectedId: sampleProfileId,
+  );
+}
+
+/// 이름이 아주 긴 어르신. 앨범 표지가 깨지지 않는지 본다.
+class _LongNameProfile extends CareProfilesNotifier {
+  @override
+  CareProfiles build() => const CareProfiles(
+    entries: [
+      CareProfileEntry(
+        id: sampleProfileId,
+        basicInfo: EnteredBasicInfo(
+          name: '남궁가나다라마바사아자차카',
+          gender: 'female',
+          birthDate: '1943-03-12',
+          stage: ConditionStage.mildDementia,
         ),
       ),
     ],
@@ -121,6 +141,36 @@ void main() {
       expect(story.isProfileDetail, isFalse);
     });
 
+    test('아픈 기억 표시를 읽고, 없는 예전 응답은 표시가 없다', () {
+      Map<String, dynamic> json({bool? sensitive}) => {
+        'schemaVersion': 1,
+        'factId': 'fact_001',
+        'profileId': 'p1',
+        'storyCategory': 'family',
+        'title': '합성 사별 이야기',
+        'content': '합성 내용',
+        'imageNumber': 2,
+        'createdAt': '2026-11-10T10:00:00+09:00',
+        'sensitive': ?sensitive,
+      };
+
+      final marked = LifeFact.fromJson(json(sensitive: true));
+      final unmarked = LifeFact.fromJson(json(sensitive: false));
+      final old = LifeFact.fromJson(json());
+
+      expect(
+        [marked.sensitive, unmarked.sensitive, old.sensitive],
+        [true, false, false],
+      );
+      expect(LifeStory.fromLifeFact(marked).sensitive, isTrue);
+      expect(LifeStory.fromLifeFact(old).sensitive, isFalse);
+      expect(
+        detailStoriesOf(_profile(family: '딸 둘')).single.sensitive,
+        isFalse,
+        reason: '세부 정보 이야기에는 표시가 없다',
+      );
+    });
+
     test('모르는 분류는 기타에, 범위 밖 그림 번호는 1~5 안에 둔다', () {
       final unknown = LifeStory.fromLifeFact(
         _fact(storyCategory: 'school', imageNumber: 9),
@@ -199,8 +249,10 @@ void main() {
       String location, {
       bool reduceMotion = false,
       double textScale = 1,
+      CareProfilesNotifier Function() profiles = _ProfileWithDetails.new,
+      Size size = const Size(412, 917),
     }) async {
-      tester.view.physicalSize = const Size(1236, 2751);
+      tester.view.physicalSize = size * 3;
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
 
@@ -211,7 +263,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              careProfilesProvider.overrideWith(_ProfileWithDetails.new),
+              careProfilesProvider.overrideWith(profiles),
               lifeStoryRandomProvider.overrideWithValue(_FixedRandom()),
             ],
             child: MaterialApp.router(
@@ -247,8 +299,21 @@ void main() {
 
       expect(find.text('쌓아온 이야기'), findsOneWidget);
       expect(find.text('책을 눌러 펼쳐 보세요'), findsOneWidget);
-      expect(find.text('김새록님의'), findsOneWidget);
-      expect(find.text('일대기'), findsOneWidget);
+      // 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나눈다.
+      expect(find.text('김새록 님의'), findsOneWidget);
+      // 책 표지는 `앨범`이다. 상단바 제목과 하단 탭은 `일대기`다.
+      expect(
+        find.descendant(
+          of: find.bySemanticsLabel('앨범 펼치기'),
+          matching: find.text('앨범'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('일대기')),
+        findsOneWidget,
+        reason: '뒤로가기 옆에 화면 이름을 둔다',
+      );
       // 세부 정보 두 편과 목 이야기 열 편.
       expect(find.text('지금까지 12편의 이야기가 담겨 있어요'), findsOneWidget);
     });
@@ -256,7 +321,7 @@ void main() {
     testWidgets('책을 누르면 펼친 장으로 가고 돌아오면 표지가 다시 덮인다', (tester) async {
       await openAt(tester, AppRoutes.album);
 
-      await tapAndSettle(tester, find.bySemanticsLabel('일대기 책 펼치기'));
+      await tapAndSettle(tester, find.bySemanticsLabel('앨범 펼치기'));
 
       expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
       expect(find.text('김새록'), findsOneWidget);
@@ -265,13 +330,47 @@ void main() {
       await tester.tap(find.byTooltip('뒤로'));
       await tester.pumpAndSettle();
 
-      expect(find.text('김새록님의'), findsOneWidget);
+      // 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나눈다.
+      expect(find.text('김새록 님의'), findsOneWidget);
+    });
+
+    testWidgets('세로 기준 화면에서는 책이 화면 폭의 72% 로 스크롤 없이 그려진다', (tester) async {
+      await openAt(tester, AppRoutes.album);
+
+      final book = tester.getSize(find.bySemanticsLabel('앨범 펼치기'));
+      // 412 에서 좌우 여백 20 씩을 뺀 372 의 72%.
+      expect(book.width, closeTo(372 * 0.72, 0.5));
+      expect(
+        find.ancestor(
+          of: find.bySemanticsLabel('앨범 펼치기'),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsNothing,
+      );
+    });
+
+    // 2026-11-10 E2E: 가로 화면에서 책이 남는 높이에 맞춰 약 7 x 9 로 줄었다.
+    testWidgets('가로 화면에서는 책을 화면 높이에 맞춰 그리고 스크롤해 편수를 본다', (tester) async {
+      await openAt(tester, AppRoutes.album, size: const Size(917, 412));
+
+      expect(tester.takeException(), isNull);
+      final book = tester.getSize(find.bySemanticsLabel('앨범 펼치기'));
+      expect(book.width, greaterThanOrEqualTo(150));
+      expect(book.height, closeTo(book.width * 4.2 / 3, 0.5));
+
+      final count = find.text('지금까지 12편의 이야기가 담겨 있어요');
+      await tester.ensureVisible(count);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(count).bottom, lessThanOrEqualTo(412));
+
+      await tapAndSettle(tester, find.bySemanticsLabel('앨범 펼치기'));
+      expect(find.text('어떤 이야기를 볼까요?'), findsOneWidget);
     });
 
     testWidgets('애니메이션 줄이기가 켜져 있으면 표지를 넘기지 않고 바로 간다', (tester) async {
       await openAt(tester, AppRoutes.album, reduceMotion: true);
 
-      await tester.tap(find.bySemanticsLabel('일대기 책 펼치기'));
+      await tester.tap(find.bySemanticsLabel('앨범 펼치기'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
@@ -287,11 +386,37 @@ void main() {
       // 가족은 세부 정보 하나와 목 이야기 셋, 일은 세부 정보 하나와 목 이야기 하나.
       expect(find.text('4편'), findsOneWidget);
       expect(find.text('2편'), findsNWidgets(2), reason: '일과 취미');
-      expect(
-        tester.getTopLeft(find.widgetWithText(AppCard, '기타')).dy,
-        greaterThan(tester.getTopLeft(find.widgetWithText(AppCard, '여행')).dy),
-        reason: '기타는 여섯 칸 아래에 따로 둔다',
+    });
+
+    testWidgets('프로필은 분류 목록과 나눠 한 항목으로 읽는다 (접근성 보고서 9쪽)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openAt(tester, AppRoutes.albumBook);
+
+      final header = find.ancestor(
+        of: find.byType(ProfileAvatar),
+        matching: find.byType(MergeSemantics),
       );
+      expect(header, findsOneWidget);
+      final label = tester.getSemantics(header).label;
+      expect(label, contains('년'), reason: '이름과 생년월일을 함께 읽는다');
+      // 분류 이름 `일` 은 생년월일의 `일` 과 겹쳐 두 글자 이상인 분류로 본다.
+      for (final category in LifeStoryCategory.values) {
+        if (category.label.length < 2) continue;
+        expect(label, isNot(contains(category.label)));
+      }
+      expect(label, isNot(contains('어떤 이야기를 볼까요?')));
+      expect(
+        tester.getBottomLeft(header).dy,
+        lessThan(tester.getTopLeft(find.widgetWithText(AppCard, '가족')).dy),
+        reason: '초점 테두리가 분류 목록까지 감싸지 않는다',
+      );
+
+      // 제목도 회색 면 전체가 아니라 제목 글자만 감싼다.
+      final title = find.text('어떤 이야기를 볼까요?');
+      expect(tester.getSemantics(title), isSemantics(isHeader: true));
+      final titleRect = tester.getSemantics(title).rect;
+      expect(titleRect.height, lessThan(tester.getSize(title).height * 2));
+      handle.dispose();
     });
 
     testWidgets('최근 추가된 이야기는 최근 것부터 세 편이다', (tester) async {
@@ -397,6 +522,20 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('가족 9'), findsOneWidget);
+    });
+
+    testWidgets('이름이 길어도 앨범 표지가 깨지지 않는다', (tester) async {
+      for (final scale in [1.0, 2.0]) {
+        await openAt(
+          tester,
+          AppRoutes.album,
+          textScale: scale,
+          profiles: _LongNameProfile.new,
+        );
+        expect(tester.takeException(), isNull, reason: '글자 $scale배');
+        expect(find.text('남궁가나다라마바사아자차카 님의'), findsOneWidget);
+        expect(find.text('앨범'), findsOneWidget);
+      }
     });
 
     testWidgets('글자를 두 배로 키워도 깨지지 않는다', (tester) async {

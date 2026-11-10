@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import card_generation as ai
+from common.llm import ENDPOINTS
+from common.retry import retry_scope
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -31,6 +33,12 @@ def card_generator(settings: Settings) -> Generate:
     api_key = settings.ml_api_key.get_secret_value()
     if not api_key:
         raise RuntimeError("카드 생성에는 SAEROK_ML_API_KEY가 필요합니다.")
+    # 4-1이 작업에 저장하는 모델. ENDPOINTS에 없으면 작업마다 INVALID_CONTEXT로 실패하므로 시작할 때 막는다.
+    if settings.card_generation_model not in ENDPOINTS:
+        raise RuntimeError(
+            f"SAEROK_CARD_GENERATION_MODEL({settings.card_generation_model})은 "
+            "ai/common/llm.py의 ENDPOINTS에 있어야 합니다."
+        )
 
     def generate(request: CardGenerationRequest) -> CardGenerationResult:
         # 두 쪽 형식은 JSON 이름이 같음. UUID는 JSON에서 문자열로 바뀜
@@ -39,7 +47,9 @@ def card_generator(settings: Settings) -> Generate:
         except ValidationError as error:
             raise CardGenerationError("INVALID_CONTEXT", "생성 함수가 요청 형식을 받지 않음") from error
         try:
-            result = ai.generate_cards(sent, api_key=api_key)
+            with retry_scope(enabled=settings.llm_retry_enabled,
+                             delay_seconds=settings.llm_retry_delay_seconds):
+                result = ai.generate_cards(sent, api_key=api_key)
         except ai.CardGenerationError as error:
             # 실패 코드를 card_sets.error_code에 그대로 남김
             raise CardGenerationError(error.code, error.message) from error

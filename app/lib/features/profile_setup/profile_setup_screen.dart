@@ -8,6 +8,7 @@ import '../../data/profile_api.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
+import '../profile/photo_consent_prompt.dart';
 import 'basic_info_step.dart';
 import 'life_fact_step.dart';
 import 'photo_steps.dart';
@@ -46,7 +47,9 @@ class ProfileSetupScreen extends ConsumerWidget {
         if (!didPop) controller.back();
       },
       child: Scaffold(
+        backgroundColor: HomeColors.background,
         appBar: AppTopBar(
+          backgroundColor: HomeColors.background,
           onBack: () {
             if (!controller.back()) context.pop();
           },
@@ -100,13 +103,22 @@ class _Progress extends StatelessWidget {
 
   final double value;
 
+  /// 단계를 넘기면 순간이동하지 않고 지금 자리에서 새 자리까지 미끄러지듯
+  /// 자란다(뒤로 가면 줄어든다). 움직임 줄이기가 켜져 있으면 바로 옮긴다.
   @override
   Widget build(BuildContext context) {
-    return LinearProgressIndicator(
-      value: value,
-      minHeight: 4,
-      backgroundColor: AppColors.surface,
-      color: AppColors.ink,
+    final still = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      // 끝값이 바뀌면 지금 값에서 새 끝값으로 움직인다.
+      tween: Tween(begin: value, end: value),
+      duration: still ? Duration.zero : const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      builder: (context, shown, _) => LinearProgressIndicator(
+        value: shown,
+        minHeight: 4,
+        backgroundColor: HomeColors.bubble,
+        color: HomeColors.accent,
+      ),
     );
   }
 }
@@ -139,7 +151,10 @@ class _StepBody extends StatelessWidget {
     }
 
     return PhotoUploadStep(
+      name: state.draft.name,
       photos: state.draft.photos,
+      // 앱을 다시 켜기 전에 올린 사진. 단말 초안에서 가져온 수만큼 덜 고른다.
+      existing: state.draft.uploadedBefore,
       canEdit: state.draft.canEditPhotos,
       onAdded: controller.addPhotos,
       onRemoved: controller.removePhoto,
@@ -147,7 +162,7 @@ class _StepBody extends StatelessWidget {
   }
 }
 
-class _Actions extends StatefulWidget {
+class _Actions extends ConsumerStatefulWidget {
   const _Actions({
     required this.state,
     required this.controller,
@@ -159,15 +174,19 @@ class _Actions extends StatefulWidget {
   final String? addingId;
 
   @override
-  State<_Actions> createState() => _ActionsState();
+  ConsumerState<_Actions> createState() => _ActionsState();
 }
 
-class _ActionsState extends State<_Actions> {
+class _ActionsState extends ConsumerState<_Actions> {
   /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않게 버튼을 막는다.
   bool _saving = false;
 
-  /// 저장을 기다리고, 실패하면 이유를 알리고 이 단계에 남는다.
-  Future<bool> _save(Future<void> Function() action) async {
+  /// 저장을 기다리고, 실패하면 이유를 알리고 이 단계에 남는다. 기본 정보는
+  /// 서버의 형식 거절을 생년월일 안내로 보여준다([basicInfoFailureMessage]).
+  Future<bool> _save(
+    Future<void> Function() action, {
+    String Function(ApiFailure) message = profileFailureMessage,
+  }) async {
     setState(() => _saving = true);
     try {
       await action();
@@ -176,7 +195,7 @@ class _ActionsState extends State<_Actions> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(profileFailureMessage(failure))));
+        ..showSnackBar(SnackBar(content: Text(message(failure))));
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -190,15 +209,25 @@ class _ActionsState extends State<_Actions> {
     final addingId = widget.addingId;
 
     if (_saving) {
-      return const PrimaryButton(label: '저장하는 중이에요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '저장하는 중이에요',
+        onPressed: null,
+      );
     }
 
     // 기본 정보는 모두 채워야 넘어간다. 로그인했으면 여기서 서버에 만든다.
     if (state.isBasicInfo) {
       return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         label: '다음',
         onPressed: state.draft.basicInfoFilled
-            ? () => _save(() => controller.submitBasicInfo(addingId: addingId))
+            ? () => _save(
+                () => controller.submitBasicInfo(addingId: addingId),
+                message: basicInfoFailureMessage,
+              )
             : null,
       );
     }
@@ -208,8 +237,17 @@ class _ActionsState extends State<_Actions> {
     if (step != null) {
       final captured = state.draft.facts.containsKey(step.category);
       return captured
-          ? PrimaryButton(label: '다음', onPressed: controller.next)
-          : SecondaryButton(label: '건너뛰기', onPressed: controller.next);
+          ? PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: '다음',
+              onPressed: controller.next,
+            )
+          : SecondaryButton(
+              borderColor: HomeColors.outline,
+              label: '건너뛰기',
+              onPressed: controller.next,
+            );
     }
 
     // 사진이 마지막 단계다. 올리지 않아도 마칠 수 있다. 마치면 입력한 분을
@@ -222,22 +260,56 @@ class _ActionsState extends State<_Actions> {
       final saved = await _save(() => controller.finish(addingId: addingId));
       if (!saved) return;
       router.go(AppRoutes.home);
-      if (addingId != null) {
+      // 사진을 올렸으면 홈 아래에 사진 준비 안내가 뜬다. 알림 띠가 그 안내의
+      // 아랫줄을 가려(2026-11-10 E2E) 이때는 띄우지 않는다. 새 분의 이름은 홈
+      // 제목과 위 알약에 바로 보인다.
+      final photoNotice = draft.uploadedPhotoCount > 0;
+      if (addingId != null && !photoNotice) {
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('지금부터 $name 어르신과 함께해요')));
+          ..showSnackBar(SnackBar(content: Text('지금부터 $name님과 함께해요')));
       }
     }
 
+    // AI 사진 분석에 동의하지 않았으면 올리기 전에 동의 시트를 띄운다.
+    Future<void> upload() async {
+      await askPhotoAnalysisBeforeUpload(context, ref);
+      await controller.uploadPhotos();
+    }
+
+    // 앱을 다시 켜기 전에 올린 사진이 있으면 건너뛰는 것이 아니라 올린 채로
+    // 마친다. 모두 올렸을 때와 같은 버튼이다.
+    if (!draft.hasPhoto && draft.uploadedBefore > 0) {
+      return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '홈으로',
+        onPressed: finish,
+      );
+    }
     if (!draft.hasPhoto) {
-      return SecondaryButton(label: '건너뛰기', onPressed: finish);
+      return SecondaryButton(
+        borderColor: HomeColors.outline,
+        label: '건너뛰기',
+        onPressed: finish,
+      );
     }
     if (draft.isUploadingPhotos) {
-      return const PrimaryButton(label: '올리는 중이에요', onPressed: null);
+      return const PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '올리는 중이에요',
+        onPressed: null,
+      );
     }
     // 완료를 보고 직접 넘어가도록 자동으로 옮기지 않는다.
     if (draft.allPhotosUploaded) {
-      return PrimaryButton(label: '홈으로', onPressed: finish);
+      return PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
+        label: '홈으로',
+        onPressed: finish,
+      );
     }
     if (draft.hasFailedPhoto) {
       final retryable = draft.photos.any(
@@ -255,18 +327,26 @@ class _ActionsState extends State<_Actions> {
         children: [
           if (retryable) ...[
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: '다시 올리기',
-              onPressed: controller.uploadPhotos,
+              onPressed: upload,
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
           SecondaryButton(
+            borderColor: HomeColors.outline,
             label: '올리지 못한 사진은 빼고 마치기',
             onPressed: dropAndGoHome,
           ),
         ],
       );
     }
-    return PrimaryButton(label: '마치기', onPressed: controller.uploadPhotos);
+    return PrimaryButton(
+      color: HomeColors.accent,
+      loadingColor: HomeColors.accentLoading,
+      label: '마치기',
+      onPressed: upload,
+    );
   }
 }

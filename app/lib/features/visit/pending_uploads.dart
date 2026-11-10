@@ -39,8 +39,8 @@ class PendingUpload {
   /// 녹음 파일의 절대 경로.
   final String audioPath;
 
-  /// 녹음을 끝낼 때 보호자가 확인한 1~8.
-  final int participantCount;
+  /// 보호자가 확인한 1~8. 확인창 없이 나갔다면 null이며, 전송 전에 다시 묻는다.
+  final int? participantCount;
 }
 
 abstract interface class PendingUploads {
@@ -49,7 +49,11 @@ abstract interface class PendingUploads {
 
   /// 아직 보내지 못한 회차의 녹음을 찾는다. 기록이 없거나, 이미 보냈거나,
   /// 파일이 사라졌으면 `null` 이다.
-  Future<PendingUpload?> find(String sessionId);
+  /// [includeUploaded]는 서버 분석 실패 후 원본 재제출과 `녹음 파일 공유`
+  /// (recording_share.dart)에만 쓴다. 공유는 리포트 화면, 실패 알림을 누르면
+  /// 뜨는 시트(failed_report_sheet.dart), 분석 다시 요청하기와 음성 다시
+  /// 보내기 화면(upload_retry_screen.dart)의 실패 안내에 있다.
+  Future<PendingUpload?> find(String sessionId, {bool includeUploaded = false});
 
   /// 서버가 받았거나 다시 받지 않는 회차의 녹음이라고 적는다. 녹음 파일과 계정,
   /// 회차 연결은 남기고 다시 보낼 목록에서만 뺀다. 기록이 없었으면 보낸 것으로
@@ -111,22 +115,28 @@ class DevicePendingUploads implements PendingUploads {
   }
 
   @override
-  Future<PendingUpload?> find(String sessionId) async {
+  Future<PendingUpload?> find(
+    String sessionId, {
+    bool includeUploaded = false,
+  }) async {
     final directory = await _directory();
     for (final entry in await _read(directory)) {
       if (entry['sessionId'] != sessionId || !_mine(entry)) continue;
-      // 보낸 녹음은 남겨 두되 다시 보내지 않는다.
-      if (entry['uploaded'] == true) return null;
+      if (entry['uploaded'] == true && !includeUploaded) return null;
       final name = entry['fileName'];
       final count = entry['participantCount'];
-      if (name is! String || count is! int) return null;
+      if (name is! String || name.contains('/') || name.contains('\\')) {
+        return null;
+      }
 
       final path = '${directory.path}/$name';
       if (!await File(path).exists()) return null;
       return PendingUpload(
         sessionId: sessionId,
         audioPath: path,
-        participantCount: count,
+        participantCount: count is int && count >= 1 && count <= 8
+            ? count
+            : null,
       );
     }
     return null;

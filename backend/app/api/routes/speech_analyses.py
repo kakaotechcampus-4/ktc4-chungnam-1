@@ -2,16 +2,37 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Path, UploadFile, status
 
-from app.api.deps import CurrentAccountDep, SpeechSubmissionDep
+from app.api.deps import CurrentAccountDep, SpeechSubmissionDep, DbConnectionDep, SettingsDep
 from app.core.errors import AppError
 from app.schemas.speech_analysis import (
     SpeechAnalysisAccepted,
     SpeechAnalysisStatusResponse,
 )
-from app.services.speech_analysis_jobs import SpeechAnalysisStatus
+from app.services.speech_analysis_jobs import SpeechAnalysisStatus, PostgresSpeechAnalysisJobRepository
+from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionService
 
 
 router = APIRouter(tags=["speech-analyses"])
+
+
+@router.post(
+    "/api/v1/speech-analyses/{analysis_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED, response_model=SpeechAnalysisAccepted,
+    summary="남아 있는 전사로 리포트 다시 요청",
+)
+async def retry_speech_report(
+    analysis_id: Annotated[str, Path(min_length=1, max_length=128)],
+    account: CurrentAccountDep, connection: DbConnectionDep, settings: SettingsDep,
+) -> SpeechAnalysisAccepted:
+    SpeechAnalysisSubmissionService._assert_account_consents(account)
+    job = await PostgresSpeechAnalysisJobRepository(
+        connection, lease_seconds=settings.speech_analysis_lease_seconds,
+    ).retry_report(
+        analysis_id=analysis_id, account_id=account.account_id,
+        max_retries=settings.report_retries_per_session,
+    )
+    return SpeechAnalysisAccepted(analysisId=job.analysis_id, sessionId=job.session_id,
+                                  status=job.status.value)
 
 
 @router.post(

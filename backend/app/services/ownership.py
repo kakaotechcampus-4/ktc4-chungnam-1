@@ -62,6 +62,16 @@ CARD_SET = OwnedResource(
     ),
 )
 
+CARD = OwnedResource(
+    error_code="CARD_NOT_FOUND",
+    message="대화 카드를 찾을 수 없습니다.",
+    query=(
+        "SELECT c.profile_id FROM conversation_cards c "
+        "JOIN profiles p ON p.profile_id = c.profile_id "
+        "WHERE c.card_id = %s AND p.user_id = %s"
+    ),
+)
+
 VISIT_SESSION = OwnedResource(
     error_code="VISIT_SESSION_NOT_FOUND",
     message="면회 기록을 찾을 수 없습니다.",
@@ -95,15 +105,17 @@ async def require_owned(
     try:
         owner_id = UUID(account_id)
     except ValueError:
-        raise _not_found(resource) from None
+        raise not_found(resource) from None
     cursor = await connection.execute(resource.query, (resource_id, owner_id))
     row = await cursor.fetchone()
     if row is None:
-        raise _not_found(resource)
+        raise not_found(resource)
     return row["profile_id"]
 
 
-def _not_found(resource: OwnedResource) -> AppError:
+def not_found(resource: OwnedResource) -> AppError:
+    """`require_owned`가 내는 404. 소유 확인 뒤 같은 계정의 다른 요청이 프로필을 지워 자원이
+    사라졌을 때도 이 오류를 낸다."""
     return AppError(
         status_code=404,
         error_code=resource.error_code,

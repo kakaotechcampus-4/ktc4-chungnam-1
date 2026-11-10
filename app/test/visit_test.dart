@@ -2,6 +2,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/data/api_client.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
@@ -54,14 +55,13 @@ void main() {
 
       expect(visit.cards, hasLength(2));
       expect(visit.currentIndex, 0);
-      expect(visit.progress, 0.5);
+      expect(visit.addedCardIds, isEmpty);
     });
 
     test('보충용 카드는 뒤 3장이다', () async {
       final container = makeContainer();
       final all = await container.read(conversationCardsProvider.future);
-      final supplements =
-          await container.read(supplementCardsProvider.future);
+      final supplements = await container.read(supplementCardsProvider.future);
 
       expect(supplements, hasLength(3));
       expect(
@@ -73,21 +73,31 @@ void main() {
     test('보충 카드를 더하면 회차 카드가 늘어난다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);
-      final supplements =
-          await container.read(supplementCardsProvider.future);
+      final supplements = await container.read(supplementCardsProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
 
       await controller.addCards(supplements.take(1));
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(3),
+      );
+      expect(
+        container.read(visitControllerProvider).value!.addedCardIds,
+        {supplements.first.cardId},
+        reason: '더한 카드는 번호 칩을 다른 색으로 그리도록 따로 기억한다',
+      );
 
       // 같은 카드를 두 번 더하지 않는다.
       await controller.addCards(supplements.take(1));
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(3));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(3),
+      );
     });
   });
 
   group('면회 진행', () {
-    test('마지막 카드에서는 다음으로 넘어가지 않는다', () async {
+    test('마지막 카드에서 다음을 누르면 첫 카드로 돌아간다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);
       final controller = container.read(visitControllerProvider.notifier);
@@ -96,10 +106,43 @@ void main() {
       var state = container.read(visitControllerProvider).value!;
       expect(state.currentIndex, 1);
       expect(state.isLastCard, isTrue);
-      expect(state.progress, 1.0);
 
       controller.nextCard();
-      expect(container.read(visitControllerProvider).value!.currentIndex, 1);
+      expect(container.read(visitControllerProvider).value!.currentIndex, 0);
+    });
+
+    test('이전 카드로 돌아가고, 첫 카드에서는 마지막 카드로 간다', () async {
+      final container = await withSelection(2);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      controller.nextCard();
+      controller.previousCard();
+      var state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 0);
+      expect(state.isFirstCard, isTrue);
+
+      controller.previousCard();
+      state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 1);
+    });
+
+    test('번호로 원하는 카드에 바로 가고, 꼬리 질문은 처음부터 보인다', () async {
+      final container = await withSelection(3);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+
+      controller.nextFollowUp();
+      controller.goToCard(2);
+      var state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 2);
+      expect(state.followUpIndex, 0);
+
+      // 범위 밖 번호는 무시한다.
+      controller.goToCard(3);
+      controller.goToCard(-1);
+      state = container.read(visitControllerProvider).value!;
+      expect(state.currentIndex, 2);
     });
 
     test('꼬리 질문은 3개를 돌아가며 보여준다', () async {
@@ -124,6 +167,34 @@ void main() {
         questions[0],
         reason: '마지막 다음에는 처음으로 돌아간다',
       );
+    });
+
+    test('꼬리 질문을 앞으로 되돌리고, 첫 질문의 앞은 마지막 질문이다', () async {
+      final container = await withSelection(2);
+      final state = await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      final questions = state.currentCard!.followUpQuestions;
+      String? shown() =>
+          container.read(visitControllerProvider).value!.currentFollowUp;
+
+      controller.nextFollowUp();
+      controller.previousFollowUp();
+      expect(shown(), questions[0]);
+
+      controller.previousFollowUp();
+      expect(shown(), questions[2], reason: '처음의 앞은 마지막이다');
+      controller.previousFollowUp();
+      expect(shown(), questions[1]);
+
+      // 되돌린 뒤에 넘겨도 차례대로 돈다.
+      controller.nextFollowUp();
+      controller.nextFollowUp();
+      expect(shown(), questions[0]);
+
+      // 되돌린 채로 카드를 넘겨도 꼬리 질문은 처음부터다.
+      controller.previousFollowUp();
+      controller.nextCard();
+      expect(container.read(visitControllerProvider).value!.followUpIndex, 0);
     });
 
     test('카드를 넘기면 꼬리 질문도 처음부터 시작한다', () async {
@@ -185,7 +256,8 @@ void main() {
 
       expect(state.elapsedLabel, '00:00:00');
       expect(
-        state.copyWith(elapsed: const Duration(minutes: 5, seconds: 38))
+        state
+            .copyWith(elapsed: const Duration(minutes: 5, seconds: 38))
             .elapsedLabel,
         '00:05:38',
       );
@@ -263,6 +335,23 @@ void main() {
       expect(state.problem, isNull);
     });
 
+    test('받은 뒤 정보를 고친 묶음이라 거절되면 카드를 다시 준비하라고 알린다', () async {
+      final api = FakeVisitApi()
+        ..createFailure = const ApiServerFailure(
+          statusCode: 409,
+          errorCode: 'CARD_SET_NEEDS_REFRESH',
+        );
+      final container = await withSelection(1, visitApi: api);
+      await container.read(visitControllerProvider.future);
+
+      await container.read(visitControllerProvider.notifier).startRecording();
+
+      final state = container.read(visitControllerProvider).value!;
+      expect(state.problem, VisitRecordingProblem.cardsOutdated);
+      expect(state.started, isFalse);
+      expect(state.sessionId, isNull);
+    });
+
     test('회차가 있으면 보충 카드를 서버에 먼저 알린다', () async {
       final api = FakeVisitApi();
       final container = await withSelection(1, visitApi: api);
@@ -275,7 +364,10 @@ void main() {
 
       expect(added, isTrue);
       expect(api.added, [supplements.first.cardId]);
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(2));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(2),
+      );
     });
 
     test('보충 카드를 서버에 알리지 못하면 화면에도 더하지 않는다', () async {
@@ -289,7 +381,10 @@ void main() {
       final added = await controller.addCards(supplements.take(1));
 
       expect(added, isFalse);
-      expect(container.read(visitControllerProvider).value!.cards, hasLength(1));
+      expect(
+        container.read(visitControllerProvider).value!.cards,
+        hasLength(1),
+      );
     });
 
     test('녹음 전에 더한 보충 카드는 회차를 만든 뒤 따로 더한다', () async {

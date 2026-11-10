@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart' show analysisFailureReason;
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
-import 'my_page_menu.dart';
+import 'failed_report_sheet.dart';
 
 /// 알림. 홈의 왼쪽 상단 알림 아이콘을 누르면 뜬다(피그마 설계 없음).
 ///
@@ -28,23 +29,16 @@ class NoticeScreen extends ConsumerWidget {
         : ref.watch(visitReportProvider);
 
     return Scaffold(
-      appBar: AppTopBar(
-        actions: [
-          // 홈의 메뉴 아이콘과 같다. 쓰임새가 정해지기 전까지 아무것도 열지 않는다.
-          IconButton(
-            onPressed: null,
-            tooltip: '메뉴',
-            icon: Icon(Icons.menu, size: 26, color: AppColors.textDisabled),
-          ),
-        ],
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '알림',
       ),
       body: ScreenBody(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: AppSpacing.lg),
-            Text('알림', style: AppTypography.screenTitle),
-            const SizedBox(height: AppSpacing.xxl),
             Expanded(
               child: notice == null
                   ? const EmptyStateView(
@@ -56,6 +50,10 @@ class NoticeScreen extends ConsumerWidget {
                   ? _NoticeRow(
                       date: info!.visitDate,
                       notice: notice,
+                      reason: notice == ReportNotice.failed
+                          ? analysisFailureReason(info.failureCode)
+                          : null,
+                      rechecking: info.rechecking,
                       onOpen: () {
                         final id = info.reportId;
                         // 회차 상태를 묻지 못했으면 다시 묻는다.
@@ -64,6 +62,17 @@ class NoticeScreen extends ConsumerWidget {
                           return;
                         }
                         if (id == null) return;
+                        // 홈 배너와 같이 녹음이 남았으면 공유도 고르게 한다.
+                        if (notice == ReportNotice.failed &&
+                            info.analysisId != null) {
+                          openFailedReport(
+                            context,
+                            ref,
+                            sessionId: id,
+                            analysisId: info.analysisId!,
+                          );
+                          return;
+                        }
                         context.push(switch (notice) {
                           // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
                           ReportNotice.evaluationPending =>
@@ -71,6 +80,8 @@ class NoticeScreen extends ConsumerWidget {
                           ReportNotice.audioPending => AppRoutes.visitUploadOf(
                             id,
                           ),
+                          // 작업 ID 를 모르면 다시 요청할 수 없다.
+                          ReportNotice.failed => AppRoutes.home,
                           _ => AppRoutes.reportOf(id),
                         });
                       },
@@ -92,35 +103,31 @@ class NoticeScreen extends ConsumerWidget {
           ],
         ),
       ),
-      bottomNavigationBar: AppBottomNav(
-        current: AppTab.home,
-        onSelected: (tab) {
-          switch (tab) {
-            case AppTab.album:
-              context.push(AppRoutes.album);
-            case AppTab.home:
-              context.go(AppRoutes.home);
-            case AppTab.myPage:
-              showMyPageMenu(context);
-          }
-        },
-      ),
     );
   }
 }
 
-/// 알림 한 건이다. 지금은 이 한 건뿐이지만, 이력이 여러 건이 되면 목록의
+/// 알림 한 건이다. 테두리 상자 안에 날짜(작은 회색), 제목(크고 굵게),
+/// 안내(오른쪽 끝, 누를 수 있으면 화살표)를 둔다. 이력이 여러 건이 되면 목록의
 /// 항목 하나가 되는 자리다.
 class _NoticeRow extends StatelessWidget {
   const _NoticeRow({
     required this.date,
     required this.notice,
     required this.onOpen,
+    this.reason,
+    this.rechecking = false,
   });
 
   final String? date;
   final ReportNotice notice;
   final VoidCallback onOpen;
+
+  /// 제목 아래에 덧붙이는 실패 이유. 홈 배너와 같은 문구다.
+  final String? reason;
+
+  /// 확인하지 못한 회차 상태를 다시 묻는 중이다. 홈 배너와 같이 누르지 않는다.
+  final bool rechecking;
 
   @override
   Widget build(BuildContext context) {
@@ -128,42 +135,107 @@ class _NoticeRow extends StatelessWidget {
     final (title, hint) = switch (notice) {
       ReportNotice.generating => ('리포트를 만들고 있어요', '조금만 기다려 주세요'),
       ReportNotice.ready => ('리포트가 도착했어요', '눌러서 확인하기'),
-      ReportNotice.failed => ('리포트를 만들지 못했어요', null),
+      ReportNotice.failed => ('리포트를 만들지 못했어요', '눌러서 분석 다시 요청하기'),
       ReportNotice.evaluationPending => ('평가 이어서 하기', '평가를 마치면 리포트를 만들어요'),
       ReportNotice.audioPending => ('음성 다시 보내기', '녹음을 보내면 리포트를 만들어요'),
-      ReportNotice.checkFailed => ('리포트 상태를 확인하지 못했어요', '눌러서 다시 확인하기'),
+      ReportNotice.checkFailed => (
+        '리포트 상태를 확인하지 못했어요',
+        rechecking ? '다시 확인하고 있어요' : '눌러서 다시 확인하기',
+      ),
     };
-    // 만드는 중과 실패는 들어갈 곳이 없다.
+    // 만드는 중에는 결과 화면을 열지 않는다. 다시 묻는 중에도 누르지 않는다.
     final onTap = switch (notice) {
-      ReportNotice.generating || ReportNotice.failed => null,
+      ReportNotice.generating => null,
+      ReportNotice.checkFailed when rechecking => null,
       _ => onOpen,
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
+    // 남는 높이를 채우지 않고 위에 붙는다.
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Material(
+        color: AppColors.background,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          side: const BorderSide(color: HomeColors.outline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-            child: Column(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (date != null) ...[
-                  Text(_friendlyDate(date!), style: AppTypography.bodyStrong),
-                  const SizedBox(height: AppSpacing.xs),
-                ],
-                Text(title, style: AppTypography.body),
-                if (hint != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(hint, style: AppTypography.sub),
-                ],
+                // 알림임을 알리는 편지 아이콘. 장식이라 화면 읽기에서 뺀다.
+                const ExcludeSemantics(child: _NoticeIcon()),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  // 내용 높이만큼만 차지한다. 기본값(max)이면 화면을 채운다.
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (date != null) ...[
+                        Text(_friendlyDate(date!), style: AppTypography.sub),
+                        const SizedBox(height: AppSpacing.xs),
+                      ],
+                      Text(title, style: AppTypography.sectionTitle),
+                      if (reason != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(reason!, style: AppTypography.sub),
+                      ],
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              hint,
+                              style: AppTypography.sub,
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          if (onTap != null) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            const Icon(
+                              Icons.chevron_right,
+                              size: 22,
+                              color: AppColors.textSub,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        const Divider(color: AppColors.line, height: 1),
-      ],
+      ),
+    );
+  }
+}
+
+/// 연회색 원 안의 편지 아이콘.
+class _NoticeIcon extends StatelessWidget {
+  const _NoticeIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: HomeColors.bubble,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.mail_outline_rounded,
+        size: 24,
+        color: HomeColors.accent,
+      ),
     );
   }
 }

@@ -88,6 +88,13 @@ enum ConditionStage {
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 피보호자를 화면에서 부르는 이름이다. 관계가 있으면 `김철수님 (아버지)`,
+/// 없으면 `김철수님` 이다. 관계는 보호자가 기본 정보에 적은 값이다.
+String careDisplayName(String name, String? relationship) {
+  final rel = relationship?.trim();
+  return rel == null || rel.isEmpty ? '$name님' : '$name님 ($rel)';
+}
+
 class Profile {
   const Profile({
     required this.profileId,
@@ -98,6 +105,8 @@ class Profile {
     required this.stage,
     required this.lifeFactIds,
     required this.photoIds,
+    this.relationship,
+    this.birthByAge = false,
     this.symptomNote,
     this.occupation,
     this.hometown,
@@ -112,6 +121,7 @@ class Profile {
       profileId: json['profileId'] as String,
       name: localOnly['name'] as String,
       gender: localOnly['gender'] as String,
+      relationship: localOnly['relationship'] as String?,
       birthDate: localOnly['birthDate'] as String,
       ageRange: json['ageRange'] as String,
       stage: ConditionStage.parse(condition['stage'] as String),
@@ -130,7 +140,14 @@ class Profile {
   /// `localOnly` 에 속한다. 외부 요청에 담지 않는다.
   final String name;
   final String gender;
+
+  /// 보호자와의 관계. 받기 전에 등록한 분은 `null` 이다.
+  final String? relationship;
   final String birthDate;
+
+  /// 생년월일 대신 나이로 입력했는지. 계약에 없는 단말 값이다(`localOnly` 에도
+  /// 없다). [birthDate] 가 지어낸 날짜라 화면은 `82세(나이로 입력)` 로 보여준다.
+  final bool birthByAge;
 
   final String ageRange;
   final ConditionStage? stage;
@@ -165,6 +182,7 @@ class LifeFact {
     required this.content,
     required this.imageNumber,
     required this.createdAt,
+    this.sensitive = false,
   });
 
   factory LifeFact.fromJson(Map<String, dynamic> json) => LifeFact(
@@ -174,6 +192,8 @@ class LifeFact {
     content: json['content'] as String,
     imageNumber: json['imageNumber'] as int,
     createdAt: json['createdAt'] as String,
+    // 이 값을 주기 전의 서버와 목 데이터에는 표시가 없다.
+    sensitive: json['sensitive'] as bool? ?? false,
   );
 
   final String factId;
@@ -189,6 +209,12 @@ class LifeFact {
   /// 분류별 기본 그림 번호. 1~5 다.
   final int imageNumber;
   final String createdAt;
+
+  /// 아픈 기억(사별, 전쟁, 사고, 병 같은)일 수 있는 이야기다. 변경 사항 확인에서
+  /// 승인한 이야기는 AI 가 붙인 표시를 그대로 받는다(api-spec 7-4). 일대기는
+  /// 작은 표시를 달고, 홈 말풍선은 이 이야기를 고르지 않는다(2026-11-10 PM
+  /// 결정). 서버가 주지 않으면 `false` 다.
+  final bool sensitive;
 }
 
 /// 생애 정보 수집 단계의 상태. `pending`, `collected`, `skipped`, `manualFallback`.
@@ -236,8 +262,8 @@ enum PhotoAnalysisStatus {
 
 /// 프로필 사진 한 장이다(`docs/architecture/data-contracts.md` 의 ProfilePhoto).
 ///
-/// [description] 은 AI 가 만든 후보이며 확인된 사실이 아니다. 보호자가 확인하는
-/// 방식(API 3-3)은 아직 정해지지 않았다.
+/// [description]은 사진 설명이다. AI 원문인지 보호자가 고친 설명인지
+/// [descriptionSource]로 구분한다. 생애 사실로 자동 저장하지 않는다.
 class ProfilePhoto {
   const ProfilePhoto({
     required this.photoId,
@@ -247,6 +273,7 @@ class ProfilePhoto {
     required this.createdAt,
     this.imageUrlExpiresAt,
     this.description,
+    this.descriptionSource,
     this.errorCode,
   });
 
@@ -261,6 +288,7 @@ class ProfilePhoto {
         json['analysisStatus'] as String,
       ),
       description: json['description'] as String?,
+      descriptionSource: json['descriptionSource'] as String?,
       errorCode: error?['errorCode'] as String?,
       createdAt: json['createdAt'] as String,
     );
@@ -276,8 +304,11 @@ class ProfilePhoto {
   /// 모르는 값이면 `null` 이다. 화면은 분석이 끝나지 않은 것으로 다룬다.
   final PhotoAnalysisStatus? analysisStatus;
 
-  /// [PhotoAnalysisStatus.completed] 일 때만 있다.
+  /// AI 분석 완료 또는 보호자가 직접 적은 설명이 있으면 채운다.
   final String? description;
+
+  /// ai 또는 caregiver. 이전 서버의 응답에는 없어도 된다.
+  final String? descriptionSource;
 
   /// [PhotoAnalysisStatus.failed] 일 때의 `error.errorCode` 다.
   final String? errorCode;
@@ -293,6 +324,7 @@ class ProfilePhoto {
     imageUrlExpiresAt: imageUrlExpiresAt,
     analysisStatus: analysisStatus,
     description: description,
+    descriptionSource: descriptionSource,
     errorCode: errorCode,
     createdAt: createdAt,
   );
@@ -344,11 +376,14 @@ class CardSet {
     required this.setId,
     required this.usedBySessionId,
     required this.cards,
+    this.needsRefresh = false,
   });
 
   factory CardSet.fromJson(Map<String, dynamic> json) => CardSet(
     setId: json['setId'] as String,
     usedBySessionId: json['usedBySessionId'] as String?,
+    // 이 값을 주기 전의 서버와 목 묶음은 다시 만들 일이 없는 묶음이다.
+    needsRefresh: json['needsRefresh'] as bool? ?? false,
     cards:
         (json['cards'] as List)
             .map((e) => ConversationCard.fromJson(e as Map<String, dynamic>))
@@ -363,6 +398,10 @@ class CardSet {
 
   /// 이 묶음을 쓰는 평가 전 회차. 고르기 전이면 `null` 이다.
   final String? usedBySessionId;
+
+  /// 받은 뒤 프로필이나 일대기를 고쳤는지. `true` 면 볼 수만 있고 이 묶음으로
+  /// 면회를 시작할 수 없다(API 4절).
+  final bool needsRefresh;
 
   /// 12장. [ConversationCard.position] 순서다.
   final List<ConversationCard> cards;
@@ -401,6 +440,7 @@ class ConversationCard {
     required this.evidenceSource,
     required this.evidence,
     required this.selected,
+    this.sensitive = false,
   });
 
   factory ConversationCard.fromJson(Map<String, dynamic> json) =>
@@ -417,6 +457,8 @@ class ConversationCard {
             .cast<Map<String, dynamic>>()
             .toList(),
         selected: json['selected'] as bool,
+        // 이 값을 주기 전의 서버와 목 묶음은 조심스러운 카드를 만들지 않았다.
+        sensitive: json['sensitive'] as bool? ?? false,
       );
 
   final String cardId;
@@ -442,6 +484,11 @@ class ConversationCard {
 
   /// 회차를 만들 때 고른 카드와 면회 중 보충한 카드가 `true` 다.
   final bool selected;
+
+  /// 아픈 경험(사별, 전쟁, 사고, 병 같은)을 다루는 카드다. 일대기나 세부 정보에
+  /// 담긴 이야기에서 왔을 때만 AI 가 만든다. 화면은 `조심스러운 이야기` 표시를
+  /// 달아 보호자가 고를지 정하게 한다. 서버가 주지 않으면 `false` 다.
+  final bool sensitive;
 }
 
 // ── 면회 회차 ───────────────────────────────────────
@@ -788,8 +835,8 @@ enum TopicAction {
 
 /// 일대기에 더할 생애 정보 제안. `life_fact_proposals` 에 대응한다.
 ///
-/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title] 과
-/// [content] 뿐이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
+/// [reason] 은 AI 가 제안한 이유다. 보호자가 고치는 값은 [title], [content] 와
+/// [storyCategory] 이며, 고친 값은 승인할 때 따로 보낸다. 이 객체는 원래 제안을
 /// 그대로 들고 있다.
 class LifeFactProposal {
   const LifeFactProposal({
@@ -798,6 +845,8 @@ class LifeFactProposal {
     required this.content,
     required this.reason,
     required this.reviewStatus,
+    this.storyCategory,
+    this.sensitive = false,
   });
 
   factory LifeFactProposal.fromJson(Map<String, dynamic> json) =>
@@ -807,6 +856,8 @@ class LifeFactProposal {
         content: json['content'] as String,
         reason: json['reason'] as String,
         reviewStatus: ChangeReviewStatus.parse(json['reviewStatus'] as String),
+        storyCategory: json['storyCategory'] as String?,
+        sensitive: json['sensitive'] as bool? ?? false,
       );
 
   final String proposalId;
@@ -816,6 +867,16 @@ class LifeFactProposal {
   final String content;
   final String reason;
   final ChangeReviewStatus? reviewStatus;
+
+  /// AI 가 고른 일대기 분류. [LifeFact.storyCategory] 와 같은 일곱 값이다.
+  ///
+  /// 이 값을 주기 전의 서버는 `null` 이다. 그런 서버는 7-4 에서 분류를 받지
+  /// 않으므로(모르는 필드는 거절한다) 화면은 분류 고르기를 두지 않는다.
+  final String? storyCategory;
+
+  /// 아픈 기억(사별, 전쟁, 사고, 병 같은)일 수 있는 이야기다. 서버가 주지
+  /// 않으면 `false` 다.
+  final bool sensitive;
 }
 
 /// 주제 제안이 가리키는 주제. `profile_topics` 에 대응한다.
@@ -942,28 +1003,35 @@ class TopicReview {
 /// [title] 과 [content] 는 일대기에 저장할 최종 값이다. 보호자가 고치지 않았으면
 /// 제안 그대로다. `accepted` 일 때만 보낸다. 이 값은 이 화면을 위해 계약에
 /// 더한 것이다.
+///
+/// [storyCategory] 는 보호자가 분류를 바꿨을 때만 담는다. 없으면 서버가 제안의
+/// 분류로 담는다.
 class LifeFactReview {
   const LifeFactReview.accepted({
     required this.proposalId,
     required this.title,
     required this.content,
+    this.storyCategory,
   }) : reviewStatus = ChangeReviewStatus.accepted;
 
   const LifeFactReview.rejected({required this.proposalId})
     : reviewStatus = ChangeReviewStatus.rejected,
       title = null,
-      content = null;
+      content = null,
+      storyCategory = null;
 
   final String proposalId;
   final ChangeReviewStatus reviewStatus;
   final String? title;
   final String? content;
+  final String? storyCategory;
 
   Map<String, dynamic> toJson() => {
     'proposalId': proposalId,
     'reviewStatus': reviewStatus.name,
     if (title != null) 'title': title,
     if (content != null) 'content': content,
+    if (storyCategory != null) 'storyCategory': storyCategory,
   };
 }
 

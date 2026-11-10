@@ -15,6 +15,8 @@ import 'package:saerok/data/providers.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
+import 'package:saerok/features/cards/card_generation_controller.dart';
+import 'package:saerok/features/cards/sensitive_card_badge.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 
 import 'fake_profile_server.dart';
@@ -60,6 +62,7 @@ Future<ProviderContainer> _open(
   FakeProfileServer server,
   String location, {
   FakeReportServer? reports,
+  bool cardsBeingMade = false,
 }) async {
   tester.view.physicalSize = const Size(1236, 6000);
   tester.view.devicePixelRatio = 3;
@@ -77,6 +80,8 @@ Future<ProviderContainer> _open(
       (reports ?? FakeReportServer()).override,
       profileSampleProvider.overrideWith((ref) async => sample),
       accountProvider.overrideWith((ref) async => account),
+      if (cardsBeingMade)
+        cardsBeingMadeProvider.overrideWith((ref, profileId) => true),
     ],
   );
   addTearDown(container.dispose);
@@ -147,6 +152,150 @@ void main() {
 
     expect(find.text('여행 · 1장'), findsOneWidget);
     expect(find.text('불국사 앞에서 사진을 찍으셨대요.'), findsOneWidget);
+  });
+
+  testWidgets('아픈 기억일 수 있는 이야기에는 목차와 이야기에 작은 표시를 단다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              sensitive: true,
+            ),
+            FakeProfileServer.lifeFact(
+              id: 'f2',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '장터 나들이',
+              content: '합성 내용이에요.',
+              createdAt: '2026-09-02T10:00:00+09:00',
+              sensitive: false,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumCategoryOf('family'));
+
+    // 목차에는 표시가 붙은 이야기 하나에만 단다. 새 안내 문장은 없다.
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    expect(find.text(SensitiveCardBadge.label), findsOneWidget);
+    final row = find.ancestor(
+      of: find.text('남편분을 떠나보낸 해'),
+      matching: find.byType(InkWell),
+    );
+    expect(
+      find.descendant(of: row, matching: find.byType(SensitiveCardBadge)),
+      findsOneWidget,
+    );
+
+    await _tap(tester, find.text('남편분을 떠나보낸 해'));
+    expect(find.text('합성 내용이에요.'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(SensitiveCardBadge)).dy,
+      lessThan(tester.getTopLeft(find.text('남편분을 떠나보낸 해')).dy),
+      reason: '카드처럼 제목 위에 둔다',
+    );
+
+    await _tap(tester, find.text('다음 이야기'));
+    expect(find.text('장터 나들이'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsNothing);
+  });
+
+  testWidgets('승인 직후 첫 장의 최근 이야기에도 같은 표시를 단다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '장터 나들이',
+              content: '합성 내용이에요.',
+              createdAt: '2026-09-02T10:00:00+09:00',
+            ),
+            // 방금 승인해 가장 최근인 이야기.
+            FakeProfileServer.lifeFact(
+              id: 'f2',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              createdAt: '2026-11-10T10:00:00+09:00',
+              sensitive: true,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumBook);
+
+    expect(find.text('최근 추가된 이야기'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    Finder rowOf(String title) =>
+        find.ancestor(of: find.text(title), matching: find.byType(InkWell));
+    expect(
+      find.descendant(
+        of: rowOf('남편분을 떠나보낸 해'),
+        matching: find.byType(SensitiveCardBadge),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: rowOf('장터 나들이'),
+        matching: find.byType(SensitiveCardBadge),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.getTopLeft(find.byType(SensitiveCardBadge)).dy,
+      greaterThan(tester.getTopLeft(find.text('남편분을 떠나보낸 해')).dy),
+      reason: '목차처럼 제목 아래에 둔다',
+    );
+  });
+
+  testWidgets('표시가 있는 이야기를 고쳐도 표시는 보내지 않고 그대로 남는다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              sensitive: true,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumStoryOf('family', 'f1'));
+
+    await _tap(tester, find.byTooltip('이야기 수정'));
+    await tester.enterText(find.byType(TextField).at(0), '남편분과의 마지막 봄');
+    await tester.pump();
+    await _tap(tester, find.text('수정 완료'));
+
+    final patch = server.requests.lastWhere((r) => r.method == 'PATCH');
+    expect((patch.body as Map).containsKey('sensitive'), isFalse);
+    expect(find.text('남편분과의 마지막 봄'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
   });
 
   testWidgets('이야기를 담으면 서버에 보내고 목차에 보인다', (tester) async {
@@ -221,6 +370,30 @@ void main() {
     expect(find.text('경주 여행'), findsNothing);
   });
 
+  testWidgets('카드를 만드는 동안 고치거나 지우려 하면 안내하고 보내지 않는다', (tester) async {
+    final server = _server();
+    final container = await _open(
+      tester,
+      server,
+      AppRoutes.albumCategoryOf('travel'),
+      cardsBeingMade: true,
+    );
+    // 홈 버튼이 카드를 만들기 시작할 때처럼 서버의 어르신 ID 를 읽어 둔다.
+    await tester.runAsync(() => container.read(serverProfileIdProvider.future));
+    await _tap(tester, find.text('경주 여행'));
+    final sent = server.requests.length;
+
+    for (final action in ['이야기 수정', '이야기 지우기']) {
+      await _tap(tester, find.byTooltip(action));
+      expect(find.text('대화 카드를 만들고 있어요'), findsOneWidget);
+      await _tap(tester, find.text('확인'));
+      // 고치는 화면이나 지우기 확인으로 넘어가지 않고 이야기에 남는다.
+      expect(find.text('대화 카드를 만들고 있어요'), findsNothing);
+      expect(find.text('경주 여행'), findsOneWidget);
+    }
+    expect(server.requests.length, sent);
+  });
+
   testWidgets('서버에 닿지 못하면 담지 않고 쓰던 내용을 둔다', (tester) async {
     final server = _server();
     await _open(tester, server, AppRoutes.albumBook);
@@ -269,14 +442,20 @@ void main() {
   });
 
   group('변경 사항 확인에서 이야기를 승인하면', () {
-    /// 일대기를 연 뒤 변경 사항 확인으로 간다. 승인한 이야기는 서버가
-    /// '기타'로 담는다(#132 D5 임시 안).
+    /// 일대기를 연 뒤 변경 사항 확인으로 간다.
+    ///
+    /// 승인한 이야기는 서버가 보호자가 고른 분류(7-4 의 `storyCategory`), 없으면
+    /// AI 가 고른 제안의 분류로 담는다. 분류를 주지 않는 예전 서버는 '기타'로
+    /// 담았다(#132 D5 임시 안). [storyCategory] 를 넘기지 않으면 그 서버다.
     Future<(FakeProfileServer, FakeReportServer)> openChanges(
-      WidgetTester tester,
-    ) async {
+      WidgetTester tester, {
+      String? storyCategory,
+    }) async {
       final profiles = _server();
       final reports = FakeReportServer(
-        proposals: {'s1': FakeReportServer.proposal('s1')},
+        proposals: {
+          's1': FakeReportServer.proposal('s1', storyCategory: storyCategory),
+        },
       );
       reports.onReview = (sessionId, body) {
         final review = (body as Map)['lifeFacts'] as List;
@@ -290,7 +469,8 @@ void main() {
               FakeProfileServer.lifeFact(
                 id: 'f-${r['proposalId']}',
                 profileId: 'p1',
-                storyCategory: 'other',
+                storyCategory:
+                    r['storyCategory'] as String? ?? storyCategory ?? 'other',
                 title: r['title'] as String,
                 content: r['content'] as String,
                 imageNumber: 1,
@@ -302,7 +482,7 @@ void main() {
       await _open(
         tester,
         profiles,
-        AppRoutes.albumCategoryOf('other'),
+        AppRoutes.albumCategoryOf(storyCategory ?? 'other'),
         reports: reports,
       );
       expect(find.text('한복'), findsNothing, reason: '승인 전');
@@ -330,7 +510,12 @@ void main() {
 
       await tester.tap(find.byTooltip('이 제안 지우기'));
       await tester.pumpAndSettle();
+      // 이야기를 지우면 뜨는 되돌리기 알림이 아래 버튼을 가린다. 저절로 닫힐
+      // 때까지 기다린 뒤 누른다.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
       await _tap(tester, find.text('반영하지 않고 마치기'));
+      expect(find.text('반영하지 않고 마치기'), findsNothing);
       _router(tester).go(AppRoutes.albumCategoryOf('other'));
       await _settle(tester);
 
@@ -340,6 +525,51 @@ void main() {
             .length,
         reads,
       );
+    });
+
+    testWidgets('분류를 바꾸지 않으면 AI 가 고른 분류에 담기고 분류를 보내지 않는다', (tester) async {
+      final (_, reports) = await openChanges(tester, storyCategory: 'work');
+
+      expect(find.text('일'), findsOneWidget, reason: 'AI 가 고른 분류');
+      await _tap(tester, find.text('이대로 반영하기'));
+
+      final sent = reports.requests.singleWhere(
+        (r) => r.path == '/api/v1/visit-sessions/s1/proposals/review',
+      );
+      final item = ((sent.body! as Map)['lifeFacts'] as List).single as Map;
+      expect(item.containsKey('storyCategory'), isFalse);
+
+      _router(tester).go(AppRoutes.albumCategoryOf('work'));
+      await _settle(tester);
+      expect(find.text('한복'), findsOneWidget);
+    });
+
+    testWidgets('보호자가 바꾼 분류로 보내고 그 분류에 담긴다', (tester) async {
+      final (_, reports) = await openChanges(tester, storyCategory: 'work');
+
+      await tester.tap(find.text('바꾸기'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.text('여행'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('이대로 반영하기'));
+
+      final sent = reports.requests.singleWhere(
+        (r) => r.path == '/api/v1/visit-sessions/s1/proposals/review',
+      );
+      final item = ((sent.body! as Map)['lifeFacts'] as List).single as Map;
+      expect(item['storyCategory'], 'travel');
+
+      _router(tester).go(AppRoutes.albumCategoryOf('travel'));
+      await _settle(tester);
+      expect(find.text('한복'), findsOneWidget);
+      _router(tester).go(AppRoutes.albumCategoryOf('work'));
+      await _settle(tester);
+      expect(find.text('한복'), findsNothing);
     });
   });
 }

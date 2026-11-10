@@ -133,8 +133,9 @@ class ReviewTarget {
 /// 인자가 `null` 이면 지금 막 마친 면회다. 앱이 켜져 있는 동안 면회 상태가
 /// 들고 있는 값을 쓴다.
 ///
-/// 인자가 회차 ID 면 앱을 다시 켠 뒤 홈 배너의 `평가 이어서 하기` 로 들어온
-/// 경우다(`/visit/review?session=<회차 ID>`). 카드는 지금 쓰는 묶음(API 4-3)에서
+/// 인자가 회차 ID 면 홈 배너나 카드 화면의 `평가 이어서 하기` 로 들어온
+/// 경우다(`/visit/review?session=<회차 ID>`). 이번 실행에서 시작한 면회면 면회
+/// 상태의 값을 쓴다. 앱을 다시 켰으면 카드는 지금 쓰는 묶음(API 4-3)에서
 /// 이 회차가 고른 카드를, 녹음은 기기 기록([PendingUploads])에서 찾는다. 묶음이
 /// 이 회차의 것이 아니면 이어서 할 수 없으므로 `null` 이다.
 final reviewTargetProvider = FutureProvider.family<ReviewTarget?, String?>((
@@ -145,6 +146,23 @@ final reviewTargetProvider = FutureProvider.family<ReviewTarget?, String?>((
     final visit = await ref.watch(visitControllerProvider.future);
     return ReviewTarget(
       sessionId: visit.sessionId,
+      cards: visit.cards,
+      audioPath: visit.recordingPath,
+      participantCount: visit.participantCount,
+    );
+  }
+
+  // 이번 실행에서 시작한 면회를 녹음 화면을 떠난 뒤 이어서 하는 경우다(#234).
+  // 받아 둔 묶음은 회차를 만들기 전에 받은 것이라 이 회차를 모르므로 면회
+  // 상태가 들고 있는 값을 쓴다. 면회 상태가 아직 없으면 새로 만들지 않는다.
+  final visit = startedVisitOf(
+    ref.exists(visitControllerProvider)
+        ? ref.read(visitControllerProvider)
+        : null,
+  );
+  if (visit != null && visit.sessionId == sessionId) {
+    return ReviewTarget(
+      sessionId: sessionId,
       cards: visit.cards,
       audioPath: visit.recordingPath,
       participantCount: visit.participantCount,

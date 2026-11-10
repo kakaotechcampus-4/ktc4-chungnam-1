@@ -1,12 +1,13 @@
 """회차 목록, 리포트와 변경 제안 (API 5-4, 7-1 ~ 7-4) 형식."""
 
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import Field, model_validator
 
 from app.schemas.common import ApiModel
+from app.schemas.profiles import LifeFactContent, LifeFactTitle, StoryCategory
 from app.schemas.visit_session import VisitSession
 
 Mood = Literal["hard", "normal", "good"]
@@ -67,6 +68,10 @@ class LifeFactProposal(ApiModel):
     title: str
     content: str
     reason: str
+    # AI가 고른 일대기 분류. 보호자가 7-4에서 다른 분류로 승인해도 이 값은 바뀌지 않는다.
+    story_category: StoryCategory = Field(alias="storyCategory")
+    # 사별, 전쟁, 사고, 병처럼 아픈 기억일 수 있는 후보. 앱이 안내 문구를 붙인다.
+    sensitive: bool
     review_status: ReviewStatus = Field(alias="reviewStatus")
 
 
@@ -94,30 +99,29 @@ class ChangeProposal(ApiModel):
     topic_proposals: list[TopicProposal] = Field(alias="topicProposals")
 
 
-def _not_blank(value: str) -> str:
-    if not value.strip():
-        raise ValueError("빈 값은 받지 않습니다.")
-    return value
-
-
-# 2-6 생애 정보 추가와 같은 규칙이다(제목 100자 이하, 둘 다 비울 수 없음).
-LifeFactTitle = Annotated[str, AfterValidator(_not_blank), Field(max_length=100)]
-LifeFactContent = Annotated[str, AfterValidator(_not_blank)]
-
-
 class LifeFactReview(ApiModel):
+    """7-4의 생애 정보 확인 항목. 최종 제목과 내용은 2-6과 같은 형식이다(제목 100자, 내용
+    5,000자 이하, 둘 다 비울 수 없음). 프로필당 개수 상한은 `create_life_fact`가 확인한다.
+
+    `storyCategory`는 승인 항목에만 넣을 수 있고 생략할 수 있다. 생략하면 제안의 분류(AI가 고른
+    값)로 이야기를 만든다. `null`은 받지 않는다(2026-11-09 PM 결정).
+    """
+
     proposal_id: UUID = Field(alias="proposalId")
     review_status: Literal["accepted", "rejected"] = Field(alias="reviewStatus")
     title: LifeFactTitle | None = None
     content: LifeFactContent | None = None
+    story_category: StoryCategory | None = Field(default=None, alias="storyCategory")
 
     @model_validator(mode="after")
     def _final_values_match_status(self) -> "LifeFactReview":
         # 승인 항목에만 보호자가 확인한 최종 값을 담는다(422 INVALID_REQUEST).
-        sent = {"title", "content"} & self.model_fields_set
+        sent = {"title", "content", "story_category"} & self.model_fields_set
         if self.review_status == "accepted":
             if self.title is None or self.content is None:
                 raise ValueError("승인한 생애 정보에는 title과 content가 필요합니다.")
+            if "story_category" in sent and self.story_category is None:
+                raise ValueError("storyCategory는 null일 수 없습니다.")
         elif sent:
             raise ValueError("반영하지 않는 생애 정보에는 최종 값을 넣지 않습니다.")
         return self

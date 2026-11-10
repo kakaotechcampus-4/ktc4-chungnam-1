@@ -9,8 +9,8 @@
 빈 문자열은 받지 않으며 DB CHECK(`length(btrim(x)) > 0`)도 막는다.
 
 프로필을 지우면 `ON DELETE CASCADE`로 그 아래 기록이 모두 지워지고, 사진과 음성의 객체
-키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. 대기열을 처리해
-S3 원본을 실제로 지우는 코드는 아직 없다.
+키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. 대기열은 삭제
+실행기(`app.services.storage_deletion`)가 처리한다.
 """
 
 from collections.abc import Mapping
@@ -23,7 +23,7 @@ from psycopg import sql
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
-from app.services import ownership
+from app.services import card_sets, ownership
 from app.services.life_facts import LifeFact, list_life_facts
 from app.services.profile_photos import ProfilePhoto, list_profile_photos
 
@@ -44,6 +44,8 @@ UPDATABLE_COLUMNS: tuple[str, ...] = (
     "hobby",
     "family",
 )
+# 카드 생성(`card_sets.build_context`)에 쓰는 컬럼. 생년월일은 연령대로만 쓴다.
+CARD_INPUT_COLUMNS = ("birth_date", "occupation", "hometown", "hobby", "family")
 
 
 @dataclass(frozen=True)
@@ -162,11 +164,13 @@ async def update_profile(
     *,
     account_id: str,
     changes: Mapping[str, Any],
+    start_timeout_seconds: int,
 ) -> Profile:
     """보낸 필드만 바꾼다(API 2-4). 세부 정보 네 항목은 `None`이면 지운다.
 
     `changes`의 키는 `UPDATABLE_COLUMNS`의 컬럼 이름이다. 바꿀 것이 없으면 그대로
-    돌려준다.
+    돌려준다. `CARD_INPUT_COLUMNS`의 값이 바뀌면 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다
+    (`card_sets.mark_stale`).
     """
     await ownership.require_owned(
         connection, ownership.PROFILE, profile_id, account_id=account_id
@@ -175,17 +179,33 @@ async def update_profile(
     if unknown:
         raise ValueError(f"바꿀 수 없는 프로필 컬럼: {sorted(unknown)}")
     if changes:
-        assignments = sql.SQL(", ").join(
-            sql.SQL("{} = %s").format(sql.Identifier(column)) for column in changes
-        )
-        cursor = await connection.execute(
-            sql.SQL("UPDATE profiles SET {} WHERE profile_id = %s").format(
-                assignments
-            ),
-            (*changes.values(), profile_id),
-        )
-        if cursor.rowcount == 0:
-            raise _profile_not_found()
+        async with connection.transaction():
+            await card_sets.lock_profile(connection, profile_id)
+            cursor = await connection.execute(
+                sql.SQL("SELECT {} FROM profiles WHERE profile_id = %s").format(
+                    sql.SQL(", ").join(map(sql.Identifier, CARD_INPUT_COLUMNS))
+                ),
+                (profile_id,),
+            )
+            before = await cursor.fetchone()
+            if before is None:
+                raise _profile_not_found()
+            if any(
+                column in changes and changes[column] != before[column]
+                for column in CARD_INPUT_COLUMNS
+            ):
+                await card_sets.mark_stale(
+                    connection, profile_id, start_timeout_seconds=start_timeout_seconds
+                )
+            assignments = sql.SQL(", ").join(
+                sql.SQL("{} = %s").format(sql.Identifier(column)) for column in changes
+            )
+            await connection.execute(
+                sql.SQL("UPDATE profiles SET {} WHERE profile_id = %s").format(
+                    assignments
+                ),
+                (*changes.values(), profile_id),
+            )
     return await _read_profile(connection, profile_id)
 
 

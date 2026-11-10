@@ -5,6 +5,7 @@
 // 요청이 나가지 않도록 이 서버를 `reportApiProvider` 에 넣는다. 값은 모두
 // 합성이다.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -32,6 +33,9 @@ class FakeReportServer {
   /// 분석 작업마다 물을 때 차례로 돌려줄 `status`. 마지막 값은 계속 돌려준다.
   final Map<String, List<String>> analyses;
 
+  /// 분석 작업마다 `failed` 일 때 돌려줄 `errorCode`.
+  final analysisErrors = <String, String>{};
+
   /// 회차마다의 리포트(VisitReport).
   final Map<String, Map<String, Object?>> reports;
 
@@ -46,6 +50,13 @@ class FakeReportServer {
 
   /// 정해 두면 그 요청에 이 오류로 답한다. 키는 `METHOD path` 다.
   final failures = <String, ({int status, String errorCode})>{};
+
+  /// 정해 두면 그 요청에 공통 `ErrorResponse` 없이 이 상태 코드로만 답한다.
+  /// 앞단 프록시가 돌려주는 본문 없는 502, 504 를 흉내 낸다. 키는 `METHOD path` 다.
+  final bareFailures = <String, int>{};
+
+  /// 채워 두면 끝날 때까지 답하지 않는다. 다시 묻는 동안의 화면을 볼 때 쓴다.
+  Completer<void>? hold;
 
   /// 연결이 끊긴 것처럼 모든 요청을 실패시킨다.
   bool offline = false;
@@ -71,10 +82,13 @@ class FakeReportServer {
     final body = request.body.isEmpty ? null : jsonDecode(request.body);
     final path = request.url.path;
     requests.add((method: request.method, path: path, body: body));
+    await hold?.future;
     if (offline) throw http.ClientException('오프라인');
 
     final failure = failures['${request.method} $path'];
     if (failure != null) return _error(failure.status, failure.errorCode);
+    final bare = bareFailures['${request.method} $path'];
+    if (bare != null) return http.Response('', bare);
 
     final s = request.url.pathSegments;
     // /api/v1/profiles/{id}/visit-sessions, /api/v1/profiles/{id}/reports
@@ -115,7 +129,7 @@ class FakeReportServer {
         'analysisId': s[3],
         'sessionId': 'session-of-${s[3]}',
         'status': status,
-        'errorCode': null,
+        'errorCode': status == 'failed' ? analysisErrors[s[3]] : null,
       });
     }
 
@@ -217,8 +231,15 @@ class FakeReportServer {
     'evaluatedAt': '2026-10-13T14:25:00+09:00',
   };
 
-  /// 명세의 ChangeProposal 하나를 만든다. 생애 정보 제안이 하나 있다.
-  static Map<String, Object?> proposal(String sessionId) => {
+  /// 이야기 제안 하나가 있는 변경 제안(ChangeProposal).
+  ///
+  /// [storyCategory] 와 [sensitive] 를 넘기지 않으면 두 값을 주기 전의 서버
+  /// 응답처럼 키를 넣지 않는다.
+  static Map<String, Object?> proposal(
+    String sessionId, {
+    String? storyCategory,
+    bool? sensitive,
+  }) => {
     'schemaVersion': 1,
     'sessionId': sessionId,
     'lifeFactProposals': [
@@ -228,6 +249,8 @@ class FakeReportServer {
         'content': '한복을 주로 만드셨어요.',
         'reason': '이번 면회에서 말씀하셨어요.',
         'reviewStatus': 'pending',
+        'storyCategory': ?storyCategory,
+        'sensitive': ?sensitive,
       },
     ],
     'topicProposals': <Object>[],

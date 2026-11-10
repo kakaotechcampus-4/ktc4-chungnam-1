@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 
+/// 참여자 수를 묻는 물음. 만남을 끝낼 때와 녹음을 다시 보낼 때 같다.
+const participantQuestion = '보호자님을 포함해 모두 몇 분인가요?';
+
 /// 만남을 끝내기 전에 띄우는 확인 창이다.
 ///
 /// 두 가지를 한 자리에서 받는다.
@@ -27,8 +30,19 @@ Future<int?> showStopRecordingDialog(BuildContext context) {
   );
 }
 
+/// 이미 저장한 녹음을 보내기 전에 누락된 참여자 수만 확인한다.
+/// 취소해도 파일과 소감은 그대로 둔다.
+Future<int?> showRecordingParticipantDialog(BuildContext context) {
+  return showDialog<int>(
+    context: context,
+    builder: (context) => const _StopRecordingDialog(recovering: true),
+  );
+}
+
 class _StopRecordingDialog extends StatefulWidget {
-  const _StopRecordingDialog();
+  const _StopRecordingDialog({this.recovering = false});
+
+  final bool recovering;
 
   @override
   State<_StopRecordingDialog> createState() => _StopRecordingDialogState();
@@ -72,8 +86,8 @@ class _StopRecordingDialogState extends State<_StopRecordingDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '만남을 끝낼까요?',
+              Text(
+                widget.recovering ? '녹음을 보내기 전에 확인해 주세요' : '만남을 끝낼까요?',
                 style: AppTypography.sectionTitle,
                 textAlign: TextAlign.center,
               ),
@@ -82,8 +96,10 @@ class _StopRecordingDialogState extends State<_StopRecordingDialog> {
               // 화면의 제목과 부제목 사이와 같은 간격이다.
               const SizedBox(height: AppSpacing.sm),
 
+              // 보호자를 빼고 세는 일이 없게 물음에 보호자를 넣는다. 녹음을
+              // 다시 보내는 창도 같은 물음이다(2026-11-09 PM 결정).
               const Text(
-                '오늘 대화에 몇 분이 함께했나요?',
+                participantQuestion,
                 // 제목보다 한 단계 연하고 얇다. 눈이 제목과 숫자에 먼저 가게
                 // 두고, 이 줄은 곁들이는 설명으로 읽히게 한다.
                 style: AppTypography.sub,
@@ -103,12 +119,15 @@ class _StopRecordingDialogState extends State<_StopRecordingDialog> {
               const SizedBox(height: AppSpacing.xxl),
 
               PrimaryButton(
-                label: '끝내기',
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
+                label: widget.recovering ? '확인하고 보내기' : '끝내기',
                 onPressed: () => Navigator.of(context).pop(_count),
               ),
               const SizedBox(height: AppSpacing.md),
               SecondaryButton(
-                label: '이어서 녹음',
+                borderColor: HomeColors.outline,
+                label: widget.recovering ? '나중에 보내기' : '이어서 녹음',
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -205,14 +224,14 @@ class _StepButton extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: enabled ? AppColors.ink : AppColors.line,
+              color: enabled ? HomeColors.accent : AppColors.line,
               width: 2,
             ),
           ),
           child: Icon(
             icon,
             size: 28,
-            color: enabled ? AppColors.ink : AppColors.textDisabled,
+            color: enabled ? HomeColors.accent : AppColors.textDisabled,
           ),
         ),
       ),

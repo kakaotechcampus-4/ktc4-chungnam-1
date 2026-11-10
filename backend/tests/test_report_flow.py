@@ -205,7 +205,16 @@ def test_failed_report_generation_is_shown_as_failed(migrated_database_url, monk
         "SELECT (SELECT count(*) FROM life_fact_proposals)"
         " + (SELECT count(*) FROM topic_proposals)"
     ) == 0
-    assert flow.submit_audio(session_id).json()["errorCode"] == "ANALYSIS_ALREADY_FAILED"
+    assert flow.submit_audio(session_id).json()["errorCode"] == "REPORT_RETRY_AVAILABLE"
+    _connected(monkeypatch)
+    retried = flow.call("POST", f"/api/v1/speech-analyses/{analysis_id}/retry")
+    assert retried.status_code == 202
+    new_id = retried.json()["analysisId"]
+    assert new_id != analysis_id
+    assert flow.latest_session()["analysisId"] == new_id
+    flow.run_worker()
+    assert flow.latest_session()["sessionStatus"] == "completed"
+    assert flow.call("GET", f"/api/v1/visit-sessions/{session_id}/report").status_code == 200
 
 
 def test_another_account_cannot_follow_the_flow(migrated_database_url, monkeypatch):
@@ -261,5 +270,5 @@ def test_timed_out_report_generation_is_failed_and_not_retried(migrated_database
         "errorCode"
     ] == "REPORT_NOT_FOUND"
     assert flow.latest_session()["sessionStatus"] == "failed"
-    # 자동 재시도는 없고, 같은 회차를 다시 보내도 새 작업을 만들지 않는다.
-    assert flow.submit_audio(session_id).json()["errorCode"] == "ANALYSIS_ALREADY_FAILED"
+    # 자동 재시도는 없고, 남은 전사를 재사용하는 수동 요청을 안내한다.
+    assert flow.submit_audio(session_id).json()["errorCode"] == "REPORT_RETRY_AVAILABLE"

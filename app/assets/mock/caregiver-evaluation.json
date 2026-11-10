@@ -33,14 +33,18 @@
         "title": "라디오 노래",
         "content": "일하실 때 라디오에서 나훈아 노래가 나오면 따라 부르셨대요.",
         "reason": "이번 면회에서 확인되었어요.",
-        "reviewStatus": "pending"
+        "reviewStatus": "pending",
+        "storyCategory": "other",
+        "sensitive": false
       },
       {
         "proposalId": "life_fact_proposal_demo_002",
         "title": "학창 시절",
         "content": "학창 시절에 학교를 오래 다니지 못하셨어요.",
         "reason": "이번 면회에서 언급되었어요.",
-        "reviewStatus": "pending"
+        "reviewStatus": "pending",
+        "storyCategory": "other",
+        "sensitive": false
       }
     ],
     "topicProposals": [

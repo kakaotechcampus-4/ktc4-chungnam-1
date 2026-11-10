@@ -1,17 +1,20 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Path, Response, status
 
 from app.api.deps import CurrentAccountDep, DbConnectionDep, SettingsDep
 from app.core.errors import AppError
-from app.schemas.card_generation import CardGenerationStatus, CardSet
+from app.schemas.card_generation import CardGenerationStatus, CardSet, PhotoPreparationChoice
+from app.services.card_photo_preparation import choose
 from app.services.card_sets import (
     current_card_set,
     generation_status,
+    session_card_set,
+    set_card_liked,
     start_card_generation,
 )
-from app.services.ownership import PROFILE, require_owned
+from app.services.ownership import CARD, PROFILE, VISIT_SESSION, require_owned
 
 
 router = APIRouter(tags=["card-generations"])
@@ -23,6 +26,7 @@ router = APIRouter(tags=["card-generations"])
     status_code=status.HTTP_202_ACCEPTED,
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
 async def create_card_generation(
     account: CurrentAccountDep,
@@ -33,7 +37,7 @@ async def create_card_generation(
     """카드 생성 작업 생성. 이미 만드는 중이면 새로 만들지 않음.
 
     평가 전 회차가 묶음을 쓰는 중(`inVisit`)이면 거절함. 새 묶음이 생기면 4-3이 면회 중인 카드를 못 줌.
-    아직 안 쓴 묶음이 있어도(`ready`) 거절함.
+    아직 안 쓴 묶음이 있어도(`ready`) 거절함. 단 `needsRefresh`이면 거절하지 않고 새 묶음을 만듦.
 
     API 명세 4-1
     """
@@ -52,8 +56,11 @@ async def create_card_generation(
         model=settings.card_generation_model,
         prompt_version=settings.card_generation_prompt_version,
         start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+        photo_wait_timeout_seconds=settings.card_photo_wait_timeout_seconds,
     )
-    return CardGenerationStatus(status="running")
+    return await generation_status(
+        connection, profile_id, start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
 
 
 @router.get(
@@ -61,6 +68,7 @@ async def create_card_generation(
     summary="카드 생성 상태 조회",
     response_model=CardGenerationStatus,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
 async def get_card_generation_status(
     account: CurrentAccountDep,
@@ -70,18 +78,36 @@ async def get_card_generation_status(
 ) -> CardGenerationStatus:
     """홈 버튼 상태. 작업이 없어도 오류가 아니라 `none`.
 
-    worker가 가져가지 않거나 멈춘 작업은 정해진 시간이 지나면 `failed`로 바뀜. 앱이 다시 요청할 수 있음.
+    worker가 없거나 멈춰 끝나지 않을 작업은 정해진 시간이 지나면 `failed`로 바뀜. 앱이 다시 요청할 수 있음.
+    worker가 다른 작업을 처리하는 동안 기다리는 작업은 `running`으로 둠.
 
     API 명세 4-2
     """
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
-    return CardGenerationStatus(
-        status=await generation_status(
-            connection,
-            profile_id,
-            start_timeout_seconds=settings.card_generation_start_timeout_seconds,
-        )
+    return await generation_status(
+        connection,
+        profile_id,
+        start_timeout_seconds=settings.card_generation_start_timeout_seconds,
+    )
+
+
+@router.post(
+    "/api/v1/profiles/{profile_id}/card-generations/photo-preparation",
+    summary="첫 카드 사진 준비 재시도 또는 완료된 사진으로 진행",
+    response_model=CardGenerationStatus,
+    response_model_by_alias=True,
+    response_model_exclude_none=True,
+)
+async def resolve_photo_preparation(
+    account: CurrentAccountDep, connection: DbConnectionDep, settings: SettingsDep,
+    profile_id: Annotated[UUID, Path()], body: PhotoPreparationChoice,
+) -> CardGenerationStatus:
+    await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
+    await choose(connection, profile_id, body.set_id, body.action,
+                 timeout_seconds=settings.card_photo_wait_timeout_seconds)
+    return await generation_status(
+        connection, profile_id, start_timeout_seconds=settings.card_generation_start_timeout_seconds,
     )
 
 
@@ -103,3 +129,67 @@ async def get_current_card_set(
 
     await require_owned(connection, PROFILE, profile_id, account_id=account.account_id)
     return await current_card_set(connection, profile_id)
+
+
+@router.get(
+    "/api/v1/visit-sessions/{session_id}/card-set",
+    summary="회차에 쓴 카드 묶음 조회",
+    response_model=CardSet,
+    response_model_by_alias=True,
+)
+async def get_session_card_set(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    session_id: Annotated[UUID, Path()],
+) -> CardSet:
+    """회차에 쓴 카드 묶음. 평가가 끝나 4-3에서 더는 나오지 않는 묶음도 다시 볼 수 있음.
+
+    API 명세 4-4
+    """
+
+    await require_owned(connection, VISIT_SESSION, session_id, account_id=account.account_id)
+    return await session_card_set(connection, session_id)
+
+
+@router.put(
+    "/api/v1/cards/{card_id}/like",
+    summary="카드에 좋았어요 표시",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def like_card(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    card_id: Annotated[UUID, Path()],
+) -> Response:
+    """보호자가 원하는 카드에만 남기는 표시. 이미 표시한 카드면 그대로 둠.
+
+    보호자 평가(6-1)와 따로 저장하며 평가 뒤에도 켜고 끌 수 있음.
+
+    API 명세 4-5
+    """
+
+    await require_owned(connection, CARD, card_id, account_id=account.account_id)
+    await set_card_liked(connection, card_id, liked=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/api/v1/cards/{card_id}/like",
+    summary="카드의 좋았어요 표시 지우기",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def unlike_card(
+    account: CurrentAccountDep,
+    connection: DbConnectionDep,
+    card_id: Annotated[UUID, Path()],
+) -> Response:
+    """표시를 지움. 표시하지 않은 카드여도 오류가 아님.
+
+    API 명세 4-6
+    """
+
+    await require_owned(connection, CARD, card_id, account_id=account.account_id)
+    await set_card_liked(connection, card_id, liked=False)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

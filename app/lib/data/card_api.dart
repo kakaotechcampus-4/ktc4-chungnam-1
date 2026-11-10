@@ -25,12 +25,22 @@ enum CardGenerationStatus {
   inVisit,
 
   /// 실패했다. 4-2 는 실패 이유를 주지 않는다.
-  failed;
+  failed,
 
-  /// 모르는 값이면 성공으로 넘기지 않는다.
-  static CardGenerationStatus parse(Object? raw) {
+  /// 다 만들었지만 받은 뒤 프로필이나 일대기를 고쳤다. 서버는 `ready` 에
+  /// `needsRefresh: true` 를 붙여 주고, 앱은 따로 가른다. 카드는 볼 수 있지만
+  /// 이 묶음으로 면회를 시작할 수 없고 4-1 로 다시 만든다.
+  needsRefresh;
+
+  /// 모르는 값이면 성공으로 넘기지 않는다. [needsRefresh] 는 서버의 `status`
+  /// 값이 아니므로 받지 않는다.
+  static CardGenerationStatus parse(Object? raw, {bool needsRefresh = false}) {
     for (final value in values) {
-      if (value.name == raw) return value;
+      if (value == CardGenerationStatus.needsRefresh) continue;
+      if (value.name != raw) continue;
+      return value == CardGenerationStatus.ready && needsRefresh
+          ? CardGenerationStatus.needsRefresh
+          : value;
     }
     throw ApiUnexpectedResponseFailure('모르는 카드 생성 status: $raw');
   }
@@ -43,7 +53,7 @@ abstract interface class CardApi {
   /// 돌려준다(`CARD_SET_READY` 는 `ready`, `VISIT_IN_PROGRESS` 는 `inVisit`).
   Future<CardGenerationStatus> requestGeneration(String profileId);
 
-  /// 4-2. 가장 최근 작업의 상태다.
+  /// 4-2. 가장 최근 작업의 상태다. `needsRefresh` 가 없으면 `false` 로 본다.
   Future<CardGenerationStatus> status(String profileId);
 
   /// 4-3. 지금 쓸 카드 묶음이다. 쓸 묶음이 없으면 `CARD_GENERATION_NOT_FOUND`
@@ -51,7 +61,88 @@ abstract interface class CardApi {
   Future<CardSet> current(String profileId);
 }
 
-class ServerCardApi implements CardApi {
+/// 새 서버가 제공하는 첫 사진 준비 상태. 기존 카드 API 대역은 그대로 쓸 수 있다.
+abstract interface class PhotoPreparationApi {
+  Future<CardGenerationSnapshot> snapshot(String profileId);
+  Future<CardGenerationSnapshot> resolvePhotos(
+    String profileId,
+    String setId,
+    String action,
+  );
+}
+
+class CardPhotoPreparation {
+  const CardPhotoPreparation({
+    required this.setId,
+    required this.needsChoice,
+    required this.total,
+    required this.completed,
+    required this.failed,
+    required this.pending,
+    this.reason,
+  });
+
+  final String setId;
+  final bool needsChoice;
+  final int total, completed, failed, pending;
+  final String? reason;
+
+  factory CardPhotoPreparation.fromJson(Map<String, dynamic> json) {
+    final state = json['state'];
+    final reason = json['reason'] as String?;
+    final setId = json['setId'] as String;
+    final total = json['total'] as int;
+    final completed = json['completed'] as int;
+    final failed = json['failed'] as int;
+    final pending = json['pending'] as int;
+    if (!['waiting', 'choice'].contains(state) ||
+        setId.isEmpty ||
+        [total, completed, failed, pending].any((n) => n < 0) ||
+        completed + failed + pending != total ||
+        (state == 'choice' &&
+            ![
+              'analysisFailed',
+              'timedOut',
+              'consentRequired',
+            ].contains(reason))) {
+      throw const FormatException('잘못된 사진 준비 상태');
+    }
+    return CardPhotoPreparation(
+      setId: setId,
+      needsChoice: state == 'choice',
+      total: total,
+      completed: completed,
+      failed: failed,
+      pending: pending,
+      reason: reason,
+    );
+  }
+}
+
+class CardGenerationSnapshot {
+  const CardGenerationSnapshot(this.status, this.photos);
+  final CardGenerationStatus status;
+  final CardPhotoPreparation? photos;
+
+  factory CardGenerationSnapshot.fromJson(Map<String, dynamic> json) {
+    final status = CardGenerationStatus.parse(
+      json['status'],
+      needsRefresh: json['needsRefresh'] == true,
+    );
+    final raw = json['photoPreparation'];
+    if (raw != null && status != CardGenerationStatus.running) {
+      throw const FormatException('진행 중이 아닌 작업의 사진 대기');
+    }
+    return CardGenerationSnapshot(
+      status,
+      raw == null
+          ? null
+          : CardPhotoPreparation.fromJson(raw as Map<String, dynamic>),
+    );
+  }
+}
+
+class ServerCardApi implements CardApi, PhotoPreparationApi {
   const ServerCardApi(this._client);
 
   final ApiClient _client;
@@ -63,7 +154,10 @@ class ServerCardApi implements CardApi {
   Future<CardGenerationStatus> requestGeneration(String profileId) async {
     try {
       final body = await _client.post(_base(profileId));
-      return CardGenerationStatus.parse(body['status']);
+      return _client.read<CardGenerationStatus>(
+        '카드 생성',
+        () => CardGenerationStatus.parse(body['status']),
+      );
     } on ApiServerFailure catch (failure) {
       // 새로 만들 수 없는 까닭이 이미 쓸 묶음이 있어서라면 실패가 아니다.
       if (failure.statusCode == 409) {
@@ -80,18 +174,38 @@ class ServerCardApi implements CardApi {
 
   @override
   Future<CardGenerationStatus> status(String profileId) async {
+    return (await snapshot(profileId)).status;
+  }
+
+  @override
+  Future<CardGenerationSnapshot> snapshot(String profileId) async {
     final body = await _client.get('${_base(profileId)}/status');
-    return CardGenerationStatus.parse(body['status']);
+    return _client.read(
+      '카드 생성 상태',
+      () => CardGenerationSnapshot.fromJson(body),
+    );
+  }
+
+  @override
+  Future<CardGenerationSnapshot> resolvePhotos(
+    String profileId,
+    String setId,
+    String action,
+  ) async {
+    final body = await _client.post('${_base(profileId)}/photo-preparation', {
+      'setId': setId,
+      'action': action,
+    });
+    return _client.read(
+      '사진 준비 선택',
+      () => CardGenerationSnapshot.fromJson(body),
+    );
   }
 
   @override
   Future<CardSet> current(String profileId) async {
     final body = await _client.get('${_base(profileId)}/current');
-    try {
-      return CardSet.fromJson(body);
-    } on TypeError {
-      throw const ApiUnexpectedResponseFailure('카드 묶음 형식이 다르다');
-    }
+    return _client.read<CardSet>('카드 묶음', () => CardSet.fromJson(body));
   }
 }
 

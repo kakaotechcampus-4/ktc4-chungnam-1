@@ -86,8 +86,34 @@ void main() {
         'a1': ['transcribing'],
       },
     );
-    expect(await server.api.analysis('a1'), AnalysisStatus.transcribing);
+    final progress = await server.api.analysis('a1');
+    expect(progress.status, AnalysisStatus.transcribing);
+    expect(progress.errorCode, isNull);
     expect(server.requests.single.path, '/api/v1/speech-analyses/a1');
+  });
+
+  test('실패한 분석 작업(6-3)의 errorCode 를 읽는다', () async {
+    final server = FakeReportServer(
+      analyses: {
+        'a1': ['failed'],
+      },
+    )..analysisErrors['a1'] = 'EMPTY_TRANSCRIPT';
+
+    final progress = await server.api.analysis('a1');
+
+    expect(progress.status, AnalysisStatus.failed);
+    expect(progress.errorCode, 'EMPTY_TRANSCRIPT');
+  });
+
+  test('실패 이유는 말소리 없음과 시간 초과만 한 줄로 옮기고 나머지는 짓지 않는다', () {
+    expect(analysisFailureReason('EMPTY_TRANSCRIPT'), '녹음에서 말소리를 찾지 못했어요.');
+    expect(
+      analysisFailureReason('AI_SERVER_TIMEOUT'),
+      '녹음이 너무 길거나 서버가 바빠 시간 안에 끝내지 못했어요.',
+    );
+    for (final code in [null, 'AI_SERVER_ERROR', 'WORKER_LEASE_EXPIRED']) {
+      expect(analysisFailureReason(code), isNull);
+    }
   });
 
   test('리포트 기록(7-1)은 회차 ID 로 연다', () async {
@@ -223,6 +249,72 @@ void main() {
           'reviewStatus': 'accepted',
           'title': '한복',
           'content': '한복을 주로 만드셨어요.',
+        },
+      ],
+      'topics': <Object>[],
+    });
+  });
+
+  group('변경 제안(7-3)의 이야기 분류와 아픈 기억 표시', () {
+    test('AI 가 고른 분류와 sensitive 를 읽는다', () async {
+      final server = FakeReportServer(
+        proposals: {
+          's1': FakeReportServer.proposal(
+            's1',
+            storyCategory: 'family',
+            sensitive: true,
+          ),
+        },
+      );
+
+      final fact = (await server.api.proposals('s1')).lifeFactProposals.single;
+
+      expect(fact.storyCategory, 'family');
+      expect(fact.sensitive, isTrue);
+    });
+
+    test('두 값을 주지 않는 예전 서버면 분류는 없고 sensitive 는 false 다', () async {
+      final server = FakeReportServer(
+        proposals: {'s1': FakeReportServer.proposal('s1')},
+      );
+
+      final fact = (await server.api.proposals('s1')).lifeFactProposals.single;
+
+      expect(fact.storyCategory, isNull);
+      expect(fact.sensitive, isFalse);
+    });
+  });
+
+  test('보호자가 바꾼 분류는 7-4 승인 항목에 storyCategory 로 담는다', () async {
+    final server = FakeReportServer(
+      proposals: {
+        's1': FakeReportServer.proposal('s1', storyCategory: 'family'),
+      },
+    );
+
+    await server.api.reviewProposals(
+      's1',
+      const ProposalReview(
+        lifeFacts: [
+          LifeFactReview.accepted(
+            proposalId: 'proposal-1',
+            title: '한복',
+            content: '한복을 주로 만드셨어요.',
+            storyCategory: 'work',
+          ),
+        ],
+        topics: [],
+      ),
+    );
+
+    expect(server.requests.single.body, {
+      'lifeFacts': [
+        {
+          'proposalId': 'proposal-1',
+          'reviewStatus': 'accepted',
+          'title': '한복',
+          'content': '한복을 주로 만드셨어요.',
+          'storyCategory': 'work',
         },
       ],
       'topics': <Object>[],

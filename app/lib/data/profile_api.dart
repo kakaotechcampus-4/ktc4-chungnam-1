@@ -2,10 +2,11 @@
 ///
 /// 요청은 [ApiClient] 가 보내고, 이 파일은 경로, 본문과 응답 모양만 맡는다.
 /// 일대기 이야기(`lifeFacts`)도 2절이라 여기서 읽고 담는다(2-3, 2-6, 2-7, 2-9).
-/// 사진(`photos`)은 갤러리 작업에서 다루므로 여기서 읽지 않는다.
+/// 프로필 사진(`photos`)은 2-3 으로 읽고 3-1 로 올리며 3-2 로 분석 상태를 묻는다.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
 import 'models.dart';
@@ -55,6 +56,7 @@ class RemoteProfile {
     required this.basicInfo,
     required this.details,
     required this.lifeFacts,
+    this.photos = const [],
     this.symptomNote,
   });
 
@@ -84,6 +86,10 @@ class RemoteProfile {
         for (final item in json['lifeFacts'] as List)
           LifeFact.fromJson(item as Map<String, dynamic>),
       ],
+      photos: [
+        for (final item in json['photos'] as List? ?? const [])
+          ProfilePhoto.fromJson(item as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -99,6 +105,9 @@ class RemoteProfile {
   /// 일대기에 담긴 이야기. 먼저 담은 것부터다. 일대기 전용 목록 API 는 없어
   /// 2-3 의 이 목록으로 일대기를 그린다.
   final List<LifeFact> lifeFacts;
+
+  /// 올린 프로필 사진. 올린 순서대로다. `imageUrl` 은 수명이 짧다.
+  final List<ProfilePhoto> photos;
 }
 
 /// 프로필 API 를 부른다. 실패는 [ApiFailure] 로 던진다.
@@ -108,6 +117,7 @@ class ProfileApi {
   final ApiClient _client;
 
   static const _base = '/api/v1/profiles';
+  static const _photoBase = '/api/v1/profile-photos';
   static const _lifeFactBase = '/api/v1/life-facts';
 
   /// 2-1 현재 계정의 프로필 목록. 만든 순서대로다.
@@ -166,6 +176,24 @@ class ProfileApi {
   /// 2-8 프로필 하나를 지운다.
   Future<void> delete(String profileId) => _client.delete('$_base/$profileId');
 
+  /// 3-1 프로필 사진 한 장을 올린다. 분석 상태는 `pending` 으로 온다.
+  ///
+  /// 형식(JPEG, PNG)은 서버가 파일 내용으로 확인한다.
+  Future<ProfilePhoto> uploadPhoto(String profileId, String path) async {
+    final body = await _client.postMultipart(
+      '$_base/$profileId/photos',
+      // 세션이 만료돼 다시 보낼 때 파일을 새로 읽는다.
+      files: () async => [await http.MultipartFile.fromPath('image', path)],
+    );
+    return _read(() => ProfilePhoto.fromJson(body));
+  }
+
+  /// 3-2 사진 한 장의 분석 상태와 새 조회 주소.
+  Future<ProfilePhoto> photo(String photoId) async {
+    final body = await _client.get('$_photoBase/$photoId');
+    return _read(() => ProfilePhoto.fromJson(body));
+  }
+
   /// 2-6 일대기에 이야기를 담는다. 서버가 만든 `factId` 를 돌려받는다.
   Future<LifeFact> createLifeFact(
     String profileId, {
@@ -212,15 +240,7 @@ class ProfileApi {
   };
 
   /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
-  static T _read<T>(T Function() parse) {
-    try {
-      return parse();
-    } on TypeError catch (error) {
-      throw ApiUnexpectedResponseFailure('프로필 응답 모양이 다르다: $error');
-    } on FormatException catch (error) {
-      throw ApiUnexpectedResponseFailure(error.message);
-    }
-  }
+  T _read<T>(T Function() parse) => _client.read('프로필', parse);
 }
 
 /// 프로필 저장과 불러오기 실패를 보호자에게 보여줄 문구로 옮긴다.
@@ -234,11 +254,27 @@ String profileFailureMessage(ApiFailure failure) => switch (failure) {
     '어르신 정보를 찾지 못했어요. 목록을 다시 불러와 주세요.',
   ApiServerFailure(errorCode: 'LIFE_FACT_NOT_FOUND') =>
     '이야기를 찾지 못했어요. 이미 지운 이야기일 수 있어요.',
-  ApiServerFailure(statusCode: 401) || ApiSignedOutFailure() =>
-    '로그인이 풀렸어요. 다시 로그인해주세요.',
+  // 카드를 만드는 동안 카드에 쓰는 정보를 고치거나 지우면 거절된다(2-4, 2-7,
+  // 2-9). 다 만들면 다시 고칠 수 있다.
+  ApiServerFailure(errorCode: 'CARD_GENERATION_IN_PROGRESS') =>
+    '대화 카드를 만드는 중이라 지금은 바꿀 수 없어요. 카드가 준비된 뒤 다시 시도해주세요.',
+  ApiServerFailure(statusCode: 401) ||
+  ApiSignedOutFailure() => '로그인이 풀렸어요. 다시 로그인해주세요.',
   ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
   ApiUnexpectedResponseFailure() => '서버 응답을 읽지 못했어요. 잠시 뒤 다시 시도해주세요.',
   ApiServerFailure() => '처리하지 못했어요. 잠시 뒤 다시 시도해주세요.',
+};
+
+/// 기본 정보 저장(2-2, 2-4) 실패를 보호자에게 보여줄 문구로 옮긴다.
+///
+/// 이름 길이와 성별은 앱이 먼저 막으므로, 기본 정보의 `422 INVALID_REQUEST` 는
+/// 대개 서버가 생년월일을 받지 않은 것이다(만 10세가 안 되거나 미래인 날, API
+/// 2-2, 2-4). 다시 눌러도 같으므로 잠시 뒤 다시 하라고 하지 않고 생년월일을
+/// 확인하게 한다. 나머지는 [profileFailureMessage] 와 같다.
+String basicInfoFailureMessage(ApiFailure failure) => switch (failure) {
+  ApiServerFailure(statusCode: 422, errorCode: 'INVALID_REQUEST') =>
+    '생년월일을 다시 확인해주세요. 만 10세 이상이고 오늘 이전 날짜여야 해요.',
+  _ => profileFailureMessage(failure),
 };
 
 final profileApiProvider = Provider<ProfileApi>(

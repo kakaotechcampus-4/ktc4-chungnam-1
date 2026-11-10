@@ -10,16 +10,24 @@
 - 요청 조립부터 검증까지 전체에 제한 시간(`time_limit_seconds`)을 둔다. 넘기면
   `AI_SERVER_TIMEOUT`이다. 생성 함수는 daemon 스레드에서 돌고, 기다림만 끝낸다.
   동기 함수라 스레드는 멈추지 않지만 그 결과는 아무도 읽지 않고, 생성 함수는 DB를
-  쓰지 않는다.
+  쓰지 않는다. 시간 초과를 확정하면 마감에 취소를 표시해, 남은 스레드는 다음 외부 호출
+  직전 `deadline.check()`에서 멈춘다.
+- 전사문을 다시 보내기 직전(변경 제안의 이야기 후보 호출과 주제 조정 호출 각각)에는
+  `deadline.check_job()`이 마감과 함께 DB의 작업 행을 다시 읽는다. 행이 없거나(계정,
+  프로필, 회차 삭제) `generatingReport`가 아니거나 임대가 끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 기한이 지났으면
+  `TRANSCRIPT_EXPIRED`로 멈추고 보내지 않는다.
 - 결과가 와도 저장 직전에 마감을 다시 확인한다.
 - 저장 트랜잭션은 먼저 작업 행을 잠그고 `generatingReport`이며 임대가 남았는지
   확인한다. 아니면(임대 만료로 다른 worker가 실패 처리함) `WORKER_LEASE_EXPIRED`로
   아무것도 저장하지 않는다. 리포트 저장과 작업 `completed`는 같은 트랜잭션이다.
 
 응답 검증 규칙
+- 화자 라벨 누락이나 입력 인원과의 차이로 생성을 차단하지 않는다. 빈 전사는 실패한다.
 - `cardSummaries`는 요청 카드 중 `reaction`이 `positive`, `neutral`, `negative`인
   카드만, 카드당 하나다.
 - `topicProposals`는 요청 카드 안에서 카드당 최대 1개다.
+- `lifeFactProposals`는 `LIFE_FACT_PROPOSAL_LIMIT`(30)개까지이고 항목마다 분류(`storyCategory`)와
+  아픈 기억 표시(`sensitive`)가 있어야 한다(형식 검사). AI 쪽이 넘는 후보를 먼저 자른다.
 - 보수적인 임시 정책(AI 담당자와 합의 필요): PM 결정(2026-09-19)은 카드를 쓰지 않았거나
   답하지 않았다는 사실만으로 `less`, `exclude`를 제안하지 않는 것이다. 백엔드는 AI가
   어떤 근거로 제안했는지 알 수 없으므로, `reaction`이 `notUsed`이거나 `null`인 카드의
@@ -28,6 +36,7 @@
 """
 
 import asyncio
+import logging
 import threading
 import time
 from collections import Counter
@@ -36,11 +45,13 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
+from common.medical_claims import has_medical_effect_claim
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
 from app.schemas.speech_analysis import SpeechAnalysisResult
 from app.services.speech_analysis_jobs import complete_job
+from app.services.speech_analysis_stats import SpeechAnalysisStats
 from app.schemas.visit_report_generation import (
     ReportCard,
     ReportCardTopic,
@@ -57,26 +68,48 @@ from app.workers.base import LEASE_EXPIRED_ERROR
 _SUMMARIZED_REACTIONS = {"positive", "neutral", "negative"}
 _NOT_EVALUATED_REACTIONS = {"notUsed", None}
 
+logger = logging.getLogger("saerok.speech_analysis")
 
 
 class ReportDeadline:
-    """리포트 생성 한 번의 마감 시각."""
+    """리포트 생성 한 번의 마감 시각과 취소 상태."""
 
     def __init__(self, seconds: float) -> None:
         self.seconds = seconds
         self._end = time.monotonic() + seconds
+        self._cancelled = threading.Event()
+        self._job_check: Callable[[], None] | None = None
 
     def left(self) -> float:
         return self._end - time.monotonic()
 
+    def cancel(self) -> None:
+        """시간 초과가 확정됐다고 표시한다. 이후 `check()`는 시계와 관계없이 실패한다."""
+        self._cancelled.set()
+
     def check(self) -> None:
-        """마감이 지났으면 `AI_SERVER_TIMEOUT`."""
-        if self.left() <= 0:
+        """취소됐거나 마감이 지났으면 `AI_SERVER_TIMEOUT`."""
+        if self._cancelled.is_set() or self.left() <= 0:
             raise _timed_out()
+
+    def watch_job(self, job_check: Callable[[], None]) -> None:
+        """`check_job()`이 부를 작업 확인 함수를 정한다. 생성기가 요청을 만든 뒤 넣는다."""
+        self._job_check = job_check
+
+    def check_job(self) -> None:
+        """전사문을 다시 외부로 보내기 직전에 부른다. 마감과 DB의 작업 상태를 확인한다.
+
+        생성 스레드에서만 부른다. 작업 확인은 이벤트 루프에서 돌고 그동안 스레드가 기다린다.
+        """
+        self.check()
+        if self._job_check is not None:
+            self._job_check()
+            self.check()
 
 
 # 8-3 요청과 마감을 받아 응답을 돌려주는 동기 함수. 실패는 `AppError`로 올린다.
-# 외부 호출 직전마다 `deadline.check()`로 마감을 확인한다.
+# 외부 호출 직전마다 `deadline.check()`로 마감을 확인하고, 전사문을 다시 보내기
+# 직전마다 `deadline.check_job()`으로 작업이 아직 진행 중인지도 확인한다.
 GenerateReport = Callable[[VisitReportRequest, ReportDeadline], VisitReportResult]
 
 # 생성 함수의 실패 코드를 기존 8-3 작업 실패 코드로 바꾼다(API 계약 유지).
@@ -100,11 +133,18 @@ class VisitReportGenerator:
         *,
         session_id: str,
         speech: SpeechAnalysisResult,
+        stats: SpeechAnalysisStats | None = None,
     ) -> None:
+        """`stats`가 있으면 받은 결과의 숫자를 검증 전에 적는다. 검증이나 저장에서 실패해도 남는다."""
         deadline = ReportDeadline(self._time_limit_seconds)
         session_uuid = UUID(session_id)
         profile_id, request = await build_request(connection, session_uuid, speech)
+        deadline.check()
+        _require_transcript(request)
+        deadline.watch_job(_job_check_from_thread(connection, request.analysis_id, deadline))
         result = await _run_until(deadline, lambda: self._generate(request, deadline))
+        if stats is not None:
+            stats.record_report(result)
         validate_result(request, result)
         # 마감 직후 도착한 결과도 저장하지 않는다.
         deadline.check()
@@ -145,7 +185,57 @@ async def _run_until(
     try:
         return await asyncio.wait_for(done, timeout=max(0.0, deadline.left()))
     except TimeoutError:
+        # 이벤트 루프 타이머와 스레드가 읽는 시계는 해상도가 달라(Windows), 남은 스레드가
+        # 아직 마감 전으로 볼 수 있다. 취소를 표시해 다음 외부 호출 전에 멈추게 한다.
+        deadline.cancel()
         raise _timed_out() from None
+
+
+def _job_check_from_thread(
+    connection: DbConnection, analysis_id: str, deadline: ReportDeadline
+) -> Callable[[], None]:
+    """생성 스레드에서 부를 작업 확인 함수. 확인은 worker의 연결로 이벤트 루프에서 한다.
+
+    worker는 생성 함수가 끝나기를 기다리는 동안 이 연결을 쓰지 않는다. 마감까지만 기다린다.
+    """
+    loop = asyncio.get_running_loop()
+
+    def check() -> None:
+        future = asyncio.run_coroutine_threadsafe(
+            require_active_job(connection, analysis_id), loop
+        )
+        try:
+            future.result(timeout=max(0.0, deadline.left()))
+        except TimeoutError:
+            future.cancel()
+            raise _timed_out() from None
+
+    return check
+
+
+async def require_active_job(connection: DbConnection, analysis_id: str) -> None:
+    """전사문을 다시 외부로 보내도 되는지 작업 행으로 확인한다. 안 되면 `AppError`.
+
+    행이 없거나(계정, 프로필, 회차 삭제의 연쇄 삭제) `generatingReport`가 아니거나 임대가
+    끝났으면 `WORKER_LEASE_EXPIRED`, 전사가 지워졌거나 보관 기한이 지났으면
+    `TRANSCRIPT_EXPIRED`다. 로그에는 작업 ID와 이유만 남긴다.
+    """
+    cursor = await connection.execute(
+        "SELECT status = 'generatingReport' AND lease_expires_at > now() AS leased, "
+        "transcript IS NOT NULL AND transcript_expires_at > clock_timestamp() AS transcript_live "
+        "FROM speech_analysis_jobs WHERE analysis_id = %s",
+        (analysis_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or not row["leased"]:
+        reason = "job_missing" if row is None else "job_not_active"
+        logger.info("report_generation_stopped analysis_id=%s reason=%s", analysis_id, reason)
+        raise _lease_lost()
+    if not row["transcript_live"]:
+        logger.info(
+            "report_generation_stopped analysis_id=%s reason=transcript_expired", analysis_id
+        )
+        raise _transcript_expired()
 
 
 async def build_request(
@@ -203,7 +293,15 @@ async def build_request(
     )
     life_facts = [ReportLifeFact(**row) for row in await cursor.fetchall()]
 
+    cursor = await connection.execute(
+        "SELECT participant_count FROM speech_analysis_jobs "
+        "WHERE session_id = %s AND analysis_id::text = %s",
+        (session_id, speech.analysis_id),
+    )
+    job = await cursor.fetchone()
+
     request = VisitReportRequest(
+        participant_count=job["participant_count"] if job else None,
         analysis_id=speech.analysis_id,
         visit_date=session["visit_date"],
         evaluation=ReportEvaluation(
@@ -231,9 +329,28 @@ async def build_request(
     return profile_id, request
 
 
+def _require_transcript(request: VisitReportRequest) -> None:
+    if not any(segment.text.strip() for segment in request.transcript.segments):
+        raise AppError(
+            status_code=502, error_code="EMPTY_TRANSCRIPT",
+            message="리포트에 사용할 전사 내용이 없습니다.",
+        )
+
+
 def validate_result(request: VisitReportRequest, result: VisitReportResult) -> None:
     """카드와 제안 규칙을 확인한다. 하나라도 어기면 응답 전체를 거절한다."""
+    generated_texts = [
+        result.title, result.body,
+        *(item.summary for item in result.card_summaries),
+        *(item.reason for item in result.topic_proposals),
+        *(text for item in result.life_fact_proposals
+          for text in (item.title, item.content, item.reason)),
+    ]
+    if any(has_medical_effect_claim(text) for text in generated_texts):
+        raise AppError(status_code=502, error_code="UNSAFE_MEDICAL_CLAIM",
+                       message="리포트에 확인되지 않은 의료 효과 표현이 있어 저장하지 않았습니다.")
     reactions = {card.card_id: card.reaction for card in request.cards}
+    _require_transcript(request)
 
     summary_cards = [summary.card_id for summary in result.card_summaries]
     if any(count > 1 for count in Counter(summary_cards).values()) or any(
@@ -297,17 +414,21 @@ async def save_report(
                 "UPDATE conversation_cards SET report_summary = %s WHERE card_id = %s",
                 (summary.summary, summary.card_id),
             )
+        # 7-3은 `created_at` 순서로 보여 준다. 한 트랜잭션의 `now()`는 모두 같아서, AI가 낸
+        # 순서(대화에 나온 순서)가 남도록 행마다 `clock_timestamp()`를 넣는다.
         for proposal in result.life_fact_proposals:
             await connection.execute(
-                "INSERT INTO life_fact_proposals "
-                "(session_id, profile_id, title, content, reason) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, "
+                "reason, story_category, sensitive, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, clock_timestamp())",
                 (
                     session_id,
                     profile_id,
                     proposal.title,
                     proposal.content,
                     proposal.reason,
+                    proposal.story_category,
+                    proposal.sensitive,
                 ),
             )
         for proposal in result.topic_proposals:
@@ -378,6 +499,14 @@ def _lease_lost() -> AppError:
         status_code=409,
         error_code=LEASE_EXPIRED_ERROR,
         message="작업 임대가 끝나 리포트를 저장하지 않았습니다.",
+    )
+
+
+def _transcript_expired() -> AppError:
+    return AppError(
+        status_code=409,
+        error_code="TRANSCRIPT_EXPIRED",
+        message="전사 보관 기한이 지나 리포트를 만들지 않았습니다.",
     )
 
 

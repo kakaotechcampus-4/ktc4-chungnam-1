@@ -3,6 +3,14 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 면회 녹음. 사용자가 녹음을 시작할 때만 요청한다. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 면회 녹음 중 화면을 끄거나 다른 앱으로 옮겨도 녹음이 이어지게 하는 마이크
+         포그라운드 서비스(RecordingService). 안드로이드 14 이상은 유형별 권한도 필요하다.
+         둘 다 설치할 때 주어지는 권한이라 묻지 않는다. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <!-- 녹음 중 알림과 리포트 완료 알림. 안드로이드 13 이상에서만 실행 중에 묻는다.
+         firebase_messaging 도 넣는 권한이지만 녹음 알림이 기대므로 여기에도 적는다. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 면회 사진을 갤러리 '새록' 앨범에 남긴다. 안드로이드 10 이하에서만 필요하고
          11 이상은 권한 없이 저장한다. 저장할 때만 요청한다(gal 2.3.3 안내). -->
     <uses-permission
@@ -38,6 +46,25 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 면회 녹음 중에만 떠 있는 마이크 포그라운드 서비스. 앱 밖에서는 부를 수 없고,
+             최근 앱 목록에서 새록을 밀어 닫으면 녹음도 멈추므로 함께 내린다. -->
+        <service
+            android:name=".RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="true" />
+        <!-- 앱을 켜자마자 FCM 토큰을 만들지 않는다. 알림 수신에 동의한 로그인 계정에서만
+             앱 코드가 토큰을 받는다(lib/features/push/). -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_messaging_installation_id_enabled"
+            android:value="true" />
+        <!-- 리포트 완료 푸시를 MainActivity 가 만드는 `report_ready` 채널(리포트 알림)로 띄운다. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="report_ready" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

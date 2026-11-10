@@ -14,8 +14,12 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/mock_repository.dart';
+import 'package:saerok/data/profile_birth_input_store.dart';
+import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
+import 'package:saerok/data/setup_draft_store.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -25,17 +29,25 @@ import 'package:saerok/features/auth/google_consent_screen.dart';
 import 'package:saerok/features/auth/google_sign_in_button.dart';
 import 'package:saerok/features/auth/google_sign_in_panel.dart';
 import 'package:saerok/features/auth/splash_screen.dart';
+import 'package:saerok/features/local_photos/local_photos.dart';
 import 'package:saerok/features/auth/session_store.dart';
 import 'package:saerok/features/profile/profile_delete_screen.dart';
 import 'package:saerok/features/profile/profile_screen.dart';
+import 'package:saerok/features/settings/settings_screen.dart';
 import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/visit/pending_uploads.dart';
+import 'package:saerok/features/visit/recording_share.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
 
+import 'fake_local_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
+import 'fake_recording_share.dart';
 import 'fake_report_server.dart';
+import 'fake_profile_birth_input_store.dart';
+import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
+import 'fake_setup_draft_store.dart';
 import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
 
@@ -203,7 +215,10 @@ Widget _app({
   bool skipGoogleLogin = false,
   PendingUploads? uploads,
   VisitPhotos? photos,
+  LocalPhotos? localPhotos,
+  RecordingShare? share,
   SelectedProfileStore? selectedProfile,
+  SetupDraftStore? setupDrafts,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -243,6 +258,10 @@ Widget _app({
         builder: (context, state) => const ProfileScreen(),
       ),
       GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.profileDelete,
         builder: (context, state) => const ProfileDeleteScreen(),
       ),
@@ -258,14 +277,32 @@ Widget _app({
       // 로그인하면 어르신 목록을 서버에서 불러온다. 실제 주소로 나가지 않게 한다.
       FakeProfileServer().override,
       FakeReportServer().override,
+      // 프로필 설정의 계정 약관 동의는 로그인하면 서버(1-3)에서 읽는다. 이
+      // 테스트는 로그인과 탈퇴만 보므로 목 계정을 쓴다.
+      accountProvider.overrideWith(
+        (ref) => const MockRepository().loadAccount(),
+      ),
       // 실제 보안 저장소는 플랫폼 채널이 필요해 테스트에서 끝나지 않는다.
       // 넘기지 않은 화면도 가짜를 쓴다.
       sessionStoreProvider.overrideWithValue(store ?? _FakeSessionStore()),
       // 기기의 녹음 폴더를 건드리지 않는다.
       pendingUploadsProvider.overrideWithValue(uploads ?? FakePendingUploads()),
       visitPhotosProvider.overrideWithValue(photos ?? FakeVisitPhotos()),
+      // 기기의 사진 폴더를 건드리지 않는다.
+      localPhotosProvider.overrideWithValue(localPhotos ?? FakeLocalPhotos()),
+      // 앱 캐시의 공유 사본 폴더를 건드리지 않는다.
+      recordingShareProvider.overrideWithValue(share ?? FakeRecordingShare()),
       selectedProfileStoreProvider.overrideWithValue(
         selectedProfile ?? FakeSelectedProfileStore(),
+      ),
+      profileRelationshipStoreProvider.overrideWithValue(
+        FakeProfileRelationshipStore(),
+      ),
+      profileBirthInputStoreProvider.overrideWithValue(
+        FakeProfileBirthInputStore(),
+      ),
+      setupDraftStoreProvider.overrideWithValue(
+        setupDrafts ?? FakeSetupDraftStore(),
       ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
@@ -519,13 +556,14 @@ void main() {
         'sensitiveData': true,
         'pushNotification': false,
         'serviceImprovement': false,
+        'photoAnalysis': false,
       }, reason: '고르지 않은 항목은 거부로 보낸다. 임의로 true 를 넣지 않는다');
       expect(
         sent!.containsKey('displayName'),
         isFalse,
         reason: '이름을 비웠으면 보내지 않고 서버 기본값을 쓴다',
       );
-      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 프로필부터 만든다');
+      expect(find.text('처음 오셨네요'), findsOneWidget, reason: '새 계정은 처음 오셨네요를 지나 홈으로 간다');
     });
 
     testWidgets('이름을 적으면 함께 보낸다', (tester) async {
@@ -631,7 +669,8 @@ void main() {
         'sensitiveData': false,
         'pushNotification': false,
         'serviceImprovement': false,
-      }, reason: '계약의 네 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
+        'photoAnalysis': false,
+      }, reason: '계약의 다섯 항목은 그대로 보내고 고르지 않은 것은 거부로 보낸다');
       expect(find.text('처음 오셨네요'), findsOneWidget);
     });
 
@@ -908,10 +947,11 @@ void main() {
       expect(google.signOutCalls, 1);
     });
 
-    testWidgets('프로필 설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
+    testWidgets('설정의 로그아웃은 서버에 알리고 로그인 화면으로 간다', (tester) async {
       _tallScreen(tester);
       final store = _FakeSessionStore(_signedIn());
       final photos = FakeVisitPhotos()..kept['/fake/visit-1.jpg'] = 'session-1';
+      final share = FakeRecordingShare();
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -926,12 +966,13 @@ void main() {
           google: _FakeGoogleAuthenticator(),
           store: store,
           session: _signedIn(),
-          initialLocation: AppRoutes.profile,
+          initialLocation: AppRoutes.settings,
           photos: photos,
+          share: share,
         ),
       );
 
-      final button = find.widgetWithText(OutlinedButton, '로그아웃');
+      final button = find.widgetWithText(TextButton, '로그아웃');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
@@ -942,6 +983,7 @@ void main() {
       expect(photos.forgottenAccounts, isEmpty, reason: '로그아웃은 면회 사진을 지우지 않는다');
       expect(photos.discarded, isEmpty);
       expect(photos.kept.keys, ['/fake/visit-1.jpg']);
+      expect(share.forgotCopies, 0, reason: '로그아웃은 공유한 녹음 사본을 지우지 않는다');
     });
   });
 
@@ -1020,9 +1062,15 @@ void main() {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
       final photos = FakeVisitPhotos();
+      final localPhotos = FakeLocalPhotos()
+        ..saved[localPhotoKey('p1', LocalPhotoSlot.avatar)] = '/fake/a.jpg';
+      final share = FakeRecordingShare();
       final selectedProfile = FakeSelectedProfileStore()
         ..values[_signedIn().account.accountId] = 'p-remembered'
         ..values['account-other'] = 'p-other';
+      final setupDrafts = FakeSetupDraftStore()
+        ..values['${_signedIn().account.accountId}/p-half'] = '{}'
+        ..values['account-other/p-other'] = '{}';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1040,7 +1088,10 @@ void main() {
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
           photos: photos,
+          localPhotos: localPhotos,
+          share: share,
           selectedProfile: selectedProfile,
+          setupDrafts: setupDrafts,
         ),
       );
 
@@ -1051,12 +1102,19 @@ void main() {
       expect(uploads.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 녹음과 재전송 기록을 지운다');
+      expect(share.forgotCopies, 1, reason: '공유하며 앱 캐시에 남긴 녹음 사본을 지운다');
       expect(photos.forgottenAccounts, [
         _signedIn().account.accountId,
       ], reason: '탈퇴한 계정의 면회 사진을 지운다');
+      expect(localPhotos.forgottenAccounts, [
+        _signedIn().account.accountId,
+      ], reason: '탈퇴한 계정이 이 기기에 넣은 어르신 사진과 이야기 사진을 지운다');
       expect(selectedProfile.values, {
         'account-other': 'p-other',
       }, reason: '탈퇴한 계정이 고른 어르신 기억만 지운다');
+      expect(setupDrafts.values.keys, [
+        'account-other/p-other',
+      ], reason: '탈퇴한 계정이 등록하다 멈춘 세부 정보 초안만 지운다');
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);
@@ -1065,6 +1123,7 @@ void main() {
     testWidgets('서버가 실패하면 화면에 남아 탈퇴되지 않았음을 알린다', (tester) async {
       final store = _FakeSessionStore(_signedIn());
       final uploads = FakePendingUploads();
+      final share = FakeRecordingShare();
 
       await _pumpWithProfile(
         tester,
@@ -1079,6 +1138,7 @@ void main() {
           session: _signedIn(),
           initialLocation: AppRoutes.profileDelete,
           uploads: uploads,
+          share: share,
         ),
       );
 
@@ -1092,6 +1152,7 @@ void main() {
         isEmpty,
         reason: '탈퇴하지 않았으면 녹음을 지우지 않는다',
       );
+      expect(share.forgotCopies, 0, reason: '탈퇴하지 않았으면 공유 사본도 지우지 않는다');
       expect(find.text('탈퇴가 완료됐어요.'), findsNothing);
       expect(store.stored, isNotNull);
       expect(

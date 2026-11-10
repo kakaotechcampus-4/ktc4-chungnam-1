@@ -1,0 +1,24 @@
+[Unit]
+Description=Saerok restricted backup STT SSH connection
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/saerok-stt-backup.env
+ExecStart=/bin/sh /opt/saerok-stt-backup/run-tunnel.sh
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=15s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

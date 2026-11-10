@@ -18,11 +18,29 @@ class CamelModel(ApiModel):
     model_config = ConfigDict(alias_generator=to_camel)
 
 
+class PhotoPreparation(CamelModel):
+    set_id: UUID
+    state: Literal["waiting", "choice"]
+    total: int
+    completed: int
+    failed: int
+    pending: int
+    reason: Literal["analysisFailed", "timedOut", "consentRequired"] | None = None
+
+
+class PhotoPreparationChoice(CamelModel):
+    set_id: UUID
+    action: Literal["retry", "continue"]
+
+
 class CardGenerationStatus(CamelModel):
     """4-1, 4-2 응답. 상태별 홈 버튼은 API 명세 4절 표 참고."""
 
     schema_version: Literal[1] = 1
     status: Literal["none", "running", "ready", "inVisit", "failed"]
+    # 카드를 받은 뒤 프로필이나 일대기를 고쳐서 새로 만들어야 하면 true. 이 묶음으로는 면회를 시작할 수 없음
+    needs_refresh: bool = False
+    photo_preparation: PhotoPreparation | None = None
 
 
 class CardTopic(CamelModel):
@@ -42,14 +60,19 @@ class Card(CamelModel):
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: list[dict[str, str]]
     selected: bool
+    liked: bool  # 보호자의 "좋았어요" 표시(4-5, 4-6)
+    # 저장된 이야기나 세부 정보의 아픈 경험(사별, 전쟁, 사고, 병)을 다루는 카드. 앱이 표시를 붙여
+    # 보호자가 고르게 함(2026-11-09 PM 결정). 이전에 만든 카드는 false
+    sensitive: bool
 
 
 class CardSet(CamelModel):
-    """4-3 응답. 고르기 전이거나 평가 전 회차에 쓰는 중인 카드 묶음."""
+    """4-3, 4-4 응답. 4-3은 고르기 전이거나 평가 전 회차에 쓰는 중인 묶음, 4-4는 회차에 쓴 묶음."""
 
     schema_version: Literal[1] = 1
     set_id: UUID
     used_by_session_id: UUID | None
+    needs_refresh: bool
     cards: list[Card]
 
 
@@ -72,6 +95,9 @@ class LifeFact(CamelModel):
     created_at: datetime
     # visit: 면회 뒤 제안을 승인해 생긴 이야기, caregiver: 보호자가 직접 넣은 이야기
     source: Literal["visit", "caregiver"]
+    # 아픈 기억일 수 있는 이야기(`life_facts.sensitive`). 카드 생성 2판은 이 이야기를 근거로 한 카드를
+    # 아픈 경험 카드(`sensitive`)로 냄(2026-11-10 PM 결정)
+    sensitive: bool
 
 
 class Photo(CamelModel):
@@ -147,6 +173,8 @@ class GeneratedCard(CamelModel):
     follow_up_questions: list[str]
     evidence_source: Literal["lifeFact", "photo", "profile", "none"]
     evidence: Evidence
+    # 아픈 경험을 다루는 카드. `conversation_cards.sensitive`로 저장하고 4-3, 4-4 카드에 담음
+    sensitive: bool
     # 생성 쪽이 채움. BE는 generation_log에만 남김
     extra: dict[str, Any] = Field(default_factory=dict)
 

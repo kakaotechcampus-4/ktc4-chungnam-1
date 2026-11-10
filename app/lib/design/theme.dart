@@ -41,6 +41,14 @@ ThemeData buildAppTheme() {
       thickness: 1,
       space: 1,
     ),
+    // 알림창(아래 띠)은 검정 면에 흰 글자다. 흰 글자 18.9:1, 버튼 글자
+    // `#E0E0E0` 14.3:1.
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: AppColors.ink,
+      contentTextStyle: AppTypography.sub.copyWith(color: AppColors.background),
+      actionTextColor: AppColors.line,
+      closeIconColor: AppColors.background,
+    ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
       color: AppColors.ink,
       linearTrackColor: AppColors.surface,

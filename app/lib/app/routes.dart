@@ -13,6 +13,11 @@ abstract final class AppRoutes {
   /// 세션이 풀렸을 때다. 복원을 확인하지 않고 곧바로 로그인 버튼을 띄운다.
   static const signIn = '/splash?signedOut=true';
 
+  /// 쓰는 도중 세션을 다시 받지 못해 로그인부터 다시 할 때 쓴다. [signIn] 과
+  /// 같고, 로그인 버튼 위에 로그인이 풀린 이유를 알린다(UX 점검 8번).
+  static const signInAfterSessionLoss =
+      '/splash?signedOut=true&sessionLost=true';
+
   /// 구글 로그인 뒤 받는 필수 동의.
   ///
   /// `POST /auth/google` 이 `consentRequired` 를 준 경우에만 들어간다.
@@ -61,8 +66,27 @@ abstract final class AppRoutes {
   static String visitUploadOf(String sessionId) =>
       '$visitUpload?session=$sessionId';
 
+  static String analysisRetryOf(String sessionId, String analysisId) => Uri(
+    path: visitUpload,
+    queryParameters: {'session': sessionId, 'analysis': analysisId},
+  ).toString();
+
   /// 보호자 평가 제출 뒤 위로 화면. 피그마 설계 없음. 여기서 홈으로 간다.
   static const visitReviewDone = '/visit/review/done';
+
+  /// 면회 흐름의 화면(사진, 녹음, 카드 추가, 소감, 위로, 음성 다시 보내기)이다.
+  ///
+  /// 이 화면에서는 하던 면회를 끊지 않는다. 업데이트 안내는 홈에 돌아올 때까지
+  /// 미루고(`app_update_watcher.dart`), 세션을 잃으면 로그인 화면으로 옮기기 전에
+  /// 확인 창으로 먼저 알린다(`main.dart`).
+  static const visitFlow = {
+    visitPhoto,
+    visitRecord,
+    visitAddCards,
+    visitReview,
+    visitReviewDone,
+    visitUpload,
+  };
 
   /// G 리포트. `:reportId` 를 받는다.
   static const report = '/report/:reportId';
@@ -96,6 +120,10 @@ abstract final class AppRoutes {
   /// 피그마 설계 없음.
   static const profileEditDetails = '/profile/edit/details';
 
+  /// 등록을 마친 어르신의 사진 더 올리기. 프로필 설정의 갤러리에서 들어간다.
+  /// `extra` 로 이미 올린 사진 수를 받는다. 피그마 설계 없음(B-7 화면을 쓴다).
+  static const profilePhotoAdd = '/profile/photos/add';
+
   /// 함께하는 소중한 분. 홈 상단의 어르신 알약을 누르면 들어온다. 피그마 설계 없음.
   static const profileSwitch = '/profiles';
 
@@ -111,6 +139,13 @@ abstract final class AppRoutes {
   /// 여러 건이 쌓인 이력을 보여주려면 `app/lib/data/` 의 데이터 모델을
   /// 넓혀야 한다. 그 전까지는 홈 배너와 같은 내용을 보여주는 자리다.
   static const notifications = '/notifications';
+
+  /// 설정. 하단 탭 맨 오른쪽. 알림 설정, 도움말, 계정 약관 동의를 둔다.
+  static const settings = '/settings';
+
+  /// 계정 약관 동의. 설정에서 한 단계 들어간다. `extra` 가 `true` 면 알림 수신
+  /// 동의 줄을 강조한다. 피그마 설계 없음.
+  static const settingsConsents = '/settings/consents';
 
   /// H 일대기의 표지. 하단 탭의 일대기에서 들어온다.
   static const album = '/album';

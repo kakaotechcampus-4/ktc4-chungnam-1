@@ -81,6 +81,29 @@ enum AnalysisStatus {
       values.where((v) => v.name == raw).firstOrNull;
 }
 
+/// 음성 분석 작업 하나를 물은 결과(6-3).
+class AnalysisProgress {
+  const AnalysisProgress(this.status, {this.errorCode});
+
+  /// 모르는 값이면 `null` 이다.
+  final AnalysisStatus? status;
+
+  /// [AnalysisStatus.failed] 일 때 서버가 남긴 이유(`EMPTY_TRANSCRIPT`,
+  /// `AI_SERVER_TIMEOUT` 등, 명세 8절). 그 밖에는 `null` 이다.
+  final String? errorCode;
+}
+
+/// 분석 실패 이유(6-3 `errorCode`)를 홈 배너와 알림에 덧붙일 한 줄로 옮긴다.
+///
+/// 이유를 짐작할 수 있는 두 가지만 알린다(2026-11-10 E2E). 말소리가 없던
+/// 녹음과, 너무 길거나 서버가 바빠 제한 시간을 넘긴 경우다. 모르는 이유는
+/// `null` 이고 지어내지 않는다.
+String? analysisFailureReason(String? errorCode) => switch (errorCode) {
+  'EMPTY_TRANSCRIPT' => '녹음에서 말소리를 찾지 못했어요.',
+  'AI_SERVER_TIMEOUT' => '녹음이 너무 길거나 서버가 바빠 시간 안에 끝내지 못했어요.',
+  _ => null,
+};
+
 /// 리포트 기록의 한 줄(7-1).
 class ReportListItem {
   const ReportListItem({
@@ -164,9 +187,25 @@ class ReportApi {
   }
 
   /// 6-3 음성 분석 작업의 상태. 모르는 값이면 `null` 이다.
-  Future<AnalysisStatus?> analysis(String analysisId) async {
+  /// 기존 전사를 쓸 수 있으면 리포트만 다시 만든다. 전사가 없으면 서버가
+  /// RECORDING_REQUIRED로 알려 기기에 보관한 녹음을 다시 제출하게 한다.
+  Future<String> retryAnalysis(String analysisId) async {
+    final body = await _client.post('$_base/speech-analyses/$analysisId/retry');
+    final id = body['analysisId'];
+    if (id is! String || id.isEmpty) {
+      throw const ApiUnexpectedResponseFailure('missing retry analysisId');
+    }
+    return id;
+  }
+
+  Future<AnalysisProgress> analysis(String analysisId) async {
     final body = await _client.get('$_base/speech-analyses/$analysisId');
-    return _read(() => AnalysisStatus.parse(body['status'] as String));
+    return _read(
+      () => AnalysisProgress(
+        AnalysisStatus.parse(body['status'] as String),
+        errorCode: body['errorCode'] as String?,
+      ),
+    );
   }
 
   /// 7-1 리포트가 저장된 회차. 최근 면회부터다.
@@ -241,15 +280,7 @@ class ReportApi {
   }
 
   /// 성공 응답이 계약과 다르면 성공으로 넘기지 않는다.
-  static T _read<T>(T Function() parse) {
-    try {
-      return parse();
-    } on TypeError catch (error) {
-      throw ApiUnexpectedResponseFailure('리포트 응답 모양이 다르다: $error');
-    } on FormatException catch (error) {
-      throw ApiUnexpectedResponseFailure(error.message);
-    }
-  }
+  T _read<T>(T Function() parse) => _client.read('리포트', parse);
 }
 
 /// 리포트와 변경 제안 처리 실패를 보호자에게 보여줄 문구로 옮긴다.

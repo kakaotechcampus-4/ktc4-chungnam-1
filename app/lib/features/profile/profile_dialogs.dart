@@ -14,7 +14,7 @@ Future<bool> showRemoveProfileDialog(
   required String name,
   required bool pending,
 }) async {
-  final title = name.isEmpty ? '입력하던 정보를 지울까요?' : '$name 어르신의 정보를 지울까요?';
+  final title = name.isEmpty ? '입력하던 정보를 지울까요?' : '$name님의 정보를 지울까요?';
   final detail = pending
       ? '입력하던 내용이 지워지고 되돌릴 수 없어요.'
       // 서버에서 무엇까지 지울지는 BE 와 정하기 전이라 범위를 말하지 않는다.
@@ -73,19 +73,37 @@ Future<bool> showChoiceDialog(
   return chosen ?? false;
 }
 
+/// 알리기만 하는 창. [showChoiceDialog] 와 같은 모양에 버튼이 하나다.
+///
+/// [barrierDismissible] 이 `false` 면 바깥을 눌러도 닫히지 않는다. 버튼을 눌러야
+/// 다음으로 넘어가는 안내에 쓴다.
+Future<void> showNoticeDialog(
+  BuildContext context, {
+  required String title,
+  required String detail,
+  String label = '확인',
+  bool barrierDismissible = true,
+}) => showDialog<bool>(
+  context: context,
+  barrierDismissible: barrierDismissible,
+  builder: (context) =>
+      _ChoiceDialog(title: title, detail: detail, primaryLabel: label),
+);
+
 /// 제목, 설명과 두 버튼만 있는 창이다. 만남 끝내기 확인 창과 같은 모양이다.
+/// [secondaryLabel] 이 없으면 버튼 하나로 알리기만 한다.
 class _ChoiceDialog extends StatelessWidget {
   const _ChoiceDialog({
     required this.title,
     required this.detail,
     required this.primaryLabel,
-    required this.secondaryLabel,
+    this.secondaryLabel,
   });
 
   final String title;
   final String detail;
   final String primaryLabel;
-  final String secondaryLabel;
+  final String? secondaryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -118,14 +136,19 @@ class _ChoiceDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: primaryLabel,
                 onPressed: () => Navigator.of(context).pop(true),
               ),
-              const SizedBox(height: AppSpacing.md),
-              SecondaryButton(
-                label: secondaryLabel,
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
+              if (secondaryLabel case final secondary?) ...[
+                const SizedBox(height: AppSpacing.md),
+                SecondaryButton(
+                  borderColor: HomeColors.outline,
+                  label: secondary,
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+              ],
             ],
           ),
         ),

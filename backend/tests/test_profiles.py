@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from app.core.database import connect
 from app.core.errors import AppError
+from app.schemas import profiles as profile_schemas
 from app.services import profiles
 from tests.db_api import DbApi, profile_body
 from tests.support import run
@@ -74,6 +75,77 @@ def test_invalid_basic_information_is_rejected(migrated_database_url):
 
     assert statuses == ["INVALID_REQUEST"] * len(invalid_bodies)
     assert caregiver.call("GET", "/api/v1/profiles").json()["profiles"] == []
+
+
+# 생년월일 검사에 쓰는 오늘 날짜를 고정한다. 만 10세가 되는 가장 늦은 생년월일은 2016-11-09다.
+FIXED_TODAY = date(2026, 11, 9)
+
+
+def test_birth_date_under_ten_years_or_in_the_future_is_rejected(
+    migrated_database_url, monkeypatch
+):
+    monkeypatch.setattr(profile_schemas, "_today", lambda: FIXED_TODAY)
+    caregiver = DbApi(migrated_database_url).create_account()
+
+    rejected = [
+        caregiver.call("POST", "/api/v1/profiles", json=profile_body(birthDate=value))
+        for value in ("2016-11-10", "2026-11-09", "2026-11-10", "2099-01-01")
+    ]
+    accepted = caregiver.call(
+        "POST", "/api/v1/profiles", json=profile_body(birthDate="2016-11-09")
+    )
+
+    assert [r.status_code for r in rejected] == [422] * 4
+    assert {r.json()["errorCode"] for r in rejected} == {"INVALID_REQUEST"}
+    assert accepted.status_code == 201
+    assert accepted.json()["birthDate"] == "2016-11-09"
+    assert len(caregiver.call("GET", "/api/v1/profiles").json()["profiles"]) == 1
+
+
+def test_patch_rejects_birth_date_under_ten_years(migrated_database_url, monkeypatch):
+    monkeypatch.setattr(profile_schemas, "_today", lambda: FIXED_TODAY)
+    caregiver = DbApi(migrated_database_url).create_account()
+    created = caregiver.create_profile()
+    path = f"/api/v1/profiles/{created['profileId']}"
+
+    future = caregiver.call("PATCH", path, json={"birthDate": "2027-01-01"})
+    too_recent = caregiver.call(
+        "PATCH", path, json={"birthDate": "2016-11-10", "hobby": "합성 취미"}
+    )
+
+    assert [future.status_code, too_recent.status_code] == [422, 422]
+    assert {future.json()["errorCode"], too_recent.json()["errorCode"]} == {
+        "INVALID_REQUEST"
+    }
+    # 함께 보낸 다른 필드도 저장하지 않는다.
+    assert caregiver.call("GET", path).json() == created
+    boundary = caregiver.call("PATCH", path, json={"birthDate": "2016-11-09"})
+    assert boundary.status_code == 200
+    assert boundary.json()["birthDate"] == "2016-11-09"
+
+
+def test_latest_birth_date_moves_leap_day_to_february_28():
+    assert profile_schemas.latest_birth_date(date(2026, 11, 9)) == date(2016, 11, 9)
+    assert profile_schemas.latest_birth_date(date(2028, 2, 29)) == date(2018, 2, 28)
+    assert profile_schemas.latest_birth_date(date(2026, 2, 28)) == date(2016, 2, 28)
+    assert profile_schemas.latest_birth_date(date(2026, 3, 1)) == date(2016, 3, 1)
+
+
+def test_accepted_birth_dates_give_a_card_age_range_of_at_least_ten(
+    migrated_database_url,
+):
+    """카드 생성은 DB에서 `age(current_date, birth_date)`로 연령대를 센다. 받는 경계가 그 계산과 같은지 본다."""
+    api = DbApi(migrated_database_url)
+    todays = [date(2026, 11, 9), date(2028, 2, 29), date(2026, 2, 28), date(2026, 3, 1)]
+    for today in todays:
+        latest = profile_schemas.latest_birth_date(today)
+        rows = api.query(
+            "SELECT date_part('year', age(%s::date, %s::date))::int / 10 * 10 AS oldest,"
+            "       date_part('year', age(%s::date, %s::date + 1))::int / 10 * 10 AS youngest",
+            (today, latest, today, latest),
+        )
+        # 받는 가장 늦은 날은 `10s`, 하루 늦으면 `0s`(카드 생성 계약이 받지 않는 값)다.
+        assert rows == [{"oldest": 10, "youngest": 0}], today
 
 
 def test_list_keeps_creation_order_and_computes_setup_status(migrated_database_url):
@@ -277,6 +349,7 @@ def test_patch_rejects_blank_details_and_cleared_basic_fields(migrated_database_
         {"birthDate": None},
         {"condition": None},
         {"name": "가" * 51},
+        {"birthDate": "2099-01-01"},
         {"setupStatus": "completed"},
     ]
     codes = [

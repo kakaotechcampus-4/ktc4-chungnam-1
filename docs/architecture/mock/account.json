@@ -22,6 +22,10 @@
       "pushNotification": {
         "granted": true,
         "grantedAt": "2026-08-21T11:40:15+09:00"
+      },
+      "photoAnalysis": {
+        "granted": false,
+        "grantedAt": null
       }
     },
     "createdAt": "2026-08-21T11:40:00+09:00"

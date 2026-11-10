@@ -8,6 +8,10 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
+import '../cards/card_expand_cue.dart';
+import '../cards/card_source_photo.dart';
+import '../cards/cards_screen.dart' show cardSelectLabel;
+import '../cards/sensitive_card_badge.dart';
 import 'visit_controller.dart';
 
 /// E-5 대화 카드 추가.
@@ -45,9 +49,7 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('카드를 추가하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.'),
-      ),
+      const SnackBar(content: Text('카드를 추가하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러주세요.')),
     );
   }
 
@@ -57,8 +59,10 @@ class _AddCardsScreenState extends ConsumerState<AddCardsScreen> {
     final visit = ref.watch(visitControllerProvider).value;
     final already = visit?.cards.map((c) => c.cardId).toSet() ?? const {};
 
+    // 오늘의 대화 카드 화면과 같은 세이지 색감이다(`HomeColors`).
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(backgroundColor: HomeColors.background),
       body: supplements.when(
         loading: () => const LoadingView(),
         error: (error, _) =>
@@ -120,6 +124,8 @@ class _Body extends StatelessWidget {
     return ScreenBody(
       scrollable: true,
       bottom: PrimaryButton(
+        color: HomeColors.accent,
+        loadingColor: HomeColors.accentLoading,
         label: adding
             ? '카드를 추가하고 있어요'
             : picked.isEmpty
@@ -172,38 +178,30 @@ class _AddCardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    // 카드 본문을 누르면 펼쳐지고, 오른쪽 원 둘레의 자리(폭 84)를 눌러야
+    // 선택된다. 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+    return SelectableCard(
+      accent: HomeColors.accent,
+      shadows: AppShadows.cardSoft,
       selected: selected,
       onTap: onToggleExpanded,
-      padding: const EdgeInsets.all(AppSpacing.xl),
+      expanded: expanded,
+      tapHint: expanded ? '질문 접기' : '질문 펼치기',
+      selectLabel: cardSelectLabel(card.cardTitle),
+      onToggleSelected: onToggleSelected,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(card.cardTitle, style: AppTypography.bodyStrong),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(card.description, style: AppTypography.sub),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              GestureDetector(
-                onTap: onToggleSelected,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: SelectionMark(selected: selected),
-                ),
-              ),
-            ],
-          ),
-
+          // 카드 고르기 화면과 같이 사진에서 나온 카드는 그 사진을 맨 위에 둔다.
+          CardSourcePhoto(card: card),
+          // 카드 고르기 화면과 같이 아픈 경험을 다루는 카드를 표시한다.
+          if (card.sensitive) ...[
+            const SensitiveCardBadge(),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          Text(card.cardTitle, style: AppTypography.bodyStrong),
+          const SizedBox(height: AppSpacing.sm),
+          Text(card.description, style: AppTypography.sub),
           if (expanded) ...[
             const SizedBox(height: AppSpacing.lg),
             const Divider(),
@@ -221,15 +219,11 @@ class _AddCardTile extends StatelessWidget {
                   ],
                 ),
               ),
-          ] else ...[
+            const SizedBox(height: AppSpacing.xs),
+          ] else
             const SizedBox(height: AppSpacing.md),
-            Text(
-              '눌러서 질문 보기',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            ),
-          ],
+          // 카드 고르기 화면과 같은 펼침 단서다.
+          CardExpandCue(expanded: expanded),
         ],
       ),
     );

@@ -23,6 +23,7 @@ COPY --from=ai common /ai/common
 COPY --from=ai card_generation /ai/card_generation
 COPY --from=ai report_generation /ai/report_generation
 COPY --from=ai proposal_generation /ai/proposal_generation
+COPY --from=ai photo_analysis /ai/photo_analysis
 RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./
@@ -31,6 +32,10 @@ COPY app ./app
 
 RUN useradd --system --uid 10001 --no-create-home saerok
 USER saerok
+
+# 코드가 바뀌어도 의존성 층은 재사용한다. 검증한 전체 SHA를 빌드 인수로 전달한다.
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 
 EXPOSE 8000
 

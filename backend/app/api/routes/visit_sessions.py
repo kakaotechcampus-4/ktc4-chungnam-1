@@ -47,10 +47,9 @@ async def create_session(
     profile_id = await require_owned(
         connection, CARD_SET, body.set_id, account_id=account.account_id
     )
-    session_id = await create_visit_session(
+    return await create_visit_session(
         connection, profile_id, body.set_id, body.selected_card_ids
     )
-    return await load_visit_session(connection, session_id)
 
 
 @router.post(

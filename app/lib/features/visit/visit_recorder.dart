@@ -6,7 +6,9 @@
 /// 주입 방식과 같다).
 library;
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -38,8 +40,29 @@ class VisitRecording {
   static const fileExtension = 'wav';
 }
 
+/// 녹음 장치가 알려 주는 지금 상태다([VisitRecorder.stateChanges]).
+enum VisitRecorderState {
+  /// 마이크 소리를 파일에 쓰고 있다.
+  recording,
+
+  /// 파일은 열려 있고 쓰기만 멈췄다. 이어서 쓸 수 있다.
+  paused,
+
+  /// 파일을 닫았거나 장치가 멈췄다. 같은 파일에 이어 쓸 수 없다.
+  stopped,
+}
+
 /// 녹음 장치를 다루는 최소한의 약속이다.
 abstract interface class VisitRecorder {
+  /// 장치의 상태가 바뀔 때마다 알린다. 앱이 부른 [pause], [resume], [stop] 도
+  /// 함께 온다.
+  ///
+  /// 앱이 부르지 않았는데 멈추는 경우를 알아채려고 듣는다. `record` 는 다른 앱이
+  /// 소리를 내거나 전화가 와 오디오 포커스를 잃으면 스스로 [VisitRecorderState.paused]
+  /// 로 멈추고 저절로 잇지 않는다(`audioInterruption: pause`). 장치가 오류로
+  /// 멈추면 오류 대신 [VisitRecorderState.stopped] 를 보낸다. 여럿이 들을 수 있다.
+  Stream<VisitRecorderState> get stateChanges;
+
   /// 마이크를 쓸 수 있는지 확인한다. 아직 묻지 않았으면 사용자에게 묻는다.
   Future<bool> hasPermission();
 
@@ -68,6 +91,22 @@ class DeviceVisitRecorder implements VisitRecorder {
 
   @override
   Future<bool> hasPermission() => _recorder.hasPermission();
+
+  @override
+  Stream<VisitRecorderState> get stateChanges =>
+      _recorder.onStateChanged().transform(
+        StreamTransformer<RecordState, VisitRecorderState>.fromHandlers(
+          handleData: (state, sink) => sink.add(switch (state) {
+            RecordState.record => VisitRecorderState.recording,
+            RecordState.pause => VisitRecorderState.paused,
+            RecordState.stop => VisitRecorderState.stopped,
+          }),
+          // `record_android` 는 녹음 중 장치가 실패하면 세션을 버리고 이 흐름에
+          // 오류를 보낸다. 녹음은 이미 끝났으므로 멈춤으로 알린다.
+          handleError: (error, stackTrace, sink) =>
+              sink.add(VisitRecorderState.stopped),
+        ),
+      );
 
   @override
   Future<VisitRecording> start() async {
@@ -122,10 +161,91 @@ class DeviceVisitRecorder implements VisitRecorder {
     );
     await directory.create(recursive: true);
 
-    final stamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[:.]'), '-');
+    final stamp = DateTime.now().toIso8601String().replaceAll(
+      RegExp(r'[:.]'),
+      '-',
+    );
     return '${directory.path}/visit-$stamp.${VisitRecording.fileExtension}';
+  }
+}
+
+/// 이미 머리글까지 쓰고 닫힌 녹음 파일인지 본다.
+///
+/// 장치가 녹음 중에 스스로 멈추면(`record_android` 의 장치 실패) 플러그인이 파일을
+/// 닫아 머리글을 쓰고 세션을 버린다. 그 뒤 [VisitRecorder.stop] 은 닫을 것이 없어
+/// `null` 을 돌려주지만 파일은 열 수 있다. 그 파일을 저장 실패로 버리지 않으려고
+/// 쓴다. WAV 녹음이 아니면 알 수 없어 `false` 다.
+bool isFinishedRecording(String path) {
+  if (visitRecordConfig.encoder != AudioEncoder.wav) return false;
+  final file = File(path);
+  if (!file.existsSync()) return false;
+  if (file.lengthSync() <= DeviceVisitRecorder._wavHeaderSize) return false;
+  final raf = file.openSync();
+  try {
+    return String.fromCharCodes(raf.readSync(4)) == 'RIFF';
+  } finally {
+    raf.closeSync();
+  }
+}
+
+/// 녹음을 끝내지 못한 WAV 파일의 머리글을 다시 쓴다.
+///
+/// `record` 는 WAV 머리글 자리(앞 44바이트)를 비워 둔 채 소리를 버퍼 없이 바로
+/// 파일에 쓰고, 녹음을 끝낼 때 머리글을 채운다(`record_android` 의
+/// `WaveContainer`). 녹음 중에 앱이 죽으면 소리는 남지만 머리글이 0으로 남아
+/// 열 수 없는 파일이 된다. 형식은 [visitRecordConfig] 로 정해져 있으므로 파일
+/// 길이로 머리글을 다시 만들어 보낼 수 있게 한다.
+///
+/// 고쳤으면 `true` 다. 이미 머리글이 있거나, 소리가 없거나, 파일이 없거나, WAV
+/// 녹음이 아니면 손대지 않고 `false` 다.
+bool repairUnfinishedRecording(String path) {
+  if (visitRecordConfig.encoder != AudioEncoder.wav) return false;
+  // 44바이트만 읽고 쓰므로 동기로 처리한다. 화면 테스트의 가짜 시간에서도 끝난다.
+  final file = File(path);
+  if (!file.existsSync()) return false;
+  final length = file.lengthSync();
+  const header = DeviceVisitRecorder._wavHeaderSize;
+  if (length <= header) return false;
+
+  final raf = file.openSync(mode: FileMode.append);
+  try {
+    raf.setPositionSync(0);
+    if (String.fromCharCodes(raf.readSync(4)) == 'RIFF') return false;
+
+    const bits = 16;
+    final channels = visitRecordConfig.numChannels;
+    final sampleRate = visitRecordConfig.sampleRate;
+    final frame = channels * bits ~/ 8;
+    // 마지막 표본이 반쯤 쓰였으면 그 앞까지만 소리로 친다.
+    final dataSize = (length - header) ~/ frame * frame;
+
+    final bytes = ByteData(header);
+    void tag(int offset, String text) {
+      for (var i = 0; i < 4; i++) {
+        bytes.setUint8(offset + i, text.codeUnitAt(i));
+      }
+    }
+
+    tag(0, 'RIFF');
+    bytes.setUint32(4, 36 + dataSize, Endian.little);
+    tag(8, 'WAVE');
+    tag(12, 'fmt ');
+    bytes.setUint32(16, 16, Endian.little);
+    bytes.setUint16(20, 1, Endian.little); // PCM
+    bytes.setUint16(22, channels, Endian.little);
+    bytes.setUint32(24, sampleRate, Endian.little);
+    bytes.setUint32(28, sampleRate * frame, Endian.little);
+    bytes.setUint16(32, frame, Endian.little);
+    bytes.setUint16(34, bits, Endian.little);
+    tag(36, 'data');
+    bytes.setUint32(40, dataSize, Endian.little);
+
+    // append 는 읽고 쓰기로 열고 끝에 놓을 뿐이라 위치를 옮겨 앞을 덮어쓸 수 있다.
+    raf.setPositionSync(0);
+    raf.writeFromSync(bytes.buffer.asUint8List());
+    return true;
+  } finally {
+    raf.closeSync();
   }
 }
 

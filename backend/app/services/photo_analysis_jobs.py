@@ -6,10 +6,9 @@
 A)가 한다. 결과를 저장할 때는 `analysis_status = 'completed'`, `description`, `model`,
 `prompt_version`과 함께 `lease_expires_at = NULL`로 바꾼다(CHECK `photos_lease_check`).
 
-**사진 동의 설계 전에는 worker에 연결하지 않는다.** ADR-001의 2026-10-05 개정안은 사진
-보관 동의와 AI 분석 동의를 나누고, 분석 동의를 확인하지 않은 사진으로 분석 작업을 만들지
-못하게 한다. 지금은 `pending`인 프로필 사진을 모두 가져오므로, 분석 동의의 저장 위치와
-"분석하지 않는 사진"의 상태가 정해지면 그 조건을 가져오기 조건에 더한 뒤 사용한다.
+계정의 현재 동의에서 AI 이미지 분석(`photo_analysis`)이 켜진 사진만 가져온다. 동의하지 않은
+계정의 사진은 `pending`으로 남고, 나중에 동의하면 그때 가져간다. 처리 함수가 ML 업체를
+부르기 바로 전과 결과를 저장하기 직전에 동의를 다시 확인한다(`photo_analysis_pipeline.py`).
 """
 
 from __future__ import annotations
@@ -52,6 +51,7 @@ class PhotoAnalysisQueue:
             WITH candidate AS (
                 SELECT photo_id FROM photos
                  WHERE analysis_status = 'pending' AND session_id IS NULL
+                   AND EXISTS (SELECT 1 FROM profiles pr JOIN current_consents c ON c.user_id = pr.user_id WHERE pr.profile_id = photos.profile_id AND c.photo_analysis)
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1
@@ -77,7 +77,7 @@ class PhotoAnalysisQueue:
             """
             UPDATE photos
                SET analysis_status = 'failed', error_code = %s, lease_expires_at = NULL
-             WHERE photo_id = %s AND analysis_status = 'processing'
+             WHERE photo_id = %s AND analysis_status = 'processing' AND attempt_count = %s
             """,
-            (error_code, job.photo_id),
+            (error_code, job.photo_id, job.attempt_count),
         )

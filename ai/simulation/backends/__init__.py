@@ -59,10 +59,11 @@ class Backend:
         raise NotImplementedError
 
 
-def get_backend(name: str) -> Backend:
+def get_backend(name: str, prompt_version: int | None = None) -> Backend:
+    """prompt_version은 카드 생성 버전(card_generation._versions). 없으면 최신 버전."""
     if name == "topics":
         from .topics import TopicsBackend
-        return TopicsBackend()
+        return TopicsBackend(prompt_version)
     raise ValueError("추천 판은 topics뿐이다")
 
 

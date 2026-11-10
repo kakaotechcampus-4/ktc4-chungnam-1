@@ -40,10 +40,11 @@ def test_request_creates_one_running_set(migrated_database_url):
     again = _request_cards(migrated_database_url, user_id, profile_id)
 
     assert first.status_code == 202
-    assert first.json() == {"schemaVersion": 1, "status": "running"}
+    assert first.json() == {"schemaVersion": 1, "status": "running", "needsRefresh": False}
     assert again.status_code == 202 and again.json()["status"] == "running"
+    # 기본 버전은 v3다(2026-11-10, general을 열린 소재로 바꾼 버전).
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "gpt-5.6-luna", "prompt_version": "1"}
+        {"status": "running", "model": "gpt-6-luna", "prompt_version": "3"}
     ]
 
 
@@ -55,11 +56,11 @@ def test_request_uses_model_and_prompt_version_from_settings(migrated_database_u
         user_id,
         profile_id,
         card_generation_model="synthetic-model",
-        card_generation_prompt_version=3,
+        card_generation_prompt_version=2,
     )
 
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "synthetic-model", "prompt_version": "3"}
+        {"status": "running", "model": "synthetic-model", "prompt_version": "2"}
     ]
 
 
@@ -179,7 +180,11 @@ def test_status_is_none_without_any_card_set(migrated_database_url):
 
     res = _status(migrated_database_url, user_id, profile_id)
 
-    assert res.status_code == 200 and res.json() == {"schemaVersion": 1, "status": "none"}
+    assert res.status_code == 200 and res.json() == {
+        "schemaVersion": 1,
+        "status": "none",
+        "needsRefresh": False,
+    }
 
 
 @pytest.mark.parametrize("status", ["running", "failed"])
@@ -275,7 +280,7 @@ def test_ready_set_is_current(migrated_database_url):
 
     body = _current(migrated_database_url, user_id, profile_id).json()
 
-    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "cards"}
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "needsRefresh", "cards"}
     assert body["setId"] == str(set_id) and body["usedBySessionId"] is None
     assert [card["position"] for card in body["cards"]] == list(range(1, 13))
     first = body["cards"][0]
@@ -283,6 +288,34 @@ def test_ready_set_is_current(migrated_database_url):
     assert first["evidenceSource"] == "profile"
     assert first["evidence"] == [{"profileField": "occupation"}]
     assert len(first["followUpQuestions"]) == 3 and first["selected"] is False
+    assert first["liked"] is False
+    assert first["sensitive"] is False
+
+
+def test_sensitive_cards_are_marked_in_the_current_and_session_sets(migrated_database_url):
+    """아픈 경험을 다루는 카드 표시(2026-11-09 PM 결정)가 4-3과 4-4 카드에 그대로 나온다."""
+
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        await connection.execute(
+            "UPDATE conversation_cards SET sensitive = true WHERE card_id = ANY(%s)",
+            ([cards[2], cards[9]],),
+        )
+        return user_id, profile_id, set_id
+
+    user_id, profile_id, set_id = with_db(migrated_database_url, build)
+
+    current = _current(migrated_database_url, user_id, profile_id).json()
+    assert [card["position"] for card in current["cards"] if card["sensitive"]] == [3, 10]
+
+    async def start_visit(connection):
+        return await visit_with(connection, profile_id, set_id, evaluated=False)
+
+    session_id = with_db(migrated_database_url, start_visit)
+    app = make_app(migrated_database_url, user_id)
+    used = request(app, "GET", f"/api/v1/visit-sessions/{session_id}/card-set").json()
+    assert [card["position"] for card in used["cards"] if card["sensitive"]] == [3, 10]
 
 
 def test_set_stays_current_until_its_visit_is_evaluated(migrated_database_url):
@@ -331,3 +364,158 @@ def test_current_of_other_accounts_profile_is_not_found(migrated_database_url):
 
     res = _current(migrated_database_url, other_user, profile_id)
     assert res.status_code == 404 and res.json()["errorCode"] == "PROFILE_NOT_FOUND"
+
+
+# ── 4-4 ──────────────────────────────────────────────
+def _session_set(database_url, user_id, session_id):
+    app = make_app(database_url, user_id)
+    return request(app, "GET", f"/api/v1/visit-sessions/{session_id}/card-set")
+
+
+@pytest.mark.parametrize("evaluated", [False, True])
+def test_session_set_is_returned_before_and_after_evaluation(migrated_database_url, evaluated):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=evaluated)
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true WHERE card_id = %s", (cards[1],)
+        )
+        return user_id, set_id, session_id
+
+    user_id, set_id, session_id = with_db(migrated_database_url, build)
+
+    body = _session_set(migrated_database_url, user_id, session_id).json()
+
+    assert set(body) == {"schemaVersion", "setId", "usedBySessionId", "needsRefresh", "cards"}
+    assert body["needsRefresh"] is False, "4-4는 회차에 쓴 묶음이라 다시 만들 대상이 아니다"
+    assert body["setId"] == str(set_id) and body["usedBySessionId"] == str(session_id)
+    assert [card["position"] for card in body["cards"]] == list(range(1, 13))
+    assert [card["selected"] for card in body["cards"][:3]] == [False, True, False]
+
+
+def test_session_set_stays_after_a_newer_set_is_made(migrated_database_url):
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        old_set, _ = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, old_set, evaluated=True)
+        await completed_card_set(connection, profile_id)
+        return user_id, old_set, session_id
+
+    user_id, old_set, session_id = with_db(migrated_database_url, build)
+
+    body = _session_set(migrated_database_url, user_id, session_id).json()
+
+    assert body["setId"] == str(old_set)
+
+
+def test_session_set_of_other_accounts_session_is_not_found(migrated_database_url):
+    async def build(connection):
+        _, profile_id = await user_and_profile(connection)
+        set_id, _ = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=True)
+        other_user, _ = await user_and_profile(connection)
+        return other_user, session_id
+
+    other_user, session_id = with_db(migrated_database_url, build)
+
+    res = _session_set(migrated_database_url, other_user, session_id)
+    assert res.status_code == 404 and res.json()["errorCode"] == "VISIT_SESSION_NOT_FOUND"
+
+
+# ── 4-5, 4-6 ─────────────────────────────────────────
+def _like(database_url, user_id, card_id, method="PUT"):
+    app = make_app(database_url, user_id)
+    return request(app, method, f"/api/v1/cards/{card_id}/like")
+
+
+def _liked_at(database_url, card_id):
+    return query(
+        database_url, "SELECT liked_at FROM conversation_cards WHERE card_id = %s", (card_id,)
+    )[0]["liked_at"]
+
+
+def _evaluated_visit(reaction="positive"):
+    """평가까지 끝난 회차. 2번 카드만 골라 쓰고 평가함."""
+
+    async def build(connection):
+        user_id, profile_id = await user_and_profile(connection)
+        set_id, cards = await completed_card_set(connection, profile_id)
+        session_id = await visit_with(connection, profile_id, set_id, evaluated=True)
+        await connection.execute(
+            "UPDATE conversation_cards SET selected = true, review_reaction = %s"
+            " WHERE card_id = %s",
+            (reaction, cards[1]),
+        )
+        return user_id, session_id, cards
+
+    return build
+
+
+def test_like_shows_in_session_set_after_evaluation(migrated_database_url):
+    user_id, session_id, cards = with_db(migrated_database_url, _evaluated_visit())
+
+    used = _like(migrated_database_url, user_id, cards[1])
+    not_selected = _like(migrated_database_url, user_id, cards[4])
+
+    assert used.status_code == 204 and used.content == b""
+    assert not_selected.status_code == 204
+    body = _session_set(migrated_database_url, user_id, session_id).json()
+    assert [card["position"] for card in body["cards"] if card["liked"]] == [2, 5]
+
+
+def test_like_again_keeps_first_time_and_unlike_clears(migrated_database_url):
+    user_id, _, cards = with_db(migrated_database_url, _evaluated_visit())
+
+    _like(migrated_database_url, user_id, cards[1])
+    first = _liked_at(migrated_database_url, cards[1])
+    again = _like(migrated_database_url, user_id, cards[1])
+
+    assert again.status_code == 204 and first is not None
+    assert _liked_at(migrated_database_url, cards[1]) == first
+
+    removed = _like(migrated_database_url, user_id, cards[1], "DELETE")
+    removed_again = _like(migrated_database_url, user_id, cards[1], "DELETE")
+
+    assert removed.status_code == 204 and removed_again.status_code == 204
+    assert _liked_at(migrated_database_url, cards[1]) is None
+
+
+def test_like_leaves_evaluation_and_other_cards(migrated_database_url):
+    user_id, _, cards = with_db(migrated_database_url, _evaluated_visit("neutral"))
+
+    _like(migrated_database_url, user_id, cards[1])
+    _like(migrated_database_url, user_id, cards[1], "DELETE")
+    _like(migrated_database_url, user_id, cards[1])
+
+    rows = query(
+        migrated_database_url,
+        "SELECT card_id, selected, review_reaction, liked_at IS NOT NULL AS liked"
+        "  FROM conversation_cards WHERE card_id = ANY(%s) ORDER BY position",
+        (cards,),
+    )
+    assert [(row["selected"], row["review_reaction"], row["liked"]) for row in rows[:3]] == [
+        (False, None, False),
+        (True, "neutral", True),
+        (False, None, False),
+    ]
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_like_of_other_accounts_card_is_not_found(migrated_database_url, method):
+    async def build(connection):
+        _, profile_id = await user_and_profile(connection)
+        _, cards = await completed_card_set(connection, profile_id)
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = now() WHERE card_id = %s", (cards[0],)
+        )
+        other_user, _ = await user_and_profile(connection)
+        return other_user, cards[0]
+
+    other_user, card_id = with_db(migrated_database_url, build)
+    before = _liked_at(migrated_database_url, card_id)
+
+    res = _like(migrated_database_url, other_user, card_id, method)
+
+    assert res.status_code == 404 and res.json()["errorCode"] == "CARD_NOT_FOUND"
+    assert _liked_at(migrated_database_url, card_id) == before

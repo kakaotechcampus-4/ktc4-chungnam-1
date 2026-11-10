@@ -41,7 +41,9 @@ class _ProfileBasicEditScreenState
     if (now == null || before == null) return true;
     return now.name != before.name ||
         now.gender != before.gender ||
+        now.relationship != before.relationship ||
         now.birthDate != before.birthDate ||
+        now.birthByAge != before.birthByAge ||
         now.stage != before.stage;
   }
 
@@ -62,14 +64,17 @@ class _ProfileBasicEditScreenState
         final saved = await ref
             .read(profileApiProvider)
             .updateBasicInfo(remoteId, info);
-        info = saved.basicInfo;
+        // 관계와 나이로 입력했는지는 서버에 없으므로 고친 값을 그대로 붙인다.
+        info = saved.basicInfo
+            .withRelationship(info.relationship)
+            .withBirthByAge(info.birthByAge);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(content: Text(profileFailureMessage(failure))),
+            SnackBar(content: Text(basicInfoFailureMessage(failure))),
           );
         return;
       }
@@ -87,22 +92,29 @@ class _ProfileBasicEditScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppTopBar(),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '기본 정보 수정',
+      ),
       body: ScreenBody(
         scrollable: true,
         // 처음 입력할 때와 같이 입력란이 많아 버튼을 본문과 함께 흘려보낸다.
         child: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xl),
+          padding: const EdgeInsets.only(top: AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 화면 이름은 상단바에 두고 본문에는 큰 제목을 두지 않는다.
               BasicInfoStep(
-                title: '기본 정보 수정',
+                title: null,
                 draft: _draft,
                 onChanged: (draft) => setState(() => _draft = draft),
               ),
               const SizedBox(height: AppSpacing.xxl),
               PrimaryButton(
+                color: HomeColors.accent,
+                loadingColor: HomeColors.accentLoading,
                 label: _saving ? '저장하는 중이에요' : '저장하기',
                 onPressed: _canSave ? _save : null,
               ),

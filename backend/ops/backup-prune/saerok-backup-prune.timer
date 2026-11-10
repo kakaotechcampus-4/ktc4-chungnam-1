@@ -1,0 +1,10 @@
+# 하루 한 번 saerok-backup-prune.service를 실행한다. 서버가 꺼져 있던 동안 놓친 실행은 켜진 뒤 한 번 한다.
+[Unit]
+Description=Daily Saerok database backup prune
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

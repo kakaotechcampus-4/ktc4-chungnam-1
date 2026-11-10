@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import '../../data/models.dart';
 import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../auth/auth_providers.dart';
+import '../local_photos/local_photos.dart';
 import 'life_story.dart';
 
 /// 지금 보고 있는 어르신의 일대기다. 등록을 마친 분이 없으면 `null` 이다.
@@ -159,14 +161,21 @@ class LifeStoryStore {
     return LifeStory.fromLifeFact(fact);
   }
 
+  /// 지우면 이 기기에 넣어 둔 그 이야기의 사진도 지운다(`LocalPhotos`).
   Future<void> delete(String profileId, LifeStory story) async {
     assert(!story.isProfileDetail, '세부 정보 이야기는 지우지 않는다');
     if (!_onServer) {
       _ref.read(lifeStoryEditsProvider.notifier).delete(profileId, story);
-      return;
+    } else {
+      await _guard(() => _api.deleteLifeFact(story.id));
+      _server._remove(profileId, story.id);
     }
-    await _guard(() => _api.deleteLifeFact(story.id));
-    _server._remove(profileId, story.id);
+    // 실패를 삼키므로 기다리지 않는다. 지우기가 파일 정리에 묶이지 않게 한다.
+    unawaited(
+      _ref
+          .read(localPhotoIndexProvider.notifier)
+          .forget(profileId, slot: LocalPhotoSlot.story(story.id)),
+    );
   }
 
   /// 일대기 밖에서 서버의 이야기가 바뀌었다. 다음에 일대기를 열 때 서버에서
@@ -285,6 +294,8 @@ class LifeStoryEditsNotifier extends Notifier<Map<String, LifeStoryEdits>> {
       content: draft.content,
       imageNumber: draft.imageNumber,
       createdAt: story.createdAt,
+      // 입력 화면은 이 표시를 고치지 않는다. 고쳐도 그대로 둔다.
+      sensitive: story.sensitive,
     );
     state = {...state, profileId: _of(profileId)._update(updated)};
     return updated;

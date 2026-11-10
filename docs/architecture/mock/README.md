@@ -2,6 +2,7 @@
 
 - 관리: FE, BE와 AI 리더 공동
 - FE, BE와 AI가 서로 기다리지 않고 같은 형식으로 개발하기 위한 합성 데이터다.
+- 2026-11-09 기준 로그인한 앱은 서버 API를 쓴다. 앱은 이 폴더의 사본(`app/assets/mock/`)을 주로 로그인 없이 여는 디버그 실행과 테스트에서 읽으며(로그인한 계정에도 `profileProvider`가 목 프로필을 읽는 자리가 남아 있다, [FE README](../../../app/README.md)), `app/test/mock_data_sync_test.dart`가 두 벌이 같은지 확인한다.
 - 필드 의미와 enum 설명은 [`../data-contracts.md`](../data-contracts.md)를 따른다.
 
 <br>
@@ -17,8 +18,7 @@
 | `caregiver-evaluation.json` | `CaregiverEvaluation`, `ChangeProposal` |
 | `visit-report.json` | `VisitReport` |
 
-- `SpeechAnalysisResult`는 형식이 확정되지 않아 파일을 만들지 않았다. AI 영역에서 확정한 뒤 추가한다.
-- `CardGenerationRequest`도 같은 이유로 넣지 않았다.
+- `SpeechAnalysisResult`와 `CardGenerationRequest`는 처음에 형식이 확정되지 않아 목 파일을 만들지 않았다. 지금은 형식이 [`../data-contracts.md`](../data-contracts.md)의 예시와 BE 코드(`backend/app/schemas/speech_analysis.py`, `backend/app/schemas/card_generation.py`)에 있다. 두 객체는 BE와 AI 사이의 내부 형식이며 앱은 읽지 않는다. 목 파일은 아직 없다.
 - 각 파일은 최상위에 `schemaVersion`을 두고, 그 옆에 객체 이름을 딴 키로 내용을 감싼다. 한 파일에 객체가 여럿이면 키도 여럿이다.
 
 <br>

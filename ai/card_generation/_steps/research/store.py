@@ -55,10 +55,13 @@ class ProfileStore:
     """backend context 하나를 감싸 에이전트 도구와 다른 단계가 쓰는 조회를 제공함.
     점수, 사용 이력, 정렬, 페이지, 번호표를 여기서 계산함.
     """
-    def __init__(self, context: CardContext, decay: float) -> None:
-        """decay는 판의 선호 점수 감쇠값. 면회를 최근 순으로 세워 카드 묶음(set_id)마다 면회 몇 번 전인지 미리 계산함."""
+    def __init__(self, context: CardContext, decay: float, *, show_sensitive: bool = False) -> None:
+        """decay는 판의 선호 점수 감쇠값. 면회를 최근 순으로 세워 카드 묶음(set_id)마다 면회 몇 번 전인지 미리 계산함.
+        show_sensitive면 이야기 도구 결과에 아픈 기억 표시(sensitive)를 붙임. 아픈 경험 카드를 내는 판(2판)만 켬.
+        """
         self._ctx = context
         self._decay = decay
+        self._show_sensitive = show_sensitive
         visits = sorted(context.visits, key=lambda v: (v.started_at, v.session_id), reverse=True)
         self._visits_ago = {v.set_id: i for i, v in enumerate(visits) if v.set_id}
         self._starts = [v.started_at for v in context.visits]
@@ -148,6 +151,10 @@ class ProfileStore:
                                     [t.topic_id for t in self._topics()])
         return self._aliases
 
+    def sensitive_fact_ids(self) -> set[str]:
+        """아픈 기억일 수 있다고 표시된 이야기의 ID. 2판에서 이 이야기를 근거로 한 카드는 늘 아픈 경험 카드가 됨."""
+        return {r["fact_id"] for r in self._facts() if r["sensitive"]}
+
     def known_ids(self) -> dict[str, set[str]]:
         """제출 검증에 쓰는 이 프로필의 ID와 빈 칸."""
         details = self._initial_details()
@@ -168,8 +175,8 @@ class ProfileStore:
         """이야기 목록을 등록 시각 순으로. from_visit은 면회 뒤 제안을 승인해 생긴 이야기인지."""
         facts = sorted(enumerate(self._ctx.life_facts),
                        key=lambda i_f: (i_f[1].created_at is None, i_f[1].created_at or 0, i_f[0]))
-        return [{"fact_id": f.fact_id, "title": f.title, "content": f.content, "from_visit": f.source == "visit"}
-                for _, f in facts]
+        return [{"fact_id": f.fact_id, "title": f.title, "content": f.content, "from_visit": f.source == "visit",
+                 "sensitive": f.sensitive} for _, f in facts]
 
     def _photos(self) -> list[dict[str, Any]]:
         """사진 목록."""
@@ -218,7 +225,8 @@ class ProfileStore:
     def _fact_view(self, row: dict[str, Any], usage: dict[str, Usage]) -> LifeFactView:
         """이야기 한 줄을 도구 결과 형식으로."""
         return LifeFactView(fact_id=row["fact_id"], title=row["title"], content=row["content"],
-                            from_visit=row["from_visit"], usage=usage.get(row["fact_id"], Usage()))
+                            from_visit=row["from_visit"], usage=usage.get(row["fact_id"], Usage()),
+                            sensitive=row["sensitive"] if self._show_sensitive else None)
 
     def _topic_view(self, t: _Topic, cards: list[dict[str, Any]]) -> TopicView:
         """주제 하나를 도구 결과 형식으로. 점수·제외 여부와 묶음에 들어간 횟수, 고른 횟수, 마지막 시점을 계산함."""

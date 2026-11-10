@@ -10,6 +10,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../data/birth_date.dart';
 import '../../data/models.dart';
 import '../profile_setup/setup_steps.dart';
 
@@ -53,6 +54,7 @@ class LifeStory {
     required this.imageNumber,
     this.createdAt,
     this.detailField,
+    this.sensitive = false,
   });
 
   /// 일대기에 담긴 이야기를 화면용으로 바꾼다.
@@ -68,6 +70,7 @@ class LifeStory {
     content: fact.content,
     imageNumber: fact.imageNumber.clamp(1, lifeStoryImageCount),
     createdAt: DateTime.parse(fact.createdAt).toLocal(),
+    sensitive: fact.sensitive,
   );
 
   final String id;
@@ -84,6 +87,12 @@ class LifeStory {
   /// 세부 정보 네 항목(`occupation`, `hometown`, `hobby`, `family`)에서 온
   /// 이야기면 그 항목 이름이다. 이 이야기는 프로필 수정에서 고친다.
   final String? detailField;
+
+  /// 아픈 기억일 수 있는 이야기([LifeFact.sensitive]). 첫 장의 최근 이야기,
+  /// 목차와 이야기 화면에 `조심스러운 이야기` 표시를 달고, 홈 말풍선의 무작위
+  /// 이야기에서 뺀다.
+  /// 세부 정보 이야기는 늘 `false` 다.
+  final bool sensitive;
 
   bool get isProfileDetail => detailField != null;
 }
@@ -179,11 +188,10 @@ class LifeStoryBook {
   }
 }
 
-/// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다.
-String birthDateLabel(String isoDate) {
-  final date = DateTime.tryParse(isoDate);
-  return date == null ? isoDate : fullDateLabel(date);
-}
+/// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다. 나이로 입력한 분([byAge])은
+/// 지어낸 날짜 대신 `82세(나이로 입력)` 로 보여준다([birthDateText]).
+String birthDateLabel(String isoDate, {bool byAge = false}) =>
+    birthDateText(isoDate, byAge: byAge);
 
 String fullDateLabel(DateTime date) =>
     '${date.year}년 ${date.month}월 ${date.day}일';

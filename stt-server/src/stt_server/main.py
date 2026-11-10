@@ -29,6 +29,7 @@ from stt_server.audio.providers import (
 from stt_server.stt.diarization import DiarizationRuntime
 from stt_server.stt.runtime import AsrRuntime
 from stt_server.stt.service import SpeechAnalysisService
+from stt_server.runtime_settings import RuntimeSettings
 
 os.environ["PYANNOTE_METRICS_ENABLED"] = "0"
 
@@ -38,6 +39,7 @@ from pyannote.audio import Pipeline
 
 SERVICE_NAME = "saerok-stt-server"
 SERVICE_VERSION = "0.1.0"
+runtime_settings = RuntimeSettings.from_environment()
 
 # asr_runtime is a singleton instance of AsrRuntime that is initialized when the FastAPI app starts.
 asr_runtime: AsrRuntime | None = None
@@ -50,7 +52,7 @@ def _get_asr_runtime() -> AsrRuntime:
 
     if asr_runtime is None:
         with progress("asr_model_load"):
-            asr_runtime = AsrRuntime()
+            asr_runtime = AsrRuntime(settings=runtime_settings)
 
     return asr_runtime
 
@@ -66,7 +68,10 @@ def _get_diarization_pipeline() -> Pipeline:
             diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-community-1",
             )
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device(
+                runtime_settings.torch_cuda_device
+                if torch.cuda.is_available() else "cpu"
+            )
             diarization_pipeline.to(device)
 
     return diarization_pipeline

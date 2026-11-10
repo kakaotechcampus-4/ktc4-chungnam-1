@@ -10,11 +10,14 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth_providers.dart';
+import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
+import 'profile_birth_input_store.dart';
+import 'profile_relationship_store.dart';
 import 'report_api.dart';
 import 'selected_profile_store.dart';
 
@@ -22,9 +25,18 @@ final mockRepositoryProvider = Provider<MockRepository>(
   (ref) => const MockRepository(),
 );
 
-final accountProvider = FutureProvider<Account>(
-  (ref) => ref.watch(mockRepositoryProvider).loadAccount(),
-);
+/// 로그인한 계정과 가장 최근 동의 이력(1-3). 로그인하지 않았으면 목 계정이다.
+///
+/// 계정이 바뀌면 다시 읽는다.
+final accountProvider = FutureProvider<Account>((ref) {
+  final accountId = ref.watch(
+    sessionProvider.select((s) => s?.account.accountId),
+  );
+  if (accountId == null) {
+    return ref.watch(mockRepositoryProvider).loadAccount();
+  }
+  return ref.watch(accountApiProvider).me();
+});
 
 /// 환자 정보 입력에서 받은 기본 정보다.
 class EnteredBasicInfo {
@@ -33,6 +45,8 @@ class EnteredBasicInfo {
     required this.gender,
     required this.birthDate,
     required this.stage,
+    this.relationship,
+    this.birthByAge = false,
   });
 
   final String name;
@@ -40,8 +54,40 @@ class EnteredBasicInfo {
   /// `male` 또는 `female`.
   final String gender;
 
-  /// `YYYY-MM-DD`.
+  /// 보호자와의 관계. "어머니", "아버지"처럼 보호자가 적는 선택 항목이다.
+  /// 앱에서 부를 때만 쓰는 별명이라 서버에 보내지 않고 단말에만 둔다
+  /// ([ProfileRelationshipStore]). 적지 않았으면 `null` 이다.
+  final String? relationship;
+
+  /// 관계만 바꾼 값이다. 서버 응답에는 관계가 없어 단말의 값을 붙일 때 쓴다.
+  EnteredBasicInfo withRelationship(String? relationship) => EnteredBasicInfo(
+    name: name,
+    gender: gender,
+    birthDate: birthDate,
+    stage: stage,
+    relationship: relationship,
+    birthByAge: birthByAge,
+  );
+
+  /// 나이로 입력했는지만 바꾼 값이다. 서버 응답에는 이 표시가 없어 단말의 값을
+  /// 붙일 때 쓴다.
+  EnteredBasicInfo withBirthByAge(bool birthByAge) => EnteredBasicInfo(
+    name: name,
+    gender: gender,
+    birthDate: birthDate,
+    stage: stage,
+    relationship: relationship,
+    birthByAge: birthByAge,
+  );
+
+  /// `YYYY-MM-DD`. 나이로 입력했으면 오늘에서 그 나이만큼 뺀 날이다
+  /// (`birth_date.dart`).
   final String birthDate;
+
+  /// 생년월일 대신 나이로 입력했는지. 서버에 보내지 않고 단말에만 둔다
+  /// ([ProfileBirthInputStore]). 화면은 날짜 대신 `82세(나이로 입력)` 로
+  /// 보여준다.
+  final bool birthByAge;
   final ConditionStage stage;
 }
 
@@ -256,14 +302,32 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
       final profiles = await Future.wait([
         for (final summary in summaries) api.get(summary.profileId),
       ]);
+      // 관계는 서버에 없고 단말에만 있다. 저장소는 실패해도 `null` 을 준다.
+      final relationshipStore = ref.read(profileRelationshipStoreProvider);
+      final relationships = accountId == null
+          ? <String?>[for (final _ in profiles) null]
+          : await Future.wait([
+              for (final profile in profiles)
+                relationshipStore.read(accountId, profile.profileId),
+            ]);
+      // 나이로 입력했다는 표시도 단말에만 있다. 실패하면 `false` 다.
+      final birthInputStore = ref.read(profileBirthInputStoreProvider);
+      final byAge = accountId == null
+          ? <bool>[for (final _ in profiles) false]
+          : await Future.wait([
+              for (final profile in profiles)
+                birthInputStore.readByAge(accountId, profile.profileId),
+            ]);
       final rememberedId = await remembered;
       if (!ref.mounted || round != _loadRound) return;
       final entries = [
-        for (final profile in profiles)
+        for (final (i, profile) in profiles.indexed)
           CareProfileEntry(
             id: profile.profileId,
             remoteId: profile.profileId,
-            basicInfo: profile.basicInfo,
+            basicInfo: profile.basicInfo
+                .withRelationship(relationships[i])
+                .withBirthByAge(byAge[i]),
             details: profile.details,
             pending: profile.setupStatus != SetupStatus.completed,
           ),
@@ -295,6 +359,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     EnteredDetails details = const EnteredDetails(),
     String? remoteId,
   }) {
+    if (remoteId != null) _rememberLocalInfo(remoteId, info);
     final existing = remoteId == null ? null : state.byId(remoteId);
     if (existing != null) {
       _replace(
@@ -338,6 +403,8 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   }) {
     final entry = state.byId(id);
     if (entry == null) return;
+    final savedId = remoteId ?? entry.remoteId;
+    if (savedId != null) _rememberLocalInfo(savedId, info);
     _replace(
       entry.copyWith(
         basicInfo: info,
@@ -353,7 +420,39 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   void updateBasicInfo(String id, EnteredBasicInfo info) {
     final entry = state.byId(id);
     if (entry == null || entry.pending) return;
+    if (entry.remoteId case final remoteId?) {
+      _rememberLocalInfo(remoteId, info);
+    }
     _replace(entry.copyWith(basicInfo: info));
+  }
+
+  /// 서버에 보내지 않는 기본 정보(관계, 나이로 입력했는지)를 단말에 기억한다.
+  void _rememberLocalInfo(String remoteId, EnteredBasicInfo info) {
+    rememberRelationship(remoteId, info.relationship);
+    rememberBirthByAge(remoteId, byAge: info.birthByAge);
+  }
+
+  /// 서버에 저장한 분을 나이로 입력했는지 단말에 기억한다. `false` 면 지운다.
+  /// 로그인하지 않았으면 앱이 켜져 있는 동안만 쓴다.
+  void rememberBirthByAge(String remoteId, {required bool byAge}) {
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    if (accountId == null) return;
+    ref
+        .read(profileBirthInputStoreProvider)
+        .writeByAge(accountId, remoteId, byAge);
+  }
+
+  /// 서버에 저장한 분의 관계를 단말에 기억한다. 비었으면 지운다. 로그인하지
+  /// 않았으면 앱이 켜져 있는 동안만 쓴다.
+  ///
+  /// 기본 정보 입력에서 서버에 만든 직후에도 부른다. 마치기 전에 앱을 닫아도
+  /// 이어서 입력할 때 관계가 남는다.
+  void rememberRelationship(String remoteId, String? relationship) {
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    if (accountId == null) return;
+    ref
+        .read(profileRelationshipStoreProvider)
+        .write(accountId, remoteId, relationship);
   }
 
   /// 등록을 마친 분의 세부 정보 네 항목을 고친다. 기본 정보는 그대로 둔다.
@@ -392,7 +491,12 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
   ///
   /// 그 분의 리포트 알림도 함께 지운다. 입력 중이던 값은 입력 흐름이 지운다.
   void remove(String id) {
-    if (state.entries.every((e) => e.id != id)) return;
+    final removed = state.byId(id);
+    if (removed == null) return;
+    if (removed.remoteId case final remoteId?) {
+      rememberRelationship(remoteId, null);
+      rememberBirthByAge(remoteId, byAge: false);
+    }
     final entries = state.entries.where((e) => e.id != id).toList();
     final selectedId = state.selectedId == id
         ? entries.where((e) => !e.pending).firstOrNull?.id
@@ -410,9 +514,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
 
   void _replace(CareProfileEntry entry, {bool select = false}) {
     state = state.copyWith(
-      entries: [
-        for (final e in state.entries) e.id == entry.id ? entry : e,
-      ],
+      entries: [for (final e in state.entries) e.id == entry.id ? entry : e],
       selectedId: select ? entry.id : null,
     );
   }
@@ -449,17 +551,26 @@ final careProfilesProvider =
 class CareProfileSummary {
   const CareProfileSummary({
     required this.id,
+    required this.profileId,
     required this.name,
     required this.gender,
     required this.selected,
     required this.pending,
+    this.relationship,
   });
 
   final String id;
 
+  /// [Profile.profileId] 와 같은 값. 서버에 저장한 분은 서버 ID 다. 이 기기에
+  /// 둔 사진을 찾는 데 쓴다(`LocalPhotos`).
+  final String profileId;
+
   /// 입력 중인 분은 비어 있다. 이름은 입력 흐름이 들고 있다.
   final String name;
   final String gender;
+
+  /// 보호자와의 관계. 받기 전에 등록한 분과 입력 중인 분은 `null` 이다.
+  final String? relationship;
 
   /// 지금 보고 있는 어르신인지.
   final bool selected;
@@ -477,8 +588,10 @@ final careProfileSummariesProvider = FutureProvider<List<CareProfileSummary>>((
     for (final entry in profiles.entries)
       CareProfileSummary(
         id: entry.id,
+        profileId: entry.remoteId ?? entry.id,
         name: entry.basicInfo?.name ?? '',
         gender: entry.basicInfo?.gender ?? '',
+        relationship: entry.basicInfo?.relationship,
         selected: entry.id == profiles.selected?.id,
         pending: entry.pending,
       ),
@@ -497,14 +610,19 @@ final profileSampleProvider = FutureProvider<ProfileBundle>(
 /// 지금 보고 있는 어르신의 프로필이다. 등록을 마친 분이 없으면 `null` 이다.
 ///
 /// 기본 정보와 세부 정보 네 항목은 입력한 값이다. 그 밖의 생애 정보는 아직 목
-/// 데이터 그대로다. 사진은 목 사진을 이 분의 `photos[]` 로 붙인다. 업로드 API(3-1)가 연결되면 이 분이
-/// 올린 사진으로 바뀐다.
+/// 데이터 그대로다.
+///
+/// 서버에 저장한 분의 사진은 여기 담지 않는다. 갤러리가
+/// [serverProfilePhotosProvider] 로 따로 읽는다. 사진을 읽지 못해도 이름과 정보는
+/// 보여야 해서다. 로그인 없이 들어온 분은 목 사진을 이 분의 `photos[]` 로 붙인다.
 final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
   final bundle = await ref.watch(profileSampleProvider.future);
   final selected = ref.watch(careProfilesProvider.select((p) => p.selected));
   final entered = selected?.basicInfo;
   if (selected == null || entered == null) return null;
 
+  final online = ref.watch(sessionProvider.select((s) => s != null));
+  final onServer = online && selected.remoteId != null;
   final mock = bundle.profile;
   final details = selected.details;
   return ProfileBundle(
@@ -513,11 +631,13 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       profileId: selected.remoteId ?? selected.id,
       name: entered.name,
       gender: entered.gender,
+      relationship: entered.relationship,
       birthDate: entered.birthDate,
+      birthByAge: entered.birthByAge,
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,
-      photoIds: mock.photoIds,
+      photoIds: onServer ? const [] : mock.photoIds,
       occupation: details.occupation,
       hometown: details.hometown,
       hobby: details.hobby,
@@ -525,9 +645,204 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
     ),
     lifeFacts: bundle.lifeFacts,
     collectionStates: bundle.collectionStates,
-    photos: [for (final photo in bundle.photos) photo.forProfile(selected.id)],
+    photos: onServer
+        ? const []
+        : [for (final photo in bundle.photos) photo.forProfile(selected.id)],
   );
 });
+
+/// 사진 분석(3-2)이 끝났는지 다시 묻는 간격. 테스트는 짧게 바꾼다.
+///
+/// 명세는 간격을 정하지 않는다. 리포트 상태를 묻는 간격과 같게 둔다.
+final photoAnalysisPollIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
+/// 지금 계정이 AI 사진 분석(선택 동의 `photoAnalysis`)에 동의했는지. 계정을 읽는
+/// 중이거나 읽지 못했으면 `null` 이다.
+///
+/// 동의하지 않은 계정의 사진은 사진 분석 worker 가 가져가지 않아 `pending` 으로
+/// 남는다. 갤러리는 이때 "분석 중"을 보이지 않고 보호자가 바로 설명을 적게 하며,
+/// 사진 상태도 다시 묻지 않는다.
+final photoAnalysisWantedProvider = Provider<bool?>((ref) {
+  final account = ref.watch(accountProvider).value;
+  if (account == null) return null;
+  return account.consent['photoAnalysis']?.granted ?? false;
+});
+
+/// 서버에 저장한 지금 어르신의 프로필 사진(2-3). 올린 순서대로다.
+///
+/// 로그인하지 않았거나 서버에 저장하지 않은 분이면 `null` 이고, 갤러리는
+/// [profileProvider] 의 목 사진을 쓴다.
+///
+/// 분석이 끝나지 않은 사진(`pending`, `processing`)은 3-2 로 끝날 때까지 묻고 그
+/// 자리를 바꾼다. 묻지 못하면 다음 차례에 다시 묻는다. 갤러리를 떠나면 묻지
+/// 않고, 다시 열면 처음부터 읽는다. `imageUrl` 은 수명이 짧아 다시 열 때 새로
+/// 받는다.
+class ServerProfilePhotosNotifier extends AsyncNotifier<List<ProfilePhoto>?> {
+  /// 읽을 때마다 올라간다. 지난 읽기의 폴링은 버린다.
+  int _round = 0;
+
+  @override
+  Future<List<ProfilePhoto>?> build() async {
+    final round = ++_round;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) return null;
+
+    final photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    // 읽는 동안 갤러리를 떠났으면 늦게 온 응답으로 묻기 시작하지 않는다.
+    // 분석에 동의하지 않은 계정의 사진은 끝나지 않으므로 묻지 않는다.
+    if (!_stale(round) &&
+        photos.any(_analyzing) &&
+        ref.read(photoAnalysisWantedProvider) != false) {
+      // 상태를 돌려준 뒤에 묻기 시작한다.
+      Future<void>(() => _poll(round));
+    }
+    return photos;
+  }
+
+  static bool _analyzing(ProfilePhoto photo) => switch (photo.analysisStatus) {
+    PhotoAnalysisStatus.completed || PhotoAnalysisStatus.failed => false,
+    _ => true,
+  };
+
+  bool _stale(int round) => !ref.mounted || round != _round;
+
+  Future<void> _poll(int round) async {
+    if (_stale(round)) return;
+    final interval = ref.read(photoAnalysisPollIntervalProvider);
+    final api = ref.read(profileApiProvider);
+    while (true) {
+      await Future<void>.delayed(interval);
+      if (_stale(round)) return;
+      final photos = state.value;
+      if (photos == null || !photos.any(_analyzing)) return;
+      // 묻는 사이 동의를 거뒀으면 그만 묻는다.
+      if (ref.read(photoAnalysisWantedProvider) == false) return;
+
+      final next = [...photos];
+      for (var i = 0; i < next.length; i++) {
+        if (!_analyzing(next[i])) continue;
+        try {
+          next[i] = await api.photo(next[i].photoId);
+        } on ApiFailure {
+          // 이번에는 묻지 못했다. 다음 차례에 다시 묻는다.
+        }
+        if (_stale(round)) return;
+      }
+      state = AsyncData(next);
+    }
+  }
+}
+
+final serverProfilePhotosProvider =
+    AsyncNotifierProvider.autoDispose<
+      ServerProfilePhotosNotifier,
+      List<ProfilePhoto>?
+    >(ServerProfilePhotosNotifier.new);
+
+/// 사진 카드의 사진 주소를 다시 읽는 여유. 가장 먼저 만료되는 주소보다 이만큼
+/// 먼저 다시 읽고, 읽은 지 이만큼 지나지 않았으면 다시 읽지 않는다. 테스트는
+/// 바꾼다.
+final cardPhotoUrlMarginProvider = Provider<Duration>(
+  (ref) => const Duration(minutes: 1),
+);
+
+/// 사진에서 나온 카드(`evidenceSource: photo`)에 그 사진을 붙이려고 읽는 지금
+/// 어르신의 프로필 사진 주소다. 사진 ID → `imageUrl` 이다.
+///
+/// 서버에 저장한 분이면 2-3 으로 읽는다. 갤러리의 [serverProfilePhotosProvider]
+/// 와 달리 분석 상태는 묻지 않는다. 보는 화면이 없으면 버리고 다음에 새로 읽는다.
+/// 카드 화면은 녹음 화면 아래에 열린 채 남고 녹음 화면도 이 주소를 들고 있어
+/// 면회(60~90분) 내내 들고 있는다. 주소는 수명이 짧아(`imageUrlExpiresAt`, 서버
+/// 기본 15분) 가장 먼저 만료되는 주소보다 [cardPhotoUrlMarginProvider] 만큼 먼저
+/// 다시 읽는다. 휴대폰 시계가 어긋나 이미 지났다고 나와도 그 간격보다 자주 읽지
+/// 않는다. 연결이 끊겨 읽지 못했으면 같은 간격 뒤에 다시 읽는다. 다시 읽는
+/// 동안과 다시 읽지 못했을 때 화면은 이미 받은 주소를 쓰고, 처음부터 받지
+/// 못했으면 사진 없이 그린다. 그림을 열지 못하면 [imageFailed] 로 한 번 다시
+/// 읽는다. 로그인하지 않았으면 목 사진이다.
+class CardPhotoUrlsNotifier extends AsyncNotifier<Map<String, String>> {
+  /// 지금 주소를 받은 때. 받지 못했거나 다시 읽는 중이면 `null` 이다.
+  DateTime? _readAt;
+
+  @override
+  Future<Map<String, String>> build() async {
+    _readAt = null;
+    final online = ref.watch(sessionProvider.select((s) => s != null));
+    final remoteId = ref.watch(
+      careProfilesProvider.select((p) => p.selected?.remoteId),
+    );
+    if (!online || remoteId == null) {
+      final bundle = await ref.watch(profileProvider.future);
+      return {
+        for (final photo in bundle?.photos ?? const <ProfilePhoto>[])
+          photo.photoId: photo.imageUrl,
+      };
+    }
+
+    final margin = ref.watch(cardPhotoUrlMarginProvider);
+    final List<ProfilePhoto> photos;
+    try {
+      photos = (await ref.watch(profileApiProvider).get(remoteId)).photos;
+    } on ApiFailure catch (failure) {
+      final retryable =
+          failure is ApiNetworkFailure ||
+          (failure is ApiServerFailure && failure.retryable);
+      if (retryable && ref.mounted) _readAgainAfter(margin);
+      rethrow;
+    }
+    final urls = {for (final photo in photos) photo.photoId: photo.imageUrl};
+    // 읽는 동안 다시 읽기 시작했으면 이 응답은 버려진다.
+    if (!ref.mounted) return urls;
+
+    _readAt = DateTime.now();
+    DateTime? earliest;
+    for (final photo in photos) {
+      final at = DateTime.tryParse(photo.imageUrlExpiresAt ?? '');
+      if (at != null && (earliest == null || at.isBefore(earliest))) {
+        earliest = at;
+      }
+    }
+    if (earliest != null) {
+      final wait = earliest.difference(DateTime.now()) - margin;
+      _readAgainAfter(wait < margin ? margin : wait);
+    }
+    return urls;
+  }
+
+  void _readAgainAfter(Duration wait) {
+    final timer = Timer(wait, ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+  }
+
+  /// 이미 [imageFailed] 로 알린 주소. 화면이 다시 그려질 때마다 같은 실패를
+  /// 다시 알려도 한 번만 본다.
+  final _failedUrls = <String>{};
+
+  /// 사진 카드의 그림을 [url] 로 열지 못했다. 휴대폰이 잠들어 다시 읽을 때를
+  /// 놓쳤으면 주소가 만료됐을 수 있어 다시 읽는다. 받은 지
+  /// [cardPhotoUrlMarginProvider] 가 지나지 않은 주소로도 열지 못했으면(지운
+  /// 사진, 끊긴 연결) 다시 읽어도 같아 읽지 않는다. 여러 장이 함께 실패해도 한
+  /// 번만 읽는다.
+  void imageFailed(String url) {
+    if (!_failedUrls.add(url)) return;
+    final readAt = _readAt;
+    if (readAt == null) return;
+    final margin = ref.read(cardPhotoUrlMarginProvider);
+    if (DateTime.now().difference(readAt) < margin) return;
+    _readAt = null;
+    ref.invalidateSelf();
+  }
+}
+
+final cardPhotoUrlsProvider =
+    AsyncNotifierProvider.autoDispose<
+      CardPhotoUrlsNotifier,
+      Map<String, String>
+    >(CardPhotoUrlsNotifier.new, retry: (_, _) => null);
 
 /// 생년월일로 `80s` 같은 연령대를 만든다. 생일이 지나지 않았으면 한 살 뺀다.
 String ageRangeOf(String birthDate, DateTime today) {
@@ -684,11 +999,13 @@ enum ReportNotice {
   /// 다 만들어졌다. 눌러서 리포트로 들어간다(`completed`).
   ready,
 
-  /// 만들지 못했다(`failed`). 다시 만드는 방법은 아직 정하지 않았다.
+  /// 만들지 못했다(`failed`). 눌러서 저장된 전사나 기기 녹음으로 다시 요청한다.
   failed,
 
   /// 서버에 회차 상태를 묻지 못했다. 알릴 것이 없는 것과 구분해, 눌러서 다시
-  /// 묻게 한다.
+  /// 묻게 한다. 만드는 중에 다시 시도할 수 없는 실패로 묻기를 멈췄을 때도 이
+  /// 알림이다. 만드는 중 배너가 끝없이 돌지 않게 한다. 다시 묻는 동안에는
+  /// [ReportNoticeInfo.rechecking] 으로 남는다.
   checkFailed,
 }
 
@@ -697,11 +1014,18 @@ class ReportNoticeInfo {
   const ReportNoticeInfo(
     this.notice, {
     this.reportId,
+    this.analysisId,
     this.visitDate,
     this.fromServer = false,
+    this.failureCode,
+    this.rechecking = false,
   });
 
   final ReportNotice notice;
+
+  /// [ReportNotice.checkFailed] 를 눌러 다시 묻는 중이다. 묻는 동안 배너를
+  /// 지우면 사라졌다가 최대 15초 뒤 다시 나타났다(2026-11-10 UX 점검 17번).
+  final bool rechecking;
 
   /// 서버의 회차로 정한 알림이다. 아니면 목 데이터의 알림이고, 화면이 목
   /// 리포트를 가리킨다.
@@ -710,9 +1034,15 @@ class ReportNoticeInfo {
   /// 눌러서 열 리포트. 서버에서는 회차 ID 다. 목 데이터의 알림은 `null` 이고
   /// 화면이 목 리포트를 연다.
   final String? reportId;
+  final String? analysisId;
 
   /// 면회한 날. 모르면 `null` 이다.
   final String? visitDate;
+
+  /// [ReportNotice.failed] 일 때 분석 작업(6-3)의 `errorCode`. 회차 목록(5-4)은
+  /// 이유를 주지 않아 6-3 으로 한 번 더 묻는다. 모르면 `null` 이다
+  /// ([analysisFailureReason]).
+  final String? failureCode;
 }
 
 /// 알림 하나가 속한 자리. 같은 휴대폰을 쓰는 계정마다 따로 둔다.
@@ -771,6 +1101,18 @@ class _ReportNoticesNotifier
     _set(key, null);
   }
 
+  /// [reportId] 를 확인했다. 지금 알림이 그 리포트의 도착이면 지운다. 다른
+  /// 리포트(리포트 기록에서 연 지난 리포트)의 알림이면 남긴다. 목 데이터의 도착
+  /// 알림은 가리키는 리포트가 없어 목 리포트를 열면 지운다.
+  void acknowledge(_NoticeKey key, String reportId) {
+    _acknowledged.add(reportId);
+    final notice = state[key];
+    if (notice == null || notice.notice != ReportNotice.ready) return;
+    if (notice.reportId != null && notice.reportId != reportId) return;
+    _nextRound(key);
+    _set(key, null);
+  }
+
   void arrive(_NoticeKey key) {
     _nextRound(key);
     _set(key, const ReportNoticeInfo(ReportNotice.ready));
@@ -805,25 +1147,66 @@ class _ReportNoticesNotifier
     unawaited(_follow(key, round, remoteProfileId, analysisId: analysisId));
   }
 
+  /// 녹음을 시작해 서버에 회차가 생겼다(5-1). 서버의 가장 최근 회차가 평가
+  /// 전인 이 회차가 되므로, 5-4 를 다시 묻지 않고 같은 알림으로 바꾼다. 앞
+  /// 회차를 기다리던 흐름은 끊는다.
+  void visitStarted(_NoticeKey key, String sessionId, String startedAt) {
+    _synced.add(key);
+    _nextRound(key);
+    String? visitDate;
+    try {
+      visitDate = VisitProgress(
+        sessionId: sessionId,
+        status: VisitStatus.evaluationPending,
+        startedAt: startedAt,
+      ).visitDate;
+    } on FormatException {
+      // 날짜를 읽지 못해도 이어서 할 회차는 알린다. 배너는 날짜 없이 뜬다.
+    }
+    _set(
+      key,
+      ReportNoticeInfo(
+        ReportNotice.evaluationPending,
+        reportId: sessionId,
+        visitDate: visitDate,
+        fromServer: true,
+      ),
+    );
+  }
+
   /// 이 자리를 아직 서버에 묻지 않았으면 가장 최근 회차로 알림을 정한다.
   void syncOnce(_NoticeKey key, String remoteProfileId) {
     if (!_synced.add(key)) return;
     unawaited(_follow(key, _nextRound(key), remoteProfileId));
   }
 
-  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 비운다.
+  /// 묻지 못했던 자리를 다시 묻는다. 묻는 동안에는 알림을 지우지 않고 다시
+  /// 묻는 중([ReportNoticeInfo.rechecking])으로 둔다.
   void retry(_NoticeKey key, String remoteProfileId) {
     _synced.add(key);
     final round = _nextRound(key);
-    _set(key, null);
+    _set(key, _checkFailed(state[key], rechecking: true));
     unawaited(_follow(key, round, remoteProfileId));
   }
 
+  /// 묻지 못했다는 알림. 만드는 중이던 회차를 알면 날짜와 회차를 그대로 둔다.
+  static ReportNoticeInfo _checkFailed(
+    ReportNoticeInfo? shown, {
+    bool rechecking = false,
+  }) => ReportNoticeInfo(
+    ReportNotice.checkFailed,
+    reportId: shown?.reportId,
+    analysisId: shown?.analysisId,
+    visitDate: shown?.visitDate,
+    fromServer: true,
+    rechecking: rechecking,
+  );
+
   /// 가장 최근 회차를 읽어 알림을 정하고, 만드는 중이면 끝날 때까지 묻는다.
   ///
-  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없을 때
-  /// 묻지 못하면 [ReportNotice.checkFailed] 를 띄운다. 이미 띄운 알림은 그대로
-  /// 둔다.
+  /// 만드는 중에 서버에 닿지 못하면 잠시 뒤 다시 묻는다. 띄운 알림이 없거나,
+  /// 만드는 중이었거나, 다시 묻던 중에 묻지 못하면 [ReportNotice.checkFailed] 를
+  /// 띄운다. 그 밖에 이미 띄운 알림은 그대로 둔다.
   Future<void> _follow(
     _NoticeKey key,
     int round,
@@ -846,15 +1229,14 @@ class _ReportNoticesNotifier
         latest = await api.latestSession(remoteProfileId);
       } on ApiFailure catch (failure) {
         if (_stale(key, round)) return;
-        if (_retryable(failure) &&
-            state[key]?.notice == ReportNotice.generating) {
+        final shown = state[key];
+        if (_retryable(failure) && shown?.notice == ReportNotice.generating) {
           continue;
         }
-        if (state[key] == null) {
-          _set(
-            key,
-            const ReportNoticeInfo(ReportNotice.checkFailed, fromServer: true),
-          );
+        if (shown == null ||
+            shown.notice == ReportNotice.generating ||
+            shown.notice == ReportNotice.checkFailed) {
+          _set(key, _checkFailed(shown));
         }
         return;
       }
@@ -867,6 +1249,9 @@ class _ReportNoticesNotifier
 
       if (latest.status != VisitStatus.processing) {
         _set(key, _noticeOf(latest, latest.status));
+        if (latest.status == VisitStatus.failed) {
+          await _addFailureCode(key, round, latest);
+        }
         return;
       }
 
@@ -892,7 +1277,8 @@ class _ReportNoticesNotifier
   }
 
   /// 분석 작업이 끝날 때까지 묻는다. 끝났거나 그만 물어야 하면 `true`, 작업을
-  /// 찾지 못해 회차부터 다시 물어야 하면 `false` 다.
+  /// 찾지 못해 회차부터 다시 물어야 하면 `false` 다. 다시 시도할 수 없는
+  /// 실패로 그만 물으면 만드는 중 배너를 [ReportNotice.checkFailed] 로 바꾼다.
   Future<bool> _pollAnalysis(
     _NoticeKey key,
     int round,
@@ -906,25 +1292,33 @@ class _ReportNoticesNotifier
       await Future<void>.delayed(interval);
       if (_stale(key, round)) return true;
 
-      final AnalysisStatus? status;
+      final AnalysisProgress progress;
       try {
-        status = await api.analysis(analysisId);
+        progress = await api.analysis(analysisId);
       } on ApiFailure catch (failure) {
         if (_stale(key, round)) return true;
         if (_retryable(failure)) continue;
         if (failure is ApiServerFailure && failure.statusCode == 404) {
           return false;
         }
+        _set(key, _checkFailed(state[key]));
         return true;
       }
       if (_stale(key, round)) return true;
 
-      switch (status) {
+      switch (progress.status) {
         case AnalysisStatus.completed:
           _set(key, _noticeOf(session, VisitStatus.completed));
           return true;
         case AnalysisStatus.failed:
-          _set(key, _noticeOf(session, VisitStatus.failed));
+          _set(
+            key,
+            _noticeOf(
+              session,
+              VisitStatus.failed,
+              failureCode: progress.errorCode,
+            ),
+          );
           return true;
         default:
           continue;
@@ -932,14 +1326,48 @@ class _ReportNoticesNotifier
     }
   }
 
+  /// 회차 목록(5-4)이 실패라고 했을 때 그 분석 작업(6-3)의 실패 이유를 한 번
+  /// 물어 알림에 붙인다. 묻지 못하면 이유 없이 둔다. 실패 배너는 그 전에 이미
+  /// 띄웠다.
+  Future<void> _addFailureCode(
+    _NoticeKey key,
+    int round,
+    VisitProgress session,
+  ) async {
+    final analysisId = session.analysisId;
+    if (analysisId == null) return;
+    final AnalysisProgress progress;
+    try {
+      progress = await ref.read(reportApiProvider).analysis(analysisId);
+    } on ApiFailure {
+      return;
+    }
+    if (_stale(key, round) || progress.status != AnalysisStatus.failed) return;
+    if (progress.errorCode == null) return;
+    _set(
+      key,
+      _noticeOf(session, VisitStatus.failed, failureCode: progress.errorCode),
+    );
+  }
+
   /// 서버에 닿지 못했거나 서버가 다시 시도해도 된다고 알렸다.
+  ///
+  /// 5xx 를 공통 `ErrorResponse` 없이 받은 것(본문 없는 502, 504 등)도 다시
+  /// 묻는다. 앞단 프록시가 앱 서버의 응답을 받지 못한 것이라 서버가 `retryable`
+  /// 을 알릴 수 없었다. 여기서는 상태를 읽기만 하므로 다시 물어도 탈이 없다.
   static bool _retryable(ApiFailure failure) =>
       failure is ApiNetworkFailure ||
-      (failure is ApiServerFailure && failure.retryable);
+      (failure is ApiServerFailure &&
+          (failure.retryable ||
+              failure.statusCode >= 500 && failure.errorCode == null));
 
   /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
   /// `null` 이다.
-  ReportNoticeInfo? _noticeOf(VisitProgress session, VisitStatus? status) {
+  ReportNoticeInfo? _noticeOf(
+    VisitProgress session,
+    VisitStatus? status, {
+    String? failureCode,
+  }) {
     final notice = switch (status) {
       VisitStatus.evaluationPending => ReportNotice.evaluationPending,
       VisitStatus.audioPending => ReportNotice.audioPending,
@@ -953,8 +1381,10 @@ class _ReportNoticesNotifier
     return ReportNoticeInfo(
       notice,
       reportId: session.sessionId,
+      analysisId: session.analysisId,
       visitDate: session.visitDate,
       fromServer: true,
+      failureCode: notice == ReportNotice.failed ? failureCode : null,
     );
   }
 
@@ -1027,6 +1457,14 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     if (key != null) _notices.dismiss(key, reportId: reportId);
   }
 
+  /// 확인할 제안이 없는 리포트를 열었다. 지금 알림이 그 리포트의 도착이면
+  /// 지운다. 서버가 그 회차를 계속 `completed` 로 주어도 이번 실행에서는 다시
+  /// 띄우지 않는다.
+  void acknowledge(String reportId) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.acknowledge(key, reportId);
+  }
+
   /// 리포트가 만들어졌다.
   void arrive() {
     final key = _currentNoticeKey(ref);
@@ -1051,6 +1489,16 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
     } else {
       _notices.startMockGenerating(key);
     }
+  }
+
+  /// 녹음을 시작해 회차를 만들었다(5-1). 홈에 `평가 이어서 하기` 를 띄운다.
+  ///
+  /// 홈은 서버의 회차(5-4)를 어르신마다 앱을 켠 뒤 한 번만 묻는다. 그래서
+  /// 면회 중 녹음 화면을 떠나 홈에 오면, 앱을 다시 켜기 전에는 이어갈 배너가
+  /// 없었다(#234). [startedAt] 은 5-1 이 준 `startedAt` 이다.
+  void visitStarted({required String sessionId, required String startedAt}) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.visitStarted(key, sessionId, startedAt);
   }
 
   /// 회차 상태를 묻지 못했을 때 다시 묻는다. 서버에 저장한 분일 때만 묻는다.

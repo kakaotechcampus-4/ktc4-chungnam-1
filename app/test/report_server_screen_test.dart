@@ -152,6 +152,62 @@ void main() {
       expect(find.text('리포트가 도착했어요'), findsNothing);
       expect(find.text('눌러서 확인하기'), findsNothing);
     });
+
+    // 2026-11-10 E2E: 말소리 없는 녹음과 너무 긴 녹음이 같은 문구로만 실패했다.
+    for (final (code, reason) in [
+      ('EMPTY_TRANSCRIPT', '녹음에서 말소리를 찾지 못했어요.'),
+      ('AI_SERVER_TIMEOUT', '녹음이 너무 길거나 서버가 바빠 시간 안에 끝내지 못했어요.'),
+    ]) {
+      testWidgets('$code 로 실패했으면 제목은 두고 이유를 한 줄 덧붙인다', (tester) async {
+        final server = FakeReportServer(
+          sessions: {
+            'p1': [
+              FakeReportServer.session(
+                id: 's1',
+                status: 'failed',
+                analysisId: 'a1',
+              ),
+            ],
+          },
+          analyses: {
+            'a1': ['failed'],
+          },
+        )..analysisErrors['a1'] = code;
+        await _open(tester, server, AppRoutes.home);
+
+        expect(find.text('리포트를 만들지 못했어요'), findsOneWidget);
+        expect(find.text(reason), findsOneWidget);
+        expect(find.text('눌러서 분석 다시 요청하기'), findsOneWidget);
+
+        _router.push(AppRoutes.notifications);
+        await _settle(tester);
+        expect(find.text('알림'), findsWidgets);
+        expect(find.text(reason), findsOneWidget);
+      });
+    }
+
+    testWidgets('모르는 이유로 실패했으면 이유 줄 없이 원래 문구만 둔다', (tester) async {
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [
+            FakeReportServer.session(
+              id: 's1',
+              status: 'failed',
+              analysisId: 'a1',
+            ),
+          ],
+        },
+        analyses: {
+          'a1': ['failed'],
+        },
+      )..analysisErrors['a1'] = 'AI_SERVER_ERROR';
+      await _open(tester, server, AppRoutes.home);
+
+      expect(find.text('리포트를 만들지 못했어요'), findsOneWidget);
+      expect(find.text('눌러서 분석 다시 요청하기'), findsOneWidget);
+      expect(find.textContaining('말소리'), findsNothing);
+      expect(find.textContaining('시간 안에'), findsNothing);
+    });
   });
 
   testWidgets('회차 상태를 묻지 못하면 알리고, 눌러서 다시 묻는다', (tester) async {
@@ -262,6 +318,112 @@ void main() {
     await _open(tester, server, AppRoutes.reportOf('s1'));
 
     expect(find.text('변경 사항 확인하기'), findsOneWidget);
+  });
+
+  group('확인할 제안이 없는 리포트의 도착 알림', () {
+    const arrived = '리포트가 도착했어요';
+
+    /// [id] 회차의 제안을 모두 없앤다. 사용한 카드가 없는 면회와 같다.
+    void noProposals(FakeReportServer server, String id) =>
+        server.proposals[id] = {
+          ...FakeReportServer.proposal(id),
+          'lifeFactProposals': <Object>[],
+        };
+
+    /// 홈에서 알림을 눌러 리포트를 연 뒤 홈으로 돌아온다.
+    Future<ProviderContainer> openFromHome(
+      WidgetTester tester,
+      FakeReportServer server,
+    ) async {
+      final container = await _open(tester, server, AppRoutes.home);
+      expect(find.text(arrived), findsOneWidget);
+      await _tap(tester, find.text(arrived));
+      _router.go(AppRoutes.home);
+      await _settle(tester);
+      return container;
+    }
+
+    testWidgets('제안이 없는 리포트를 열면 알림을 지운다', (tester) async {
+      final server = _completed();
+      noProposals(server, 's1');
+      final container = await openFromHome(tester, server);
+
+      expect(container.read(reportNoticeProvider), isNull);
+      expect(find.text(arrived), findsNothing);
+    });
+
+    testWidgets('제안이 남았으면 열기만 해서는 지우지 않는다', (tester) async {
+      final server = _completed();
+      final container = await openFromHome(tester, server);
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+      expect(find.text(arrived), findsOneWidget);
+    });
+
+    testWidgets('제안을 불러오지 못하면 지우지 않는다', (tester) async {
+      final server = _completed()
+        ..failures['GET /api/v1/visit-sessions/s1/proposals'] = (
+          status: 500,
+          errorCode: 'INTERNAL_SERVER_ERROR',
+        );
+      final container = await openFromHome(tester, server);
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+      expect(find.text(arrived), findsOneWidget);
+    });
+
+    testWidgets('리포트를 불러오지 못하면 지우지 않는다', (tester) async {
+      final server = _completed()
+        ..failures['GET /api/v1/visit-sessions/s1/report'] = (
+          status: 500,
+          errorCode: 'INTERNAL_SERVER_ERROR',
+        );
+      noProposals(server, 's1');
+      final container = await openFromHome(tester, server);
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+      expect(find.text(arrived), findsOneWidget);
+    });
+
+    testWidgets('지난 리포트를 열면 지금 도착한 리포트의 알림은 남긴다', (tester) async {
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [
+            FakeReportServer.session(
+              id: 's2',
+              status: 'completed',
+              startedAt: '2026-10-20T14:00:00+09:00',
+            ),
+            FakeReportServer.session(id: 's1', status: 'completed'),
+          ],
+        },
+        reports: {
+          's1': FakeReportServer.report(sessionId: 's1'),
+          's2': FakeReportServer.report(
+            sessionId: 's2',
+            title: '고향 이야기를 나눈 날',
+            visitDate: '2026-10-20',
+          ),
+        },
+        evaluations: {
+          's1': FakeReportServer.evaluation('s1'),
+          's2': FakeReportServer.evaluation('s2'),
+        },
+        proposals: {'s2': FakeReportServer.proposal('s2')},
+      );
+      noProposals(server, 's1');
+      final container = await _open(tester, server, AppRoutes.home);
+      expect(find.text(arrived), findsOneWidget);
+
+      _router.go(AppRoutes.reportOf('s1'));
+      await _settle(tester);
+      expect(find.text('재봉 일 이야기를 나눈 날'), findsOneWidget);
+      _router.go(AppRoutes.home);
+      await _settle(tester);
+
+      expect(container.read(reportNoticeProvider), ReportNotice.ready);
+      expect(find.text(arrived), findsOneWidget);
+    });
   });
 
   group('변경 사항 확인', () {

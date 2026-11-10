@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
+import '../../data/profile_birth_input_store.dart';
+import '../../data/profile_relationship_store.dart';
 import '../../data/providers.dart';
 import '../../data/selected_profile_store.dart';
 import '../../design/tokens.dart';
@@ -13,8 +15,11 @@ import '../../widgets/app_surfaces.dart';
 import '../auth/auth_messages.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
+import '../local_photos/local_photos.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_draft_keeper.dart';
 import '../visit/pending_uploads.dart';
+import '../visit/recording_share.dart';
 import '../visit/visit_photos.dart';
 
 /// 회원 탈퇴 확인. 프로필 설정의 `회원탈퇴`를 누르면 뜬다(피그마 설계 없음).
@@ -34,7 +39,11 @@ class ProfileDeleteScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(appBar: AppTopBar(), body: _Body());
+    return const Scaffold(
+      backgroundColor: HomeColors.background,
+      appBar: AppTopBar(backgroundColor: HomeColors.background),
+      body: _Body(),
+    );
   }
 }
 
@@ -81,7 +90,12 @@ class _BodyState extends ConsumerState<_Body> {
     final accountId = ref.read(sessionProvider)?.account.accountId;
     final uploads = ref.read(pendingUploadsProvider);
     final photos = ref.read(visitPhotosProvider);
+    final localPhotos = ref.read(localPhotosProvider);
+    final share = ref.read(recordingShareProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
+    final relationships = ref.read(profileRelationshipStoreProvider);
+    final birthInputs = ref.read(profileBirthInputStoreProvider);
+    final setupDrafts = ref.read(setupDraftKeeperProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -94,8 +108,9 @@ class _BodyState extends ConsumerState<_Body> {
       return;
     }
 
-    // 계정이 없어졌으니 그 계정의 면회 녹음, 재전송 기록과 면회 사진도 지운다.
-    // 앱을 지우지 않는 한 기기에 남기 때문이다. 화면을 떠났어도 지운다.
+    // 계정이 없어졌으니 그 계정의 면회 녹음, 재전송 기록, 공유하며 남긴 녹음
+    // 사본과 면회 사진도 지운다. 앱을 지우지 않는 한 기기에 남기 때문이다.
+    // 화면을 떠났어도 지운다.
     if (accountId != null) {
       try {
         await uploads.forgetAccount(accountId);
@@ -103,12 +118,29 @@ class _BodyState extends ConsumerState<_Body> {
         // 탈퇴는 끝났다. 남은 녹음은 다른 계정이 찾거나 보내지 못한다.
       }
       try {
+        await share.forgetCopies();
+      } on Exception {
+        // 탈퇴는 끝났다. 남은 사본은 다음 공유나 캐시 정리 때 지워진다.
+      }
+      try {
         await photos.forgetAccount(accountId);
+      } on Exception {
+        // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
+      }
+      // 프로필 설정과 일대기에서 넣은, 이 기기에만 둔 사진도 지운다.
+      try {
+        await localPhotos.forgetAccount(accountId);
       } on Exception {
         // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
       }
       // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
       await selectedProfile.clear(accountId);
+      // 단말에만 둔 관계도 지운다. 저장소가 실패를 삼킨다.
+      await relationships.clear(accountId);
+      // 나이로 입력했다는 표시도 지운다. 저장소가 실패를 삼킨다.
+      await birthInputs.clear(accountId);
+      // 등록하다 멈춘 세부 정보 초안도 지운다. 저장소가 실패를 삼킨다.
+      await setupDrafts.clearAccount(accountId);
     }
 
     if (!mounted) return;
@@ -177,9 +209,16 @@ class _BodyState extends ConsumerState<_Body> {
             const SizedBox(height: AppSpacing.lg),
           ],
           if (restart)
-            PrimaryButton(label: '로그인으로 돌아가기', onPressed: _backToLogin)
+            PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: '로그인으로 돌아가기',
+              onPressed: _backToLogin,
+            )
           else
             PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
               label: _deleting ? '탈퇴하는 중이에요' : '탈퇴하기',
               onPressed: _deleting ? null : _delete,
             ),
@@ -218,19 +257,22 @@ class _BodyState extends ConsumerState<_Body> {
                   hintStyle: AppTypography.body.copyWith(
                     color: AppColors.textDisabled,
                   ),
+                  // 흰 칸이라 안내 글자의 비활성 회색이 4.5:1 을 지킨다.
+                  filled: true,
+                  fillColor: AppColors.background,
                   contentPadding: const EdgeInsets.all(AppSpacing.lg),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.line),
+                    borderSide: const BorderSide(color: HomeColors.outline),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    borderSide: const BorderSide(color: AppColors.line),
+                    borderSide: const BorderSide(color: HomeColors.outline),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
                     borderSide: const BorderSide(
-                      color: AppColors.ink,
+                      color: HomeColors.accent,
                       width: 2,
                     ),
                   ),
@@ -267,7 +309,11 @@ class _ReasonRow extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: SelectionMark(selected: selected, size: 24),
+            child: SelectionMark(
+              accent: HomeColors.accent,
+              selected: selected,
+              size: 24,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(child: Text(label, style: AppTypography.body)),

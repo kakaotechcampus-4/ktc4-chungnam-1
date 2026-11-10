@@ -5,13 +5,21 @@
 트랜잭션 블록에서 한다. 정리 단계는 응답을 보낸 뒤에 실행될 수 있어, 커밋이 실패해도
 앱은 성공 응답을 받을 수 있기 때문이다. 테스트는 `dependency_overrides` 로 구글 JWKS
 조회와 저장소를 바꿔 끼운다.
+
+토큰은 DB 연결을 열기 전에 확인한다. FastAPI 는 의존성을 선언한 순서대로 풀고, 앞의
+의존성이 예외(401 등)를 던지면 뒤의 의존성은 풀지 않는다. 그래서 `get_current_session` 은
+서명과 만료를 보는 `read_signed_session` 을 폐기 기록 저장소보다 먼저 선언하고, 인증이
+필요한 라우트와 의존성은 `CurrentAccountDep`, `CurrentSessionDep` 을 DB 를 쓰는 다른
+의존성보다 먼저 선언한다. 구글 로그인과 동의 제출도 같은 방식으로 토큰을 먼저 본다
+(routes/auth.py). `tests/test_token_check_before_db.py` 가 이 순서를 확인한다.
 """
 
+import re
 from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
@@ -44,6 +52,41 @@ from app.services.speech_analysis_pipeline import SpeechAnalysisSubmissionServic
 bearer_scheme = HTTPBearer(auto_error=False)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+APP_VERSION_CODE_HEADER = "X-App-Version-Code"
+_VERSION_CODE_PATTERN = re.compile(r"[0-9]{1,10}")
+
+
+def require_supported_app_version(
+    settings: SettingsDep,
+    version_code: Annotated[
+        str | None,
+        Header(
+            alias=APP_VERSION_CODE_HEADER,
+            description=(
+                "앱의 안드로이드 versionCode. 최소 지원 버전보다 낮으면 426 "
+                "APP_UPDATE_REQUIRED 로 거절한다. 없으면 검사하지 않는다."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """최소 지원 버전보다 낮은 앱의 요청을 426 으로 거절한다.
+
+    헤더가 없거나 숫자가 아니면 통과시킨다. 헤더를 보내기 전에 낸 앱 빌드와 서버
+    점검 도구의 요청을 막지 않기 위해서다. 인증보다 먼저 확인하므로 구버전 앱은
+    로그인 전 요청에서도 업데이트가 필요하다는 응답을 받는다.
+    """
+    minimum = settings.min_android_version_code
+    if minimum == 0 or version_code is None:
+        return
+    if not _VERSION_CODE_PATTERN.fullmatch(version_code):
+        return
+    if int(version_code) < minimum:
+        raise AppError(
+            status_code=426,
+            error_code="APP_UPDATE_REQUIRED",
+            message="새 버전으로 업데이트해야 합니다.",
+        )
 
 
 async def get_db_connection(settings: SettingsDep) -> AsyncIterator[DbConnection]:
@@ -174,18 +217,29 @@ def _unauthenticated() -> AppError:
     )
 
 
-async def get_current_session(
+def read_signed_session(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
     ],
     issuer: Annotated[TokenIssuer, Depends(get_token_issuer)],
+) -> SessionClaims:
+    """Bearer 형식과 세션 토큰의 서명, 만료, 종류(`typ`)만 확인한다. DB 연결을 열지 않는다.
+
+    폐기 여부는 DB를 봐야 하므로 여기서 확인하지 않는다. `get_current_session` 이 의존성으로
+    쓰고, 업로드 경로에서 본문을 읽기 전에 확인하는 미들웨어(body_limits.py)가 직접 부른다.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthenticated()
+    return issuer.read_session(credentials.credentials)
+
+
+async def get_current_session(
+    # 서명과 만료를 먼저 본다. 여기서 거절하면 아래 폐기 기록 저장소의 DB 연결은 열지 않는다.
+    session: Annotated[SessionClaims, Depends(read_signed_session)],
     revocations: Annotated[
         SessionRevocationStore, Depends(get_session_revocations)
     ],
 ) -> SessionClaims:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise _unauthenticated()
-    session = issuer.read_session(credentials.credentials)
     # 로그아웃하거나 탈퇴한 세션이다. 만료 전이라도 받지 않는다.
     if await revocations.is_revoked(session.token_id):
         raise _unauthenticated()

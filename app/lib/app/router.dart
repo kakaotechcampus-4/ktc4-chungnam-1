@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/auth_api.dart';
 import '../data/providers.dart';
+import '../design/tokens.dart';
 import '../features/auth/google_consent_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/cards/cards_screen.dart';
@@ -18,6 +19,8 @@ import '../features/life_story/life_story_story_screen.dart';
 import '../features/profile/profile_basic_edit_screen.dart';
 import '../features/profile/profile_delete_screen.dart';
 import '../features/profile/profile_details_edit_screen.dart';
+import '../features/profile/profile_dialogs.dart';
+import '../features/profile/profile_photo_add_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/profile_switch_screen.dart';
 import '../features/profile_setup/onboarding_screen.dart';
@@ -28,6 +31,8 @@ import '../features/report/report_screen.dart';
 import '../features/review/comfort_screen.dart';
 import '../features/review/review_screen.dart';
 import '../features/review/upload_retry_screen.dart';
+import '../features/settings/consent_settings_screen.dart';
+import '../features/settings/settings_screen.dart';
 import '../features/profile_setup/profile_setup_screen.dart';
 import '../features/visit/add_cards_screen.dart';
 import '../features/visit/record_screen.dart';
@@ -48,6 +53,7 @@ GoRouter buildRouter() {
           // 같은 경로로 다시 오면 화면을 새로 만들어 복원 확인을 다시 한다.
           key: ValueKey(state.uri.toString()),
           signedOut: state.uri.queryParameters['signedOut'] == 'true',
+          sessionLost: state.uri.queryParameters['sessionLost'] == 'true',
         ),
       ),
       GoRoute(
@@ -58,7 +64,11 @@ GoRouter buildRouter() {
           // 다시 띄우면 비어 있으므로, 빈 동의 화면을 보여주지 않고 되돌린다.
           if (pending is! ConsentRequiredResult) {
             return Scaffold(
-              appBar: const AppTopBar(title: '약관 동의'),
+              backgroundColor: HomeColors.background,
+              appBar: const AppTopBar(
+                backgroundColor: HomeColors.background,
+                title: '약관 동의',
+              ),
               body: ErrorStateView(
                 message: '로그인 정보가 없어요.\n로그인부터 다시 해주세요.',
                 onRetry: () => context.go(AppRoutes.signIn),
@@ -77,19 +87,50 @@ GoRouter buildRouter() {
         builder: (context, state) =>
             ProfileSetupScreen(addingId: state.uri.queryParameters['adding']),
       ),
-      GoRoute(
-        path: AppRoutes.home,
-        // 서버에서 어르신을 불러오기 전에는 등록 안내를 띄우지 않는다.
-        builder: (context, state) =>
-            const CareProfilesLoading(child: HomeScreen()),
+      // 하단 탭이 있는 화면들. 탭을 한 번만 그려 화면이 바뀌어도 그대로 두고,
+      // 고른 탭 위 막대가 미끄러지게 한다. 다른 화면은 이 위에 쌓인다.
+      ShellRoute(
+        builder: (context, state, child) =>
+            _TabShell(location: state.uri.path, child: child),
+        routes: [
+          GoRoute(
+            path: AppRoutes.home,
+            // 서버에서 어르신을 불러오기 전에는 등록 안내를 띄우지 않는다.
+            builder: (context, state) =>
+                const CareProfilesLoading(child: HomeScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.notifications,
+            builder: (context, state) =>
+                const _NeedsProfile(child: NoticeScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.settings,
+            builder: (context, state) => const SettingsScreen(),
+          ),
+          // 일대기 표지만 탭 화면이다. 책을 펼친 뒤의 화면은 이 위에 쌓인다.
+          GoRoute(
+            path: AppRoutes.album,
+            builder: (context, state) =>
+                const _NeedsProfile(child: LifeStoryCoverScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.reports,
+            builder: (context, state) =>
+                const _NeedsProfile(child: ReportListScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.profile,
+            builder: (context, state) => const CareProfilesLoading(
+              withTopBar: true,
+              child: ProfileScreen(),
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.cards,
         builder: (context, state) => const _NeedsProfile(child: CardsScreen()),
-      ),
-      GoRoute(
-        path: AppRoutes.notifications,
-        builder: (context, state) => const _NeedsProfile(child: NoticeScreen()),
       ),
       GoRoute(
         path: AppRoutes.visitPhoto,
@@ -116,6 +157,7 @@ GoRouter buildRouter() {
         builder: (context, state) => _NeedsProfile(
           child: UploadRetryScreen(
             sessionId: state.uri.queryParameters['session'],
+            analysisId: state.uri.queryParameters['analysis'],
           ),
         ),
       ),
@@ -151,11 +193,6 @@ GoRouter buildRouter() {
         },
       ),
       GoRoute(
-        path: AppRoutes.profile,
-        builder: (context, state) =>
-            const CareProfilesLoading(withTopBar: true, child: ProfileScreen()),
-      ),
-      GoRoute(
         path: AppRoutes.profileEditBasic,
         builder: (context, state) =>
             const _NeedsProfile(child: ProfileBasicEditScreen()),
@@ -164,6 +201,12 @@ GoRouter buildRouter() {
         path: AppRoutes.profileEditDetails,
         builder: (context, state) =>
             const _NeedsProfile(child: ProfileDetailsEditScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.profilePhotoAdd,
+        builder: (context, state) => _NeedsProfile(
+          child: ProfilePhotoAddScreen(existing: state.extra as int? ?? 0),
+        ),
       ),
       GoRoute(
         path: AppRoutes.profileSwitch,
@@ -177,14 +220,9 @@ GoRouter buildRouter() {
         builder: (context, state) => const ProfileDeleteScreen(),
       ),
       GoRoute(
-        path: AppRoutes.reports,
+        path: AppRoutes.settingsConsents,
         builder: (context, state) =>
-            const _NeedsProfile(child: ReportListScreen()),
-      ),
-      GoRoute(
-        path: AppRoutes.album,
-        builder: (context, state) =>
-            const _NeedsProfile(child: LifeStoryCoverScreen()),
+            ConsentSettingsScreen(pointAtPush: state.extra == true),
       ),
       GoRoute(
         path: AppRoutes.albumBook,
@@ -225,7 +263,11 @@ GoRouter buildRouter() {
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
-      appBar: const AppTopBar(title: '새록'),
+      backgroundColor: HomeColors.background,
+      appBar: const AppTopBar(
+        backgroundColor: HomeColors.background,
+        title: '새록',
+      ),
       body: ErrorStateView(
         message: '찾을 수 없는 화면이에요.\n${state.uri}',
         onRetry: () => context.go(AppRoutes.home),
@@ -243,9 +285,69 @@ Widget _withCategory(
   final category = LifeStoryCategory.parse(state.pathParameters['category']!);
   if (category != null) return builder(category);
   return const Scaffold(
-    appBar: AppTopBar(),
+    backgroundColor: HomeColors.background,
+    appBar: AppTopBar(backgroundColor: HomeColors.background),
     body: EmptyStateView(message: '찾을 수 없는 이야기 묶음이에요.'),
   );
+}
+
+/// 하단 탭과 그 위의 화면. 탭마다 고르는 화면은 일대기 표지, 리포트 기록, 홈,
+/// 프로필 설정(마이페이지), 설정이다. 알림은 `홈` 탭을 고른다.
+///
+/// 홈에서는 탭 화면을 위에 쌓고, 다른 탭 화면에서는 그 자리를 바꿔 끼운다.
+/// 그래서 탭 화면의 뒤로 가기는 늘 홈으로 돌아온다. 일대기와 리포트는 어르신이
+/// 있어야 열고, 없으면 등록부터 안내한다.
+class _TabShell extends ConsumerWidget {
+  const _TabShell({required this.location, required this.child});
+
+  final String location;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = switch (location) {
+      AppRoutes.album => AppTab.album,
+      AppRoutes.reports => AppTab.report,
+      AppRoutes.profile => AppTab.myPage,
+      AppRoutes.settings => AppTab.settings,
+      _ => AppTab.home,
+    };
+
+    void open(String route, {bool needsProfile = false}) {
+      if (needsProfile && !ref.read(careProfilesProvider).hasSelected) {
+        showProfileRequiredDialog(context);
+        return;
+      }
+      if (location == route) return;
+      if (location == AppRoutes.home) {
+        context.push(route);
+      } else {
+        context.pushReplacement(route);
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: HomeColors.background,
+      body: child,
+      bottomNavigationBar: AppBottomNav(
+        current: current,
+        onSelected: (tab) {
+          switch (tab) {
+            case AppTab.album:
+              open(AppRoutes.album, needsProfile: true);
+            case AppTab.report:
+              open(AppRoutes.reports, needsProfile: true);
+            case AppTab.home:
+              if (location != AppRoutes.home) context.go(AppRoutes.home);
+            case AppTab.myPage:
+              open(AppRoutes.profile);
+            case AppTab.settings:
+              open(AppRoutes.settings);
+          }
+        },
+      ),
+    );
+  }
 }
 
 /// 일대기가 여기에 든다.
@@ -268,13 +370,14 @@ class _NeedsProfile extends ConsumerWidget {
     return CareProfilesLoading(
       withTopBar: true,
       child: Scaffold(
-      appBar: const AppTopBar(),
-      body: EmptyStateView(
-        message: '함께하는 소중한 분을 등록한 뒤\n이용할 수 있어요.',
-        icon: Icons.person_add_alt_1_outlined,
-        actionLabel: '등록하러 가기',
-        onAction: () => context.pushReplacement(AppRoutes.profileSwitch),
-      ),
+        backgroundColor: HomeColors.background,
+        appBar: const AppTopBar(backgroundColor: HomeColors.background),
+        body: EmptyStateView(
+          message: '함께하는 소중한 분을 등록한 뒤\n이용할 수 있어요.',
+          icon: Icons.person_add_alt_1_outlined,
+          actionLabel: '등록하러 가기',
+          onAction: () => context.pushReplacement(AppRoutes.profileSwitch),
+        ),
       ),
     );
   }

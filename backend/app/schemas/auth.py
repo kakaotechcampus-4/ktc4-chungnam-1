@@ -12,10 +12,18 @@ class GoogleLoginRequest(ApiModel):
 
 
 class ConsentSubmission(ApiModel):
-    service_data: bool = Field(alias="serviceData")
-    sensitive_data: bool = Field(alias="sensitiveData")
-    push_notification: bool = Field(alias="pushNotification")
-    service_improvement: bool = Field(alias="serviceImprovement")
+    """가입 동의 (API 1-2).
+
+    선택 동의 변경(`ConsentChangeRequest`)과 같이 명시적인 `true`/`false`만 받는다.
+    `"yes"`, `"on"`, `1`을 동의로 바꿔 읽으면 필수 동의를 받지 않고 계정을 만들게 된다.
+    """
+
+    service_data: StrictBool = Field(alias="serviceData")
+    sensitive_data: StrictBool = Field(alias="sensitiveData")
+    push_notification: StrictBool = Field(alias="pushNotification")
+    service_improvement: StrictBool = Field(alias="serviceImprovement")
+    # 11/7 추가한 선택 동의. 이전 앱은 보내지 않으므로 기본은 거부다.
+    photo_analysis: StrictBool = Field(default=False, alias="photoAnalysis")
 
 
 class ConsentRequest(ApiModel):
@@ -40,6 +48,7 @@ class ConsentChangeRequest(ApiModel):
     push_notification: StrictBool | None = Field(
         default=None, alias="pushNotification"
     )
+    photo_analysis: StrictBool | None = Field(default=None, alias="photoAnalysis")
     # 필수 동의는 바꿀 수 없다. 형식 오류(`INVALID_REQUEST`)와 구분해
     # `REQUIRED_CONSENT_NOT_CHANGEABLE`로 알리려고 받기만 한다.
     service_data: bool | None = Field(
@@ -55,7 +64,7 @@ class ConsentChangeRequest(ApiModel):
 
     @model_validator(mode="after")
     def _optional_consents_are_not_null(self) -> "ConsentChangeRequest":
-        for field in ("service_improvement", "push_notification"):
+        for field in ("service_improvement", "push_notification", "photo_analysis"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field}는 null일 수 없습니다.")
         return self
@@ -112,6 +121,7 @@ class AccountConsentResponse(ApiModel):
     sensitive_data: ConsentItemResponse = Field(alias="sensitiveData")
     service_improvement: ConsentItemResponse = Field(alias="serviceImprovement")
     push_notification: ConsentItemResponse = Field(alias="pushNotification")
+    photo_analysis: ConsentItemResponse = Field(alias="photoAnalysis")
 
 
 class AccountResponse(ApiModel):

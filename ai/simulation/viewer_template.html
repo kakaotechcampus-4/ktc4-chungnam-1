@@ -194,7 +194,7 @@ function renderWho() {
       h("h3", {}, c.relation), h("p", { class: "small muted" }, c.summary),
       dl([["피하고 싶은 것", c.wants_to_avoid], ["바라는 것", c.hopes]]),
       h("p", { class: "runline" }, `${run.llm} · 시드 ${run.seed} · ` + (TOPICS ? "주제판(PR #84 구조)" : `요소판(proto_*) · 범위 선택 화면 ${P.visits.scope_ui ? "있음" : "없음(지금 앱)"}`)
-        + (run.failure ? ` · 중단: ${run.failure}` : "")))));
+        + (run.blank_profile ? " · 초기 정보 없이 시작" : "") + (run.failure ? ` · 중단: ${run.failure}` : "")))));
   document.getElementById("eyebrow").textContent = `합성 페르소나 면회 시뮬레이션 · ${TOPICS ? "주제판 · PR #84 DB 구조" : "요소판 · 시험용 proto_* 테이블"}`;
   document.getElementById("title").textContent = `${(ob.basic && ob.basic.name) || "어르신"} 어르신 면회 기록`;
 }
@@ -294,6 +294,59 @@ function tile(c) {
 }
 
 
+// 카드 생성 단계별 입력과 출력(visits[].recommend.steps, simulation/backends/steps.py)
+const pretty = (x) => h("pre", { class: "small" }, typeof x === "string" ? x : JSON.stringify(x, null, 1));
+const box = (title, ...kids) => h("details", {}, h("summary", { class: "small" }, title), ...kids);
+const tbl = (head, rows) => h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, head.map(t => h("th", {}, t)))), h("tbody", {}, rows)));
+function stepsPanel(st) {
+  if (!st) return panel("카드 생성 단계", null, h("p", { class: "small muted" }, "이 기록에는 단계 기록이 없습니다(단계 기록 추가 전 실행)."));
+  const fate = {};
+  st.match.forEach(m => m.dropped.forEach(d => fate[d.no] = ["bad", "② 판정에서 빠짐: " + (d.reason || "")]));
+  (st.select ? st.select.dropped : []).forEach(d => fate[d.no] = ["", "③ 탈락: " + (d.reason || "")]);
+  (st.select ? st.select.picked : []).forEach(p => fate[p.no] = ["ok", `③ ${p.position}번 카드`]);
+  const ctx = st.context || {}, pf = ctx.profileFacts || {};
+  const input = h("div", {}, h("p", { class: "eyebrow" }, "입력 · backend가 조립한 context"),
+    h("p", { class: "small" }, `연령대 ${ctx.ageRange} · 초기 정보 ${["occupation", "hometown", "hobby", "family"].filter(k => pf[k]).length}/4칸 · 이야기 ${(ctx.lifeFacts || []).length} · 사진 ${(ctx.photos || []).length} · 주제 ${(ctx.topics || []).length} · 평가 끝난 면회 ${(ctx.visits || []).length} · 지난 카드 ${(ctx.pastCards || []).length}`),
+    box("context 원문", pretty(ctx)));
+  const research = st.research.map((r, i) => h("div", { class: "stack" },
+    h("p", { class: "eyebrow" }, `① 조사${i ? ` · 다시 찾기 ${i}` : ""} · ${r.seconds}초 · 후보 ${r.candidates.length}개`),
+    box(`에이전트와 주고받은 것 (도구 ${r.messages.filter(m => m.kind === "tool").length}번)`, ...r.messages.map(m => m.kind === "request"
+      ? h("div", {}, h("p", { class: "small" }, h("b", {}, "요청 "), m.text))
+      : h("div", {}, h("p", { class: "small mono" }, `턴 ${m.turn} · ${m.name} ${JSON.stringify(m.args)}`), m.name === "CardCandidateSubmission" ? null : pretty(m.result)))),
+    r.rejected.length ? box(`거부된 제출 ${r.rejected.length}번`, ...r.rejected.map(pretty)) : null,
+    tbl(["#", "종류", "제목 / angle", "주제", "근거", "reason", "결과"], r.candidates.map(c => {
+      const f = i === st.research.length - 1 ? (fate[c.no] || ["", ""]) : ["", "다시 찾기 전 제출"];
+      const ev = c.evidence.map(e => Object.values(e)[0]).join(", ") || c.discover_field || "";
+      return h("tr", {}, h("td", { class: "mono" }, c.no), h("td", {}, h("span", { class: "pill" }, c.kind), c.sensitive ? h("span", { class: "pill bad" }, "sensitive") : null),
+        h("td", {}, h("b", {}, c.card_title), h("p", { class: "small muted" }, c.angle)),
+        h("td", { class: "small" }, c.linked_topic_id ? `기존 ${c.linked_topic_id.slice(0, 8)}` : `새: ${c.new_topic_title}`),
+        h("td", { class: "small mono" }, ev), h("td", { class: "small muted" }, c.reason), h("td", {}, f[1] ? h("span", { class: `pill ${f[0]}` }, f[1]) : null)); }))));
+  const match = st.match.map((m, i) => h("div", { class: "stack" },
+    h("p", { class: "eyebrow" }, `② 연결 판정${i ? ` · 다시 찾기 ${i}` : ""} · ${m.seconds}초 · 남음 ${m.kept.length} · 빠짐 ${m.dropped.length}`),
+    box("판정 LLM 입력", pretty(m.input)), box("판정 LLM 출력", pretty(m.output)),
+    tbl(["#", "후보", "연결", "판정 이유"], [...m.kept.map(k => h("tr", {}, h("td", { class: "mono" }, k.no), h("td", {}, k.cardTitle),
+      h("td", { class: "small" }, k.topicId ? `기존 ${k.topicId.slice(0, 8)}` : `${k.newKey} ${(m.newTopics[k.newKey] || {}).title || ""}`,
+        (k.agentTopicId || null) !== (k.topicId || null) ? h("span", { class: "pill warn" }, " 에이전트 연결과 다름") : null),
+      h("td", { class: "small muted" }, k.reason))),
+      ...m.dropped.map(d => h("tr", {}, h("td", { class: "mono" }, d.no), h("td", {}, d.card_title), h("td", {}, h("span", { class: "pill bad" }, "빠짐")), h("td", { class: "small muted" }, d.reason)))])));
+  const sel = st.select ? h("div", { class: "stack" }, h("p", { class: "eyebrow" }, `③ 선정 · 규칙 ${JSON.stringify(st.select.rules)}`),
+    st.select.topics.length ? box(`입력 · 기존 주제 점수 ${st.select.topics.length}개`, tbl(["주제", "점수", "추천하지 않기"],
+      st.select.topics.map(t => h("tr", {}, h("td", {}, t.title), h("td", { class: "mono" }, t.score.toFixed(2)), h("td", {}, t.excluded ? "예" : ""))))) : h("p", { class: "small muted" }, "기존 주제 없음. 새 이야기 후보를 에이전트가 낸 순서대로 채움"),
+    tbl(["카드", "후보 #", "종류", "제목", "칸", "이유"], [...st.select.picked.map(p => h("tr", {}, h("td", { class: "mono" }, p.position), h("td", { class: "mono" }, p.no),
+      h("td", {}, h("span", { class: "pill" }, p.kind)), h("td", {}, p.cardTitle), h("td", {}, p.bucket), h("td", { class: "small muted" }, p.reason))),
+      ...st.select.dropped.map(d => h("tr", {}, h("td", {}, "-"), h("td", { class: "mono" }, d.no), h("td", {}), h("td", {}, d.card_title), h("td", {}, "탈락"), h("td", { class: "small muted" }, d.reason)))])) : null;
+  const w = st.write, out = w ? Object.fromEntries((w.output.cards || []).map(c => [c.position, c])) : {};
+  const write = w ? h("div", { class: "stack" }, h("p", { class: "eyebrow" }, `④ 문안 · ${w.seconds}초 · 첫 검사에서 걸린 것 ${w.firstProblems.length}건 · 입력 profile ${JSON.stringify(w.input.profile)}`),
+    w.firstProblems.length ? h("ul", { class: "small" }, w.firstProblems.map(p => h("li", {}, p))) : null,
+    tbl(["카드", "입력 (angle · 주제 · 근거 글)", "출력 (설명 · 첫 질문 · 꼬리 질문)"], w.input.cards.map(c => { const o = out[c.position] || {};
+      return h("tr", {}, h("td", { class: "mono" }, c.position, " ", h("span", { class: "pill" }, c.kind), c.sensitive ? h("span", { class: "pill bad" }, "sensitive") : null),
+        h("td", {}, h("b", {}, c.card_title), h("p", { class: "small" }, "angle: " + c.angle), h("p", { class: "small muted" }, `주제: ${c.topic.title} — ${c.topic.description}`),
+          h("p", { class: "small muted" }, c.evidence_texts.length ? "근거: " + c.evidence_texts.join(" / ") : "근거 글 없음")),
+        h("td", {}, h("p", { class: "small muted" }, o.description), h("p", {}, h("b", {}, o.primary_question)), h("ul", { class: "small" }, (o.follow_up_questions || []).map(q => h("li", {}, q))))); }))) : null;
+  return panel("카드 생성 단계", h("span", { class: "small muted" }, "① 조사 → ② 연결 판정 → ③ 선정 → ④ 문안. 도구 결과와 판정 입력은 모델이 보는 번호표(t1, f3, p2)를 씁니다."),
+    h("div", { class: "stack" }, input, ...research, ...match, sel, write));
+}
+
 function visitView(v, i) {
   const root = h("div", { class: "stack" });
   const ev = v.evaluation, rep = v.report || { title: "", body: "" };
@@ -309,6 +362,7 @@ function visitView(v, i) {
   root.append(panel("받은 카드", h("span", { class: "small muted" }, `추천 후보 ${v.recommend.candidates}개 · 다시 찾기 ${v.recommend.refills.length}번`),
     h("p", { class: "eyebrow" }, "1~9번 · 고르는 카드"), h("div", { class: "tiles" }, pick.map(tile)),
     h("p", { class: "eyebrow" }, "10~12번 · 면회 중 추가용"), h("div", { class: "tiles" }, reserve.map(tile))));
+  root.append(stepsPanel(v.recommend.steps));
 
   const cg = P.caregiver.relation;
   const chat = h("div", { class: "chat" }, v.transcript.map(t => h("div", { class: `msg ${t.speaker}` },

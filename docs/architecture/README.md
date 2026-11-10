@@ -2,9 +2,9 @@
 
 ## 현재 결정과 구현
 
-STT는 엘리스 클라우드 GPU 서버 인스턴스에서 처리하고 사진 설명, 카드와 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의에서 재확인했으며, [ADR-006의 후속 정정](decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)에 기존 결정과 후속 논의를 구분했다. 현재 STT 장비는 A100 MIG `1g.10gb`이며 [2026-10-26 배포 변경](decisions/ADR-006-server-side-ai-processing.md#stt-실행-환경-변경-2026-10-26)을 따른다. 처리 성능은 실측 후 판단한다. ML API 사용 방향이 실제 사용자 자료 전송 승인이나 최종 모델 확정을 뜻하지는 않는다.
+STT는 Tailscale 사설망으로 연결한 개인 GPU 서버에서 처리하고 사진 설명, 카드와 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의에서 재확인했으며, [ADR-006의 후속 정정](decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)에 기존 결정과 후속 논의를 구분했다. 현재 STT 연결은 [2026-10-31 보완](decisions/ADR-006-server-side-ai-processing.md#개인-gpu와-tailscale-임시-연결-2026-10-31-보완)을 따르며, 기본 GPU에 연결하지 못하면 [ck 예비 서버](decisions/ADR-006-server-side-ai-processing.md#ck-예비-연결-2026-11-03-pm-요청)를 한 번 시도한다. 처리 성능은 실측 후 판단한다. ML API 사용 방향이 실제 사용자 자료 전송 승인이나 최종 모델 확정을 뜻하지는 않는다.
 
-현재 Flutter는 합성 목 데이터를 사용한다. FastAPI에는 상태 확인, 공통 오류 및 로그와 구글 인증 API가 있으며 PostgreSQL 개발 스키마도 반영됐다. 계정과 세션 폐기 기록은 PostgreSQL에 저장한다. 아래는 개발할 목표 흐름이며 실제 모델과 영속 저장소 연결이 완료됐다는 뜻은 아니다.
+현재 구현 (2026-11-10, develop `83695093` 기준): 로그인한 Flutter 앱은 [API 명세](api-spec.md)의 공개 API로 서버와 연결된다. 합성 목 데이터는 로그인 없이 여는 디버그 실행과 테스트에 쓰인다. 다만 로그인한 계정에도 `profileProvider`가 목 프로필의 `lifeFactIds` 등을 읽는 자리가 남아 있다([FE README](../../app/README.md)). FastAPI(`api`)는 계정과 동의, 프로필과 일대기, 프로필 사진, 카드, 면회, 평가와 음성 제출, 리포트와 변경 제안, 푸시 기기 API를 제공하고 PostgreSQL에 저장한다. 카드 생성은 `card-worker`, 면회 녹음의 STT 호출과 리포트 및 변경 제안 생성은 `speech-worker`, AI 사진 분석에 동의한 계정의 사진 설명은 `photo-worker`가 맡는다. 세부 정보 음성 입력(6-6)의 짧은 전사는 `api`가 STT를 직접 부른다. 생성 단계는 세 worker 모두 `ai/`의 생성 함수를 직접 불러 ML API로 처리하고, STT는 위 GPU 서버를 HTTP로 호출한다. 운영 서버의 BE는 같은 구성(`api`, `card-worker`, `speech-worker`, `photo-worker`)으로 동작하며, 마지막 배포는 11/10 01:41 KST 승인 배포([Deploy run 42656825849](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42656825849), develop `83695093`)다. 그래서 운영 BE는 develop과 같은 코드다. 이 배포는 11/9 14:42 KST 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490), develop `59190ba7`)에 [#293](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/293)(처리방침 문서)과 [#295](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/295)(이야기 후보 분류와 아픈 기억 표시, 카드 생성 2판 등)를 더했다. 11/9 배포에는 11/8 배포(develop `9c2b8276`) 뒤 병합된 [#275](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/275)와 [#277](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/277)~[#291](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/291)의 BE 변경이 들어갔다(목록은 [API 명세](api-spec.md#api-목록)). 다만 배포 백업을 14일만 두는 정리 timer([#287](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/287))는 Deploy가 설치하지 않으며 서버에 설치한 기록이 없어 설치되지 않은 상태다. STT 서버는 이 BE 배포 대상이 아니어서 [#276](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/276)의 전사 기본값 변경(VAD 켬, 앞 문장 조건 끔)은 서버마다 따로 반영한다. 운영 기록상 11/9에 ck 예비 서버에만 반영했고 기본 GPU 서버는 아직이다. Android 앱 출시 상태는 BE 배포와 별개이며 [루트 README](../../README.md)에서 관리한다. #295의 앱 변경(이야기 분류 고르기, 녹음 공유, 아픈 기억 표시 등)은 새 APK를 만들어야 휴대폰에 들어가며, 설치된 앱(Play와 11/8 Releases APK)에는 없다. 아래 흐름도는 목표 사용자 흐름이며, 사진 보관 동의와 원본 삭제의 정기 실행처럼 [데이터 경계](#데이터-경계)에 남긴 항목은 완료되지 않았다.
 
 ## 목표 사용자 흐름
 
@@ -40,8 +40,8 @@ flowchart TD
 - 해당 처리의 동의와 권한을 확인한 원본만 암호화 전송한다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간을 넘기지 않는다. 등록 사진과 AI 분석용 임시 사본의 보관 구분, 삭제 조건 및 PR #92 검토 상태는 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)을 따른다.
 - 미확인 후보와 실패한 분석을 확정 사실로 저장하지 않는다. 계산 불가 값과 이유를 구분한다.
 - 외부 AI의 업체, 국가, 처리 항목, 보유기간과 자체 학습 여부 등은 실제 자료 전송 전에 검토한다.
-- 데이터별 서버 저장 항목, 단말 보관 및 캐시 여부, 접근 권한, 보관 기간과 삭제 구현은 미정이다. 서버 중심 전환이 모든 원본의 영구 저장이나 기존 전송 제한 해제를 뜻하지 않는다.
-- 카드와 리포트 생성 모델, 자동 재시도·취소·복구, 실제 배포 방식은 미정이다. ADR-008은 PostgreSQL 작업 상태와 별도 worker를 제안하지만 아직 accepted 결정이 아니다. 구글 인증 API와 PostgreSQL 개발 스키마가 있다는 사실만으로 운영 준비 완료를 뜻하지 않는다. GPU 1대 결정으로 DB까지 같은 장비에 배치한다고 정한 것은 아니다.
+- 서버 저장 항목은 [API 명세](api-spec.md)와 DB 스키마에 정했고, 다른 계정의 자원은 404로 막는다. S3 원본은 삭제 대기열에 넣고 삭제 실행기([#204](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/204))로 지우는 구조이며 실행기 코드는 11/5 운영 배포(develop `6cebcf72`, [#187 배포 기록](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/187#issuecomment-6652039046))부터 운영 이미지에 있지만 compose 서비스가 아니라 손으로 실행하는 명령이다. 실행기의 정기 실행과 실행기를 통한 실제 원본 삭제는 11/6 PM 결정으로 보류 중이다(팀 운영 기록). 사진 보관 동의와 보관 기간, 단말 보관 및 캐시 범위, 기기 녹음의 보관 안내와 삭제 실패 처리는 남아 있다. 서버 중심 전환이 모든 원본의 영구 저장이나 기존 전송 제한 해제를 뜻하지 않는다.
+- 카드와 리포트 생성 모델은 BE 설정값이며 현재 기본은 `gpt-6-luna`다. 최종 모델 확정을 뜻하지 않는다. 자동 재시도와 작업 취소는 없고, 실패한 음성 분석은 보호자가 리포트 재요청([API 6-5](api-spec.md#6-5-post-apiv1speech-analysesanalysisidretry--신규))이나 녹음 재제출(6-2)로 이어 간다. [#280](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/280)은 전사 저장 직후 worker가 멈춘 작업을 다음 worker가 한 번 이어 처리하게 하지만, 실패한 작업을 다시 시도하는 기능은 아니다. 11/9 배포부터 운영에 있다. 리포트 재요청은 전사가 남아 있을 때 회차당 3회까지다([#285](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/285)). 운영 배포는 Release build를 통과한 커밋을 승인 뒤 반영하는 Deploy workflow([#256](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/256))로 한다. ADR-008은 PostgreSQL 작업 상태와 별도 worker를 제안한 문서이며, 같은 구조가 운영에서 동작하지만 ADR 상태는 proposed 그대로다. 운영 배포가 실제 사용자 자료 처리 승인을 뜻하지는 않는다. GPU 1대 결정으로 DB까지 같은 장비에 배치한다고 정한 것은 아니다.
 
 동의와 원본 임시 처리 기준은 [ADR-001](decisions/ADR-001-consent-and-temporary-processing.md), 절차와 열린 쟁점은 [법률 문서](../legal/README.md)를 따른다.
 
@@ -55,6 +55,7 @@ flowchart TD
 | 객체, 필드와 상태 | [공통 데이터 계약](data-contracts.md) |
 | API 경로, 요청과 오류 코드 | [API 명세](api-spec.md) |
 | 작업 중단과 실패 후 재처리, 앱 안내 | [복구 기준 검토안](processing-recovery.md), 검토 중 |
+| 엘리스 우선 LLM 전환과 장애 검증 | [LLM 장애 대응 설계안](llm-failover.md), 1회 재시도 일부 로컬 구현·미배포, 자동 전환 미구현 |
 | 화면용 합성 자료 | [목 데이터](mock/README.md) |
 | 선택 이유와 과거 결정 | [ADR 목록](decisions/README.md) |
 

@@ -164,13 +164,50 @@ void main() {
       expect(find.text('대화 카드 추가'), findsOneWidget);
     });
 
-    testWidgets('천천히 끌어올려도 꺼낸다', (tester) async {
+    testWidgets('천천히 충분히 끌어올리면 꺼낸다', (tester) async {
       await openRecording(tester, cardCount: 2);
 
-      // 속도를 남기지 않는 드래그다. 속도만 보면 이 손짓은 열리지 않는다.
+      // 속도를 남기지 않는 드래그다. 시트의 3할보다 많이 올라왔다.
+      await tester.drag(find.text('위로 올려서 대화 카드 꺼내기'), const Offset(0, -300));
+      await settleSheet(tester);
+
+      expect(find.text('대화 카드 추가'), findsOneWidget);
+    });
+
+    testWidgets('끄는 동안 시트가 손가락을 따라 올라온다', (tester) async {
+      await openRecording(tester, cardCount: 2);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('위로 올려서 대화 카드 꺼내기')),
+      );
+      Future<double> sheetTop() async {
+        await tester.pump();
+        return tester.getTopLeft(find.text('대화 카드 추가')).dy;
+      }
+
+      await gesture.moveBy(const Offset(0, -40));
+      await gesture.moveBy(const Offset(0, -100));
+      final first = await sheetTop();
+      await gesture.moveBy(const Offset(0, -100));
+      final second = await sheetTop();
+      expect(first - second, closeTo(100, 1), reason: '손가락만큼 올라온다');
+
+      await gesture.up();
+      await settleSheet(tester);
+    });
+
+    testWidgets('조금만 끌다 놓으면 다시 내려간다', (tester) async {
+      await openRecording(tester, cardCount: 2);
+
       await tester.drag(find.text('위로 올려서 대화 카드 꺼내기'), const Offset(0, -80));
       await settleSheet(tester);
 
+      expect(find.text('대화 카드 추가'), findsNothing);
+      expect(find.text('위로 올려서 대화 카드 꺼내기').hitTestable(), findsOneWidget);
+
+      // 내려간 뒤에도 다시 꺼낼 수 있다.
+      await tester.tap(find.text('위로 올려서 대화 카드 꺼내기'));
+      await settleSheet(tester);
       expect(find.text('대화 카드 추가'), findsOneWidget);
     });
 

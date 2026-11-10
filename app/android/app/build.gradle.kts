@@ -6,6 +6,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 푸시 알림(FCM) 설정. google-services.json 은 커밋하지 않으므로(app/README.md "푸시 알림")
+// 파일이 없는 빌드는 플러그인을 붙이지 않는다. 그 빌드에서는 앱이 토큰 없이 지낸다.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Play 업로드 키. android/key.properties 가 있을 때만 쓴다(커밋 대상 아님, app/README.md 참고)
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {

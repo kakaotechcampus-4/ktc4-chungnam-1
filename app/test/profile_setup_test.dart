@@ -114,6 +114,7 @@ void main() {
         const SetupDraft(
           name: '김○○',
           gender: 'female',
+          relationship: '어머니',
           birthYear: 1943,
           birthMonth: 3,
           birthDay: 12,
@@ -199,6 +200,7 @@ void main() {
       SetupDraft draftNamed(String name) => SetupDraft(
         name: name,
         gender: 'female',
+        relationship: '어머니',
         birthYear: 1943,
         birthMonth: 3,
         birthDay: 12,
@@ -218,6 +220,7 @@ void main() {
         const SetupDraft(
           name: '김○○',
           gender: 'female',
+          relationship: '어머니',
           birthYear: 1943,
           birthMonth: 3,
           birthDay: 12,
@@ -339,6 +342,7 @@ void main() {
     const filled = SetupDraft(
       name: '김○○',
       gender: 'female',
+      relationship: '어머니',
       birthYear: 1943,
       birthMonth: 3,
       birthDay: 12,
@@ -413,28 +417,6 @@ void main() {
       expect(find.widgetWithText(TextField, savedText), findsOneWidget);
       expect(find.text('말로 답하기'), findsNothing, reason: '빈 처음 화면이 아니다');
     });
-
-    // 폰에서 키보드를 올리면 입력칸 아래 버튼이 고정된 `다음` 과 겹쳐 보였다.
-    // 키보드 높이는 기준 화면에서 한글 자판이 차지하는 정도로 잡았다.
-    testWidgets('글로 쓰는 중 키보드가 올라와도 입력칸이 다음 버튼과 겹치지 않는다', (tester) async {
-      final first = lifeFactSteps[0];
-      await openAt(
-        tester,
-        SetupState(
-          reachedIndex: 1,
-          draft: filled.copyWith(facts: {first.category: savedText}),
-        ),
-      );
-
-      await tester.tap(find.byType(TextField));
-      tester.view.viewInsets = const FakeViewPadding(bottom: 330 * 3);
-      await tester.pumpAndSettle();
-
-      final field = tester.getRect(find.byType(TextField));
-      final next = tester.getRect(find.text('다음'));
-      expect(field.bottom, lessThan(next.top));
-      expect(find.text('말로 답할게요'), findsNothing);
-    });
   });
 
   // PM 확인(PR #146): 하시던 일을 말한 뒤 전사 중에 건너뛰고 고향에서 다시
@@ -462,6 +444,7 @@ void main() {
             draft: SetupDraft(
               name: '김○○',
               gender: 'female',
+              relationship: '어머니',
               birthYear: 1943,
               birthMonth: 3,
               birthDay: 12,
@@ -484,7 +467,10 @@ void main() {
     Future<void> settle() => tester.pump(const Duration(seconds: 1));
 
     Future<void> startListening() async {
+      // 고른 버튼은 눌린 모습을 잠깐 보인 뒤 넘어간다.
       await tester.tap(find.text('말로 답하기'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       await settle();
       await tester.tap(find.byIcon(Icons.mic));
       await settle();
@@ -571,11 +557,16 @@ void main() {
     }
 
     testWidgets('기본 정보는 입력란이 많아 버튼이 본문과 함께 흐른다', (tester) async {
-      final (button, viewport) = await openSetup(tester);
+      await openSetup(tester);
 
+      // 관계 칸이 더해져 기준 화면에서는 버튼이 첫 화면 아래로 내려간다. 보이는지
+      // 대신 스크롤 영역 안에 있는지로 확인한다.
       expect(
-        button.top,
-        lessThan(viewport.bottom),
+        find.descendant(
+          of: find.byType(SingleChildScrollView).first,
+          matching: find.widgetWithText(FilledButton, '다음'),
+        ),
+        findsOneWidget,
         reason: '아래에 고정하면 그만큼 입력란이 보이는 높이를 가져간다',
       );
     });

@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../widgets/app_buttons.dart';
 import 'consent_terms.dart';
 
 /// 동의 항목 한 줄. 체크박스, 이름, 자세히 보기다.
@@ -54,8 +55,8 @@ class ConsentRow extends StatelessWidget {
           Checkbox(
             value: checked,
             onChanged: onChanged,
-            activeColor: AppColors.ink,
-            side: const BorderSide(color: AppColors.line, width: 2),
+            activeColor: HomeColors.accent,
+            side: const BorderSide(color: HomeColors.outline, width: 2),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -89,11 +90,11 @@ class ConsentRow extends StatelessWidget {
 
                 // 자세히 보기를 이름과 같은 줄에 두면 이름이 쓸 수 있는 폭이
                 // 316 에서 245 로 줄어 네 항목 중 셋이 줄바꿈된다. 아래 줄로
-                // 내리고 글자를 한 단계 흐리게 둔다.
+                // 내리고 글자를 보조 글자색으로 둔다(오프화이트 위 비활성 회색은 4.3:1).
                 TextButton(
                   onPressed: onDetails,
                   style: TextButton.styleFrom(
-                    foregroundColor: AppColors.textDisabled,
+                    foregroundColor: AppColors.textSub,
                     padding: EdgeInsets.zero,
                     alignment: Alignment.centerLeft,
                     minimumSize: const Size(0, _detailsHeight),
@@ -102,16 +103,11 @@ class ConsentRow extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        '자세히 보기',
-                        style: AppTypography.sub.copyWith(
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
+                      Text('자세히 보기', style: AppTypography.sub),
                       const Icon(
                         Icons.chevron_right,
                         size: 18,
-                        color: AppColors.textDisabled,
+                        color: AppColors.textSub,
                       ),
                     ],
                   ),
@@ -126,40 +122,107 @@ class ConsentRow extends StatelessWidget {
 }
 
 /// 동의문 전문을 아래에서 올라오는 시트로 보여준다.
+///
+/// 가입 동의 화면과 설정의 계정 약관 동의가 함께 쓴다. 약관이 길면 시트 안에서
+/// 스크롤하고, 제목과 `닫기` 는 그 자리에 둔다. 전에는 스크롤되지 않아 작은
+/// 화면이나 큰 글자에서 보유 기간 같은 아래 줄이 잘렸다(2026-11-10 UX 점검 14번).
 Future<void> showConsentDetails(BuildContext context, ConsentTerm term) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.background,
     showDragHandle: true,
     isScrollControlled: true,
+    useSafeArea: true,
+    barrierLabel: '닫기',
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
     ),
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.screen,
-          0,
-          AppSpacing.screen,
-          AppSpacing.section,
+    builder: (context) => _ConsentDetailsSheet(term: term),
+  );
+}
+
+class _ConsentDetailsSheet extends StatefulWidget {
+  const _ConsentDetailsSheet({required this.term});
+
+  final ConsentTerm term;
+
+  @override
+  State<_ConsentDetailsSheet> createState() => _ConsentDetailsSheetState();
+}
+
+class _ConsentDetailsSheetState extends State<_ConsentDetailsSheet> {
+  /// 스크롤 막대를 늘 보이게 하려면 막대와 목록이 같은 컨트롤러를 봐야 한다.
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final term = widget.term;
+    return SafeArea(
+      child: ConstrainedBox(
+        // 사진 올리기 전 동의 시트(`photo_consent_prompt.dart`)와 같은 높이까지다.
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(term.label, style: AppTypography.sectionTitle),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: Text(term.label, style: AppTypography.sectionTitle),
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text(term.statement, style: AppTypography.body),
-            const SizedBox(height: AppSpacing.xl),
-            for (final line in term.details) ...[
-              Text(line, style: AppTypography.sub),
-              const SizedBox(height: AppSpacing.md),
-            ],
+            Flexible(
+              // 넘칠 때만 막대가 그려진다. 아래에 더 읽을 글이 있다는 표시다.
+              // 여백을 목록 안에 두어 막대가 글자 위에 겹치지 않게 한다.
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.screen,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(term.statement, style: AppTypography.body),
+                      const SizedBox(height: AppSpacing.xl),
+                      for (final line in term.details) ...[
+                        Text(line, style: AppTypography.sub),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.lg,
+                AppSpacing.screen,
+                AppSpacing.section,
+              ),
+              child: SecondaryButton(
+                borderColor: HomeColors.outline,
+                label: '닫기',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// 진행을 막는 이유를 한 칸에 보여준다. 필수 동의 안내와 로그인 실패에 쓴다.

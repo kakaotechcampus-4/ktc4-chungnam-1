@@ -19,13 +19,24 @@ class PhotoUploadStep extends ConsumerStatefulWidget {
     required this.canEdit,
     required this.onAdded,
     required this.onRemoved,
+    this.name = '',
+    this.existing = 0,
     super.key,
   });
 
+  /// 사진의 주인. 제목을 `김철수님과 관련된 사진` 처럼 부른다. 비어 있으면
+  /// 이름 없이 묻는다.
+  final String name;
+
+  /// 이 화면에서 고른 사진. [existing] 은 담지 않는다.
   final List<SetupPhoto> photos;
 
-  /// 사진을 더하거나 뺄 수 있는지. 올리는 중이거나 모두 올린 뒤에는 막는다.
+  /// 사진을 더하거나 뺄 수 있는지. 올리는 중에는 막는다.
   final bool canEdit;
+
+  /// 이미 서버에 올린 사진 수. 등록 뒤 사진을 더할 때와 앱을 다시 켜 등록을
+  /// 이어 갈 때 쓴다. 이만큼 덜 고른다.
+  final int existing;
 
   final ValueChanged<List<PickedPhoto>> onAdded;
   final ValueChanged<int> onRemoved;
@@ -40,7 +51,8 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
 
   String? _notice;
 
-  int get _remaining => maxProfilePhotos - widget.photos.length;
+  int get _remaining =>
+      maxProfilePhotos - widget.existing - widget.photos.length;
 
   Future<void> _pick() async {
     if (_picking || _remaining < 1 || !widget.canEdit) return;
@@ -51,9 +63,7 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
 
     final remaining = _remaining;
     try {
-      final picked = await ref
-          .read(photoPickerProvider)
-          .pick(limit: remaining);
+      final picked = await ref.read(photoPickerProvider).pick(limit: remaining);
       if (!mounted) return;
 
       // 기기에 따라 개수 제한이 걸리지 않을 수 있어 여기서 한 번 더 자른다.
@@ -62,8 +72,7 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
       setState(() {
         _picking = false;
         if (dropped > 0) {
-          _notice =
-              '사진은 $maxProfilePhotos장까지 올릴 수 있어요. $dropped장은 빼고 담았어요.';
+          _notice = '사진은 $maxProfilePhotos장까지 올릴 수 있어요. $dropped장은 빼고 담았어요.';
         }
       });
       if (kept.isNotEmpty) widget.onAdded(kept);
@@ -87,29 +96,40 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Spacer(flex: 2),
-        const Text(
-          '어르신과 관련된 사진을\n올려주세요',
+        Text(
+          widget.name.trim().isEmpty
+              ? '관련된 사진을\n올려주세요'
+              : '${widget.name.trim()}님과 관련된 사진을\n올려주세요',
           style: AppTypography.screenTitle,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.lg),
-        const Text(
-          '최대 $maxProfilePhotos장까지 올릴 수 있어요. 넣지 않으셔도 괜찮아요.',
+        Text(
+          widget.existing == 0
+              ? '최대 $maxProfilePhotos장까지 올릴 수 있어요. 넣지 않으셔도 괜찮아요.'
+              // 등록하다 앱을 다시 켜면 이미 다 올렸을 수 있다.
+              : widget.existing >= maxProfilePhotos
+              ? '사진 $maxProfilePhotos장을 모두 올렸어요.'
+              : '${widget.existing}장을 올렸어요. '
+                    '${maxProfilePhotos - widget.existing}장 더 올릴 수 있어요.',
           style: AppTypography.sub,
           textAlign: TextAlign.center,
         ),
         const Spacer(flex: 2),
 
-        if (photos.isEmpty)
+        // 더 고를 수 없으면 눌러도 열리지 않는 빈 자리를 두지 않는다.
+        if (photos.isEmpty && _remaining < 1)
+          const SizedBox.shrink()
+        else if (photos.isEmpty)
           _EmptyPicker(onTap: _picking ? null : _pick)
         else ...[
           Align(
             alignment: Alignment.centerRight,
             child: Text(
-              '${photos.length}/$maxProfilePhotos',
+              '${widget.existing + photos.length}/$maxProfilePhotos',
               style: AppTypography.sub,
               semanticsLabel:
-                  '$maxProfilePhotos장 중 ${photos.length}장을 골랐어요',
+                  '$maxProfilePhotos장 중 ${widget.existing + photos.length}장을 골랐어요',
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -164,7 +184,7 @@ class _EmptyPicker extends StatelessWidget {
       child: Container(
         height: 260,
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: HomeColors.bubble,
           borderRadius: BorderRadius.circular(AppRadius.image),
         ),
         child: const Column(
@@ -173,7 +193,7 @@ class _EmptyPicker extends StatelessWidget {
             Icon(
               Icons.add_photo_alternate_outlined,
               size: 44,
-              color: AppColors.textDisabled,
+              color: HomeColors.accent,
             ),
             SizedBox(height: AppSpacing.md),
             Text('사진 추가하기', style: AppTypography.sub),
@@ -273,10 +293,10 @@ class _PhotoTile extends StatelessWidget {
             semanticLabel: '고른 사진 $number',
             // 파일을 읽지 못해도 칸은 남겨 X 로 뺄 수 있게 한다.
             errorBuilder: (context, error, stackTrace) => const ColoredBox(
-              color: AppColors.surface,
+              color: HomeColors.bubble,
               child: Icon(
                 Icons.broken_image_outlined,
-                color: AppColors.textDisabled,
+                color: HomeColors.accent,
               ),
             ),
           ),
@@ -312,7 +332,7 @@ class _PhotoTile extends StatelessWidget {
           _StatusBadge(
             icon: Icons.check,
             label: '완료',
-            color: AppColors.ink,
+            color: HomeColors.accent,
             semanticsLabel: '사진 $number 업로드 완료',
           ),
         if (failed)
@@ -454,7 +474,7 @@ class _AddTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.image),
         child: Container(
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: HomeColors.bubble,
             borderRadius: BorderRadius.circular(AppRadius.image),
           ),
           child: const Column(
@@ -463,7 +483,7 @@ class _AddTile extends StatelessWidget {
               Icon(
                 Icons.add_photo_alternate_outlined,
                 size: 32,
-                color: AppColors.textDisabled,
+                color: HomeColors.accent,
               ),
               SizedBox(height: AppSpacing.xs),
               Text('추가', style: AppTypography.caption),

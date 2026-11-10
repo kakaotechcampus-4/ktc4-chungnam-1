@@ -17,6 +17,12 @@ class FakeVisitApi implements VisitApi {
   /// 5-1 이 연결 실패로 끝나게 한다.
   bool failCreate;
 
+  /// 있으면 5-1 이 이 실패로 끝난다.
+  Object? createFailure;
+
+  /// 있으면 끝날 때까지 5-1 이 응답하지 않는다. 회차를 기다리는 중을 흉내 낸다.
+  Completer<void>? createGate;
+
   /// 5-3 이 연결 실패로 끝나게 한다.
   bool failAdd;
 
@@ -61,7 +67,10 @@ class FakeVisitApi implements VisitApi {
     required List<String> selectedCardIds,
   }) async {
     calls.add('create');
+    final gate = createGate;
+    if (gate != null) await gate.future;
     if (failCreate) throw const ApiNetworkFailure();
+    if (createFailure case final failure?) throw failure;
     created = (setId: setId, selectedCardIds: selectedCardIds);
     return _session(setId, selectedCardIds);
   }

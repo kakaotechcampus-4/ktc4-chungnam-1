@@ -1,0 +1,451 @@
+{
+  "used": 22,
+  "runs": [
+    {
+      "name": "report-clear",
+      "calls_attempted": 1,
+      "wall_seconds": 3.5,
+      "calls": [
+        {
+          "seconds": 3.3,
+          "usage": {
+            "input_tokens": 1593,
+            "output_tokens": 310,
+            "total_tokens": 1903,
+            "input_token_details": {
+              "cache_creation": 1272,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-clear",
+      "calls_attempted": 1,
+      "wall_seconds": 7.9,
+      "calls": [
+        {
+          "seconds": 7.9,
+          "usage": {
+            "input_tokens": 2331,
+            "output_tokens": 732,
+            "total_tokens": 3063,
+            "input_token_details": {
+              "cache_creation": 1862,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 392
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "report-merged",
+      "calls_attempted": 1,
+      "wall_seconds": 2.8,
+      "calls": [
+        {
+          "seconds": 2.8,
+          "usage": {
+            "input_tokens": 973,
+            "output_tokens": 269,
+            "total_tokens": 1242,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 49
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-merged",
+      "calls_attempted": 1,
+      "wall_seconds": 2.0,
+      "calls": [
+        {
+          "seconds": 2.0,
+          "usage": {
+            "input_tokens": 1576,
+            "output_tokens": 90,
+            "total_tokens": 1666,
+            "input_token_details": {
+              "cache_creation": 397,
+              "cache_read": 1076
+            },
+            "output_token_details": {
+              "reasoning": 67
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "report-third",
+      "calls_attempted": 1,
+      "wall_seconds": 2.5,
+      "calls": [
+        {
+          "seconds": 2.5,
+          "usage": {
+            "input_tokens": 1343,
+            "output_tokens": 209,
+            "total_tokens": 1552,
+            "input_token_details": {
+              "cache_creation": 1072,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "proposals-third",
+      "calls_attempted": 1,
+      "wall_seconds": 1.8,
+      "calls": [
+        {
+          "seconds": 1.8,
+          "usage": {
+            "input_tokens": 1743,
+            "output_tokens": 77,
+            "total_tokens": 1820,
+            "input_token_details": {
+              "cache_creation": 531,
+              "cache_read": 1076
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "card-rich",
+      "calls_attempted": 6,
+      "wall_seconds": 57.7,
+      "calls": [
+        {
+          "seconds": 2.1,
+          "usage": {
+            "input_tokens": 3084,
+            "output_tokens": 120,
+            "total_tokens": 3204,
+            "input_token_details": {
+              "cache_creation": 2369,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 2.1,
+          "usage": {
+            "input_tokens": 4261,
+            "output_tokens": 113,
+            "total_tokens": 4374,
+            "input_token_details": {
+              "cache_creation": 1416,
+              "cache_read": 2369
+            },
+            "output_token_details": {
+              "reasoning": 56
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 16.5,
+          "usage": {
+            "input_tokens": 4701,
+            "output_tokens": 2119,
+            "total_tokens": 6820,
+            "input_token_details": {
+              "cache_creation": 635,
+              "cache_read": 3785
+            },
+            "output_token_details": {
+              "reasoning": 185
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 12.7,
+          "usage": {
+            "input_tokens": 7760,
+            "output_tokens": 2083,
+            "total_tokens": 9843,
+            "input_token_details": {
+              "cache_creation": 2574,
+              "cache_read": 4420
+            },
+            "output_token_details": {
+              "reasoning": 135
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 14.3,
+          "usage": {
+            "input_tokens": 3462,
+            "output_tokens": 1461,
+            "total_tokens": 4923,
+            "input_token_details": {
+              "cache_creation": 2767,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 195
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 9.9,
+          "usage": {
+            "input_tokens": 2480,
+            "output_tokens": 1371,
+            "total_tokens": 3851,
+            "input_token_details": {
+              "cache_creation": 1981,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 183
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "card-rich-uuid",
+      "calls_attempted": 5,
+      "wall_seconds": 47.5,
+      "calls": [
+        {
+          "seconds": 2.9,
+          "usage": {
+            "input_tokens": 2491,
+            "output_tokens": 49,
+            "total_tokens": 2540,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 2369
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 2.2,
+          "usage": {
+            "input_tokens": 3063,
+            "output_tokens": 141,
+            "total_tokens": 3204,
+            "input_token_details": {
+              "cache_creation": 457,
+              "cache_read": 2369
+            },
+            "output_token_details": {
+              "reasoning": 16
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 15.4,
+          "usage": {
+            "input_tokens": 4867,
+            "output_tokens": 2204,
+            "total_tokens": 7071,
+            "input_token_details": {
+              "cache_creation": 1535,
+              "cache_read": 2826
+            },
+            "output_token_details": {
+              "reasoning": 237
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 17.7,
+          "usage": {
+            "input_tokens": 3072,
+            "output_tokens": 1755,
+            "total_tokens": 4827,
+            "input_token_details": {
+              "cache_creation": 1462,
+              "cache_read": 1241
+            },
+            "output_token_details": {
+              "reasoning": 343
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 9.2,
+          "usage": {
+            "input_tokens": 2563,
+            "output_tokens": 1315,
+            "total_tokens": 3878,
+            "input_token_details": {
+              "cache_creation": 2048,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "card-sparse-uuid",
+      "calls_attempted": 5,
+      "wall_seconds": 42.7,
+      "calls": [
+        {
+          "seconds": 1.8,
+          "usage": {
+            "input_tokens": 2491,
+            "output_tokens": 49,
+            "total_tokens": 2540,
+            "input_token_details": {
+              "cache_creation": 0,
+              "cache_read": 2369
+            },
+            "output_token_details": {
+              "reasoning": 0
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 2.0,
+          "usage": {
+            "input_tokens": 2709,
+            "output_tokens": 108,
+            "total_tokens": 2817,
+            "input_token_details": {
+              "cache_creation": 174,
+              "cache_read": 2369
+            },
+            "output_token_details": {
+              "reasoning": 15
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 15.7,
+          "usage": {
+            "input_tokens": 2999,
+            "output_tokens": 2053,
+            "total_tokens": 5052,
+            "input_token_details": {
+              "cache_creation": 267,
+              "cache_read": 2543
+            },
+            "output_token_details": {
+              "reasoning": 96
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 13.8,
+          "usage": {
+            "input_tokens": 2609,
+            "output_tokens": 1467,
+            "total_tokens": 4076,
+            "input_token_details": {
+              "cache_creation": 1092,
+              "cache_read": 1241
+            },
+            "output_token_details": {
+              "reasoning": 92
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        },
+        {
+          "seconds": 9.4,
+          "usage": {
+            "input_tokens": 2283,
+            "output_tokens": 1315,
+            "total_tokens": 3598,
+            "input_token_details": {
+              "cache_creation": 1824,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "reasoning": 83
+            }
+          },
+          "model_name": "gpt-5.6-luna",
+          "ok": true
+        }
+      ],
+      "error": null
+    }
+  ]
+}

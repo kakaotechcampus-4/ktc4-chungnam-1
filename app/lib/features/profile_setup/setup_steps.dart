@@ -30,7 +30,7 @@ const lifeFactSteps = <LifeFactStep>[
   LifeFactStep(
     category: 'occupation',
     label: '하시던 일',
-    question: '어르신은 예전에\n어떤 일을 하셨나요?',
+    question: '예전에 어떤 일을\n하셨나요?',
     examples: [
       '"30년 동안 초등학교 선생님을 하셨어요."',
       '"동네에서 작은 슈퍼마켓을 운영하셨어요."',

@@ -6,6 +6,13 @@
 # - caddy: 개발 서버에서 HTTPS로 api를 공개할 때 `--profile https`로 켠다.
 name: saerok
 
+# 기본 json-file 로그는 크기 제한이 없어 오래 띄워 두면 디스크를 채운다. 서비스마다 30MB까지만 남긴다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   api:
     build:
@@ -20,6 +27,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test:
         - CMD
@@ -43,8 +51,9 @@ services:
     # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
-    stop_grace_period: 180s
+    stop_grace_period: ${SAEROK_CARD_STOP_GRACE_SECONDS:-360}s
     restart: unless-stopped
+    logging: *default-logging
 
   speech-worker:
     build:
@@ -56,11 +65,37 @@ services:
     profiles: ["workers"]
     command: ["python", "-m", "app.workers.speech_analysis"]
     env_file: .env
+    # 리포트 완료 푸시(FCM)의 서비스 계정 키. 키는 이미지에 넣지 않고 호스트 파일을 읽기 전용으로
+    # 붙인다. SAEROK_FCM_KEY_FILE에 호스트 경로를 넣지 않으면 빈 파일(/dev/null)이 붙고,
+    # SAEROK_FCM_CREDENTIALS_PATH도 비워 두면 푸시 없이 동작한다(docs/deployment.md).
+    volumes:
+      - ${SAEROK_FCM_KEY_FILE:-/dev/null}:/run/secrets/fcm-service-account.json:ro
     # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
     init: true
     # 처리 중인 작업을 마칠 때까지 기다리는 시간. 넘기면 강제 종료되고 작업은 임대 만료로 실패한다.
-    stop_grace_period: 180s
+    # 전사 임대 900초 + 리포트 임대 900초 + 60초. 30분 조각으로 나눈 긴 녹음은 진행 중인 조각만
+    # 마치고 대기열로 되돌리므로 조각 수가 늘어도 이 값으로 충분하다(docs/deployment.md).
+    stop_grace_period: ${SAEROK_SPEECH_STOP_GRACE_SECONDS:-1860}s
     restart: unless-stopped
+    logging: *default-logging
+
+  # 프로필 사진 AI 설명(#183). AI 이미지 분석에 동의한 계정의 사진만 처리한다(docs/photo-analysis.md).
+  photo-worker:
+    build:
+      context: .
+      # 사진 분석 패키지. Dockerfile이 COPY --from=ai로 씀
+      additional_contexts:
+        ai: ../ai
+    image: saerok-backend
+    profiles: ["workers"]
+    command: ["python", "-m", "app.workers.photo_analysis"]
+    env_file: .env
+    # init이 종료 신호를 worker에 넘긴다. worker는 처리 중인 작업을 마치고 끝난다(docs/deployment.md).
+    init: true
+    # 사진 하나의 분석 제한 시간(기본 120초)보다 길게 기다린다.
+    stop_grace_period: ${SAEROK_PHOTO_STOP_GRACE_SECONDS:-180}s
+    restart: unless-stopped
+    logging: *default-logging
 
   db:
     image: postgres:17
@@ -75,6 +110,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "saerok", "-d", "saerok"]
       interval: 10s
@@ -96,6 +132,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   postgres-data:

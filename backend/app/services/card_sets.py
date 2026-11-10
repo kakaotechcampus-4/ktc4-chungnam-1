@@ -1,6 +1,7 @@
 """카드 묶음(`card_sets`)의 상태 계산, 조회, 생성 요청과 생성 처리.
 
 - 상태: 저장하지 않음. 가장 최근 묶음의 `status`, `session_id`, 그 회차의 `evaluated_at`으로 계산(API 명세 4절)
+- 새로 만들어야 하는 묶음: 카드를 받은 뒤 프로필이나 일대기를 고치면 아직 면회에 안 쓴 묶음에 `stale_at`을 찍음(#158)
 - 4-1 처리: worker가 임대한 작업 하나를 처리. 생성 함수는 밖에서 받음
 
       context 조립 → 생성 함수(트랜잭션 밖, 별도 스레드) → 결과 검증 → 저장(한 트랜잭션)
@@ -13,6 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from psycopg.types.json import Jsonb
+from common.retry import retry_scope
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -21,6 +23,7 @@ from app.schemas.card_generation import (
     CardContext,
     CardGenerationRequest,
     CardGenerationResult,
+    CardGenerationStatus,
     CardSet,
     CardTopic,
     LifeFact,
@@ -32,6 +35,10 @@ from app.schemas.card_generation import (
     Visit,
 )
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
+from app.services.card_generation_log import PROFILE_FIELDS, reference_log
+from app.services.card_photo_preparation import advance_ready, progress as photo_progress
+from app.services.llm_retry_guard import retry_guard
+from app.workers.base import LEASE_EXPIRED_ERROR
 
 logger = logging.getLogger("saerok.card_generation")
 
@@ -46,7 +53,7 @@ EVIDENCE_SOURCE = {
 
 async def _latest(connection: DbConnection, profile_id: UUID) -> dict[str, Any] | None:
     cursor = await connection.execute(
-        "SELECT s.set_id, s.status, s.session_id, v.evaluated_at "
+        "SELECT s.set_id, s.status, s.session_id, s.stale_at, v.evaluated_at "
         "  FROM card_sets s LEFT JOIN visit_sessions v ON v.session_id = s.session_id "
         " WHERE s.profile_id = %s ORDER BY s.created_at DESC, s.set_id LIMIT 1",
         (profile_id,),
@@ -64,18 +71,30 @@ def _status(latest: dict[str, Any] | None) -> str:
     return "inVisit" if latest["evaluated_at"] is None else "none"
 
 
+def _needs_refresh(latest: dict[str, Any] | None) -> bool:
+    return _status(latest) == "ready" and latest["stale_at"] is not None
+
+
 async def generation_status(
     connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
-) -> str:
-    """`none`, `running`, `ready`, `inVisit`, `failed`.
+) -> CardGenerationStatus:
+    """`status`는 `none`, `running`, `ready`, `inVisit`, `failed`.
+
+    카드를 받은 뒤 프로필이나 일대기를 고친 묶음도 `status`는 `ready`이고 `needsRefresh`로 구분함.
+    지금 앱은 모르는 `status` 값을 오류로 처리함.
 
     더는 끝나지 않을 `running`을 먼저 실패로 정리함(`CardGenerationQueue.expire_stuck`).
     정리하지 않으면 worker가 없을 때 앱이 `running`만 보고 다시 요청할 수 없음.
     """
+    await advance_ready(connection, profile_id)
     await CardGenerationQueue().expire_stuck(
         connection, profile_id, start_timeout_seconds=start_timeout_seconds
     )
-    return _status(await _latest(connection, profile_id))
+    latest = await _latest(connection, profile_id)
+    return CardGenerationStatus(
+        status=_status(latest), needs_refresh=_needs_refresh(latest),
+        photo_preparation=await photo_progress(connection, latest["set_id"]) if latest else None,
+    )
 
 
 async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSet:
@@ -87,13 +106,44 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
             error_code="CARD_GENERATION_NOT_FOUND",
             message="쓸 수 있는 카드 묶음이 없습니다.",
         )
+    return await _card_set(
+        connection,
+        latest["set_id"],
+        latest["session_id"],
+        needs_refresh=_needs_refresh(latest),
+    )
+
+
+async def session_card_set(connection: DbConnection, session_id: UUID) -> CardSet:
+    """4-4. 회차에 쓴 묶음. 평가가 끝난 회차도 줌. 읽기만 하며 면회에 다시 쓰게 하지 않음."""
+    cursor = await connection.execute(
+        "SELECT set_id FROM card_sets WHERE session_id = %s", (session_id,)
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        raise AppError(
+            status_code=404,
+            error_code="CARD_GENERATION_NOT_FOUND",
+            message="회차에 쓴 카드 묶음이 없습니다.",
+        )
+    return await _card_set(connection, row["set_id"], session_id)
+
+
+async def _card_set(
+    connection: DbConnection,
+    set_id: UUID,
+    session_id: UUID | None,
+    *,
+    needs_refresh: bool = False,
+) -> CardSet:
     cursor = await connection.execute(
         "SELECT c.card_id, c.position, c.topic_id, t.title, t.description,"
         "       c.card_title, c.description AS card_description, c.primary_question,"
-        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected"
+        "       c.follow_up_questions, c.evidence_source, c.evidence, c.selected,"
+        "       c.liked_at IS NOT NULL AS liked, c.sensitive"
         "  FROM conversation_cards c JOIN profile_topics t ON t.topic_id = c.topic_id"
         " WHERE c.set_id = %s ORDER BY c.position",
-        (latest["set_id"],),
+        (set_id,),
     )
     cards = [
         Card(
@@ -109,14 +159,41 @@ async def current_card_set(connection: DbConnection, profile_id: UUID) -> CardSe
             evidence_source=EVIDENCE_SOURCE[row["evidence_source"]],
             evidence=row["evidence"],
             selected=row["selected"],
+            liked=row["liked"],
+            sensitive=row["sensitive"],
         )
         for row in await cursor.fetchall()
     ]
-    return CardSet(set_id=latest["set_id"], used_by_session_id=latest["session_id"], cards=cards)
+    return CardSet(
+        set_id=set_id,
+        used_by_session_id=session_id,
+        needs_refresh=needs_refresh,
+        cards=cards,
+    )
+
+
+async def set_card_liked(connection: DbConnection, card_id: UUID, *, liked: bool) -> None:
+    """4-5, 4-6. 카드의 "좋았어요" 표시를 켜거나 끔. 같은 요청을 다시 보내도 결과가 같음.
+
+    이미 켠 카드를 다시 켜면 처음 켠 시각을 그대로 둠. 보호자 평가(`review_reaction`)와 리포트는
+    바꾸지 않음.
+    """
+    if liked:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = now()"
+            " WHERE card_id = %s AND liked_at IS NULL",
+            (card_id,),
+        )
+    else:
+        await connection.execute(
+            "UPDATE conversation_cards SET liked_at = NULL WHERE card_id = %s", (card_id,)
+        )
 
 
 async def lock_profile(connection: DbConnection, profile_id: UUID) -> None:
-    """프로필 행을 트랜잭션 끝까지 잠금. 4-1과 5-1이 같은 프로필에서 차례로 실행되게 함.
+    """프로필 행을 트랜잭션 끝까지 잠금. 4-1, 5-1과 카드 생성 입력을 고치는 요청(2-4, 2-6, 2-7,
+    2-9, 3-3, 3-4, 7-4)이 같은 프로필에서 차례로 실행되게 함. 2-6과 7-4는 이야기 개수 상한도
+    이 잠금 안에서 셈(`life_facts.create_life_fact`).
 
     4-1의 상태 확인과 INSERT 사이에 5-1이 묶음을 쓰기 시작하면 면회 중인 묶음이 최신이 아니게 됨.
     """
@@ -132,11 +209,13 @@ async def start_card_generation(
     model: str,
     prompt_version: int,
     start_timeout_seconds: int,
+    photo_wait_timeout_seconds: int = 180,
 ) -> None:
     """`running` 작업 생성. 이미 `running`이 있으면 넘어감. `inVisit`, `ready`이면 409.
 
     `ready`도 거절해서 아직 안 쓴 완료 묶음은 늘 최신 묶음 하나뿐이게 함. 그래서 5-1이 받는
-    묶음이 4-2, 4-3이 보는 최신 묶음과 같음.
+    묶음이 4-2, 4-3이 보는 최신 묶음과 같음. 단 `needsRefresh`이면 새 묶음을 만듦. 예전 묶음은
+    5-1이 받지 않으므로 면회에 쓸 수 있는 묶음은 여전히 하나뿐임.
 
     끝나지 않을 `running`은 상태를 보기 전에 실패로 정리하므로, 그 뒤 요청은 새 작업을 만듦.
 
@@ -145,31 +224,71 @@ async def start_card_generation(
     """
     async with connection.transaction():
         await lock_profile(connection, profile_id)
-        status = await generation_status(
+        current = await generation_status(
             connection, profile_id, start_timeout_seconds=start_timeout_seconds
         )
+        status = current.status
         if status == "inVisit":
             raise AppError(
                 status_code=409,
                 error_code="VISIT_IN_PROGRESS",
                 message="평가를 마치지 않은 면회가 있습니다.",
             )
-        if status == "ready":
+        if status == "ready" and not current.needs_refresh:
             raise AppError(
                 status_code=409,
                 error_code="CARD_SET_READY",
                 message="아직 쓰지 않은 카드 묶음이 있습니다.",
             )
+        if status == "running":
+            return
+        # 첫 성공 묶음 전만 기다린다. 등록 마치기까지 올라온 사진 ID를 고정하며,
+        # 나중에 추가한 사진 때문에 대기가 끝없이 늘어나지 않게 한다.
+        photos = await (await connection.execute(
+            "SELECT p.photo_id FROM photos p JOIN profiles pr USING(profile_id) "
+            "JOIN current_consents c USING(user_id) "
+            "WHERE p.profile_id=%s AND p.session_id IS NULL AND c.photo_analysis "
+            "AND NOT EXISTS (SELECT 1 FROM card_sets WHERE profile_id=%s AND status='completed') "
+            "ORDER BY p.created_at, p.photo_id", (profile_id, profile_id),
+        )).fetchall()
+        photo_ids = [row["photo_id"] for row in photos]
         await connection.execute(
-            "INSERT INTO card_sets (profile_id, status, model, prompt_version) "
-            "VALUES (%s, 'running', %s, %s) "
+            "INSERT INTO card_sets (profile_id, status, model, prompt_version, photo_wait_ids, photo_wait_until) "
+            "VALUES (%s, 'running', %s, %s, %s, "
+            "CASE WHEN %s THEN clock_timestamp()+(%s * interval '1 second') ELSE NULL END) "
             "ON CONFLICT (profile_id) WHERE status = 'running' DO NOTHING",
-            (profile_id, model, str(prompt_version)),
+            (profile_id, model, str(prompt_version), photo_ids, bool(photo_ids), photo_wait_timeout_seconds),
         )
 
 
+async def mark_stale(
+    connection: DbConnection, profile_id: UUID, *, start_timeout_seconds: int
+) -> None:
+    """아직 면회에 안 쓴 카드 묶음에 `stale_at`을 찍는 함수. 2-4, 2-7, 2-9, 3-3, 3-4가 카드 생성에
+    쓰는 값을 고칠 때와 7-4가 주제 결정을 승인할 때 같은 트랜잭션 안에서 부름.
+
+    면회에 쓴 묶음은 지난 기록이라 찍지 않음.
+    카드를 만드는 중이면 409로 거절함. 고치기 전 내용으로 새 묶음이 만들어질 수 있음.
+    """
+    await lock_profile(connection, profile_id)
+    current = await generation_status(
+        connection, profile_id, start_timeout_seconds=start_timeout_seconds
+    )
+    if current.status == "running":
+        raise AppError(
+            status_code=409,
+            error_code="CARD_GENERATION_IN_PROGRESS",
+            message="카드를 만드는 중에는 고칠 수 없습니다.",
+        )
+    await connection.execute(
+        "UPDATE card_sets SET stale_at = now()"
+        " WHERE profile_id = %s AND status = 'completed' AND session_id IS NULL"
+        "   AND stale_at IS NULL",
+        (profile_id,),
+    )
+
+
 # ── 4-1 처리 ──────────────────────────────────────────
-PROFILE_FIELDS = ("occupation", "hometown", "hobby", "family")
 EVIDENCE_KEYS = ("factId", "photoId", "profileField")
 # 근거 종류별 근거 항목의 키
 EVIDENCE_KEY = {"lifeFact": "factId", "photo": "photoId", "profile": "profileField"}
@@ -200,16 +319,61 @@ async def _rows(connection: DbConnection, sql: str, profile_id: UUID) -> list[di
     return await cursor.fetchall()
 
 
-def _without_deleted_facts(
-    evidence: list[dict[str, str]], fact_ids: set[str]
+def _without_missing_evidence(
+    evidence: list[dict[str, str]], fact_ids: set[str], photo_ids: set[str]
 ) -> list[dict[str, str]]:
-    """지금 없는 생애 정보를 가리키는 근거 항목을 뺌.
+    """context에 없는 이야기나 사진을 가리키는 근거 항목을 뺌.
 
-    보호자가 일대기에서 지운 이야기(API 2-9)도 주제와 지난 카드의 근거에는 남아 있음(FK 없는
-    JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시 써서 결과 검증에서 실패함. 저장된 근거는
-    고치지 않고 context에서만 뺌. 카드와 주제를 정리할지는 미정(작업 D 문서 미정 D3).
+    보호자가 일대기에서 지운 이야기(API 2-9)와 제외한 주제의 근거 이야기, 사진([`_excluded_evidence`])도
+    주제와 지난 카드의 근거에는 남아 있음(FK 없는 JSONB). 그대로 넘기면 생성 함수가 그 근거를 다시
+    써서 결과 검증에서 실패함. 저장된 근거는 고치지 않고 context에서만 뺌. 이렇게 빼서 근거가 모두
+    사라진 주제는 `build_context`가 넣지 않음(제외한 주제는 DB에 남은 이야기와 입력에 넣을 수
+    있는 사진으로 판정). 저장된 카드와 주제는 지우지 않음(작업 D 문서 D3).
     """
-    return [item for item in evidence if "factId" not in item or item["factId"] in fact_ids]
+    return [
+        item
+        for item in evidence
+        if ("factId" not in item or item["factId"] in fact_ids)
+        and ("photoId" not in item or item["photoId"] in photo_ids)
+    ]
+
+
+def _excluded_topics(feedback_by_topic: dict[UUID, list[TopicFeedback]]) -> set[UUID]:
+    """보호자가 제외(`exclude`)를 고른 주제."""
+    return {
+        topic_id
+        for topic_id, items in feedback_by_topic.items()
+        if any(item.action == "exclude" for item in items)
+    }
+
+
+def _excluded_evidence(
+    topics: list[dict[str, Any]], excluded_topics: set[UUID]
+) -> set[tuple[str, str]]:
+    """보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진. 다음 카드 생성 입력에서 뺌.
+
+    제외는 주제 하나에 걸림. 근거 이야기가 입력에 남아 있으면 생성 함수가 그 이야기로 이름만
+    다른 새 주제를 만들어, 어르신이 거절한 내용이 카드로 다시 나올 수 있음. 세부 정보 네 칸
+    (`profileField`)은 칸 전체가 빠지면 같은 칸의 다른 주제까지 사라지므로 남김.
+    """
+    return {
+        (key, item[key])
+        for row in topics
+        if row["topic_id"] in excluded_topics
+        for item in row["evidence"]
+        for key in ("factId", "photoId")
+        if key in item
+    }
+
+
+def _material_gone(stored: list[dict[str, str]], remaining: list[dict[str, str]]) -> bool:
+    """이야기나 사진 근거가 있었는데 남은 근거(`remaining`)가 하나도 없는 주제인지.
+
+    `remaining`은 저장된 근거에서 없는 이야기와 사진을 뺀 것([`_without_missing_evidence`]).
+    세부 정보 칸(`profileField`) 근거는 빼지 않으므로 남은 근거가 없으면 근거가 모두 이야기나
+    사진이었고 그 이야기와 사진이 모두 빠진 것임. 근거가 없던 주제는 해당하지 않음.
+    """
+    return bool(stored) and not remaining
 
 
 async def build_context(connection: DbConnection, profile_id: UUID) -> CardContext:
@@ -226,15 +390,17 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
     )[0]
     facts = await _rows(
         connection,
-        "SELECT fact_id, title, content, created_at, source_proposal_id IS NOT NULL AS from_visit"
+        "SELECT fact_id, title, content, created_at, sensitive,"
+        "       source_proposal_id IS NOT NULL AS from_visit"
         "  FROM life_facts WHERE profile_id = %(profile_id)s ORDER BY created_at, fact_id",
         profile_id,
     )
     photos = await _rows(
         connection,
-        "SELECT photo_id, description FROM photos"
+        "SELECT photo_id, COALESCE(user_description, description) AS description FROM photos"
         " WHERE profile_id = %(profile_id)s AND session_id IS NULL"
-        "   AND analysis_status = 'completed' ORDER BY created_at, photo_id",
+        "   AND (user_description IS NOT NULL OR analysis_status = 'completed')"
+        " ORDER BY created_at, photo_id",
         profile_id,
     )
     topics = await _rows(
@@ -268,12 +434,42 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
         " ORDER BY v.started_at, c.position",
         profile_id,
     )
-    fact_ids = {str(row["fact_id"]) for row in facts}
     feedback_by_topic: dict[UUID, list[TopicFeedback]] = {}
     for row in feedback:
         feedback_by_topic.setdefault(row["topic_id"], []).append(
             TopicFeedback(action=row["action"], decided_at=row["decided_at"])
         )
+    # 제외 규칙으로 빼기 전, 지금 DB에 남아 있는 이야기와 입력에 넣을 수 있는 사진(설명이 있는
+    # 사진). AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음)은 여기에도 없음
+    stored_fact_ids = {str(row["fact_id"]) for row in facts}
+    stored_photo_ids = {str(row["photo_id"]) for row in photos}
+    excluded_topics = _excluded_topics(feedback_by_topic)
+    excluded = _excluded_evidence(topics, excluded_topics)
+    facts = [row for row in facts if ("factId", str(row["fact_id"])) not in excluded]
+    photos = [row for row in photos if ("photoId", str(row["photo_id"])) not in excluded]
+    fact_ids = {str(row["fact_id"]) for row in facts}
+    photo_ids = {str(row["photo_id"]) for row in photos}
+    topic_evidence = {
+        row["topic_id"]: _without_missing_evidence(row["evidence"], fact_ids, photo_ids)
+        for row in topics
+    }
+
+    def remaining_evidence(row: dict[str, Any]) -> list[dict[str, str]]:
+        """주제를 넣을지 정할 때 쓰는 남은 근거.
+
+        제외한 주제의 근거 이야기와 사진은 제외 규칙 때문에 늘 입력에서 빠지므로, 보낸 입력이
+        아니라 제외 전 DB에 남은 이야기와 입력에 넣을 수 있는 사진으로 판정함. 하나라도 남아
+        있으면 '이 이야기로 만들지 말 것'이라는 표시로 넣고, 보호자가 모두 지웠으면 넣지 않음
+        (PM 결정 2026-11-09).
+        제외한 주제는 근거에 종속되며, 제목과 설명에 지운 이야기의 내용이 담겨 있을 수 있음.
+        """
+        if row["topic_id"] in excluded_topics:
+            return _without_missing_evidence(row["evidence"], stored_fact_ids, stored_photo_ids)
+        return topic_evidence[row["topic_id"]]
+
+    # 이야기나 사진 근거가 모두 사라진 주제는 넣지 않음(PM 결정 2026-11-08, 제외한 주제는 2026-11-09).
+    # 원래 근거가 없던 주제와 세부 정보 칸 근거가 있는 주제는 넣음. 저장된 주제와 카드는 지우지 않음
+    topics = [row for row in topics if not _material_gone(row["evidence"], remaining_evidence(row))]
     return CardContext(
         age_range=f"{profile['decade']}s",
         profile_facts=ProfileFacts(**{field: profile[field] for field in PROFILE_FIELDS}),
@@ -284,6 +480,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 content=row["content"],
                 created_at=row["created_at"],
                 source="visit" if row["from_visit"] else "caregiver",
+                sensitive=row["sensitive"],
             )
             for row in facts
         ],
@@ -293,7 +490,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 topic_id=row["topic_id"],
                 title=row["title"],
                 description=row["description"],
-                evidence=_without_deleted_facts(row["evidence"], fact_ids),
+                evidence=topic_evidence[row["topic_id"]],
                 created_at=row["created_at"],
                 feedback=feedback_by_topic.get(row["topic_id"], []),
             )
@@ -311,7 +508,7 @@ async def build_context(connection: DbConnection, profile_id: UUID) -> CardConte
                 position=row["position"],
                 card_title=row["card_title"],
                 primary_question=row["primary_question"],
-                evidence=_without_deleted_facts(row["evidence"], fact_ids),
+                evidence=_without_missing_evidence(row["evidence"], fact_ids, photo_ids),
                 selected=row["selected"],
                 review_reaction=row["review_reaction"],
             )
@@ -385,12 +582,18 @@ async def save_result(
 ) -> bool:
     """새 주제, 카드 12장, 작업 완료를 한 트랜잭션으로 저장.
 
-    그 사이 임대가 만료돼 실패 처리됐으면 저장하지 않고 `False`.
+    임대가 남은 `running` 작업일 때만 저장함. 임대 시각이 지났으면 만료 정리 전이라도
+    아무것도 저장하지 않고 `False`. 그 사이 실패 처리된 작업도 `False`.
+
+    시각은 프로필 잠금을 기다린 뒤 `clock_timestamp()`로 봄. 트랜잭션 안의 `now()`는
+    트랜잭션 시작 시각이라 잠금을 기다리는 동안 끝난 임대를 남은 것으로 봄. 작업 행을
+    잠근 뒤에는 만료 정리가 기다렸다가 끝난 작업을 건너뜀.
     """
     async with connection.transaction():
+        await lock_profile(connection, job.profile_id)
         cursor = await connection.execute(
             "SELECT 1 FROM card_sets WHERE set_id = %s AND status = 'running'"
-            "   AND lease_expires_at IS NOT NULL FOR UPDATE",
+            "   AND lease_expires_at > clock_timestamp() FOR UPDATE",
             (job.set_id,),
         )
         if await cursor.fetchone() is None:
@@ -412,7 +615,8 @@ async def save_result(
             await connection.execute(
                 "INSERT INTO conversation_cards (set_id, profile_id, topic_id, card_title,"
                 " position, description, primary_question, follow_up_questions,"
-                " evidence_source, evidence) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                " evidence_source, evidence, sensitive)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     job.set_id,
                     job.profile_id,
@@ -424,23 +628,41 @@ async def save_result(
                     card.follow_up_questions,
                     DB_EVIDENCE_SOURCE[card.evidence_source],
                     Jsonb(card.evidence),
+                    card.sensitive,
                 ),
             )
-        log = {
-            "input": context.model_dump(mode="json", by_alias=True),
-            "log": result.log,
-            "cards": [{"position": card.position, **card.extra} for card in result.cards],
-        }
+        # 기록에는 보낸 글을 복사하지 않고 ID와 숫자만 남김(`card_generation_log`)
+        log = reference_log(
+            {
+                "input": context.model_dump(mode="json", by_alias=True),
+                "log": result.log,
+                "cards": [{"position": card.position, **card.extra} for card in result.cards],
+            }
+        )
+        # 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀌면 생성 결과를 정정 전
+        # 카드처럼 사용하지 않고 다음 준비 때 갱신한다. 생성 중에 분석이 끝나 새로
+        # 생긴 사진은 입력에 없던 새 재료라서 다음 카드부터 쓴다.
+        current_photos = await _rows(
+            connection,
+            "SELECT photo_id, COALESCE(user_description, description) AS description FROM photos"
+            " WHERE profile_id = %(profile_id)s AND session_id IS NULL"
+            " AND (user_description IS NOT NULL OR analysis_status='completed')",
+            job.profile_id,
+        )
+        current = {str(p["photo_id"]): p["description"] for p in current_photos}
+        photos_changed = any(
+            current.get(str(p.photo_id)) != p.description for p in context.photos
+        )
         await connection.execute(
             "UPDATE card_sets SET status = 'completed', lease_expires_at = NULL,"
-            " generation_log = %s WHERE set_id = %s",
-            (Jsonb(log), job.set_id),
+            " generation_log = %s, stale_at = CASE WHEN %s THEN now() ELSE NULL END WHERE set_id = %s",
+            (Jsonb(log), photos_changed, job.set_id),
         )
     return True
 
 
 class CardGenerationProcessor:
-    """worker 처리 함수. 실패하면 보낸 context를 `generation_log.input`에 남기고 실패 처리."""
+    """worker 처리 함수. 실패하면 보낸 context의 ID를 `generation_log.input`에 남기고 실패 처리."""
 
     def __init__(self, *, queue: CardGenerationQueue, generate: Generate) -> None:
         self._queue = queue
@@ -460,7 +682,18 @@ class CardGenerationProcessor:
         )
         try:
             # LLM 호출은 동기 코드라 이벤트 루프를 막지 않게 별도 스레드에서 실행
-            result = await asyncio.to_thread(self._generate, request)
+            async def check_retry() -> None:
+                active = await (await connection.execute(
+                    "SELECT 1 FROM card_sets WHERE set_id=%s AND profile_id=%s "
+                    "AND status='running' AND attempt_count=%s "
+                    "AND lease_expires_at > clock_timestamp()",
+                    (job.set_id, job.profile_id, job.attempt_count),
+                )).fetchone()
+                if active is None:
+                    raise CardGenerationError(LEASE_EXPIRED_ERROR, "카드 생성 작업이 만료되거나 삭제됨")
+
+            with retry_scope(before_retry=retry_guard(check_retry)):
+                result = await asyncio.to_thread(self._generate, request)
         except CardGenerationError as error:
             logger.warning("card_generation_failed code=%s", error.code)
             await self._queue.fail(connection, job, error_code=error.code, generation_input=sent)
@@ -474,3 +707,19 @@ class CardGenerationProcessor:
             return
         if not await save_result(connection, job, context, result):
             logger.warning("card_generation_lease_lost set_id=%s", job.set_id)
+            # 만료 정리를 기다리지 않고 임대 만료로 끝냄. 이미 끝난 작업은 `fail`이 바꾸지 않음.
+            await self._queue.fail(
+                connection, job, error_code=LEASE_EXPIRED_ERROR, generation_input=sent
+            )
+            return
+        # 처리 기록(2026-11-09 PM 결정). 카드 문구와 주제 제목은 남기지 않고 개수만 남김
+        logger.info(
+            "card_generation_completed",
+            extra={
+                "set_id": str(job.set_id),
+                "cards": len(result.cards),
+                "sensitive_cards": sum(card.sensitive for card in result.cards),
+                "model": result.model,
+                "prompt_version": result.prompt_version,
+            },
+        )
