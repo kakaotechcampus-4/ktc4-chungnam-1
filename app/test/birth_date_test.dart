@@ -360,6 +360,19 @@ void main() {
     });
   });
 
+  testWidgets('목록에 없는 날이 들어와도 멈추지 않고 그 칸을 비워 둔다', (tester) async {
+    await _pumpStep(
+      tester,
+      _base.copyWith(birthYear: 1943, birthMonth: 2, birthDay: 30),
+      now: DateTime(2026, 11, 10, 12),
+    );
+    expect(tester.takeException(), isNull);
+    final day = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>).at(2),
+    );
+    expect(day.value, isNull);
+  });
+
   testWidgets('글자를 두 배로 키우면 입력 방식 두 칸을 위아래로 쌓는다', (tester) async {
     tester.platformDispatcher.textScaleFactorTestValue = 2.0;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);

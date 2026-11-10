@@ -423,7 +423,9 @@ class _NumberPicker extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<int>(
-          value: value,
+          // 목록에 없는 값(예전 범위 밖의 해, 달력에 없는 날)이 들어와도 화면이
+          // 멈추지 않게 비운 칸으로 보여준다. 그 값으로는 마칠 수 없다.
+          value: values.contains(value) ? value : null,
           isExpanded: true,
           hint: Text(
             hint,
