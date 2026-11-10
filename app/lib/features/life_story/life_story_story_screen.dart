@@ -10,6 +10,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../cards/card_generation_controller.dart';
+import '../cards/sensitive_card_badge.dart';
 import '../profile/profile_dialogs.dart';
 import 'life_story.dart';
 import 'life_story_book_loader.dart';
@@ -208,6 +209,14 @@ class _StoryPage extends StatelessWidget {
         children: [
           Text('${story.category.label} · $chapter장', style: AppTypography.sub),
           const SizedBox(height: AppSpacing.sm),
+          // 아픈 기억일 수 있는 이야기는 제목 위에 카드와 같은 작은 표시를 단다.
+          if (story.sensitive) ...[
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: SensitiveCardBadge(),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Text(story.title, style: AppTypography.screenTitle),
           if (story.createdAt case final createdAt?) ...[
             const SizedBox(height: AppSpacing.sm),

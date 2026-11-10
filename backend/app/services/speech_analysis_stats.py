@@ -14,11 +14,20 @@ PM 결정(2026-11-09): 음성 분석이 끝나거나 실패하면 그 작업의 
   감싼 생성 함수만 알려 준다.
 - "남은 수"는 AI 쪽에서 거르고 자른 뒤 8-3 결과에 담긴 수다. `outcome`이 `completed`일 때만 그대로
   저장됐다는 뜻이다.
+- 30분을 넘는 녹음을 조각으로 나눠 전사했으면(2026-11-10 PM 결정) STT에 보낸 조각 수(`stt_parts`),
+  조각마다 녹음 길이(`stt_part_audio_seconds`)와 STT 호출에 걸린 시간(`stt_part_elapsed_seconds`,
+  초. 조각 파일 쓰기와 업로드는 빼고 잰다)을 남긴다. 실패하면 실패한 STT 호출까지의 값이고,
+  업로드에서 실패한 조각은 세지 않는다. 나누지 않고 한 번에 보낸 작업은 셋 다 `null`이다.
+  조각마다 화자 라벨을 따로 붙이므로(`speech_analysis_pipeline.merge_part_results`) 그때
+  `speaker_labels`는 조각별 라벨 수의 합이다. `stt_server`는 한 조각이라도 예비 서버가 받았으면
+  `backup`이다.
 
 `outcome`
 - `completed`: 리포트까지 저장하고 작업을 끝냈다.
 - `sttCompleted`: 리포트 생성기 없이 돌린 worker(`--stt-only`)라 전사에서 멈췄다.
 - `stopped`: 다른 처리(임대 만료 정리 등)가 먼저 끝낸 작업이라 이어 가지 않았다.
+- `requeued`: 조각을 나눠 전사하던 중 worker가 종료 요청을 받아, 조각 사이에서 멈추고 작업을
+  대기열(`queued`)에 되돌렸다. 다음 worker가 처음 조각부터 다시 전사한다.
 - `failed`: 처리 중 오류로 작업을 실패로 남긴다. `error_code`가 작업의 실패 코드다.
 """
 
@@ -34,7 +43,7 @@ from app.schemas.visit_report_generation import VisitReportResult
 
 logger = logging.getLogger("saerok.speech_analysis")
 
-Outcome = Literal["completed", "sttCompleted", "stopped", "failed"]
+Outcome = Literal["completed", "sttCompleted", "stopped", "requeued", "failed"]
 
 
 def _seconds(milliseconds: int) -> float:
@@ -52,6 +61,9 @@ class SpeechAnalysisStats:
     transcript_chars: int | None = None
     last_segment_end_seconds: float | None = None
     speaker_labels: int | None = None
+    stt_parts: int | None = None
+    stt_part_audio_seconds: list[float] | None = None
+    stt_part_elapsed_seconds: list[float] | None = None
     report_body_chars: int | None = None
     life_story_proposals_returned: int | None = None
     life_story_proposals_kept: int | None = None
@@ -75,6 +87,14 @@ class SpeechAnalysisStats:
         self.speaker_labels = len(
             {segment.speaker_label for segment in segments if segment.speaker_label is not None}
         )
+
+    def record_part(self, *, audio_seconds: float, elapsed_seconds: float) -> None:
+        """조각 하나의 STT를 마치거나 실패한 뒤 부른다."""
+        self.stt_parts = (self.stt_parts or 0) + 1
+        self.stt_part_audio_seconds = [*(self.stt_part_audio_seconds or []), round(audio_seconds, 1)]
+        self.stt_part_elapsed_seconds = [
+            *(self.stt_part_elapsed_seconds or []), round(elapsed_seconds, 1)
+        ]
 
     def record_report(self, result: VisitReportResult) -> None:
         """8-3 결과를 받은 직전에 부른다. 검증이나 저장에서 실패해도 받은 결과의 숫자는 남는다."""

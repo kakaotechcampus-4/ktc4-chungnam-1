@@ -16,6 +16,7 @@ import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
 import 'package:saerok/features/cards/card_generation_controller.dart';
+import 'package:saerok/features/cards/sensitive_card_badge.dart';
 import 'package:saerok/features/life_story/life_story_providers.dart';
 
 import 'fake_profile_server.dart';
@@ -151,6 +152,150 @@ void main() {
 
     expect(find.text('여행 · 1장'), findsOneWidget);
     expect(find.text('불국사 앞에서 사진을 찍으셨대요.'), findsOneWidget);
+  });
+
+  testWidgets('아픈 기억일 수 있는 이야기에는 목차와 이야기에 작은 표시를 단다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              sensitive: true,
+            ),
+            FakeProfileServer.lifeFact(
+              id: 'f2',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '장터 나들이',
+              content: '합성 내용이에요.',
+              createdAt: '2026-09-02T10:00:00+09:00',
+              sensitive: false,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumCategoryOf('family'));
+
+    // 목차에는 표시가 붙은 이야기 하나에만 단다. 새 안내 문장은 없다.
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    expect(find.text(SensitiveCardBadge.label), findsOneWidget);
+    final row = find.ancestor(
+      of: find.text('남편분을 떠나보낸 해'),
+      matching: find.byType(InkWell),
+    );
+    expect(
+      find.descendant(of: row, matching: find.byType(SensitiveCardBadge)),
+      findsOneWidget,
+    );
+
+    await _tap(tester, find.text('남편분을 떠나보낸 해'));
+    expect(find.text('합성 내용이에요.'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(SensitiveCardBadge)).dy,
+      lessThan(tester.getTopLeft(find.text('남편분을 떠나보낸 해')).dy),
+      reason: '카드처럼 제목 위에 둔다',
+    );
+
+    await _tap(tester, find.text('다음 이야기'));
+    expect(find.text('장터 나들이'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsNothing);
+  });
+
+  testWidgets('승인 직후 첫 장의 최근 이야기에도 같은 표시를 단다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '장터 나들이',
+              content: '합성 내용이에요.',
+              createdAt: '2026-09-02T10:00:00+09:00',
+            ),
+            // 방금 승인해 가장 최근인 이야기.
+            FakeProfileServer.lifeFact(
+              id: 'f2',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              createdAt: '2026-11-10T10:00:00+09:00',
+              sensitive: true,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumBook);
+
+    expect(find.text('최근 추가된 이야기'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
+    Finder rowOf(String title) =>
+        find.ancestor(of: find.text(title), matching: find.byType(InkWell));
+    expect(
+      find.descendant(
+        of: rowOf('남편분을 떠나보낸 해'),
+        matching: find.byType(SensitiveCardBadge),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: rowOf('장터 나들이'),
+        matching: find.byType(SensitiveCardBadge),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.getTopLeft(find.byType(SensitiveCardBadge)).dy,
+      greaterThan(tester.getTopLeft(find.text('남편분을 떠나보낸 해')).dy),
+      reason: '목차처럼 제목 아래에 둔다',
+    );
+  });
+
+  testWidgets('표시가 있는 이야기를 고쳐도 표시는 보내지 않고 그대로 남는다', (tester) async {
+    final server = FakeProfileServer(
+      profiles: [
+        FakeProfileServer.profile(
+          id: 'p1',
+          setupStatus: 'completed',
+          lifeFacts: [
+            FakeProfileServer.lifeFact(
+              id: 'f1',
+              profileId: 'p1',
+              storyCategory: 'family',
+              title: '남편분을 떠나보낸 해',
+              content: '합성 내용이에요.',
+              sensitive: true,
+            ),
+          ],
+        ),
+      ],
+    );
+    await _open(tester, server, AppRoutes.albumStoryOf('family', 'f1'));
+
+    await _tap(tester, find.byTooltip('이야기 수정'));
+    await tester.enterText(find.byType(TextField).at(0), '남편분과의 마지막 봄');
+    await tester.pump();
+    await _tap(tester, find.text('수정 완료'));
+
+    final patch = server.requests.lastWhere((r) => r.method == 'PATCH');
+    expect((patch.body as Map).containsKey('sensitive'), isFalse);
+    expect(find.text('남편분과의 마지막 봄'), findsOneWidget);
+    expect(find.byType(SensitiveCardBadge), findsOneWidget);
   });
 
   testWidgets('이야기를 담으면 서버에 보내고 목차에 보인다', (tester) async {

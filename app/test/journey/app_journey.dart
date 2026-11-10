@@ -291,7 +291,12 @@ void defineAppJourneyTests() {
       expect(find.text('눌러서 분석 다시 요청하기'), findsOneWidget);
       expect(find.text('리포트가 도착했어요'), findsNothing);
 
+      // 이 기기에 녹음이 남아 있으므로 다시 요청과 녹음 파일 공유 중에 고른다
+      // (2026-11-10 PM 결정). 고르기 전에는 다시 요청하지 않는다.
       await app.tap(find.text('리포트를 만들지 못했어요'));
+      await app.waitFor(find.text('녹음 파일 공유'));
+      expect(server.requests.where((r) => r.path.endsWith('/retry')), isEmpty);
+      await app.tap(find.text('분석 다시 요청하기'));
       await app.waitFor(find.text('리포트를 다시 만들고 있어요'));
       expect(
         server.requests.where((r) => r.path.endsWith('/retry')),

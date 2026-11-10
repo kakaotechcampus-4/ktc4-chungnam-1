@@ -42,9 +42,9 @@ def test_request_creates_one_running_set(migrated_database_url):
     assert first.status_code == 202
     assert first.json() == {"schemaVersion": 1, "status": "running", "needsRefresh": False}
     assert again.status_code == 202 and again.json()["status"] == "running"
-    # 기본 판은 2다(2026-11-09, 아픈 경험 카드 표시가 2판부터 나옴).
+    # 기본 버전은 v3다(2026-11-10, general을 열린 소재로 바꾼 버전).
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "gpt-6-luna", "prompt_version": "2"}
+        {"status": "running", "model": "gpt-6-luna", "prompt_version": "3"}
     ]
 
 
@@ -56,11 +56,11 @@ def test_request_uses_model_and_prompt_version_from_settings(migrated_database_u
         user_id,
         profile_id,
         card_generation_model="synthetic-model",
-        card_generation_prompt_version=3,
+        card_generation_prompt_version=2,
     )
 
     assert _sets(migrated_database_url, profile_id) == [
-        {"status": "running", "model": "synthetic-model", "prompt_version": "3"}
+        {"status": "running", "model": "synthetic-model", "prompt_version": "2"}
     ]
 
 

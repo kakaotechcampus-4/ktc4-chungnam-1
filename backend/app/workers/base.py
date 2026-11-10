@@ -77,6 +77,11 @@ class Worker(Generic[JobT]):
         self._lease_seconds = lease_seconds
         self._stopping = asyncio.Event()
 
+    @property
+    def stopping(self) -> bool:
+        """종료 요청을 받았는지. 긴 작업을 단계로 나눠 처리하는 함수가 단계 사이에서 본다."""
+        return self._stopping.is_set()
+
     def request_stop(self) -> None:
         """새 작업을 더 가져오지 않게 한다. 처리 중인 작업은 끝까지 처리한다."""
         if self._stopping.is_set():

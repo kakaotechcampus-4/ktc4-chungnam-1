@@ -40,7 +40,8 @@ def _fake_models(monkeypatch, life, topics) -> list[dict]:
         return config   # 동시에 오는 두 호출이 서로의 설정을 읽지 않게 설정을 그대로 대역 모델로 씀
 
     def invoke(client, schema, messages, *args, usage=None, **kwargs):
-        calls.append({"effort": client.effort, "schema": schema, "system": messages[0][1],
+        calls.append({"effort": client.effort, "max_tokens": client.max_tokens,
+                      "schema": schema, "system": messages[0][1],
                       "payload": json.loads(messages[1][1])})
         if usage is not None:
             usage["calls"] = usage.get("calls", 0) + 1
@@ -65,6 +66,25 @@ def test_topics_follow_106_rules():
         _TopicProposal(card="c9", suggested_action="more", reason="없는 카드")])
     kept = [(t.card_id, t.suggested_action) for t in _topics(out, req, card_refs(req))]
     assert kept == [("id-1", "more"), ("id-3", "more"), ("id-4", "exclude")]
+
+
+def test_more_is_never_proposed_for_a_card_the_caregiver_rated_poorly():
+    """11/10 E2E 문제 12: 아쉬웠어요(negative)로 평가한 카드에 '더 자주'가 미리 골라져 나옴.
+    그 more는 버리고, 같은 카드의 다음 조정(less, exclude)은 받음. 다른 반응의 more는 그대로."""
+    req = request("negative", "negative", "neutral", "positive")
+    out = _Topics(topic_proposals=[
+        _TopicProposal(card="c1", suggested_action="more", reason="이야기가 길게 이어짐"),
+        _TopicProposal(card="c2", suggested_action="more", reason="이야기가 길게 이어짐"),
+        _TopicProposal(card="c2", suggested_action="less", reason="대답이 짧아지심"),
+        _TopicProposal(card="c3", suggested_action="more", reason="즐거워하심"),
+        _TopicProposal(card="c4", suggested_action="more", reason="즐거워하심")])
+    kept = [(t.card_id, t.suggested_action) for t in _topics(out, req, card_refs(req))]
+    assert kept == [("id-2", "less"), ("id-3", "more"), ("id-4", "more")]
+
+
+def test_topic_prompt_forbids_more_for_poorly_rated_cards():
+    _, topic_prompt = _prompts()
+    assert "reaction이 negative인 카드(보호자가 아쉬웠다고 평가한 카드)에는 more를 내지 않는다" in topic_prompt
 
 
 def test_topic_with_blank_reason_is_dropped():
@@ -113,6 +133,7 @@ def test_life_stories_and_topics_are_separate_calls(monkeypatch):
     by_schema = {c["schema"]: c for c in calls}   # 동시에 보내므로 기록 순서는 정해져 있지 않음
     assert len(calls) == 2 and set(by_schema) == {_LifeFacts, _Topics}
     assert (by_schema[_LifeFacts]["effort"], by_schema[_Topics]["effort"]) == ("medium", "low")
+    assert all(c["max_tokens"] == 16000 for c in calls)
     life_prompt, topic_prompt = _prompts()
     assert (by_schema[_LifeFacts]["system"], by_schema[_Topics]["system"]) == (life_prompt, topic_prompt)
     assert calls[0]["payload"] == calls[1]["payload"]
@@ -199,7 +220,7 @@ def test_category_and_sensitive_reach_the_106_response(monkeypatch):
          "storyCategory": "hometown", "sensitive": True},
         {"title": "손주와 여행 계획", "content": "합성 경험 내용", "reason": "합성 이유",
          "storyCategory": "travel", "sensitive": False}]
-    assert out["promptVersion"] == "report-6+proposals-8"
+    assert out["promptVersion"] == "report-6+proposals-10"
     assert "tokenUsage" not in out and "lifeFactProposalsReturned" not in out
 
 
@@ -315,6 +336,20 @@ def test_prompt_keeps_painful_and_uncertain_stories_for_review():
     assert "어르신이 함께한 일이면 내고" in life_prompt
     for value in ("family", "hobby", "work", "hometown", "friend", "travel", "other"):
         assert value in life_prompt
+
+
+def test_story_prompt_checks_attribution_and_uncertainty_in_content():
+    """문구 회귀 검사다. 실제 인물 관계의 정확성은 별도 모델 평가로 확인한다."""
+    life, topics = _prompts()
+    for rule in (
+        "해당 이야기 앞뒤의 질문, 답변, 되묻기와 정정을 함께 대조한다",
+        "서로 다른 집안의 인물이나 다른 시기의 사건을 하나로 합치지 않는다",
+        "그 부분만 title과 content에서도 단정하지 않는다",
+        "행동한 사람과 들은 사람을 바꾸지 않았는지",
+        "사건의 앞뒤를 뒤집지 않았는지",
+    ):
+        assert rule in life
+        assert rule not in topics
 
 
 def test_topic_prompt_drops_scarcity_rules_but_keeps_one_per_card():

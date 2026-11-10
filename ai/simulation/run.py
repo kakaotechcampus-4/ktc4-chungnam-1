@@ -1,7 +1,10 @@
 """페르소나 시뮬레이션. 합성 어르신·보호자 페르소나로 앱 사용 흐름을 처음부터 따라가며 면회를 여러 회차 이어서 돌린다.
 
     uv run python -m simulation.run --persona simulation/personas/seocheon-seamstress.json \
-        [--visits 5] [--seed 7]
+        [--visits 5] [--seed 7] [--blank-profile] [--prompt-version 3]
+
+--prompt-version은 카드 생성 버전(card_generation/_versions). 없으면 최신 버전이다. 운영 backend 기본 버전과 다를 수 있다.
+--blank-profile은 보호자가 생애 질문 네 칸과 사진을 모두 건너뛴 경우다(기본 정보만 입력). 페르소나의 onboarding.blank로도 켠다.
 
 카드와 결정은 PR #84 스키마(profile_topics, card_sets, conversation_cards, topic_*)에 쓴다.
 
@@ -17,6 +20,7 @@
               8 변경 사항 확인: 보호자가 ×로 빼기, 행동 바꾸기, 이름·내용 고치기. 쌓아온 이야기에 직접 추가
               9 반영: 남긴 것만 DB에 넣는다
 결과는 runs/persona-<판>-<id>-<seed>-<시각>.json과 .events.jsonl에 남는다(커밋하지 않음).
+회차마다 카드 생성의 단계별 입력과 출력(①조사 ②연결 판정 ③선정 ④문안)이 visits[].recommend.steps에 남는다(backends/steps.py).
 """
 
 from __future__ import annotations
@@ -90,22 +94,28 @@ def prompt_files(backend: Backend) -> dict[str, Path]:
 
 
 # ── 처음 한 번 ──────────────────────────────────────
-def create_user(conn: psycopg.Connection, backend: Backend, persona: dict[str, Any], seed: int) -> str:
-    """가입까지. 판·페르소나·시드가 같은 실행만 지우고 새로 만든다. 다른 실행을 같은 DB에서 동시에 돌려도 서로 지우지 않는다."""
-    sub = f"sim-{backend.name}-{persona['id']}-{seed}"
+def create_user(conn: psycopg.Connection, backend: Backend, persona: dict[str, Any], seed: int, blank: bool = False) -> str:
+    """가입까지. 추천 버전·카드 생성 버전·페르소나·시드(·빈 프로필 여부)가 같은 실행만 지우고 새로 만든다. 다른 실행을 같은 DB에서 동시에 돌려도 서로 지우지 않는다."""
+    version = getattr(getattr(backend, "v", None), "number", None)
+    sub = f"sim-{backend.name}{f'-v{version}' if version else ''}-{persona['id']}{'-blank' if blank else ''}-{seed}"
     conn.execute("DELETE FROM users WHERE google_sub = %s", (sub,))
     return str(conn.execute("INSERT INTO users (google_sub) VALUES (%s) RETURNING user_id", (sub,)).fetchone()[0])
 
 
-def onboarding(model, backend: Backend, persona: dict[str, Any], url: str, user_id: str, seed: int) -> tuple[str, dict[str, Any]]:
-    """프로필 입력 화면. (profile_id, 기록)."""
+def onboarding(model, backend: Backend, persona: dict[str, Any], url: str, user_id: str, seed: int,
+               blank: bool = False) -> tuple[str, dict[str, Any]]:
+    """프로필 입력 화면. (profile_id, 기록). blank면 기본 정보만 넣고 생애 질문 네 칸과 사진은 건너뛴다."""
     ob = roles.caregiver_onboarding(model, persona)
+    if blank:
+        ob = ob.model_copy(update={"answers": ob.answers.model_copy(update={k: None for k in ("occupation", "hometown", "hobby", "family")}),
+                                   "photo_id": None, "why": "초기 정보 없이 시작(--blank-profile). 생애 질문과 사진을 모두 건너뜀"})
     b, a = ob.basic, ob.answers
     try:
         birth = date(b.birth_year, b.birth_month, b.birth_day)
     except ValueError:
         birth = date(b.birth_year, 1, 1)
-    record: dict[str, Any] = {"basic": b.model_dump(), "answers": a.model_dump(), "photo_id": ob.photo_id, "why": ob.why}
+    record: dict[str, Any] = {"basic": b.model_dump(), "answers": a.model_dump(), "photo_id": ob.photo_id, "why": ob.why,
+                              "blank": blank}
     photo = next((x for x in persona.get("album", []) if x["id"] == ob.photo_id), None)
     if photo:
         vlm = roles.vlm_photo(model, photo["truth"])
@@ -168,13 +178,16 @@ def learned_facts(backend: Backend, url: str, pid: str) -> list[dict[str, str]]:
 # ── 실행 ────────────────────────────────────────────
 def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int, url: str,
              sink: Callable[[dict[str, Any]], None] | None = None,
-             should_stop: Callable[[], bool] = lambda: False) -> Path:
+             should_stop: Callable[[], bool] = lambda: False, blank_profile: bool = False,
+             prompt_version: int | None = None) -> Path:
     """시뮬레이션 한 번. sink를 주면 진행 이벤트(단계, LLM 요청, 도구 호출, 대화 턴, 중간 산출물)를 받는다."""
-    backend = get_backend(recommender)
-    tag = backend.name
+    backend = get_backend(recommender, prompt_version)
+    tag = f"{backend.name}-v{backend.v.number}" if hasattr(backend, "v") else backend.name
     persona = json.loads(persona_path.read_text(encoding="utf-8"))
     visits = visits or persona["visits"]["count"]
-    out_path = HERE / "runs" / f"persona-{tag}-{persona['id']}-{seed}-{datetime.now():%Y%m%d-%H%M%S}.json"
+    blank = blank_profile or bool(persona.get("onboarding", {}).get("blank"))
+    pid_tag = f"{persona['id']}-blank" if blank else persona["id"]
+    out_path = HERE / "runs" / f"persona-{tag}-{pid_tag}-{seed}-{datetime.now():%Y%m%d-%H%M%S}.json"
     events_path = out_path.with_suffix(".events.jsonl")
 
     def write_event(event: dict[str, Any]) -> None:
@@ -189,15 +202,17 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
         config = config_from_env()
         model = chat_model(config)
         run: dict[str, Any] = {"recommender": backend.name, "persona": persona, "seed": seed, "llm": config.name,
+                               "blank_profile": blank, "prompt_version": getattr(getattr(backend, "v", None), "number", None),
                                "started_at": datetime.now().isoformat(), "visits": [], "failure": None,
                                "prompts": {name: path.read_text(encoding="utf-8") for name, path in prompt_files(backend).items()}}
-        tracing.emit("run_start", run=out_path.stem, persona=persona["id"], recommender=backend.name, visits=visits, seed=seed)
+        tracing.emit("run_start", run=out_path.stem, persona=persona["id"], recommender=backend.name, visits=visits, seed=seed,
+                     prompt_version=run["prompt_version"], blank_profile=blank)
         try:
             with psycopg.connect(url) as conn:
                 backend.prepare(conn)
-                user_id = create_user(conn, backend, persona, seed)
+                user_id = create_user(conn, backend, persona, seed, blank)
             with tracing.stage("처음 한 번 · 프로필 입력"):
-                pid, run["onboarding"] = onboarding(model, backend, persona, url, user_id, seed)
+                pid, run["onboarding"] = onboarding(model, backend, persona, url, user_id, seed, blank)
             run["profile_id"] = pid
             run["initial_state"] = backend.state(url, pid)
             take_snapshot(run, backend, url, pid, "onboarding", "프로필 입력 직후", 0)
@@ -218,6 +233,27 @@ def simulate(persona_path: Path, recommender: str, visits: int | None, seed: int
         return out_path
     finally:
         tracing.set_sink(None)
+
+
+def _step_outputs(st: dict[str, Any] | None) -> list[tuple[str, Any]]:
+    """작업대 실시간 화면에 보낼 단계 요약. 원문 전체는 결과 JSON의 recommend.steps에 있다."""
+    if not st:
+        return []
+    out = []
+    for i, r in enumerate(st["research"], 1):
+        out.append((f"① 조사{'' if i == 1 else f' (다시 찾기 {i - 1})'}", {
+            "tools": [f"{m['name']} {json.dumps(m['args'], ensure_ascii=False)}" for m in r["messages"] if m["kind"] == "tool"],
+            "candidates": [f"{c['no']}. [{c['kind']}] {c['card_title']} · {c['angle']}" for c in r["candidates"]]}))
+    for i, m in enumerate(st["match"], 1):
+        out.append((f"② 연결 판정{'' if i == 1 else f' (다시 찾기 {i - 1})'}", {
+            "kept": [f"{k['no']}. {k['cardTitle']} → {k['topicId'] or k['newKey']}" for k in m["kept"]],
+            "dropped": m["dropped"]}))
+    if st.get("select"):
+        out.append(("③ 선정", {"picked": [f"{p['position']}번 ← 후보 {p['no']} [{p['kind']}] {p['cardTitle']} · {p['reason']}"
+                                         for p in st["select"]["picked"]], "dropped": st["select"]["dropped"]}))
+    if st.get("write"):
+        out.append(("④ 문안", {"firstProblems": st["write"]["firstProblems"]}))
+    return out
 
 
 def _pick_mood(rng: random.Random, persona: dict[str, Any]) -> str:
@@ -246,11 +282,14 @@ def run_visits(run, backend: Backend, persona, visits, first, rng, url, pid, con
         try:
             with step("카드 받기(추천)"):
                 cards, visit["recommend"] = backend.recommend(url, pid, config, model)
+                for name, data in _step_outputs(visit["recommend"].get("steps")):
+                    tracing.emit("output", visit=n, what=name, data=data)
                 tracing.emit("output", visit=n, what="추천 카드", data=[
                     {k: c[k] for k in ("position", "card_title", "bucket", "primary_question", "follow_up_questions")}
                     | backend.output_card(c) for c in cards])
         except (*backend.recommend_errors, AgentFailed, SelectionFailed, WritingFailed, RuntimeError) as error:
             run["failure"] = f"{n}회차 추천 실패: {error}"
+            run["failed_recommend"] = {"visit": n, "steps": getattr(backend, "last_steps", None)}
             print(run["failure"])
             return
         visit["timings"]["recommend"] = round(time.monotonic() - t0)
@@ -365,13 +404,14 @@ def run_visits(run, backend: Backend, persona, visits, first, rng, url, pid, con
                 f["decision"] = d.model_dump() if d else {"keep": True, "why": "따로 손대지 않음"}
                 title = d.new_title if d and d.new_title else f["title"]
                 content = d.new_content if d and d.new_content else f["content"]
+                # 아픈 기억 표시는 7-4처럼 제안에서 이야기로 그대로 옮김. 그래야 다음 면회의 카드 생성이 표시를 봄
                 proposal = rw.execute(
-                    "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, reason, status) "
-                    "VALUES (%s, %s, %s, %s, %s, 'settled') RETURNING proposal_id",
-                    (session, pid, f["title"], f["content"], f["reason"])).fetchone()[0]
+                    "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, reason, status, sensitive) "
+                    "VALUES (%s, %s, %s, %s, %s, 'settled', %s) RETURNING proposal_id",
+                    (session, pid, f["title"], f["content"], f["reason"], f["sensitive"])).fetchone()[0]
                 if keep:
-                    rw.execute("INSERT INTO life_facts (profile_id, title, content, source_proposal_id, created_at) "
-                               "VALUES (%s, %s, %s, %s, %s)", (pid, title, content, proposal, decided_at))
+                    rw.execute("INSERT INTO life_facts (profile_id, title, content, source_proposal_id, created_at, sensitive) "
+                               "VALUES (%s, %s, %s, %s, %s, %s)", (pid, title, content, proposal, decided_at, f["sensitive"]))
                     applied_facts.append({"title": title, "content": content, "edited": bool(d and (d.new_title or d.new_content))})
             for t in topics:
                 d = topic_ch.get(t["index"])
@@ -410,12 +450,15 @@ def main() -> int:
     ap.add_argument("--recommender", choices=["topics"], default="topics")
     ap.add_argument("--visits", type=int)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--blank-profile", action="store_true", help="생애 질문 네 칸과 사진을 모두 건너뛰고 시작")
+    ap.add_argument("--prompt-version", type=int, help="카드 생성 버전. 없으면 최신 버전")
     args = ap.parse_args()
     url = os.environ.get(DB_ENV)
     if not url:
         print(f"{DB_ENV}가 없습니다", file=sys.stderr)
         return 2
-    out = simulate(Path(args.persona), args.recommender, args.visits, args.seed, url)
+    out = simulate(Path(args.persona), args.recommender, args.visits, args.seed, url, blank_profile=args.blank_profile,
+                   prompt_version=args.prompt_version)
     return 0 if json.loads(out.read_text(encoding="utf-8"))["failure"] is None else 1
 
 

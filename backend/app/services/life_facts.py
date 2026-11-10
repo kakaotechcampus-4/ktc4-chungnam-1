@@ -13,6 +13,10 @@
 일대기의 분류(`story_category`)와 기본 그림 번호(`image_number`, 1~5)도 저장한다. 그림 파일은
 앱에 있다. 필드 이름은 임시다(작업 D 문서 미정 D1, D2). 7-4로 만드는 이야기의 분류는 보호자가
 고른 값이고, 고르지 않았으면 AI가 제안에 붙인 분류다(2026-11-09 PM 결정).
+
+아픈 기억일 수 있다는 표시(`sensitive`)는 7-4가 제안의 표시를 그대로 옮기고, 보호자가 2-7로
+바꾼다. 2-6으로 담은 이야기는 `false`다. 보호자가 지우지 않는 한 아픈 이야기도 일대기와 카드
+생성에 쓴다(2026-11-10 PM 결정).
 """
 
 import secrets
@@ -36,17 +40,21 @@ class LifeFact:
     created_at: datetime
     story_category: str
     image_number: int
+    sensitive: bool
 
 
-_COLUMNS = "fact_id, profile_id, title, content, created_at, story_category, image_number"
+_COLUMNS = (
+    "fact_id, profile_id, title, content, created_at, story_category, image_number, sensitive"
+)
 # 분류마다 있는 기본 그림 수. 앱의 `lifeStoryImageCount`, DB CHECK와 같다.
 IMAGE_COUNT = 5
 # 프로필 하나에 둘 수 있는 이야기 수(2026-11-09 PM 결정). 2-6과 7-4 승인으로 만든 것을 함께 센다.
 LIFE_FACT_LIMIT = 300
 # 2-7이 고칠 수 있는 열. `SET` 절의 열 이름은 이 목록에서만 고른다.
-_UPDATABLE = ("title", "content", "story_category", "image_number")
-# 카드 생성(`card_sets.build_context`)에 쓰는 열. 분류와 그림 번호는 쓰지 않는다.
-_CARD_INPUT = ("title", "content")
+_UPDATABLE = ("title", "content", "story_category", "image_number", "sensitive")
+# 카드 생성(`card_sets.build_context`)에 쓰는 열. 분류와 그림 번호는 쓰지 않는다. 아픈 기억 표시는
+# 카드의 '조심스러운 이야기' 표시와 문안을 정하므로 쓴다.
+_CARD_INPUT = ("title", "content", "sensitive")
 
 
 async def create_life_fact(
@@ -58,6 +66,7 @@ async def create_life_fact(
     source_proposal_id: UUID | None = None,
     story_category: str = "other",
     image_number: int | None = None,
+    sensitive: bool = False,
 ) -> LifeFact:
     """생애 정보 하나를 만든다.
 
@@ -72,7 +81,8 @@ async def create_life_fact(
 
     7-4는 보호자가 고른 분류나 제안의 분류(AI가 고른 값)를 넘긴다(2026-11-09 PM 결정, 작업 D
     문서 D5). 그림 번호는 보내지 않으므로 1~5 중 하나를 고른다(D2). 분류 기본값 `other`는 분류를
-    모르는 호출을 위한 것이다.
+    모르는 호출을 위한 것이다. 7-4는 제안의 아픈 기억 표시(`sensitive`)도 그대로 넘긴다
+    (2026-11-10 PM 결정).
     """
     cursor = await connection.execute(
         "SELECT count(*) AS n FROM life_facts WHERE profile_id = %s", (profile_id,)
@@ -87,9 +97,9 @@ async def create_life_fact(
         image_number = secrets.randbelow(IMAGE_COUNT) + 1
     cursor = await connection.execute(
         "INSERT INTO life_facts "
-        "(profile_id, title, content, source_proposal_id, story_category, image_number) "
-        f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}",
-        (profile_id, title, content, source_proposal_id, story_category, image_number),
+        "(profile_id, title, content, source_proposal_id, story_category, image_number, sensitive) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}",
+        (profile_id, title, content, source_proposal_id, story_category, image_number, sensitive),
     )
     return _to_life_fact(await cursor.fetchone())
 
@@ -145,9 +155,9 @@ async def update_life_fact(
 ) -> LifeFact:
     """보낸 필드만 바꾼다(API 2-7). 바꿀 것이 없으면 그대로 돌려준다.
 
-    `changes`의 키는 열 이름(`title`, `content`, `story_category`, `image_number`)이다.
-    `created_at`은 바꾸지 않으므로 고쳐도 일대기 목차 순서가 그대로다. 제목이나 내용이
-    바뀌면 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다(`card_sets.mark_stale`).
+    `changes`의 키는 열 이름(`title`, `content`, `story_category`, `image_number`, `sensitive`)이다.
+    `created_at`은 바꾸지 않으므로 고쳐도 일대기 목차 순서가 그대로다. 제목, 내용이나 아픈 기억
+    표시가 바뀌면 아직 면회에 안 쓴 카드 묶음은 면회에 쓸 수 없게 된다(`card_sets.mark_stale`).
     """
     await ownership.require_owned(
         connection, ownership.LIFE_FACT, fact_id, account_id=account_id
@@ -215,7 +225,8 @@ async def _lock(connection: DbConnection, fact_id: UUID) -> Mapping[str, Any]:
     if row is not None:
         await card_sets.lock_profile(connection, row["profile_id"])
         cursor = await connection.execute(
-            "SELECT profile_id, title, content FROM life_facts WHERE fact_id = %s FOR UPDATE",
+            "SELECT profile_id, title, content, sensitive FROM life_facts "
+            "WHERE fact_id = %s FOR UPDATE",
             (fact_id,),
         )
         row = await cursor.fetchone()

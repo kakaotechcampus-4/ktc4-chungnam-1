@@ -21,8 +21,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
+import importlib
+
+from card_generation._versions import LATEST, VERSIONS
+
 from .backends import get_backend, recommender_of
 from .run import DB_ENV, ROOT, prompt_files, simulate
+from .steps_view import render as render_steps
 from .viewer import DBVIEW, render
 
 HERE = Path(__file__).resolve().parent
@@ -33,14 +38,15 @@ RECOMMENDERS = ("topics",)
 
 
 def _prompt_keys() -> dict[str, tuple[str, Path]]:
-    """두 판에서 쓰는 프롬프트를 한 목록으로. 추천 프롬프트는 판마다 달라 이름 앞에 판을 붙인다."""
+    """실행에서 쓰는 프롬프트를 한 목록으로. 카드 생성 프롬프트는 버전마다 파일이 달라 이름 앞에 버전을 붙인다(최신 버전이 먼저)."""
     seen: dict[Path, str] = {}
     for name in RECOMMENDERS:
-        backend = get_backend(name)
-        own = {ROOT / p for p in backend.prompt_files.values()}
-        for label, path in prompt_files(backend).items():
-            if path not in seen:
-                seen[path] = f"[{'주제판' if name == 'topics' else '요소판'}] {label}" if path in own else label
+        for number in sorted(VERSIONS, reverse=True):
+            backend = get_backend(name, number)
+            own = {ROOT / p for p in backend.prompt_files.values()}
+            for label, path in prompt_files(backend).items():
+                if path not in seen:
+                    seen[path] = f"[v{number}] {label}" if path in own else label
     return {f"p{i}": (label, path) for i, (path, label) in enumerate(seen.items(), 1)}
 
 
@@ -155,6 +161,20 @@ class Start(BaseModel):
     recommender: str = "topics"
     visits: int = 5
     seed: int = 7
+    blank_profile: bool = False  # 생애 질문 네 칸과 사진을 모두 건너뛰고 시작
+    prompt_version: int | None = None  # 카드 생성 버전. 없으면 최신 버전
+
+
+def _version_note(number: int) -> str:
+    """버전 모듈 설명의 첫 줄."""
+    doc = importlib.import_module(f"card_generation._versions.v{number}").__doc__ or ""
+    return doc.strip().splitlines()[0] if doc.strip() else ""
+
+
+@app.get("/api/versions")
+def versions() -> list[dict[str, Any]]:
+    """고를 수 있는 카드 생성 버전. 최신 버전이 먼저."""
+    return [{"number": n, "latest": VERSIONS[n] is LATEST, "note": _version_note(n)} for n in sorted(VERSIONS, reverse=True)]
 
 
 @app.post("/api/run")
@@ -167,6 +187,8 @@ def start(body: Start) -> dict[str, Any]:
     path = PERSONAS / f"{Path(body.persona).name}.json"
     if not path.exists():
         raise HTTPException(404, "페르소나 파일이 없습니다")
+    if body.prompt_version is not None and body.prompt_version not in VERSIONS:
+        raise HTTPException(400, f"없는 버전입니다. 있는 버전: {sorted(VERSIONS)}")
     with live.lock:
         if live.running:
             raise HTTPException(409, "이미 실행 중입니다. 끝나거나 멈춘 뒤에 다시 시작하세요")
@@ -175,7 +197,8 @@ def start(body: Start) -> dict[str, Any]:
     def work() -> None:
         try:
             simulate(path, body.recommender, max(1, min(body.visits, 10)), body.seed, url, sink=live.add,
-                     should_stop=lambda: live.stop)
+                     should_stop=lambda: live.stop, blank_profile=body.blank_profile,
+                     prompt_version=body.prompt_version)
         except Exception as error:
             live.error = f"{type(error).__name__}: {error}"
             live.add({"kind": "run_error", "stage": "", "ts": time.time(), "error": live.error})
@@ -250,6 +273,17 @@ def view(name: str) -> str:
     if not path.exists():
         raise HTTPException(404, "기록이 없습니다")
     return render(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.get("/runs/{name}/steps", response_class=HTMLResponse)
+def steps_view(name: str) -> str:
+    """카드 생성 단계별 입력과 출력(simulation/steps_view.py)."""
+    path = RUNS / f"{Path(name).name}.json"
+    if not path.exists():
+        raise HTTPException(404, "기록이 없습니다")
+    run = json.loads(path.read_text(encoding="utf-8"))
+    run["_name"] = path.stem
+    return render_steps(run)
 
 
 @app.get("/api/runs/{name}")

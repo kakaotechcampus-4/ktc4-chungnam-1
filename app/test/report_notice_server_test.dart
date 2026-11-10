@@ -127,6 +127,74 @@ void main() {
     expect(_info(container)!.analysisId, 'a1');
   });
 
+  test('분석이 실패하면 6-3 의 실패 이유를 함께 남긴다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [
+          FakeReportServer.session(
+            id: 's1',
+            status: 'processing',
+            analysisId: 'a1',
+          ),
+        ],
+      },
+      analyses: {
+        'a1': ['queued', 'failed'],
+      },
+    )..analysisErrors['a1'] = 'AI_SERVER_TIMEOUT';
+    final container = await _signedIn(server);
+
+    await _until(() => _info(container)?.notice == ReportNotice.failed);
+    expect(_info(container)!.failureCode, 'AI_SERVER_TIMEOUT');
+  });
+
+  test('회차 목록이 실패라고 하면 6-3 에 한 번 물어 실패 이유를 붙인다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [
+          FakeReportServer.session(
+            id: 's1',
+            status: 'failed',
+            analysisId: 'a1',
+          ),
+        ],
+      },
+      analyses: {
+        'a1': ['failed'],
+      },
+    )..analysisErrors['a1'] = 'EMPTY_TRANSCRIPT';
+    final container = await _signedIn(server);
+
+    await _until(() => _info(container)?.failureCode != null);
+    expect(_info(container)!.notice, ReportNotice.failed);
+    expect(_info(container)!.failureCode, 'EMPTY_TRANSCRIPT');
+    expect(server.count('/api/v1/speech-analyses/a1'), 1);
+  });
+
+  test('실패 이유를 묻지 못해도 실패는 띄운다', () async {
+    final server = FakeReportServer(
+      sessions: {
+        'p1': [
+          FakeReportServer.session(
+            id: 's1',
+            status: 'failed',
+            analysisId: 'a1',
+          ),
+        ],
+      },
+    );
+    server.failures['GET /api/v1/speech-analyses/a1'] = (
+      status: 503,
+      errorCode: 'SERVICE_UNAVAILABLE',
+    );
+    final container = await _signedIn(server);
+
+    await _until(() => server.count('/api/v1/speech-analyses/a1') > 0);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(_info(container)!.notice, ReportNotice.failed);
+    expect(_info(container)!.failureCode, isNull);
+  });
+
   test('서버가 실패로 계산한 회차는 바로 실패를 띄운다', () async {
     final server = FakeReportServer(
       sessions: {

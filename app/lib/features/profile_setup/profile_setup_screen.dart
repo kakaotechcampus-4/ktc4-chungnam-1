@@ -251,7 +251,13 @@ class _ActionsState extends ConsumerState<_Actions> {
       final saved = await _save(() => controller.finish(addingId: addingId));
       if (!saved) return;
       router.go(AppRoutes.home);
-      if (addingId != null) {
+      // 사진을 올렸으면 홈 아래에 사진 준비 안내가 뜬다. 알림 띠가 그 안내의
+      // 아랫줄을 가려(2026-11-10 E2E) 이때는 띄우지 않는다. 새 분의 이름은 홈
+      // 제목과 위 알약에 바로 보인다.
+      final photoNotice = draft.photos.any(
+        (photo) => photo.status == PhotoUploadStatus.uploaded,
+      );
+      if (addingId != null && !photoNotice) {
         messenger
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text('지금부터 $name님과 함께해요')));

@@ -90,7 +90,9 @@ CREATE TABLE life_facts (
                      CONSTRAINT life_facts_story_category_check CHECK (story_category IN
                        ('family', 'hobby', 'work', 'hometown', 'friend', 'travel', 'other')),
     image_number   SMALLINT     NOT NULL DEFAULT 1
-                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5)
+                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5),
+    -- 아픈 기억일 수 있는 이야기. 7-4가 제안의 표시를 옮기고 보호자가 2-7로 바꾼다. 카드 생성 입력에 담는다.
+    sensitive      BOOLEAN      NOT NULL DEFAULT false
 );
 CREATE INDEX idx_life_facts_profile ON life_facts(profile_id, created_at);
 

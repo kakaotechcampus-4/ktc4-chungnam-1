@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart'
@@ -6,8 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/recording_pulse.dart';
+import '../cards/card_source_photo.dart';
+import 'recording_stopped_alert.dart';
 import 'visit_controller.dart';
 
 /// E-3, E-4 면회 중 대화 카드.
@@ -28,6 +34,8 @@ Future<void> showVisitCardsSheet(
   return showModalBottomSheet<void>(
     context: context,
     transitionAnimationController: controller,
+    // 녹음이 멈추면 녹음 화면이 이 이름으로 시트를 찾아 닫는다.
+    routeSettings: const RouteSettings(name: visitCardsSheetRouteName),
     isScrollControlled: true,
     backgroundColor: HomeColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
@@ -38,11 +46,25 @@ Future<void> showVisitCardsSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
     ),
-    builder: (context) => FractionallySizedBox(
-      // 화면의 5분의 4까지 올라온다.
-      heightFactor: visitCardsSheetHeightFactor,
+    builder: (context) => SizedBox(
+      height: visitCardsSheetHeight(context),
       child: const _SheetBody(),
     ),
+  );
+}
+
+/// 시트 높이. 화면의 5분의 4에 손잡이 아래 녹음 표시 줄 높이를 더한다.
+///
+/// 녹음 표시 줄을 손잡이와 카드 막대 사이에 끼우면서 원래 간격을 줄이니 줄이
+/// 손잡이에 붙어 답답해 보였다(2026-11-10 실기기 확인). 원래 간격은 그대로 두고
+/// 줄 높이만큼 시트를 높여 메인 질문의 자리도 줄지 않게 한다. 화면 위 안전영역은
+/// 넘지 않는다. 녹음 화면에서 끌어올리는 동안 그리는 시트도 이 높이를 쓴다.
+double visitCardsSheetHeight(BuildContext context) {
+  final screen = MediaQuery.sizeOf(context).height;
+  final top = MediaQuery.paddingOf(context).top;
+  return math.min(
+    screen * visitCardsSheetHeightFactor + _RecordingStatus.lineHeight(context),
+    screen - top,
   );
 }
 
@@ -71,6 +93,23 @@ class VisitCardsSheetPreview extends StatelessWidget {
 
 /// 시트가 화면 높이에서 차지하는 비율.
 const visitCardsSheetHeightFactor = 0.8;
+
+/// 대화 카드 시트 경로의 이름.
+const visitCardsSheetRouteName = 'visitCardsSheet';
+
+/// 대화 카드 시트가 맨 위에 떠 있으면 닫는다.
+///
+/// 보호자 모르게 녹음이 멈추면 시트를 닫아 녹음 화면 맨 위의 멈춤 띠를 보게 한다
+/// (2026-11-10 PM 확인). 시트와 녹음 화면 두 곳에 같은 띠를 띄우면 헷갈려서
+/// 띠는 녹음 화면에만 둔다. 카드 추가 화면이 시트 위에 있으면 보던 화면을 빼앗지
+/// 않고, 시트로 돌아왔을 때 닫는다.
+void closeVisitCardsSheet(BuildContext context) {
+  final navigator = Navigator.maybeOf(context);
+  if (navigator == null) return;
+  navigator.popUntil(
+    (route) => route.settings.name != visitCardsSheetRouteName,
+  );
+}
 
 class _SheetBody extends ConsumerWidget {
   const _SheetBody();
@@ -116,6 +155,9 @@ class _CardsState extends ConsumerState<_Cards> {
     await context.push(AppRoutes.visitAddCards);
     if (!mounted) return;
     setState(() => _hiddenFrom = null);
+    // 카드를 더하는 동안 녹음이 멈췄으면 시트를 닫아 녹음 화면의 띠를 보게 한다.
+    final visit = ref.read(visitControllerProvider).value;
+    if (recordingAlertOf(visit) != null) closeVisitCardsSheet(context);
   }
 
   @override
@@ -126,7 +168,7 @@ class _CardsState extends ConsumerState<_Cards> {
 
     return Column(
       children: [
-        const _DragHandle(),
+        _SheetTop(state: state),
         _CardBar(
           state: state,
           shownCount: _hiddenFrom ?? state.cards.length,
@@ -146,10 +188,7 @@ class _CardsState extends ConsumerState<_Cards> {
                   Expanded(
                     child: Semantics(
                       sortKey: const OrdinalSortKey(0),
-                      child: _MainQuestion(
-                        cardTitle: card.cardTitle,
-                        question: card.primaryQuestion,
-                      ),
+                      child: _MainQuestion(card: card),
                     ),
                   ),
                   Expanded(
@@ -213,6 +252,36 @@ class _CardsState extends ConsumerState<_Cards> {
   }
 }
 
+/// 시트 맨 위. 손잡이 바로 아래에 녹음 상태와 시간을 둔다.
+///
+/// 시트가 화면의 5분의 4를 덮어 녹음 화면의 `녹음 중이에요` 와 시간이 가려졌다
+/// (2026-11-10 UX 점검 7번). 녹음이 이어지는지 보려고 시트를 내리지 않아도 되게
+/// 여기 작게 다시 보인다. 손잡이 위아래 여백과 카드 막대 위 여백은 원래대로
+/// 두고 그 사이에 이 줄을 끼운다. 줄 높이만큼 시트를 높인다
+/// ([visitCardsSheetHeight], 2026-11-10 실기기 확인).
+class _SheetTop extends StatelessWidget {
+  const _SheetTop({required this.state});
+
+  final VisitState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const _DragHandle(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+          child: _RecordingStatus(
+            key: const Key('visitSheetRecordingStatus'),
+            recording: state.recording,
+            elapsed: state.elapsedLabel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
 
@@ -228,6 +297,100 @@ class _DragHandle extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
       ),
+    );
+  }
+}
+
+/// 녹음 화면의 상태와 시간을 한 줄로 줄인 것이다.
+///
+/// 녹음 화면의 마이크 원을 작게 줄여 같은 모양으로 둔다. 녹음 중이면 초록 면에
+/// 흰 마이크와 둘레의 물결([RecordingPulse]), 멈추면 연초록 면에 진한 테두리와
+/// 멈춤 표시다. 색만으로 가르지 않도록 아이콘과 글자도 바뀐다. 누르는 자리가
+/// 아니라 면이나 테두리로 감싸지 않는다.
+///
+/// 화면 낭독기는 녹음 화면처럼 상태가 바뀔 때 바로 읽고(`녹음 중이에요`,
+/// `잠시 멈췄어요`), 1초마다 바뀌는 시간은 바뀔 때 읽지 않는다. 시간은 글자가
+/// 커져 한 줄에 들어가지 않으면 다음 줄로 내려간다.
+class _RecordingStatus extends StatelessWidget {
+  const _RecordingStatus({
+    required this.recording,
+    required this.elapsed,
+    super.key,
+  });
+
+  final bool recording;
+  final String elapsed;
+
+  /// 작은 녹음 원의 지름. 보조 글자 한 줄 높이에 들어간다.
+  static const _dot = 20.0;
+
+  /// 작은 원 둘레로 물결이 퍼지는 거리. 옆 글자와의 간격(8)에 닿지 않는다.
+  static const _spread = 6.0;
+
+  static final _labelStyle = AppTypography.sub.copyWith(
+    color: AppColors.ink,
+    fontWeight: FontWeight.w600,
+  );
+
+  /// 한 줄일 때 이 줄의 높이. 원과 글자 중 큰 쪽이다. 글자가 커져 시간이 다음
+  /// 줄로 내려가면 늘어난 만큼은 메인 질문 자리에서 쓴다.
+  static double lineHeight(BuildContext context) {
+    final painter = TextPainter(
+      text: TextSpan(text: '녹음 중', style: _labelStyle),
+      textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final text = painter.height;
+    painter.dispose();
+    return math.max(_dot, text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.md,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: recording ? '녹음 중이에요' : '잠시 멈췄어요',
+          excludeSemantics: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RecordingPulse(
+                active: recording,
+                spread: _spread,
+                child: Container(
+                  width: _dot,
+                  height: _dot,
+                  decoration: BoxDecoration(
+                    color: recording ? HomeColors.accent : HomeColors.bubble,
+                    shape: BoxShape.circle,
+                    border: recording
+                        ? null
+                        : Border.all(color: HomeColors.outline, width: 1.5),
+                  ),
+                  child: Icon(
+                    recording ? Icons.mic : Icons.pause,
+                    size: 14,
+                    color: recording ? AppColors.background : AppColors.textSub,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(recording ? '녹음 중' : '잠시 멈춤', style: _labelStyle),
+            ],
+          ),
+        ),
+        Text(
+          elapsed,
+          style: AppTypography.sub.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -320,8 +483,9 @@ class _CardBarState extends State<_CardBar>
     final state = widget.state;
     final count = widget.shownCount.clamp(0, state.cards.length);
 
-    // 시트 손잡이와 헷갈리지 않게 손잡이에서 조금 떨어뜨린다. 아래 여백은
-    // 두지 않는다. 막대 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
+    // 시트 손잡이와 헷갈리지 않게 손잡이에서 떨어뜨린다. 그 사이의 녹음 표시
+    // 줄([_SheetTop])과도 원래 간격(16)을 둔다. 아래 여백은 두지 않는다. 막대
+    // 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.screen,
@@ -433,14 +597,60 @@ class _CardBarSegment extends StatelessWidget {
 }
 
 /// 위쪽 절반. 흰 바탕에 어르신께 여쭙는 문장을 크게 둔다.
+///
+/// 사진에서 나온 카드는 소제목 위에 그 사진을 작게 둔다([CardSourcePhoto]).
+/// 사진은 소제목과 메인 질문을 제 크기로 놓고 남는 높이만 쓰며 120 을 넘지
+/// 않는다. 남는 높이가 48 보다 작으면(작은 화면, 큰 글자) 질문을 줄이지 않도록
+/// 사진을 두지 않는다. 곁눈질로 읽는 질문이 먼저다.
 class _MainQuestion extends StatelessWidget {
-  const _MainQuestion({required this.cardTitle, required this.question});
+  const _MainQuestion({required this.card});
 
-  final String cardTitle;
-  final String question;
+  final ConversationCard card;
+
+  static const _photoMax = CardSourcePhoto.largestHeight;
+  static const _photoMin = 48.0;
+  static const _questionWidth = 340.0;
+
+  /// 바닥에 둔 채 곁눈질로 읽으므로 다른 화면보다 크게 둔다.
+  static final _questionStyle = AppTypography.screenTitle.copyWith(
+    fontSize: 32,
+    height: 1.4,
+  );
+
+  /// 사진에 줄 수 있는 높이. 소제목과 메인 질문을 제 크기로 놓고 남는 높이에서
+  /// 사진 아래 여백을 뺀다.
+  double _photoRoom(BuildContext context, BoxConstraints box) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    double heightOf(String text, TextStyle style, double width) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textAlign: TextAlign.center,
+        textDirection: direction,
+        textScaler: scaler,
+      )..layout(maxWidth: width);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final title = heightOf(
+      '[ ${card.cardTitle} ]',
+      AppTypography.sub,
+      box.maxWidth,
+    );
+    final question = heightOf(
+      card.primaryQuestion,
+      _questionStyle,
+      _questionWidth,
+    );
+    return box.maxHeight - title - AppSpacing.lg - question - AppSpacing.md;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cardTitle = card.cardTitle;
+    final question = card.primaryQuestion;
     return Container(
       width: double.infinity,
       color: HomeColors.background,
@@ -455,33 +665,42 @@ class _MainQuestion extends StatelessWidget {
         AppSpacing.screen,
         52,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '[ $cardTitle ]',
-            style: AppTypography.sub,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 340),
-                child: Text(
-                  question,
-                  // 바닥에 둔 채 곁눈질로 읽으므로 다른 화면보다 크게 둔다.
-                  style: AppTypography.screenTitle.copyWith(
-                    fontSize: 32,
-                    height: 1.4,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final photo = card.evidenceSource == 'photo'
+              ? math.min(_photoMax, _photoRoom(context, box))
+              : 0.0;
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (photo >= _photoMin)
+                CardSourcePhoto(
+                  card: card,
+                  maxHeight: photo,
+                  alignment: Alignment.center,
+                ),
+              Text(
+                '[ $cardTitle ]',
+                style: AppTypography.sub,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _questionWidth),
+                    child: Text(
+                      question,
+                      style: _questionStyle,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

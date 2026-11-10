@@ -6,6 +6,7 @@ import proposal_generation
 import report_generation
 from common import visit_report as ai
 from common.llm import ENDPOINTS
+from common.retry import retry_scope
 from pydantic import ValidationError
 
 from app.clients.ai_server import AiServerClient
@@ -23,7 +24,10 @@ from app.services.speech_analysis_jobs import (
     PostgresSpeechAnalysisJobRepository,
     SpeechAnalysisJob,
 )
-from app.services.speech_analysis_pipeline import create_speech_worker
+from app.services.speech_analysis_pipeline import (
+    create_speech_worker,
+    remove_stale_work_dirs,
+)
 from app.services.visit_report_generator import (
     GenerateReport,
     ReportDeadline,
@@ -35,6 +39,10 @@ from app.workers.base import Worker, run_worker_main
 
 # 리포트 생성 제한 시간이 끝난 뒤 저장과 완료 처리에 남겨 둘 임대 시간.
 REPORT_SAVE_MARGIN_SECONDS = 60
+# STT 호출 제한 시간이 끝난 뒤 남겨 둘 임대 시간. 30분 조각은 임대를 늘린 뒤 조각 파일 쓰기와
+# 업로드(약 57.6 MB), STT 호출을 하고, 마지막 조각이면 전사 저장과 원본, 조각 삭제까지 같은 임대
+# 안에서 한다. 30분 이하 녹음의 한 번 호출과 전사 저장, 원본 삭제도 같다.
+STT_CALL_MARGIN_SECONDS = 60
 
 
 def create_worker(
@@ -56,6 +64,13 @@ def create_worker(
         )
     database_url = settings.database_url
     lease_seconds = settings.speech_analysis_lease_seconds
+    if settings.ai_server_timeout_seconds + STT_CALL_MARGIN_SECONDS > lease_seconds:
+        # 넘으면 제한 시간 안에 온 STT 결과도 임대가 끝나 저장하지 못하고 WORKER_LEASE_EXPIRED가 된다.
+        raise RuntimeError(
+            "SAEROK_AI_SERVER_TIMEOUT_SECONDS는 "
+            "SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS보다 "
+            f"{STT_CALL_MARGIN_SECONDS}초 이상 짧아야 합니다."
+        )
     report = None
     notifier = None
     if not stt_only:
@@ -71,6 +86,8 @@ def create_worker(
             time_limit_seconds=time_limit,
         )
         notifier = report_notifier(settings)
+    # 강제 종료로 남은 긴 녹음 사본을 지운다. 작업마다 조각을 나누기 전에도 다시 본다.
+    remove_stale_work_dirs(older_than_seconds=3 * lease_seconds)
     return create_speech_worker(
         jobs_for=lambda connection: PostgresSpeechAnalysisJobRepository(
             connection, lease_seconds=lease_seconds
@@ -96,7 +113,7 @@ def create_worker(
 
 
 def report_notifier(settings: Settings) -> ReportNotifier | None:
-    """리포트 완료 푸시. 키 파일 경로가 비어 있으면 보내지 않는다.
+    """리포트 완료와 실패 푸시. 키 파일 경로가 비어 있으면 보내지 않는다.
 
     경로를 넣었는데 키 파일을 읽지 못하면 worker를 시작하지 않는다. 설정한 푸시가
     조용히 꺼진 채로 도는 일을 막는다.
@@ -142,12 +159,14 @@ def report_generator(settings: Settings) -> GenerateReport:
             raise generation_failed("INVALID_REQUEST") from error
         try:
             deadline.check()
-            report = report_generation.generate_report(sent, model=model, api_key=api_key)
-            # 리포트 응답이 시간 초과 확정 뒤에 와도 변경 제안 호출을 시작하지 않는다.
-            # 작업이 지워졌거나 끝났거나 전사 기한이 지났어도 전사문을 다시 보내지 않는다.
-            proposals = proposal_generation.generate_proposals(
-                sent, model=model, api_key=api_key, before_call=deadline.check_job
-            )
+            with retry_scope(enabled=settings.llm_retry_enabled,
+                             delay_seconds=settings.llm_retry_delay_seconds,
+                             remaining=deadline.left, before_retry=lambda _: deadline.check_job()):
+                report = report_generation.generate_report(sent, model=model, api_key=api_key)
+                # 리포트 응답이 늦게 와도 작업·전사 상태를 확인한 뒤 변경 제안을 보낸다.
+                proposals = proposal_generation.generate_proposals(
+                    sent, model=model, api_key=api_key, before_call=deadline.check_job
+                )
         except ai.VisitReportError as error:
             failed = generation_failed(error.code)
             # 끊긴 응답(incomplete_responses)도 숫자로 남기려고 생성 함수의 토큰 수를 옮긴다.
