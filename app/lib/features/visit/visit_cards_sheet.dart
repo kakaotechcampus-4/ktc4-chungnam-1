@@ -1,5 +1,9 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart' show OrdinalSortKey;
+import 'package:flutter/semantics.dart'
+    show CustomSemanticsAction, OrdinalSortKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,7 +11,9 @@ import '../../app/routes.dart';
 import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/recording_pulse.dart';
 import '../cards/card_source_photo.dart';
+import 'recording_stopped_alert.dart';
 import 'visit_controller.dart';
 
 /// E-3, E-4 면회 중 대화 카드.
@@ -28,6 +34,8 @@ Future<void> showVisitCardsSheet(
   return showModalBottomSheet<void>(
     context: context,
     transitionAnimationController: controller,
+    // 녹음이 멈추면 녹음 화면이 이 이름으로 시트를 찾아 닫는다.
+    routeSettings: const RouteSettings(name: visitCardsSheetRouteName),
     isScrollControlled: true,
     backgroundColor: HomeColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
@@ -38,11 +46,25 @@ Future<void> showVisitCardsSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
     ),
-    builder: (context) => FractionallySizedBox(
-      // 화면의 5분의 4까지 올라온다.
-      heightFactor: visitCardsSheetHeightFactor,
+    builder: (context) => SizedBox(
+      height: visitCardsSheetHeight(context),
       child: const _SheetBody(),
     ),
+  );
+}
+
+/// 시트 높이. 화면의 5분의 4에 손잡이 아래 녹음 표시 줄 높이를 더한다.
+///
+/// 녹음 표시 줄을 손잡이와 카드 막대 사이에 끼우면서 원래 간격을 줄이니 줄이
+/// 손잡이에 붙어 답답해 보였다(2026-11-10 실기기 확인). 원래 간격은 그대로 두고
+/// 줄 높이만큼 시트를 높여 메인 질문의 자리도 줄지 않게 한다. 화면 위 안전영역은
+/// 넘지 않는다. 녹음 화면에서 끌어올리는 동안 그리는 시트도 이 높이를 쓴다.
+double visitCardsSheetHeight(BuildContext context) {
+  final screen = MediaQuery.sizeOf(context).height;
+  final top = MediaQuery.paddingOf(context).top;
+  return math.min(
+    screen * visitCardsSheetHeightFactor + _RecordingStatus.lineHeight(context),
+    screen - top,
   );
 }
 
@@ -71,6 +93,23 @@ class VisitCardsSheetPreview extends StatelessWidget {
 
 /// 시트가 화면 높이에서 차지하는 비율.
 const visitCardsSheetHeightFactor = 0.8;
+
+/// 대화 카드 시트 경로의 이름.
+const visitCardsSheetRouteName = 'visitCardsSheet';
+
+/// 대화 카드 시트가 맨 위에 떠 있으면 닫는다.
+///
+/// 보호자 모르게 녹음이 멈추면 시트를 닫아 녹음 화면 맨 위의 멈춤 띠를 보게 한다
+/// (2026-11-10 PM 확인). 시트와 녹음 화면 두 곳에 같은 띠를 띄우면 헷갈려서
+/// 띠는 녹음 화면에만 둔다. 카드 추가 화면이 시트 위에 있으면 보던 화면을 빼앗지
+/// 않고, 시트로 돌아왔을 때 닫는다.
+void closeVisitCardsSheet(BuildContext context) {
+  final navigator = Navigator.maybeOf(context);
+  if (navigator == null) return;
+  navigator.popUntil(
+    (route) => route.settings.name != visitCardsSheetRouteName,
+  );
+}
 
 class _SheetBody extends ConsumerWidget {
   const _SheetBody();
@@ -116,6 +155,9 @@ class _CardsState extends ConsumerState<_Cards> {
     await context.push(AppRoutes.visitAddCards);
     if (!mounted) return;
     setState(() => _hiddenFrom = null);
+    // 카드를 더하는 동안 녹음이 멈췄으면 시트를 닫아 녹음 화면의 띠를 보게 한다.
+    final visit = ref.read(visitControllerProvider).value;
+    if (recordingAlertOf(visit) != null) closeVisitCardsSheet(context);
   }
 
   @override
@@ -126,7 +168,7 @@ class _CardsState extends ConsumerState<_Cards> {
 
     return Column(
       children: [
-        const _DragHandle(),
+        _SheetTop(state: state),
         if (card.evidenceSource == 'photo')
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
@@ -182,7 +224,8 @@ class _CardsState extends ConsumerState<_Cards> {
                               : state.followUpIndex % state.followUpCount,
                           turn: state.followUpIndex,
                           count: state.followUpCount,
-                          onTap: controller.nextFollowUp,
+                          onNext: controller.nextFollowUp,
+                          onPrevious: controller.previousFollowUp,
                         ),
                       ),
                     ],
@@ -216,7 +259,8 @@ class _CardsState extends ConsumerState<_Cards> {
                                 : state.followUpIndex % state.followUpCount,
                             turn: state.followUpIndex,
                             count: state.followUpCount,
-                            onTap: controller.nextFollowUp,
+                            onNext: controller.nextFollowUp,
+                            onPrevious: controller.previousFollowUp,
                           ),
                         ),
                       ),
@@ -265,6 +309,36 @@ class _CardsState extends ConsumerState<_Cards> {
   }
 }
 
+/// 시트 맨 위. 손잡이 바로 아래에 녹음 상태와 시간을 둔다.
+///
+/// 시트가 화면의 5분의 4를 덮어 녹음 화면의 `녹음 중이에요` 와 시간이 가려졌다
+/// (2026-11-10 UX 점검 7번). 녹음이 이어지는지 보려고 시트를 내리지 않아도 되게
+/// 여기 작게 다시 보인다. 손잡이 위아래 여백과 카드 막대 위 여백은 원래대로
+/// 두고 그 사이에 이 줄을 끼운다. 줄 높이만큼 시트를 높인다
+/// ([visitCardsSheetHeight], 2026-11-10 실기기 확인).
+class _SheetTop extends StatelessWidget {
+  const _SheetTop({required this.state});
+
+  final VisitState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const _DragHandle(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+          child: _RecordingStatus(
+            key: const Key('visitSheetRecordingStatus'),
+            recording: state.recording,
+            elapsed: state.elapsedLabel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
 
@@ -280,6 +354,100 @@ class _DragHandle extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
       ),
+    );
+  }
+}
+
+/// 녹음 화면의 상태와 시간을 한 줄로 줄인 것이다.
+///
+/// 녹음 화면의 마이크 원을 작게 줄여 같은 모양으로 둔다. 녹음 중이면 초록 면에
+/// 흰 마이크와 둘레의 물결([RecordingPulse]), 멈추면 연초록 면에 진한 테두리와
+/// 멈춤 표시다. 색만으로 가르지 않도록 아이콘과 글자도 바뀐다. 누르는 자리가
+/// 아니라 면이나 테두리로 감싸지 않는다.
+///
+/// 화면 낭독기는 녹음 화면처럼 상태가 바뀔 때 바로 읽고(`녹음 중이에요`,
+/// `잠시 멈췄어요`), 1초마다 바뀌는 시간은 바뀔 때 읽지 않는다. 시간은 글자가
+/// 커져 한 줄에 들어가지 않으면 다음 줄로 내려간다.
+class _RecordingStatus extends StatelessWidget {
+  const _RecordingStatus({
+    required this.recording,
+    required this.elapsed,
+    super.key,
+  });
+
+  final bool recording;
+  final String elapsed;
+
+  /// 작은 녹음 원의 지름. 보조 글자 한 줄 높이에 들어간다.
+  static const _dot = 20.0;
+
+  /// 작은 원 둘레로 물결이 퍼지는 거리. 옆 글자와의 간격(8)에 닿지 않는다.
+  static const _spread = 6.0;
+
+  static final _labelStyle = AppTypography.sub.copyWith(
+    color: AppColors.ink,
+    fontWeight: FontWeight.w600,
+  );
+
+  /// 한 줄일 때 이 줄의 높이. 원과 글자 중 큰 쪽이다. 글자가 커져 시간이 다음
+  /// 줄로 내려가면 늘어난 만큼은 메인 질문 자리에서 쓴다.
+  static double lineHeight(BuildContext context) {
+    final painter = TextPainter(
+      text: TextSpan(text: '녹음 중', style: _labelStyle),
+      textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final text = painter.height;
+    painter.dispose();
+    return math.max(_dot, text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.md,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: recording ? '녹음 중이에요' : '잠시 멈췄어요',
+          excludeSemantics: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RecordingPulse(
+                active: recording,
+                spread: _spread,
+                child: Container(
+                  width: _dot,
+                  height: _dot,
+                  decoration: BoxDecoration(
+                    color: recording ? HomeColors.accent : HomeColors.bubble,
+                    shape: BoxShape.circle,
+                    border: recording
+                        ? null
+                        : Border.all(color: HomeColors.outline, width: 1.5),
+                  ),
+                  child: Icon(
+                    recording ? Icons.mic : Icons.pause,
+                    size: 14,
+                    color: recording ? AppColors.background : AppColors.textSub,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(recording ? '녹음 중' : '잠시 멈춤', style: _labelStyle),
+            ],
+          ),
+        ),
+        Text(
+          elapsed,
+          style: AppTypography.sub.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -372,8 +540,9 @@ class _CardBarState extends State<_CardBar>
     final state = widget.state;
     final count = widget.shownCount.clamp(0, state.cards.length);
 
-    // 시트 손잡이와 헷갈리지 않게 손잡이에서 조금 떨어뜨린다. 아래 여백은
-    // 두지 않는다. 막대 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
+    // 시트 손잡이와 헷갈리지 않게 손잡이에서 떨어뜨린다. 그 사이의 녹음 표시
+    // 줄([_SheetTop])과도 원래 간격(16)을 둔다. 아래 여백은 두지 않는다. 막대
+    // 아래 누르는 자리의 남는 높이(20)가 그 역할을 한다.
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.screen,
@@ -573,43 +742,103 @@ class _MainQuestion extends StatelessWidget {
 }
 
 /// 아래쪽 절반. 회색 바탕으로 위와 구분하고, 누르면 다음 꼬리 질문으로 넘어간다.
+/// 옆으로 밀어도 넘어간다. 왼쪽으로 밀면 다음 질문, 오른쪽으로 밀면 앞 질문이다.
 ///
 /// 넘길 때 앞 질문이 왼쪽으로 밀려 사라진 뒤 다음 질문이 오른쪽에서 들어온다.
-/// 글자만 바뀌면 넘어갔는지 알아채기 어려웠다.
-class _FollowUpQuestion extends StatelessWidget {
+/// 글자만 바뀌면 넘어갔는지 알아채기 어려웠다. 앞 질문으로 되돌릴 때는 거꾸로
+/// 오른쪽으로 밀려 사라지고 왼쪽에서 들어온다.
+class _FollowUpQuestion extends StatefulWidget {
   const _FollowUpQuestion({
     required this.question,
     required this.index,
     required this.turn,
     required this.count,
-    required this.onTap,
+    required this.onNext,
+    required this.onPrevious,
     super.key,
   });
 
   final String question;
   final int index;
 
-  /// 넘긴 횟수. 한 바퀴 돌아 같은 질문이 와도 넘김 효과가 보이게 이 값으로
-  /// 질문을 가른다.
+  /// 꼬리 질문의 자리([VisitState.followUpIndex]). 넘기면 하나 늘고 되돌리면
+  /// 하나 준다. 늘었는지 줄었는지로 질문이 밀려 나가는 쪽을 정한다.
   final int turn;
 
   final int count;
-  final VoidCallback onTap;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
+
+  @override
+  State<_FollowUpQuestion> createState() => _FollowUpQuestionState();
+}
+
+class _FollowUpQuestionState extends State<_FollowUpQuestion> {
+  /// 옆으로 이만큼 끌었거나 이보다 빠르게 그었을 때만 넘긴다. 누르다 손가락이
+  /// 조금 비껴가는 정도로는 넘어가지 않는다.
+  static const _swipeDistance = 48.0;
+  static const _swipeVelocity = 300.0;
+
+  /// 옆으로 미는 손짓은 화면 낭독기에서 쓸 수 없어 동작 메뉴에 넘기기를 둔다.
+  /// 두 번 누르면 그대로 다음 질문으로 넘어간다.
+  static const _nextAction = CustomSemanticsAction(label: '다음 꼬리 질문');
+  static const _previousAction = CustomSemanticsAction(label: '이전 꼬리 질문');
+
+  /// 질문이 바뀐 횟수. 한 바퀴 돌아 같은 질문이 오거나 앞뒤로 빠르게 오가
+  /// 같은 자리로 돌아와도 넘김 효과가 보이게 이 값으로 질문을 가른다.
+  int _shown = 0;
+
+  /// 마지막 넘김이 다음 질문 쪽이었는지.
+  bool _forward = true;
+
+  /// 이번 끌기에서 옆으로 움직인 거리. 왼쪽이 음수다.
+  double _dragged = 0;
+
+  @override
+  void didUpdateWidget(_FollowUpQuestion old) {
+    super.didUpdateWidget(old);
+    if (widget.turn == old.turn) return;
+    _shown++;
+    _forward = widget.turn > old.turn;
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final dragged = _dragged;
+    _dragged = 0;
+
+    // 빠르게 그었으면 그은 쪽을, 천천히 끌었으면 끈 거리를 본다.
+    final double toward;
+    if (velocity.abs() >= _swipeVelocity) {
+      toward = velocity;
+    } else if (dragged.abs() >= _swipeDistance) {
+      toward = dragged;
+    } else {
+      return;
+    }
+    if (toward < 0) {
+      widget.onNext();
+    } else {
+      widget.onPrevious();
+    }
+  }
 
   Widget _slide(Widget child, Animation<double> animation) {
-    // 앞 질문이 조금 왼쪽으로 밀리며 사라진 뒤에 다음 질문이 오른쪽에서
-    // 들어온다. 둘이 함께 움직이면 글자가 겹쳐 어지러웠다.
+    // 앞 질문이 조금 밀리며 사라진 뒤에 다음 질문이 반대쪽에서 들어온다.
+    // 둘이 함께 움직이면 글자가 겹쳐 어지러웠다. 다음 질문으로 넘기면 왼쪽,
+    // 앞 질문으로 되돌리면 오른쪽으로 밀려 나간다.
     //
     // 나가는 쪽은 애니메이션이 1에서 0으로 거꾸로 돈다. 두 쪽 모두 뒤 절반
     // 구간만 쓰므로, 나가는 질문은 앞 절반에 사라지고 들어오는 질문은 뒤
     // 절반에 나타나 한 번에 하나만 보인다.
-    final incoming = child.key == ValueKey(turn);
+    final incoming = child.key == ValueKey(_shown);
+    final shift = _forward ? 0.25 : -0.25;
     final half = CurvedAnimation(
       parent: animation,
       curve: const Interval(0.5, 1, curve: Curves.easeOutCubic),
     );
     final offset = Tween<Offset>(
-      begin: Offset(incoming ? 0.25 : -0.25, 0),
+      begin: Offset(incoming ? shift : -shift, 0),
       end: Offset.zero,
     ).animate(half);
     return SlideTransition(
@@ -623,11 +852,14 @@ class _FollowUpQuestion extends StatelessWidget {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 400);
+    final question = widget.question;
+    final index = widget.index;
+    final count = widget.count;
 
-    return Material(
+    final area = Material(
       color: HomeColors.bubble,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onNext,
         child: Container(
           width: double.infinity,
           decoration: const BoxDecoration(
@@ -651,9 +883,13 @@ class _FollowUpQuestion extends StatelessWidget {
                     width: double.infinity,
                     child: AnimatedSwitcher(
                       duration: duration,
-                      transitionBuilder: _slide,
+                      // 빌드마다 새 함수를 넘긴다. 함수가 바뀌어야
+                      // AnimatedSwitcher 가 나가는 질문의 효과도 지금 방향으로
+                      // 다시 만든다.
+                      transitionBuilder: (child, animation) =>
+                          _slide(child, animation),
                       child: Padding(
-                        key: ValueKey(turn),
+                        key: ValueKey(_shown),
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.screen,
                         ),
@@ -710,6 +946,26 @@ class _FollowUpQuestion extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+
+    return Semantics(
+      customSemanticsActions: {
+        _nextAction: widget.onNext,
+        _previousAction: widget.onPrevious,
+      },
+      // 옆으로 끄는 손길만 받는다. 위아래로 끄는 손길은 시트가 받아 내려 닫는다.
+      child: GestureDetector(
+        // 손가락을 댄 자리부터 끈 거리를 잰다.
+        dragStartBehavior: DragStartBehavior.down,
+        // 화면 낭독기에는 옆으로 밀기 대신 위 동작 메뉴를 둔다.
+        excludeFromSemantics: true,
+        onHorizontalDragStart: (_) => _dragged = 0,
+        onHorizontalDragUpdate: (details) =>
+            _dragged += details.primaryDelta ?? 0,
+        onHorizontalDragEnd: _onDragEnd,
+        onHorizontalDragCancel: () => _dragged = 0,
+        child: area,
       ),
     );
   }

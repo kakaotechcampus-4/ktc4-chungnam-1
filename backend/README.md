@@ -132,6 +132,12 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 ## 담당과 다음 결정
 
+### LLM 1회 재시도(2026-11-11, 로컬 변경·미배포)
+
+`SAEROK_LLM_RETRY_ENABLED=false`가 기본이며, true로 설정하면 카드·리포트·변경 제안·사진 설명의 동기 LLM 호출에서 일시적 전송 오류를 최대 1회 재시도한다. 작업 자체를 다시 실행하는 기능과 별개다. SDK 재시도는 끄고 AI 공통 호출부에서 관리한다. 최초 호출과 재시도가 시간 예산을 공유하며, `SAEROK_LLM_RETRY_DELAY_SECONDS=1`은 검증용 초기 대기값이다. 실제 대기는 이 값의 0.5~1배와 서버의 Retry-After 중 큰 값을 사용하고, 남은 시간이 부족하면 재시도하지 않는다.
+
+재전송 직전에는 기존 작업 상태를 다시 확인한다. 카드는 작업·프로필·시도 번호·임대, 리포트와 변경 제안은 기존 `ReportDeadline.check_job`의 작업·전사 만료 검사, 사진은 작업·프로필·임대·현재 AI 분석 동의와 사진 주소 만료를 확인한다. 기존 결과 검증과 저장 조건은 유지한다. Claude 연결은 별도 합성 점검용이며 자동 전환은 미구현이다. 기본 모델과 운영 환경은 변경하지 않았고 앱·DB 계약도 변경하지 않았다. 상세: [설계 및 검증 범위](../docs/architecture/llm-failover.md), [ADR-010](../docs/architecture/decisions/ADR-010-llm-resilience.md).
+
 | 범위 | BE 작업 / 함께 정할 내용 |
 | --- | --- |
 | 모델 실행 | AI와 입력 형식, 모델 로딩, 자원 해제, STT 및 화자 처리 파이프라인 검토 |
@@ -391,12 +397,15 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 | 환경 변수 | 설명 |
 | --- | --- |
 | `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_PER_ACCOUNT` | 한 계정이 동시에 보낼 수 있는 6-6 수, 기본 2. 1 이상. 앱은 앞 전사가 끝나기 전에 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있으므로 1로 내리면 그 녹음이 거절된다 |
+| `SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_TOTAL` | 서버 전체에서 동시에 처리하는 6-6 수. 비워 두면(기본) 제한 없음. 넣으면 계정 한도를 통과한 요청만 세고, 다 차 있으면 S3 저장과 STT 호출 없이 `503 SPEECH_TRANSCRIPTION_BUSY`(`retryable: true`)로 거절한다. 값은 STT 서버가 동시에 처리하는 수를 확인한 뒤 정한다. 다른 계정 요청도 거절하게 되므로 켜기 전에 PM 확인이 필요하다 |
+| `SAEROK_SHORT_TRANSCRIPTION_TIMEOUT_SECONDS` | 6-6이 STT 응답을 기다리는 시간, 기본 90초(잠정). 앱이 업로드를 포함해 2분에 포기하므로 그보다 짧게 둔다. `SAEROK_AI_SERVER_TIMEOUT_SECONDS`보다 길면 그 값을 쓴다. 넘으면 `504 AI_SERVER_TIMEOUT`. 실제 처리 시간 측정 뒤 #138에서 정한다 |
 | `SAEROK_PUSH_DEVICES_PER_ACCOUNT` | 계정당 푸시 받을 기기 수, 기본 5. 1 이상 |
 | `SAEROK_REPORT_RETRIES_PER_SESSION` | 면회 회차당 6-5 수, 기본 3. 1 이상. 자동 재시도는 여전히 없다 |
 
 | `errorCode` | HTTP | 언제 |
 | --- | --- | --- |
 | `SPEECH_TRANSCRIPTION_IN_PROGRESS` | 429 | 6-6. 같은 계정의 앞 요청이 한도만큼 아직 처리 중. 앞 요청이 끝난 뒤 다시 보낸다 |
+| `SPEECH_TRANSCRIPTION_BUSY` | 503 | 6-6. 서버 전체 한도(`SAEROK_SHORT_TRANSCRIPTION_CONCURRENCY_TOTAL`, 설정했을 때만)가 다 참. 잠시 뒤 다시 보낸다 |
 | `REPORT_RETRY_LIMIT_EXCEEDED` | 409 | 6-5. 이 회차의 재요청 횟수를 모두 썼고 다시 쓸 전사가 남아 있음. 전사 기한이 지나면 같은 요청이 `RECORDING_REQUIRED`가 된다 |
 
 - 한도에 닿은 회차에 전사가 남아 있는 동안은 6-2도 `REPORT_RETRY_AVAILABLE`로 녹음 재제출을 받지 않는다. 전사 기한(최초 STT부터 24시간)이 지나면 6-5는 `RECORDING_REQUIRED`로 답하고, 앱이 기기 녹음을 6-2로 다시 보내면 기존 규칙대로 새 작업을 받는다. 이 재제출은 재요청 횟수에 넣지 않는다(2026-11-09 PM 결정). 재제출한 작업의 리포트가 다시 실패하면 그 전사로 하는 6-5에는 같은 한도가 적용된다.
@@ -432,7 +441,7 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 - 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름과 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
 - 이야기 후보(`life_fact_proposals`)에는 AI가 고른 분류(`story_category`)와 아픈 기억일 수 있다는 표시(`sensitive`)가 있다(2026-11-09 PM 결정, migration `9c4e2b7a1f63`, 기존 행은 `other`, `false`). 8-3 결과의 이야기 후보는 30개까지이며 두 값이 모두 있어야 한다. 7-3은 두 값을 그대로 돌려주고, 7-4의 승인 항목은 `storyCategory`를 선택으로 받아 보호자가 바꾼 분류로 이야기를 만든다. 제안 행의 분류와 표시는 확인 뒤에도 바뀌지 않는다. #295로 들어갔고 11/10 배포(develop `83695093`)부터 운영에 있다.
 - 생애 정보(`life_facts.sensitive`)에도 아픈 기억 표시가 있다(2026-11-10 PM 결정, migration `5d2e8b1c9a47`, 운영 배포 전). 7-4는 승인한 제안의 표시를 `create_life_fact(..., sensitive=)`로 옮기고, 2-6은 `false`로 만들며, 2-7은 `sensitive`를 받아 보호자가 바꾼다. 값이 바뀌면 제목, 내용처럼 아직 면회에 안 쓴 묶음을 `needsRefresh`로 바꾼다(카드 생성 입력이라서). 2-3, 2-6, 2-7 응답과 4-1 입력 `lifeFacts[].sensitive`에 담고, 카드 생성 2판은 그 이야기를 근거로 한 카드를 늘 `sensitive`로 낸다. migration은 이미 승인한 이야기에 출처 제안의 표시를 옮긴다.
-- 대화 카드(`conversation_cards.sensitive`)도 저장된 이야기나 세부 정보의 아픈 경험을 다루면 표시한다. 4-3, 4-4 카드에 `sensitive`로 나오며 카드 생성 2판부터 채워진다(`SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 기본값). 이것도 #295로 11/10 배포부터 운영에 있다. 운영 `.env`에 판 번호를 적지 않아 기본값 2가 쓰이므로 운영 카드는 2판이다. migration 적용 순서와 판 번호 설정은 [배포 문서](docs/deployment.md#이야기-후보-분류와-아픈-기억-표시)를 따른다.
+- 대화 카드(`conversation_cards.sensitive`)도 저장된 이야기나 세부 정보의 아픈 경험을 다루면 표시한다. 4-3, 4-4 카드에 `sensitive`로 나오며 카드 생성 2판부터 채워진다. 기본값은 v3다(`SAEROK_CARD_GENERATION_PROMPT_VERSION=3`, 2026-11-10 변경, 운영 배포 전). v3도 아픈 경험 표시를 그대로 채운다. 이것도 #295로 11/10 배포부터 운영에 있다. 운영 `.env`에 판 번호를 적지 않아 기본값 2가 쓰이므로 운영 카드는 2판이다. migration 적용 순서와 판 번호 설정은 [배포 문서](docs/deployment.md#이야기-후보-분류와-아픈-기억-표시)를 따른다.
 - 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_missing_evidence`).
 - 보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진도 4-1 입력에서 뺀다(`card_sets._excluded_evidence`). 제외는 주제 하나에 걸리므로, 근거가 입력에 남으면 같은 이야기로 이름만 다른 새 주제가 다시 만들어진다. 세부 정보 네 칸은 칸 전체가 빠지면 다른 주제까지 사라지므로 남긴다. 저장된 이야기와 사진은 그대로이며 일대기에도 그대로 보인다.
 - 위 두 규칙으로 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 입력의 `topics`에 넣지 않는다(PM 결정 2026-11-08, `card_sets._material_gone`). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 제외한 주제는 근거 이야기와 사진이 늘 입력에서 빠지므로 DB에 남은 이야기와 입력에 넣을 수 있는 사진(보호자 설명이 있거나 분석이 끝난 사진)으로 정한다. 하나라도 남아 있으면 넣고, 보호자가 모두 지웠으면 넣지 않는다(PM 결정 2026-11-09). 세부 정보 칸 근거가 있는 제외 주제는 이야기와 사진을 모두 지워도 다른 주제처럼 넣는다. AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음)도 입력에서 빠지므로, 근거가 그런 사진뿐인 주제는 제외 여부와 상관없이 넣지 않고 다시 분석이 끝나면 넣는다. 빠진 주제를 가리키는 지난 카드는 `pastCards`에 그대로 넣는다.

@@ -333,3 +333,112 @@ def test_concurrency_follows_the_setting(migrated_database_url):
     assert second.status_code == 429
     assert second.json()["errorCode"] == "SPEECH_TRANSCRIPTION_IN_PROGRESS"
     assert first.status_code == 200
+
+
+# ── 6-6 전용 대기 시간과 서버 전체 동시 요청 수 ─────────────────────────────────
+
+
+def test_short_timeout_applies_even_when_the_general_ai_timeout_is_longer(migrated_database_url):
+    """앱은 2분에 포기하므로 6-6은 면회 분석용 `ai_server_timeout_seconds`(기본 600초)를 쓰지 않는다."""
+    class SlowAi:
+        async def analyze_speech(self, payload):
+            await asyncio.sleep(1)
+            pytest.fail("6-6 대기 시간이 지난 뒤 결과를 사용하면 안 된다")
+
+    app, storage, _ = harness(migrated_database_url, ai=SlowAi())
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        database_url=migrated_database_url, ai_server_timeout_seconds=5,
+        short_transcription_timeout_seconds=.01, session_secret="s" * 32,
+    )
+    response = submit(app)
+    assert response.status_code == 504
+    assert response.json()["errorCode"] == "AI_SERVER_TIMEOUT"
+    assert response.json()["retryable"] is True
+    assert storage.objects == {} and len(storage.deleted) == 1
+
+
+def test_short_timeout_defaults_below_the_app_limit():
+    # 앱의 speechTranscriptionTimeout(2분)은 업로드 시간을 포함한다. 로컬 .env 와 관계없이
+    # 코드의 기본값을 본다.
+    fields = Settings.model_fields
+    assert fields["short_transcription_timeout_seconds"].default < 120
+    assert fields["short_transcription_concurrency_total"].default is None
+
+
+def test_empty_server_limit_setting_means_unlimited():
+    assert Settings(short_transcription_concurrency_total="").short_transcription_concurrency_total is None
+    assert Settings(short_transcription_concurrency_total="3").short_transcription_concurrency_total == 3
+
+
+def test_server_wide_limit_rejects_other_accounts_without_uploading(migrated_database_url):
+    async def scenario():
+        started, finish = asyncio.Event(), asyncio.Event()
+
+        class WaitingAi(FakeAiServer):
+            async def analyze_speech(self, payload):
+                if not started.is_set():
+                    started.set()
+                    await finish.wait()
+                return await super().analyze_speech(payload)
+
+        app, storage, ai = harness(migrated_database_url, ai=WaitingAi())
+        app.dependency_overrides[get_settings] = lambda: Settings(
+            database_url=migrated_database_url, ai_server_timeout_seconds=5,
+            session_secret="s" * 32, short_transcription_concurrency_total=1,
+        )
+        _accounts_by_header(app)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            first = asyncio.create_task(_send_as(client, "first"))
+            await started.wait()
+            busy = await _send_as(client, "other")
+            uploads_while_busy = len(storage.objects)
+            finish.set()
+            done = await first
+            after = await _send_as(client, "other")
+        return storage, ai, busy, uploads_while_busy, done, after
+
+    storage, ai, busy, uploads_while_busy, done, after = run(scenario())
+    assert busy.status_code == 503, busy.text
+    assert busy.json()["errorCode"] == "SPEECH_TRANSCRIPTION_BUSY"
+    assert busy.json()["retryable"] is True
+    # 거절한 요청은 S3에 올리지 않고 STT도 부르지 않는다.
+    assert uploads_while_busy == 1
+    assert done.status_code == 200 and after.status_code == 200
+    assert len(ai.payloads) == 2 and len(storage.deleted) == 2
+    rows = _Db(migrated_database_url).execute("SELECT count(*) AS n FROM storage_deletion_request_queue")
+    assert rows[0]["n"] == 2
+
+
+def test_account_limit_is_checked_before_the_server_limit(migrated_database_url):
+    """계정 한도에 걸린 요청은 서버 칸을 차지하지 않는다."""
+    async def scenario():
+        started, finish = asyncio.Event(), asyncio.Event()
+
+        class WaitingAi(FakeAiServer):
+            async def analyze_speech(self, payload):
+                if not started.is_set():
+                    started.set()
+                    await finish.wait()
+                return await super().analyze_speech(payload)
+
+        app, _, _ = harness(migrated_database_url, ai=WaitingAi())
+        app.dependency_overrides[get_settings] = lambda: Settings(
+            database_url=migrated_database_url, ai_server_timeout_seconds=5,
+            session_secret="s" * 32, short_transcription_concurrency_per_account=1,
+            short_transcription_concurrency_total=2,
+        )
+        _accounts_by_header(app)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            first = asyncio.create_task(_send_as(client, "first"))
+            await started.wait()
+            same = await _send_as(client, "first")
+            other = await _send_as(client, "other")
+            finish.set()
+            return same, other, await first
+
+    same, other, first = run(scenario())
+    assert same.status_code == 429
+    assert same.json()["errorCode"] == "SPEECH_TRANSCRIPTION_IN_PROGRESS"
+    assert other.status_code == 200 and first.status_code == 200

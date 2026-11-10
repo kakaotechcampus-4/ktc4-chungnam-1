@@ -20,6 +20,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 
 from common.llm import ChatConfig, chat_model
+from common.retry import retry_scope
 
 T = TypeVar("T")
 
@@ -44,7 +45,8 @@ class Deadline:
 
         def target() -> None:
             try:
-                done.set_result(work())
+                with retry_scope(remaining=lambda: self.check("모델 재시도")):
+                    done.set_result(work())
             except BaseException as error:
                 done.set_exception(error)
 

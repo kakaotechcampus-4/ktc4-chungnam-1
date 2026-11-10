@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../design/tokens.dart';
 
 /// 화면에서 가장 중요한 행동 하나에만 쓴다. 검정 면에 흰 글자다.
+///
+/// 높이는 56 이상이고, 글자를 키우면 그만큼 높아진다. 위아래 여백이 12라
+/// 한 줄이어도 글자 1.5배쯤부터 56을 넘는다.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     required this.label,
@@ -41,12 +44,15 @@ class PrimaryButton extends StatelessWidget {
     final enabled = onPressed != null || loading;
     final text = Text(
       label,
+      textAlign: TextAlign.center,
       style: AppTypography.button.copyWith(
         color: enabled ? AppColors.background : AppColors.textDisabled,
       ),
     );
-    final button = SizedBox(
-      height: AppSizes.control,
+    final button = ConstrainedBox(
+      // 높이는 최소만 정한다. 글자를 키워 줄이 바뀌면 버튼도 함께 높아진다.
+      // 높이를 못 박으면 두 번째 줄이 잘린다(`app/DESIGN.md` 접근성).
+      constraints: const BoxConstraints(minHeight: AppSizes.control),
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
@@ -57,7 +63,10 @@ class PrimaryButton extends StatelessWidget {
               : AppColors.line,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xl,
+            vertical: AppSpacing.md,
+          ),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
@@ -109,9 +118,14 @@ class SecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(label, style: AppTypography.button);
-    final button = SizedBox(
-      height: AppSizes.control,
+    final text = Text(
+      label,
+      textAlign: TextAlign.center,
+      style: AppTypography.button,
+    );
+    final button = ConstrainedBox(
+      // 주 버튼처럼 높이는 최소만 정하고 글자를 키우면 함께 높아진다.
+      constraints: const BoxConstraints(minHeight: AppSizes.control),
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
@@ -119,7 +133,10 @@ class SecondaryButton extends StatelessWidget {
           disabledForegroundColor: AppColors.textDisabled,
           backgroundColor: AppColors.background,
           side: BorderSide(color: borderColor),
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xl,
+            vertical: AppSpacing.md,
+          ),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
@@ -132,10 +149,8 @@ class SecondaryButton extends StatelessWidget {
                   Icon(icon, size: 20),
                   const SizedBox(width: AppSpacing.sm),
                   // 좁은 화면에서 글자를 키우면 아이콘과 한 줄에 들어가지
-                  // 않는다. 버튼 높이가 정해져 있어 줄을 바꾸지 않고 줄인다.
-                  Flexible(
-                    child: FittedBox(fit: BoxFit.scaleDown, child: text),
-                  ),
+                  // 않는다. 글자를 줄이지 않고 줄을 바꾸며 버튼이 높아진다.
+                  Flexible(child: text),
                 ],
               ),
       ),

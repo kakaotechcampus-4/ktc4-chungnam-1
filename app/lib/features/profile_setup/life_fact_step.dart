@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/mic_settings.dart';
 import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_surfaces.dart';
+import '../../widgets/recording_pulse.dart';
 import 'setup_steps.dart';
 import 'speech_input.dart';
 
@@ -98,6 +100,14 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   /// 동의 없음, 형식 오류처럼 다시 해도 안 되는 실패로 넘어온 경우다.
   bool _voiceUnavailable = false;
 
+  /// 마이크 권한을 받지 못해 직접 입력으로 넘어왔다. 화면 아래에 휴대전화
+  /// 설정의 새록 화면을 여는 버튼을 둔다.
+  bool _micDenied = false;
+
+  /// 안드로이드가 마이크 권한 창을 더 띄우지 않는다. 이때 `다시 녹음하기` 는
+  /// 누르자마자 같은 안내로 돌아오므로 `설정에서 마이크 켜기` 로 바꾼다.
+  bool _micBlocked = false;
+
   /// 재시도를 이만큼 실패하면 직접 입력으로 넘어간다.
   static const _maxResends = 2;
 
@@ -136,6 +146,22 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   /// 읽고, 바뀔 때는 [didChangeMetrics] 로 다시 그린다.
   bool get _keyboardOpen => View.of(context).viewInsets.bottom > 0;
 
+  /// 설정에서 마이크를 켜고 돌아오면 `다시 녹음하기` 를 되살린다.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _micDenied) {
+      unawaited(_recheckMicBlocked());
+    }
+  }
+
+  Future<void> _recheckMicBlocked() async {
+    final blocked = await ref
+        .read(micSettingsPlatformProvider)
+        .isMicPermanentlyDenied();
+    if (!mounted || !_micDenied || blocked == _micBlocked) return;
+    setState(() => _micBlocked = blocked);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -172,11 +198,25 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
         attempt: _attempt + 1,
       );
     } on SpeechStartFailure catch (failure) {
+      // 권한 창이 떠 있는 동안 화면을 벗어났을 수 있다. 벗어난 뒤에 `ref` 를
+      // 쓰면 던진다.
       if (!mounted) return;
-      _toManual(switch (failure.problem) {
-        SpeechStartProblem.micDenied => _micDeniedNotice,
-        SpeechStartProblem.unavailable => _unavailableNotice,
-      }, voiceUnavailable: failure.problem == SpeechStartProblem.unavailable);
+      final micDenied = failure.problem == SpeechStartProblem.micDenied;
+      // 안드로이드가 권한 창을 더 띄우지 않는지 넘어가기 전에 알아 둔다. 넘어간
+      // 뒤에 알면 `다시 녹음하기` 가 잠깐 보였다가 바뀐다.
+      final micBlocked =
+          micDenied &&
+          await ref.read(micSettingsPlatformProvider).isMicPermanentlyDenied();
+      if (!mounted) return;
+      _toManual(
+        switch (failure.problem) {
+          SpeechStartProblem.micDenied => _micDeniedNotice,
+          SpeechStartProblem.unavailable => _unavailableNotice,
+        },
+        voiceUnavailable: failure.problem == SpeechStartProblem.unavailable,
+        micDenied: micDenied,
+        micBlocked: micBlocked,
+      );
       return;
     }
     if (!mounted) {
@@ -277,12 +317,19 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   }
 
   /// 실패해서 직접 입력으로 넘어간다. [notice] 로 이유를 알린다.
-  void _toManual(String notice, {bool voiceUnavailable = false}) {
+  void _toManual(
+    String notice, {
+    bool voiceUnavailable = false,
+    bool micDenied = false,
+    bool micBlocked = false,
+  }) {
     unawaited(_dropUnsent());
     setState(() {
       _phase = _Phase.manualInput;
       _manualNotice = notice;
       _voiceUnavailable = voiceUnavailable;
+      _micDenied = micDenied;
+      _micBlocked = micBlocked;
       _heardText = null;
       _manual.clear();
     });
@@ -313,6 +360,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
       _stoppedAtLimit = false;
       _manualNotice = null;
       _voiceUnavailable = false;
+      _micDenied = false;
+      _micBlocked = false;
       _manual.clear();
     });
     widget.onCleared();
@@ -332,17 +381,56 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
       _stoppedAtLimit = false;
       _manualNotice = null;
       _voiceUnavailable = false;
+      _micDenied = false;
+      _micBlocked = false;
       if (heard != null) _manual.text = heard;
     });
     if (heard == null) widget.onCleared();
   }
 
-  /// 원 아래 보조 내용(한 줄 글과 버튼)이 차지하는 가장 큰 높이.
+  /// 원 아래 보조 내용이 차지하는 가장 큰 높이.
+  ///
+  /// 상태마다 보조 내용이 다르므로 가장 긴 것을 미리 재어 잡는다. 예전에는
+  /// 글 한 줄과 48 높이 버튼으로 셈해, 글자를 키워 안내가 두 줄이 되고 버튼이
+  /// 높아지면 `재시도` 가 잡아 둔 높이 밖으로 밀려 아래 버튼에 가렸다.
   static double _extraHeight(BuildContext context) {
-    const style = AppTypography.body;
-    final line =
-        MediaQuery.textScalerOf(context).scale(style.fontSize!) * style.height!;
-    return AppSpacing.sm + line + AppSpacing.md + AppSizes.minTouch;
+    final scaler = MediaQuery.textScalerOf(context);
+    final base = DefaultTextStyle.of(context).style;
+    // 등록 화면은 좌우 여백 안에 이 단계를 놓는다. 실제 폭이 이보다 좁으면
+    // 아래에서 실제 내용 높이가 이 값을 넘겨 자리를 늘린다.
+    final width = MediaQuery.sizeOf(context).width - AppSpacing.screen * 2;
+
+    double textHeight(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: base.merge(style)),
+        textAlign: TextAlign.center,
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+      )..layout(maxWidth: width);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    // 공통 보조 버튼은 높이 56 이상이고 글자를 키우면 위아래 여백 12씩과
+    // 글자 높이만큼 높아진다(`app_buttons.dart`).
+    const label = AppTypography.button;
+    final button = [
+      AppSizes.control,
+      scaler.scale(label.fontSize!) * label.height! + AppSpacing.md * 2,
+    ].reduce((a, b) => a > b ? a : b);
+
+    final heights = [
+      // 듣는 중: 다 말했어요.
+      button,
+      // 보내지 못함: 안내 한 줄과 재시도.
+      textHeight(_MicArea.sendFailedDetail, AppTypography.body) +
+          AppSpacing.md +
+          button,
+      // 못 알아들음: 다시 말해 달라는 안내.
+      textHeight(_MicArea.retryHint, AppTypography.sub),
+    ];
+    return AppSpacing.sm + heights.reduce((a, b) => a > b ? a : b);
   }
 
   _MicArea _micArea(_MicPart part) => _MicArea(
@@ -435,22 +523,23 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
 
         // 마이크 화면에서는 원 아래 빈 공간의 맨 위에 보조 내용(다 말했어요,
         // 둘째 줄 안내)을 둔다. 원과 첫 줄 안내는 위아래 같은 빈 공간 사이
-        // 한가운데에 오고, 보조 내용은 높이 계산에 들지 않아 상태가 바뀌어도 원이
-        // 오르내리지 않는다.
+        // 한가운데에 온다. 보조 영역은 상태마다 다른 보조 내용 가운데 가장 긴
+        // 것의 높이를 미리 잡아 두므로 상태가 바뀌어도 원이 오르내리지 않는다.
         if (!choosing && _phase != _Phase.manualInput && _phase != _Phase.heard)
           Expanded(
             flex: 3,
             child: Stack(
-              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
               children: [
                 // 보조 내용이 들어갈 높이를 알린다. 등록 화면은 내용 높이를
                 // 미리 재어 모자라면 스크롤하므로, 좁거나 글자가 커도 이 영역이
                 // 이만큼은 남아 버튼이 늘 눌린다.
                 SizedBox(width: double.infinity, height: _extraHeight(context)),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
+                // 실제 내용도 높이 계산에 넣는다. 미리 잰 값이 모자라도(예를
+                // 들어 실제 폭이 더 좁을 때) 내용이 영역 밖으로 나가 가려지지
+                // 않는다.
+                SizedBox(
+                  width: double.infinity,
                   child: _micArea(_MicPart.extra),
                 ),
               ],
@@ -463,6 +552,36 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
         // 바로 밑에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지 않는다.
         if (typing || (_phase == _Phase.manualInput && _voiceUnavailable))
           const SizedBox.shrink()
+        else if (_phase == _Phase.manualInput && _micDenied)
+          // 마이크 권한이 없으면 휴대전화 설정의 새록 화면을 여는 길을 같은
+          // 알약으로 둔다. 안드로이드가 권한 창을 더 띄우지 않으면 `다시
+          // 녹음하기` 는 누르자마자 같은 안내로 돌아와 고장 난 버튼처럼 보이므로
+          // `설정에서 마이크 켜기` 하나로 바꾼다.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              if (_micBlocked)
+                _SwitchMethodButton(
+                  icon: Icons.settings_outlined,
+                  label: '설정에서 마이크 켜기',
+                  onTap: () => openMicSettings(context, ref),
+                )
+              else ...[
+                _SwitchMethodButton(
+                  icon: Icons.record_voice_over_outlined,
+                  label: '다시 녹음하기',
+                  onTap: _startVoice,
+                ),
+                _SwitchMethodButton(
+                  icon: Icons.settings_outlined,
+                  label: '설정 열기',
+                  onTap: () => openMicSettings(context, ref),
+                ),
+              ],
+            ],
+          )
         else if (_phase == _Phase.manualInput)
           Center(
             child: _SwitchMethodButton(
@@ -520,25 +639,29 @@ class _InputMethodChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _MethodButton(
-            // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
-            icon: Icons.record_voice_over_outlined,
-            label: '말로 답하기',
-            onTap: onVoice,
+    // 글자를 키워 한쪽 이름이 두 줄이 되어도 두 버튼 높이를 맞춘다.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _MethodButton(
+              // 고른 뒤 나오는 녹음 화면에 마이크 버튼이 따로 있어 겹치지 않게 둔다.
+              icon: Icons.record_voice_over_outlined,
+              label: '말로 답하기',
+              onTap: onVoice,
+            ),
           ),
-        ),
-        const SizedBox(width: AppSpacing.item),
-        Expanded(
-          child: _MethodButton(
-            icon: Icons.chat_bubble_outline,
-            label: '글로 답하기',
-            onTap: onText,
+          const SizedBox(width: AppSpacing.item),
+          Expanded(
+            child: _MethodButton(
+              icon: Icons.chat_bubble_outline,
+              label: '글로 답하기',
+              onTap: onText,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -627,15 +750,20 @@ class _MethodButtonState extends State<_MethodButton>
             ),
           );
         },
-        child: SizedBox(
-          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다.
-          height: 96,
+        child: ConstrainedBox(
+          // 주 사용자가 50~60대다. 고르는 자리를 넉넉하게 잡는다. 글자를 키워
+          // 이름이 두 줄이 되면 잘리지 않게 그만큼 높아진다.
+          constraints: const BoxConstraints(minHeight: 96),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(widget.icon, size: 44, color: HomeColors.accent),
               const SizedBox(height: AppSpacing.lg),
-              Text(widget.label, style: AppTypography.bodyStrong),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyStrong,
+              ),
             ],
           ),
         ),
@@ -644,7 +772,8 @@ class _MethodButtonState extends State<_MethodButton>
   }
 }
 
-/// 답하는 방법을 바꾸는 버튼이다.
+/// 답하는 방법을 바꾸는 버튼이다. 마이크 권한이 없을 때 설정을 여는 버튼도
+/// 같은 모양으로 둔다.
 ///
 /// 안내 문구 바로 아래에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지
 /// 않는다. 면과 테두리를 준 알약 모양으로 감싸고 화면 아래로 내린다.
@@ -680,11 +809,19 @@ class _SwitchMethodButton extends StatelessWidget {
             children: [
               Icon(icon, size: 20, color: HomeColors.accent),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                label,
-                style: AppTypography.sub.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w600,
+              // 긴 이름(`설정에서 마이크 켜기`)은 좁은 화면에서 글자를 키우면
+              // 한 줄에 들어가지 않는다. 높이가 정해져 있어 줄을 바꾸지 않고
+              // 줄인다. 아이콘이 있는 보조 버튼과 같다.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: AppTypography.sub.copyWith(
+                      color: AppColors.ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -731,6 +868,10 @@ class _MicArea extends StatelessWidget {
     final heard = phase == _Phase.heard;
     final listening = phase == _Phase.listening;
     final transcribing = phase == _Phase.transcribing;
+
+    // 녹음이 실제로 시작된 뒤다. 마이크를 누른 직후 권한을 묻는 동안에는
+    // 아직 녹음하지 않으므로 녹음 중 표시를 하지 않는다.
+    final recording = listening && onFinish != null;
 
     // 듣는 중에는 마이크를 다시 눌러도 녹음을 끝낸다. 옮기는 중에는 누를 수 없다.
     // 보내지 못했을 때도 막는다. 할 일을 재시도 하나로 두기 위해서다. 다시
@@ -786,12 +927,14 @@ class _MicArea extends StatelessWidget {
       _ when sendFailed => (
         Text(
           '연결이 원활하지 않아',
+          textAlign: TextAlign.center,
           style: statusStyle.copyWith(color: AppColors.danger),
         ),
         Column(
           children: [
             Text(
-              '말씀을 글로 옮기지 못했어요.',
+              sendFailedDetail,
+              textAlign: TextAlign.center,
               style: statusStyle.copyWith(color: AppColors.danger),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -810,9 +953,14 @@ class _MicArea extends StatelessWidget {
       _ when failed => (
         Text(
           '목소리를 잘 듣지 못했어요.',
+          textAlign: TextAlign.center,
           style: statusStyle.copyWith(color: AppColors.danger),
         ),
-        const Text('마이크를 눌러 다시 말씀해주세요.', style: AppTypography.sub),
+        const Text(
+          retryHint,
+          textAlign: TextAlign.center,
+          style: AppTypography.sub,
+        ),
       ),
       _ => (const Text('마이크를 누르고 말씀해주세요', style: statusStyle), null),
     };
@@ -827,46 +975,56 @@ class _MicArea extends StatelessWidget {
 
     return Column(
       children: [
-        SizedBox(
-          width: _micSize,
-          height: _micSize,
-          // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
-          // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
-          // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
-          child: ExcludeSemantics(
-            excluding: onTap == null,
-            child: Semantics(
-              button: true,
-              label: listening ? '음성 입력 종료' : '음성 입력 시작',
-              child: InkWell(
-                onTap: onTap,
-                customBorder: const CircleBorder(),
-                // 대기, 듣는 중, 옮기는 중 모두 같은 크기와 두께의 원이다.
-                // 색만 바뀐다.
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: failed
-                          ? AppColors.danger
-                          : listening
-                          ? HomeColors.accent
-                          : HomeColors.outline,
-                      width: 2,
+        // 녹음하는 동안 원 둘레로 물결이 퍼진다. 원 밖에 그려 자리를 차지하지
+        // 않으므로 원과 글자가 오르내리지 않는다.
+        RecordingPulse(
+          active: recording,
+          child: SizedBox(
+            width: _micSize,
+            height: _micSize,
+            // 아이콘만 있는 버튼이라 지금 누르면 하는 일을 이름으로 붙인다
+            // (접근성 보고서 7쪽). 옮기는 중과 보내지 못했을 때는 누를 수
+            // 없으므로 버튼으로 읽지 않고 아래 상태 문구에 맡긴다.
+            child: ExcludeSemantics(
+              excluding: onTap == null,
+              child: Semantics(
+                button: true,
+                label: listening ? '음성 입력 종료' : '음성 입력 시작',
+                child: InkWell(
+                  onTap: onTap,
+                  customBorder: const CircleBorder(),
+                  // 대기, 듣는 중, 옮기는 중 모두 같은 크기와 두께의 원이다.
+                  // 색만 바뀐다. 녹음하는 동안에는 E-2 녹음 화면처럼 초록 면에
+                  // 흰 아이콘으로 채워, 움직임 줄이기가 켜져 있어도 대기와
+                  // 구분된다.
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: recording ? HomeColors.accent : null,
+                      border: Border.all(
+                        color: failed
+                            ? AppColors.danger
+                            : listening
+                            ? HomeColors.accent
+                            : HomeColors.outline,
+                        width: 2,
+                      ),
                     ),
-                  ),
-                  child: Center(
-                    child: SizedBox.square(
-                      dimension: _iconSize,
-                      child: transcribing
-                          ? const CircularProgressIndicator(strokeWidth: 3)
-                          : Icon(
-                              Icons.mic,
-                              size: _iconSize,
-                              color: failed
-                                  ? AppColors.danger
-                                  : HomeColors.accent,
-                            ),
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: _iconSize,
+                        child: transcribing
+                            ? const CircularProgressIndicator(strokeWidth: 3)
+                            : Icon(
+                                Icons.mic,
+                                size: _iconSize,
+                                color: failed
+                                    ? AppColors.danger
+                                    : recording
+                                    ? AppColors.background
+                                    : HomeColors.accent,
+                              ),
+                      ),
                     ),
                   ),
                 ),
@@ -879,6 +1037,12 @@ class _MicArea extends StatelessWidget {
       ],
     );
   }
+
+  /// 보내지 못했을 때 원 아래 둘째 줄. 보조 자리 높이를 잴 때도 쓴다.
+  static const sendFailedDetail = '말씀을 글로 옮기지 못했어요.';
+
+  /// 못 알아들었을 때 원 아래 둘째 줄. 보조 자리 높이를 잴 때도 쓴다.
+  static const retryHint = '마이크를 눌러 다시 말씀해주세요.';
 
   /// 마이크 원의 지름과 그 안의 아이콘(또는 도는 표시) 크기. 모든 상태가 같다.
   static const _micSize = 120.0;

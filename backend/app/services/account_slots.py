@@ -10,6 +10,10 @@
 잠금 키는 `작업 이름:계정 ID:칸 번호`의 64비트 해시다. 삭제 실행기의 advisory lock 은
 32비트 키 두 개 형식이라 키 공간이 겹치지 않는다. 계정 ID 는 키를 만들 때만 쓰고 로그에
 남기지 않는다.
+
+`server_slot` 은 같은 방식으로 계정과 관계없이 서버 전체에서 동시에 도는 수를 센다. 키는
+`작업 이름:all:칸 번호`이며 계정 ID 는 UUID 라 `all` 과 겹치지 않는다. 같은 DB 를 쓰는 api
+프로세스가 여럿이어도 함께 센다.
 """
 
 from collections.abc import AsyncIterator
@@ -29,9 +33,29 @@ async def account_slot(
 
     `False` 일 때는 아무것도 잡지 않았으므로 부르는 쪽이 거절만 하면 된다.
     """
+    async with _slot(connection, prefix=f"{scope}:{account_id}", limit=limit) as acquired:
+        yield acquired
+
+
+@asynccontextmanager
+async def server_slot(
+    connection: DbConnection, *, scope: str, limit: int | None
+) -> AsyncIterator[bool]:
+    """서버 전체 한도. `limit` 이 `None` 이면 세지 않고 늘 `True` 를 넘긴다."""
+    if limit is None:
+        yield True
+        return
+    async with _slot(connection, prefix=f"{scope}:all", limit=limit) as acquired:
+        yield acquired
+
+
+@asynccontextmanager
+async def _slot(
+    connection: DbConnection, *, prefix: str, limit: int
+) -> AsyncIterator[bool]:
     held = None
     for slot in range(limit):
-        name = f"{scope}:{account_id}:{slot}"
+        name = f"{prefix}:{slot}"
         row = await (await connection.execute(
             "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS acquired", (name,),
         )).fetchone()

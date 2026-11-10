@@ -169,6 +169,34 @@ void main() {
       );
     });
 
+    test('꼬리 질문을 앞으로 되돌리고, 첫 질문의 앞은 마지막 질문이다', () async {
+      final container = await withSelection(2);
+      final state = await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      final questions = state.currentCard!.followUpQuestions;
+      String? shown() =>
+          container.read(visitControllerProvider).value!.currentFollowUp;
+
+      controller.nextFollowUp();
+      controller.previousFollowUp();
+      expect(shown(), questions[0]);
+
+      controller.previousFollowUp();
+      expect(shown(), questions[2], reason: '처음의 앞은 마지막이다');
+      controller.previousFollowUp();
+      expect(shown(), questions[1]);
+
+      // 되돌린 뒤에 넘겨도 차례대로 돈다.
+      controller.nextFollowUp();
+      controller.nextFollowUp();
+      expect(shown(), questions[0]);
+
+      // 되돌린 채로 카드를 넘겨도 꼬리 질문은 처음부터다.
+      controller.previousFollowUp();
+      controller.nextCard();
+      expect(container.read(visitControllerProvider).value!.followUpIndex, 0);
+    });
+
     test('카드를 넘기면 꼬리 질문도 처음부터 시작한다', () async {
       final container = await withSelection(2);
       await container.read(visitControllerProvider.future);

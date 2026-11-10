@@ -6,6 +6,7 @@
 /// 주입 방식과 같다).
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -39,8 +40,29 @@ class VisitRecording {
   static const fileExtension = 'wav';
 }
 
+/// 녹음 장치가 알려 주는 지금 상태다([VisitRecorder.stateChanges]).
+enum VisitRecorderState {
+  /// 마이크 소리를 파일에 쓰고 있다.
+  recording,
+
+  /// 파일은 열려 있고 쓰기만 멈췄다. 이어서 쓸 수 있다.
+  paused,
+
+  /// 파일을 닫았거나 장치가 멈췄다. 같은 파일에 이어 쓸 수 없다.
+  stopped,
+}
+
 /// 녹음 장치를 다루는 최소한의 약속이다.
 abstract interface class VisitRecorder {
+  /// 장치의 상태가 바뀔 때마다 알린다. 앱이 부른 [pause], [resume], [stop] 도
+  /// 함께 온다.
+  ///
+  /// 앱이 부르지 않았는데 멈추는 경우를 알아채려고 듣는다. `record` 는 다른 앱이
+  /// 소리를 내거나 전화가 와 오디오 포커스를 잃으면 스스로 [VisitRecorderState.paused]
+  /// 로 멈추고 저절로 잇지 않는다(`audioInterruption: pause`). 장치가 오류로
+  /// 멈추면 오류 대신 [VisitRecorderState.stopped] 를 보낸다. 여럿이 들을 수 있다.
+  Stream<VisitRecorderState> get stateChanges;
+
   /// 마이크를 쓸 수 있는지 확인한다. 아직 묻지 않았으면 사용자에게 묻는다.
   Future<bool> hasPermission();
 
@@ -69,6 +91,22 @@ class DeviceVisitRecorder implements VisitRecorder {
 
   @override
   Future<bool> hasPermission() => _recorder.hasPermission();
+
+  @override
+  Stream<VisitRecorderState> get stateChanges =>
+      _recorder.onStateChanged().transform(
+        StreamTransformer<RecordState, VisitRecorderState>.fromHandlers(
+          handleData: (state, sink) => sink.add(switch (state) {
+            RecordState.record => VisitRecorderState.recording,
+            RecordState.pause => VisitRecorderState.paused,
+            RecordState.stop => VisitRecorderState.stopped,
+          }),
+          // `record_android` 는 녹음 중 장치가 실패하면 세션을 버리고 이 흐름에
+          // 오류를 보낸다. 녹음은 이미 끝났으므로 멈춤으로 알린다.
+          handleError: (error, stackTrace, sink) =>
+              sink.add(VisitRecorderState.stopped),
+        ),
+      );
 
   @override
   Future<VisitRecording> start() async {
@@ -123,10 +161,30 @@ class DeviceVisitRecorder implements VisitRecorder {
     );
     await directory.create(recursive: true);
 
-    final stamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[:.]'), '-');
+    final stamp = DateTime.now().toIso8601String().replaceAll(
+      RegExp(r'[:.]'),
+      '-',
+    );
     return '${directory.path}/visit-$stamp.${VisitRecording.fileExtension}';
+  }
+}
+
+/// 이미 머리글까지 쓰고 닫힌 녹음 파일인지 본다.
+///
+/// 장치가 녹음 중에 스스로 멈추면(`record_android` 의 장치 실패) 플러그인이 파일을
+/// 닫아 머리글을 쓰고 세션을 버린다. 그 뒤 [VisitRecorder.stop] 은 닫을 것이 없어
+/// `null` 을 돌려주지만 파일은 열 수 있다. 그 파일을 저장 실패로 버리지 않으려고
+/// 쓴다. WAV 녹음이 아니면 알 수 없어 `false` 다.
+bool isFinishedRecording(String path) {
+  if (visitRecordConfig.encoder != AudioEncoder.wav) return false;
+  final file = File(path);
+  if (!file.existsSync()) return false;
+  if (file.lengthSync() <= DeviceVisitRecorder._wavHeaderSize) return false;
+  final raf = file.openSync();
+  try {
+    return String.fromCharCodes(raf.readSync(4)) == 'RIFF';
+  } finally {
+    raf.closeSync();
   }
 }
 
