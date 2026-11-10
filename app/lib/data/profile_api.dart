@@ -258,11 +258,23 @@ String profileFailureMessage(ApiFailure failure) => switch (failure) {
   // 2-9). 다 만들면 다시 고칠 수 있다.
   ApiServerFailure(errorCode: 'CARD_GENERATION_IN_PROGRESS') =>
     '대화 카드를 만드는 중이라 지금은 바꿀 수 없어요. 카드가 준비된 뒤 다시 시도해주세요.',
-  ApiServerFailure(statusCode: 401) || ApiSignedOutFailure() =>
-    '로그인이 풀렸어요. 다시 로그인해주세요.',
+  ApiServerFailure(statusCode: 401) ||
+  ApiSignedOutFailure() => '로그인이 풀렸어요. 다시 로그인해주세요.',
   ApiNetworkFailure() => '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.',
   ApiUnexpectedResponseFailure() => '서버 응답을 읽지 못했어요. 잠시 뒤 다시 시도해주세요.',
   ApiServerFailure() => '처리하지 못했어요. 잠시 뒤 다시 시도해주세요.',
+};
+
+/// 기본 정보 저장(2-2, 2-4) 실패를 보호자에게 보여줄 문구로 옮긴다.
+///
+/// 이름 길이와 성별은 앱이 먼저 막으므로, 기본 정보의 `422 INVALID_REQUEST` 는
+/// 대개 서버가 생년월일을 받지 않은 것이다(만 10세가 안 되거나 미래인 날, API
+/// 2-2, 2-4). 다시 눌러도 같으므로 잠시 뒤 다시 하라고 하지 않고 생년월일을
+/// 확인하게 한다. 나머지는 [profileFailureMessage] 와 같다.
+String basicInfoFailureMessage(ApiFailure failure) => switch (failure) {
+  ApiServerFailure(statusCode: 422, errorCode: 'INVALID_REQUEST') =>
+    '생년월일을 다시 확인해주세요. 만 10세 이상이고 오늘 이전 날짜여야 해요.',
+  _ => profileFailureMessage(failure),
 };
 
 final profileApiProvider = Provider<ProfileApi>(

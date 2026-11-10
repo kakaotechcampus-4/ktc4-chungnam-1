@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 
 import '../../data/api_client.dart';
+import '../../data/birth_date.dart';
 import '../../data/card_api.dart';
 import '../../data/models.dart';
 import '../../data/profile_api.dart';
@@ -26,6 +27,9 @@ class SetupDraft {
     this.birthYear,
     this.birthMonth,
     this.birthDay,
+    this.birthByAge = false,
+    this.age,
+    this.ageBirthDate,
     this.stage,
     this.facts = const {},
     this.photos = const [],
@@ -40,6 +44,19 @@ class SetupDraft {
   final int? birthYear;
   final int? birthMonth;
   final int? birthDay;
+
+  /// 생년월일 대신 나이로 입력하는지. 나이로 입력하면 [birthYear], [birthMonth],
+  /// [birthDay] 는 쓰지 않고 [age] 로 생년월일을 만든다(`birth_date.dart`).
+  /// 두 방식의 값은 따로 두어 오가도 지워지지 않는다.
+  final bool birthByAge;
+
+  /// 나이로 입력한 나이. 비었거나 숫자가 아니면 `null` 이다.
+  final int? age;
+
+  /// 나이로 입력해 저장한 분을 고칠 때, 저장된 생년월일(`YYYY-MM-DD`). 나이를
+  /// 바꾸지 않으면 이 날을 그대로 보낸다. 오늘 날짜로 다시 만들면 고치지 않아도
+  /// 바뀐 것이 된다.
+  final String? ageBirthDate;
   final ConditionStage? stage;
 
   /// `LifeFact.category` 별로 모은 문장. 건너뛴 항목은 담기지 않는다.
@@ -77,42 +94,133 @@ class SetupDraft {
   bool get relationshipTooLong =>
       relationship.trim().length > maxRelationshipLength;
 
+  /// 나이를 적었는데 받는 범위([minAgeInput] ~ [maxAgeInput]) 밖이다.
+  bool get ageOutOfRange =>
+      age != null && (age! < minAgeInput || age! > maxAgeInput);
+
+  /// 고른 년, 월, 일이 달력에 있고 서버가 받는 날(만 10세 이상, 미래가 아님)인지.
+  /// 하나라도 비었으면 `false` 다.
+  bool birthDateValid(DateTime now) {
+    final (y, m, d) = (birthYear, birthMonth, birthDay);
+    if (y == null || m == null || d == null) return false;
+    if (!isRealDate(y, m, d)) return false;
+    return !DateTime(y, m, d).isAfter(latestBirthDate(now));
+  }
+
   bool get basicInfoFilled =>
       name.trim().isNotEmpty &&
       !nameTooLong &&
       gender != null &&
       !relationshipTooLong &&
-      birthYear != null &&
-      birthMonth != null &&
-      birthDay != null &&
+      (birthByAge
+          ? age != null && !ageOutOfRange
+          : birthDateValid(DateTime.now())) &&
       stage != null;
 
   /// 등록을 마친 분의 기본 정보로 채운다. 프로필 설정에서 고칠 때 쓴다.
-  factory SetupDraft.fromBasicInfo(EnteredBasicInfo info) {
+  ///
+  /// 나이로 입력한 분은 지어낸 날짜를 년, 월, 일 칸에 채우지 않고 오늘의 나이를
+  /// 채운다. 날짜로 바꾸면 빈 칸에서 고른다.
+  factory SetupDraft.fromBasicInfo(EnteredBasicInfo info, {DateTime? today}) {
     final birth = DateTime.parse(info.birthDate);
+    final byAge = info.birthByAge;
     return SetupDraft(
       name: info.name,
       gender: info.gender,
       relationship: info.relationship ?? '',
-      birthYear: birth.year,
-      birthMonth: birth.month,
-      birthDay: birth.day,
+      birthYear: byAge ? null : birth.year,
+      birthMonth: byAge ? null : birth.month,
+      birthDay: byAge ? null : birth.day,
+      birthByAge: byAge,
+      age: byAge ? ageOn(birth, today ?? DateTime.now()) : null,
+      ageBirthDate: byAge ? info.birthDate : null,
       stage: info.stage,
     );
   }
 
   /// 기본 정보를 저장할 모양으로 바꾼다. 다 채우지 않았으면 `null` 이다.
-  EnteredBasicInfo? toBasicInfo() {
+  ///
+  /// 나이로 입력했으면 [today] 에서 그 나이만큼 뺀 날을 보낸다. 고치는 중에
+  /// 나이를 바꾸지 않았으면 저장된 날([ageBirthDate])을 그대로 보낸다.
+  EnteredBasicInfo? toBasicInfo({DateTime? today}) {
     if (!basicInfoFilled) return null;
-    String two(int value) => value.toString().padLeft(2, '0');
+    final String birthDate;
+    if (birthByAge) {
+      final now = today ?? DateTime.now();
+      final saved = ageBirthDate == null
+          ? null
+          : DateTime.tryParse(ageBirthDate!);
+      birthDate = saved != null && ageOn(saved, now) == age
+          ? ageBirthDate!
+          : isoDate(birthDateForAge(age!, now));
+    } else {
+      birthDate = isoDate(DateTime(birthYear!, birthMonth!, birthDay!));
+    }
     return EnteredBasicInfo(
       name: name.trim(),
       gender: gender!,
       relationship: relationship.trim().isEmpty ? null : relationship.trim(),
-      birthDate: '$birthYear-${two(birthMonth!)}-${two(birthDay!)}',
+      birthDate: birthDate,
+      birthByAge: birthByAge,
       stage: stage!,
     );
   }
+
+  /// 년, 월, 일 중 하나를 고른다. 그 바람에 앞서 고른 값이 없는 날이 되면
+  /// (2월 29일에서 평년으로, 31일에서 4월로) 그 값을 비워 다시 고르게 한다.
+  /// 몰래 다른 날로 바꾸지 않는다.
+  SetupDraft withBirthPart({int? year, int? month, int? day, DateTime? now}) {
+    final today = now ?? DateTime.now();
+    final latest = latestBirthDate(today);
+    var y = year ?? birthYear;
+    var m = month ?? birthMonth;
+    var d = day ?? birthDay;
+    if (y != null &&
+        m != null &&
+        (y > latest.year || (y == latest.year && m > latest.month))) {
+      m = null;
+    }
+    if (y != null && m != null && d != null) {
+      final lastDay = y == latest.year && m == latest.month
+          ? latest.day
+          : daysInMonth(y, m);
+      if (d > lastDay) d = null;
+    } else if (y == null && m != null && d != null) {
+      // 해를 고르기 전이면 그달에 있을 수 있는 날(2월은 29일)까지 둔다.
+      if (d > daysInMonth(2000, m)) d = null;
+    }
+    if (y != null && y > latest.year) y = null;
+    return SetupDraft(
+      name: name,
+      gender: gender,
+      relationship: relationship,
+      birthYear: y,
+      birthMonth: m,
+      birthDay: d,
+      birthByAge: birthByAge,
+      age: age,
+      ageBirthDate: ageBirthDate,
+      stage: stage,
+      facts: facts,
+      photos: photos,
+    );
+  }
+
+  /// 나이 칸에 적은 글자. 비었거나 숫자가 아니면 나이를 비운다.
+  SetupDraft withAgeText(String text) => SetupDraft(
+    name: name,
+    gender: gender,
+    relationship: relationship,
+    birthYear: birthYear,
+    birthMonth: birthMonth,
+    birthDay: birthDay,
+    birthByAge: birthByAge,
+    age: int.tryParse(text.trim()),
+    ageBirthDate: ageBirthDate,
+    stage: stage,
+    facts: facts,
+    photos: photos,
+  );
 
   SetupDraft copyWith({
     String? name,
@@ -121,6 +229,7 @@ class SetupDraft {
     int? birthYear,
     int? birthMonth,
     int? birthDay,
+    bool? birthByAge,
     ConditionStage? stage,
     Map<String, String>? facts,
     List<SetupPhoto>? photos,
@@ -131,6 +240,9 @@ class SetupDraft {
     birthYear: birthYear ?? this.birthYear,
     birthMonth: birthMonth ?? this.birthMonth,
     birthDay: birthDay ?? this.birthDay,
+    birthByAge: birthByAge ?? this.birthByAge,
+    age: age,
+    ageBirthDate: ageBirthDate,
     stage: stage ?? this.stage,
     facts: facts ?? this.facts,
     photos: photos ?? this.photos,
@@ -238,9 +350,9 @@ class SetupController extends Notifier<SetupState> {
       if (!ref.mounted) return;
       state = state.copyWith(remoteId: saved.profileId);
       // 관계는 서버에 보내지 않으므로 서버 ID 가 생긴 지금 단말에 기억한다.
-      ref
-          .read(careProfilesProvider.notifier)
-          .rememberRelationship(saved.profileId, info.relationship);
+      ref.read(careProfilesProvider.notifier)
+        ..rememberRelationship(saved.profileId, info.relationship)
+        ..rememberBirthByAge(saved.profileId, byAge: info.birthByAge);
       if (addingId != null) {
         ref
             .read(careProfilesProvider.notifier)

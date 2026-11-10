@@ -120,7 +120,7 @@ class _ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          birthDateLabel(profile.birthDate),
+          birthDateLabel(profile.birthDate, byAge: profile.birthByAge),
           style: AppTypography.sub,
           textAlign: TextAlign.center,
         ),

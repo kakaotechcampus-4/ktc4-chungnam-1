@@ -16,6 +16,7 @@ import 'card_api.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
+import 'profile_birth_input_store.dart';
 import 'profile_relationship_store.dart';
 import 'report_api.dart';
 import 'selected_profile_store.dart';
@@ -45,6 +46,7 @@ class EnteredBasicInfo {
     required this.birthDate,
     required this.stage,
     this.relationship,
+    this.birthByAge = false,
   });
 
   final String name;
@@ -64,10 +66,28 @@ class EnteredBasicInfo {
     birthDate: birthDate,
     stage: stage,
     relationship: relationship,
+    birthByAge: birthByAge,
   );
 
-  /// `YYYY-MM-DD`.
+  /// 나이로 입력했는지만 바꾼 값이다. 서버 응답에는 이 표시가 없어 단말의 값을
+  /// 붙일 때 쓴다.
+  EnteredBasicInfo withBirthByAge(bool birthByAge) => EnteredBasicInfo(
+    name: name,
+    gender: gender,
+    birthDate: birthDate,
+    stage: stage,
+    relationship: relationship,
+    birthByAge: birthByAge,
+  );
+
+  /// `YYYY-MM-DD`. 나이로 입력했으면 오늘에서 그 나이만큼 뺀 날이다
+  /// (`birth_date.dart`).
   final String birthDate;
+
+  /// 생년월일 대신 나이로 입력했는지. 서버에 보내지 않고 단말에만 둔다
+  /// ([ProfileBirthInputStore]). 화면은 날짜 대신 `82세(나이로 입력)` 로
+  /// 보여준다.
+  final bool birthByAge;
   final ConditionStage stage;
 }
 
@@ -290,6 +310,14 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
               for (final profile in profiles)
                 relationshipStore.read(accountId, profile.profileId),
             ]);
+      // 나이로 입력했다는 표시도 단말에만 있다. 실패하면 `false` 다.
+      final birthInputStore = ref.read(profileBirthInputStoreProvider);
+      final byAge = accountId == null
+          ? <bool>[for (final _ in profiles) false]
+          : await Future.wait([
+              for (final profile in profiles)
+                birthInputStore.readByAge(accountId, profile.profileId),
+            ]);
       final rememberedId = await remembered;
       if (!ref.mounted || round != _loadRound) return;
       final entries = [
@@ -297,7 +325,9 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
           CareProfileEntry(
             id: profile.profileId,
             remoteId: profile.profileId,
-            basicInfo: profile.basicInfo.withRelationship(relationships[i]),
+            basicInfo: profile.basicInfo
+                .withRelationship(relationships[i])
+                .withBirthByAge(byAge[i]),
             details: profile.details,
             pending: profile.setupStatus != SetupStatus.completed,
           ),
@@ -329,7 +359,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     EnteredDetails details = const EnteredDetails(),
     String? remoteId,
   }) {
-    if (remoteId != null) rememberRelationship(remoteId, info.relationship);
+    if (remoteId != null) _rememberLocalInfo(remoteId, info);
     final existing = remoteId == null ? null : state.byId(remoteId);
     if (existing != null) {
       _replace(
@@ -374,7 +404,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final entry = state.byId(id);
     if (entry == null) return;
     final savedId = remoteId ?? entry.remoteId;
-    if (savedId != null) rememberRelationship(savedId, info.relationship);
+    if (savedId != null) _rememberLocalInfo(savedId, info);
     _replace(
       entry.copyWith(
         basicInfo: info,
@@ -391,9 +421,25 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     final entry = state.byId(id);
     if (entry == null || entry.pending) return;
     if (entry.remoteId case final remoteId?) {
-      rememberRelationship(remoteId, info.relationship);
+      _rememberLocalInfo(remoteId, info);
     }
     _replace(entry.copyWith(basicInfo: info));
+  }
+
+  /// 서버에 보내지 않는 기본 정보(관계, 나이로 입력했는지)를 단말에 기억한다.
+  void _rememberLocalInfo(String remoteId, EnteredBasicInfo info) {
+    rememberRelationship(remoteId, info.relationship);
+    rememberBirthByAge(remoteId, byAge: info.birthByAge);
+  }
+
+  /// 서버에 저장한 분을 나이로 입력했는지 단말에 기억한다. `false` 면 지운다.
+  /// 로그인하지 않았으면 앱이 켜져 있는 동안만 쓴다.
+  void rememberBirthByAge(String remoteId, {required bool byAge}) {
+    final accountId = ref.read(sessionProvider)?.account.accountId;
+    if (accountId == null) return;
+    ref
+        .read(profileBirthInputStoreProvider)
+        .writeByAge(accountId, remoteId, byAge);
   }
 
   /// 서버에 저장한 분의 관계를 단말에 기억한다. 비었으면 지운다. 로그인하지
@@ -449,6 +495,7 @@ class CareProfilesNotifier extends Notifier<CareProfiles> {
     if (removed == null) return;
     if (removed.remoteId case final remoteId?) {
       rememberRelationship(remoteId, null);
+      rememberBirthByAge(remoteId, byAge: false);
     }
     final entries = state.entries.where((e) => e.id != id).toList();
     final selectedId = state.selectedId == id
@@ -580,6 +627,7 @@ final profileProvider = FutureProvider<ProfileBundle?>((ref) async {
       gender: entered.gender,
       relationship: entered.relationship,
       birthDate: entered.birthDate,
+      birthByAge: entered.birthByAge,
       ageRange: ageRangeOf(entered.birthDate, DateTime.now()),
       stage: entered.stage,
       lifeFactIds: mock.lifeFactIds,

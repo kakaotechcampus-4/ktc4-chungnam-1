@@ -179,9 +179,12 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     if (remoteId != null) {
       try {
         await ref.read(profileApiProvider).delete(remoteId);
-        // 단말에만 둔 관계도 함께 지운다. 입력 중이던 분은 목록에 서버 ID 가
+        // 단말에만 둔 관계와 나이로 입력했다는 표시도 함께 지운다. 입력 중이던
+        // 분은 목록에 서버 ID 가
         // 없을 수 있어 여기서 지운다.
-        profiles.rememberRelationship(remoteId, null);
+        profiles
+          ..rememberRelationship(remoteId, null)
+          ..rememberBirthByAge(remoteId, byAge: false);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         ScaffoldMessenger.of(context)

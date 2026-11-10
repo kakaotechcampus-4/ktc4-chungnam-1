@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../design/tokens.dart';
 
@@ -19,6 +20,7 @@ class AppTextField extends StatelessWidget {
     this.required = false,
     this.obscureText = false,
     this.keyboardType,
+    this.inputFormatters,
     this.errorText,
     this.onChanged,
     this.suffix,
@@ -41,6 +43,9 @@ class AppTextField extends StatelessWidget {
   final bool required;
   final bool obscureText;
   final TextInputType? keyboardType;
+
+  /// 받을 글자를 거른다. 숫자만 받는 칸에 쓴다.
+  final List<TextInputFormatter>? inputFormatters;
   final String? errorText;
   final ValueChanged<String>? onChanged;
   final Widget? suffix;
@@ -78,6 +83,7 @@ class AppTextField extends StatelessWidget {
             controller: controller,
             obscureText: obscureText,
             keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
             onChanged: onChanged,
             maxLength: maxLength,
             minLines: minLines,
@@ -90,6 +96,8 @@ class AppTextField extends StatelessWidget {
                 color: AppColors.textDisabled,
               ),
               errorText: errorText,
+              // 글자를 키워도 안내가 잘리지 않게 줄을 바꾼다.
+              errorMaxLines: 3,
               errorStyle: AppTypography.caption.copyWith(
                 color: AppColors.danger,
               ),

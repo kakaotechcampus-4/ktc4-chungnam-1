@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
+import '../../data/birth_date.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
@@ -168,7 +169,11 @@ class _Body extends StatelessWidget {
                           _InfoRow(label: '관계', value: relationship),
                         _InfoRow(
                           label: '생년월일',
-                          value: _dateLabel(profile.birthDate),
+                          // 나이로 입력한 분은 `82세(나이로 입력)` 다.
+                          value: birthDateText(
+                            profile.birthDate,
+                            byAge: profile.birthByAge,
+                          ),
                         ),
                         _InfoRow(
                           label: '연령대',
@@ -223,17 +228,6 @@ class _Body extends StatelessWidget {
     'female' => '여성',
     _ => raw,
   };
-
-  /// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다.
-  static String _dateLabel(String isoDate) {
-    final parts = isoDate.split('-');
-    if (parts.length != 3) return isoDate;
-    final year = int.tryParse(parts[0]);
-    final month = int.tryParse(parts[1]);
-    final day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) return isoDate;
-    return '$year년 $month월 $day일';
-  }
 
   /// `80s` 를 `80대` 로 바꾼다.
   static String _ageLabel(String raw) =>
