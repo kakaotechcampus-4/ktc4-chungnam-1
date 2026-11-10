@@ -82,6 +82,7 @@ class LifeStoryCoverScreen extends StatelessWidget {
                   final opening = _OpeningBook(
                     name: book.profile.name,
                     gender: book.profile.gender,
+                    profileId: book.profile.profileId,
                     width: roomy
                         ? null
                         : math.max(
@@ -167,10 +168,16 @@ class LifeStoryCoverScreen extends StatelessWidget {
 }
 
 class _OpeningBook extends StatefulWidget {
-  const _OpeningBook({required this.name, required this.gender, this.width});
+  const _OpeningBook({
+    required this.name,
+    required this.gender,
+    required this.profileId,
+    this.width,
+  });
 
   final String name;
   final String gender;
+  final String profileId;
 
   /// 책 폭을 정해 둔다. 화면이 스크롤될 때(가로 화면) 쓴다. `null` 이면 받은
   /// 자리에 맞춰 줄어든다.
@@ -316,6 +323,7 @@ class _OpeningBookState extends State<_OpeningBook>
                 child: _Cover(
                   name: widget.name,
                   gender: widget.gender,
+                  profileId: widget.profileId,
                   scale: width / 268,
                 ),
               ),
@@ -400,10 +408,16 @@ class _PageLinesPainter extends CustomPainter {
 /// 이름이 길어도 깨지지 않게 `○○○ 님의` 와 `앨범` 을 두 줄로 나누고, 이름
 /// 줄은 넘치면 글자를 줄인다.
 class _Cover extends StatelessWidget {
-  const _Cover({required this.name, required this.gender, required this.scale});
+  const _Cover({
+    required this.name,
+    required this.gender,
+    required this.profileId,
+    required this.scale,
+  });
 
   final String name;
   final String gender;
+  final String profileId;
 
   /// 기준 너비 268 대비 비율. 화면이 낮아 책이 줄면 안의 것도 함께 준다.
   final double scale;
@@ -534,7 +548,11 @@ class _Cover extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: ProfileAvatar(gender: gender, size: 92 * s),
+                      child: ProfileAvatar(
+                        gender: gender,
+                        size: 92 * s,
+                        profileId: profileId,
+                      ),
                     ),
                     SizedBox(height: 18 * s),
                     FittedBox(

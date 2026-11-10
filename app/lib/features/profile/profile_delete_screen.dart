@@ -14,6 +14,7 @@ import '../../widgets/app_surfaces.dart';
 import '../auth/auth_messages.dart';
 import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
+import '../local_photos/local_photos.dart';
 import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_draft_keeper.dart';
 import '../visit/pending_uploads.dart';
@@ -88,6 +89,7 @@ class _BodyState extends ConsumerState<_Body> {
     final accountId = ref.read(sessionProvider)?.account.accountId;
     final uploads = ref.read(pendingUploadsProvider);
     final photos = ref.read(visitPhotosProvider);
+    final localPhotos = ref.read(localPhotosProvider);
     final share = ref.read(recordingShareProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
     final relationships = ref.read(profileRelationshipStoreProvider);
@@ -120,6 +122,12 @@ class _BodyState extends ConsumerState<_Body> {
       }
       try {
         await photos.forgetAccount(accountId);
+      } on Exception {
+        // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
+      }
+      // 프로필 설정과 일대기에서 넣은, 이 기기에만 둔 사진도 지운다.
+      try {
+        await localPhotos.forgetAccount(accountId);
       } on Exception {
         // 탈퇴는 끝났다. 남은 사진은 다른 계정이 쓰지 못한다.
       }

@@ -110,7 +110,11 @@ class _ProfileHeader extends StatelessWidget {
             border: Border.all(color: HomeColors.bubbleLine),
             boxShadow: AppShadows.low,
           ),
-          child: ProfileAvatar(gender: profile.gender, size: 112),
+          child: ProfileAvatar(
+            gender: profile.gender,
+            size: 112,
+            profileId: profile.profileId,
+          ),
         ),
         const SizedBox(height: AppSpacing.lg),
         Text(

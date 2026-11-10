@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +13,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_surfaces.dart';
 import '../../widgets/profile_avatar.dart';
+import '../local_photos/local_photos.dart';
 import '../profile_setup/setup_controller.dart';
 import '../profile_setup/setup_entry.dart';
 import 'profile_dialogs.dart';
@@ -195,6 +198,11 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     }
 
     profiles.remove(profile.id);
+    // 이 기기에만 둔 그분의 사진(프로필 사진, 이야기 사진)도 지운다. 실패를
+    // 삼키므로 기다리지 않는다.
+    unawaited(
+      ref.read(localPhotoIndexProvider.notifier).forget(remoteId ?? profile.id),
+    );
     // 입력 중이던 분이면 단말에 남긴 세부 정보 초안도 함께 지운다.
     ref
         .read(pendingSetupsProvider.notifier)
@@ -302,7 +310,12 @@ class _ProfileSlot extends StatelessWidget {
       child: Row(
         children: [
           if (!removing) _DragHandle(index: index),
-          ProfileAvatar(gender: profile.gender, size: _photo),
+          ProfileAvatar(
+            gender: profile.gender,
+            size: _photo,
+            // 입력 중인 분은 사진을 고를 곳이 없다.
+            profileId: profile.pending ? null : profile.profileId,
+          ),
           const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Text(
