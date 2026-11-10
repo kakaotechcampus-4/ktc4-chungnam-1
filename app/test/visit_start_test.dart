@@ -358,6 +358,36 @@ void main() {
         reason: '만든 회차는 남겨 카드 화면과 홈이 평가 이어서 하기로 잇는다',
       );
     });
+
+    test('장치를 여는 사이 녹음 화면을 떠나면 열린 장치를 바로 닫는다', () async {
+      final f = _Fixture();
+      await f.select();
+      final gate = f.recorder.startGate = Completer<void>();
+
+      final start = f.controller.startRecording();
+      await pumpEventQueue();
+      expect(f.recorder.calls, contains('start'));
+      unawaited(f.controller.stopRecordingOnLeave());
+      await pumpEventQueue();
+      gate.complete();
+      await start;
+      await pumpEventQueue();
+
+      expect(
+        f.recorder.calls.last,
+        'stop',
+        reason: '화면이 없는 곳에서 마이크가 켜져 있으면 안 된다',
+      );
+      expect(f.state.recording, isFalse);
+      expect(f.state.started, isFalse);
+      expect(f.state.starting, isFalse);
+      expect(f.state.sessionId, FakeVisitApi.sessionId);
+
+      // 같은 회차로 다시 누르면 새 파일로 녹음한다.
+      await f.controller.startRecording();
+      expect(f.creates, 1);
+      expect(f.state.recording, isTrue);
+    });
   });
 
   group('녹음 전 안내 화면', () {
@@ -550,6 +580,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('이 카드로 시작한 면회가 있어요'), findsOneWidget);
+      // 다른 기기에서 시작했거나 녹음 전에 멈춘 회차는 이 휴대폰에 녹음이 없어
+      // 평가해도 리포트를 만들지 못한다. 리포트를 약속하지 않는다.
+      expect(find.textContaining('평가를 마치면 새 대화 카드를 받을 수 있어요'), findsOneWidget);
+      expect(find.textContaining('리포트를 만들어요'), findsNothing);
       expect(find.text('네, 좋아요'), findsNothing);
       expect(f.recorder.calls, isNot(contains('start')));
 

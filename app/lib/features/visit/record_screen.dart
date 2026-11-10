@@ -351,8 +351,11 @@ class _ProblemNotice extends StatelessWidget {
       '이 카드로는 면회를 시작할 수 없어요.\n홈에서 오늘의 대화카드 받기를 눌러주세요.',
     VisitRecordingProblem.cardsOutdated =>
       '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
+    // 리포트는 약속하지 않는다. 다른 기기에서 시작했거나 녹음 전에 멈춘 회차는
+    // 이 휴대폰에 녹음이 없어 평가해도 리포트를 만들지 못한다. 카드 화면의
+    // `평가 이어서 하기` 안내와 같은 말로 둔다.
     VisitRecordingProblem.visitAlreadyStarted =>
-      '이 카드로 시작한 면회가 있어요.\n평가를 이어서 하면 리포트를 만들어요.',
+      '이 카드로 시작한 면회가 있어요.\n평가를 마치면 새 대화 카드를 받을 수 있어요.',
   };
 
   @override

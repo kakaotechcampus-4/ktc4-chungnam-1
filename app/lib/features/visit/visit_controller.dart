@@ -222,7 +222,8 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 회차를 이어 받아 녹음한다([_continueUsedSet]).
   bool _sessionMayExist = false;
 
-  /// 녹음을 시작하는 사이 녹음 화면을 떠났다. 장치를 열지 않는다.
+  /// 녹음을 시작하는 사이 녹음 화면을 떠났다. 장치를 열지 않고, 이미 여는
+  /// 중이었으면 열린 뒤 바로 닫는다.
   bool _leftWhileStarting = false;
 
   /// 녹음 파일을 연 뒤 세션을 붙잡아 두었는지([sessionHoldProvider]). 파일을
@@ -333,11 +334,22 @@ class VisitController extends AsyncNotifier<VisitState> {
     // 만든 회차는 그대로 두며, 카드 화면과 홈이 `평가 이어서 하기` 로 잇는다.
     if (_leftWhileStarting || !ref.mounted) return;
 
+    final recorder = _recorder;
     final VisitRecording recording;
     try {
-      recording = await _recorder.start();
+      recording = await recorder.start();
     } on Exception {
       _fail(VisitRecordingProblem.startFailed);
+      return;
+    }
+    // 장치를 여는 사이 화면을 떠났다. 떠날 때는 아직 닫을 파일이 없었으므로
+    // 여기서 바로 닫는다. 같은 회차로 다시 누르면 새 파일로 녹음한다.
+    if (_leftWhileStarting || !ref.mounted) {
+      try {
+        await recorder.stop();
+      } on Exception {
+        // 닫지 못해도 이 파일은 보낼 목록에 없어 쓰이지 않는다.
+      }
       return;
     }
 
@@ -674,7 +686,8 @@ class VisitController extends AsyncNotifier<VisitState> {
   /// 정리가 끝난 뒤다.
   ///
   /// 녹음을 시작하는 중([VisitState.starting])이었으면 기다리던 일이 끝나도
-  /// 장치를 열지 않게 한다. 화면이 없는 곳에서 마이크가 켜지지 않게 하려는 것이다.
+  /// 장치를 열지 않고, 여는 중이었으면 열린 뒤 바로 닫는다. 화면이 없는 곳에서
+  /// 마이크가 켜지지 않게 하려는 것이다.
   Future<void> stopRecordingOnLeave() {
     if (state.value?.starting ?? false) _leftWhileStarting = true;
     return _stop(participantCount: null, deferStateChange: true);

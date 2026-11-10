@@ -3,6 +3,8 @@
 // 실제 마이크와 파일 쓰기는 플러그인이 하므로 단위 테스트에서 돌릴 수 없다.
 // 화면과 상태가 장치를 어떤 순서로 부르는지만 여기서 확인한다.
 
+import 'dart:async';
+
 import 'package:saerok/features/visit/visit_recorder.dart';
 
 class FakeVisitRecorder implements VisitRecorder {
@@ -25,6 +27,9 @@ class FakeVisitRecorder implements VisitRecorder {
   /// 끝냈는데 파일이 없는 경우.
   bool losesFile;
 
+  /// 있으면 끝날 때까지 장치가 열리지 않는다. 장치를 여는 중을 흉내 낸다.
+  Completer<void>? startGate;
+
   /// 불린 순서다. `hasPermission`, `start`, `pause`, `resume`, `stop`.
   final List<String> calls = [];
 
@@ -39,6 +44,8 @@ class FakeVisitRecorder implements VisitRecorder {
   @override
   Future<VisitRecording> start() async {
     calls.add('start');
+    final gate = startGate;
+    if (gate != null) await gate.future;
     if (failOnStart) throw Exception('장치를 열지 못했다');
     _files++;
     return VisitRecording(path: '/fake/visit_recordings/visit-$_files.wav');
