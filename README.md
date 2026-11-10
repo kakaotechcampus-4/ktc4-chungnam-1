@@ -302,7 +302,7 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 
 처음 기획한 기능을 어떻게 구현했고, 개발 중 무엇을 바꿨는지와 검증 결과를 정리했습니다.
 
-- [서비스 개발 충실성 보고서](docs/pm/service-development-fidelity-20261110.md): 최초 기획, 변경 이유, 구현 결과, 실사용 개선과 후속 계획
+- [서비스 개발 결과 보고서](docs/pm/service-development-fidelity-20261110.md): 최초 기획, 변경 이유, 구현 결과, 실사용 개선과 후속 계획
 - [멘토 심사 항목별 근거](docs/pm/mentor-evidence.md): 기능별 테스트와 실행 기록
 - [상세 문서 안내](docs/README.md): 앱, 서버, AI, API와 기술 결정 문서
 
