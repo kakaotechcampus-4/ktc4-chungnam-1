@@ -40,4 +40,5 @@ def store(db_url: str, seeded: Seeded):
     from simulation.backends.context import build_context
 
     with psycopg.connect(db_url) as conn:
-        return ProfileStore(build_context(conn, seeded.profile_a), LATEST.decay)
+        # backend 거르기 전 원본. 지워진 근거를 가리키는 주제가 들어와도 ProfileStore가 막는지 보려는 것(backend는 #291부터 이런 주제를 빼고 넘김)
+        return ProfileStore(build_context(conn, seeded.profile_a, backend_filters=False), LATEST.decay)
