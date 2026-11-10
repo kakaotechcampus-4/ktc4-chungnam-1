@@ -421,14 +421,15 @@ class _Recording extends ConsumerWidget {
         // ScreenBody 의 SafeArea 가 하단 안전영역을 한 번 더 쓰므로 카드 자리와
         // 따로 빼 둔다. 빼지 않으면 그만큼 컨트롤이 스크롤 밖으로 밀린다.
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        // 녹음 멈춤 띠가 있으면 그 높이도 먼저 떼어 카드 자리를 줄인다.
-        final status =
-            _statusHeight +
-            (recordingAlertOf(state) != null ? _alertHeight : 0);
-        final peekHeight = (constraints.maxHeight - status - bottomInset).clamp(
-          _CardPeek.minHeight,
-          _CardPeek.maxHeight + bottomInset,
-        );
+        // 녹음 멈춤 띠가 있으면 줄어든 자리에서 카드 그림이 위만 조금 보이게
+        // 잘려 그림을 숨기고 `위로 올려서` 안내 줄만 둔다(2026-11-10). 남는 높이는
+        // 띠와 녹음 상태가 쓴다. 띠가 사라지면 그림이 바로 돌아온다.
+        final peekHeight = recordingAlertOf(state) != null
+            ? _PullHint._height + bottomInset
+            : (constraints.maxHeight - _statusHeight - bottomInset).clamp(
+                _CardPeek.minHeight,
+                _CardPeek.maxHeight + bottomInset,
+              );
 
         return _body(context, ref, controller, peekHeight);
       },
@@ -461,10 +462,6 @@ class _Recording extends ConsumerWidget {
 
   /// 녹음 상태가 잘리지 않는 높이. 여백과 글자, 원, 컨트롤의 합에 여유를 더했다.
   static const _statusHeight = 410.0;
-
-  /// 녹음 멈춤 띠와 위아래 여백이 더 쓰는 높이. 글자 1배의 제목, 이유 두 줄,
-  /// 버튼에 맞췄다. 글자가 커지면 넘치는 만큼 스크롤된다.
-  static const _alertHeight = 230.0;
 
   Widget _body(
     BuildContext context,
@@ -585,6 +582,7 @@ class _Recording extends ConsumerWidget {
 
         _CardPeek(
           height: peekHeight,
+          showFan: alert == null,
           onOpen: (sheet) => showVisitCardsSheet(context, controller: sheet),
         ),
       ],
@@ -598,10 +596,17 @@ class _Recording extends ConsumerWidget {
 /// 알 수 없어서, 카드를 화면 아래에 내어 두고 끌어올려 꺼내는 자리로 바꿨다.
 /// 끌어올리기와 누르기 둘 다 같은 시트를 연다.
 class _CardPeek extends StatefulWidget {
-  const _CardPeek({required this.height, required this.onOpen});
+  const _CardPeek({
+    required this.height,
+    required this.onOpen,
+    this.showFan = true,
+  });
 
   /// 하단 안전영역까지 포함한 전체 높이.
   final double height;
+
+  /// 부채 그림을 그린다. 녹음 멈춤 띠가 있는 동안은 끄고 안내 줄만 둔다.
+  final bool showFan;
 
   /// 주어진 움직임으로 시트를 열고, 시트가 닫히면 끝나는 Future 를 돌려준다.
   final Future<void> Function(AnimationController sheet) onOpen;
@@ -762,15 +767,16 @@ class _CardPeekState extends State<_CardPeek>
             height: widget.height,
             child: Stack(
               children: [
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: _CardPeek._fanBottom + bottomInset,
-                  child: _CardFan(
-                    key: const Key('cardPeekFan'),
-                    height: fanHeight,
+                if (widget.showFan)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _CardPeek._fanBottom + bottomInset,
+                    child: _CardFan(
+                      key: const Key('cardPeekFan'),
+                      height: fanHeight,
+                    ),
                   ),
-                ),
                 Positioned(
                   left: 0,
                   right: 0,

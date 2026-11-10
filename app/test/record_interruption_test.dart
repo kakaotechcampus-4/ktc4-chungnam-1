@@ -250,13 +250,21 @@ void main() {
       recorder: recorder,
       service: service,
     );
+    const fan = Key('cardPeekFan');
+    expect(find.byKey(fan), findsOneWidget);
     recorder.deviceChanged(VisitRecorderState.paused);
     await settle(tester);
     final stoppedAt = read(container).elapsed;
 
+    // 띠가 있는 동안은 잘리는 카드 그림을 숨기고 꺼내는 안내 줄만 둔다.
+    expect(find.byKey(fan), findsNothing);
+    expect(find.text('위로 올려서 대화 카드 꺼내기'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('recordingAlertAction')));
     await settle(tester);
 
+    // 이어서 녹음하면 띠가 사라지고 카드 그림이 바로 돌아온다.
+    expect(find.byKey(fan), findsOneWidget);
     expect(recorder.calls.where((c) => c == 'start'), hasLength(1));
     expect(recorder.calls.last, 'resume');
     expect(read(container).recording, isTrue);
