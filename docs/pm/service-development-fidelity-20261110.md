@@ -1,6 +1,6 @@
 # 새록 서비스 개발 충실성 보고서
 
-작성: 김영석 | 갱신: 2026년 11월 10일
+작성: 김영석 | 갱신: 2026년 11월 11일 00:28 KST
 
 새록의 최초 목표는 보호자가 면회 대화를 준비하고, 함께 나눈 이야기를 기록해 다음 면회에 이어 쓰도록 돕는 것이었다. 현재 **프로필과 사진 입력 → 대화 카드 준비 → 녹음과 소감 → 리포트와 이야기 후보 → 보호자 확인 → 다음 카드 추천**의 핵심 흐름이 구현됐다. 실제 면회에서도 승인한 이야기가 다음 카드의 근거로 사용된 기록이 있다.
 
@@ -38,7 +38,7 @@
 | 사용자가 이야기 분류 선택 | AI가 이야기 후보를 만들 때 분류도 함께 반환하고, 사용자는 잘못됐다고 느낄 때 수정한다. 별도 분류 호출과 필수 선택 단계를 줄였다 | [#125 논의](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/125), [#139](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/139)를 거쳐 11월 10일 [#295](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/295)에서 AI 출력과 승인 저장 연결 |
 | 사실을 고칠 때마다 카드 생성 또는 일부 카드 교체 | 정정은 즉시 저장하고, 다음 대화 준비에서 누적 정정을 반영해 12장을 한 번에 다시 만든다. 사용자가 수정할 때마다 생성 비용과 대기를 반복하지 않도록 했다 | 김영석의 [10월 31일 02:50 KST 회의 결정 확인](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/161#issuecomment-6529648361). #171 앱과 #161 서버에 반영 |
 | 이야기 삭제를 추천 비선호로 해석 | 삭제한 이야기는 새 입력에서 빼고, 추천 제외는 보호자가 명시적으로 선택했을 때 적용한다 | [10월 22일 멘토링 후 PM 변경](mentoring-followup-20261022.md#삭제와-추천-제외의-구분). 삭제 이유를 임의로 추측하지 않는 방향 |
-| 화자 라벨이 부족하면 생성 차단 | 듣기만 한 참여자, 입력 인원 오류와 불완전한 화자 분리를 고려해 문맥으로 리포트와 후보를 만들고 보호자가 확인한다. 같은 전사로 재요청해도 계속 막히는 문제를 줄였다 | 이문영의 [#251 최종 설명, 11월 6일 17:40 KST](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/251#issuecomment-6680822233). 인물 관계의 단정은 후속 #320에서 보완 중 |
+| 화자 라벨이 부족하면 생성 차단 | 듣기만 한 참여자, 입력 인원 오류와 불완전한 화자 분리를 고려해 문맥으로 리포트와 후보를 만들고 보호자가 확인한다. 같은 전사로 재요청해도 계속 막히는 문제를 줄였다 | 이문영의 [#251 최종 설명, 11월 6일 17:40 KST](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/251#issuecomment-6680822233). 인물 관계의 단정은 후속 [#320](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/320)에서 보완해 11월 10일 23:53 KST에 병합 |
 
 이러한 변경은 면회 준비, 이야기 기록과 다음 추천이라는 목적을 유지하면서 구현 방식과 사용자 부담을 조정한 것이다. 출시 이후로 미룬 기능과 현재 방식으로 대체한 기능은 별도로 구분한다.
 
@@ -65,7 +65,7 @@
 | 실제 면회 녹음의 생성 결과 개선 | 같은 녹음에서 리포트 309자와 이야기 후보 2개였던 결과를 화제별 약 1,400자와 후보 14개로 보완하고 자동 분류를 확인했다 | 11월 9일 허가받은 녹음 1건 비교. [검증 보고](real-visit-validation-20261109.md), [#295](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/295) |
 | 실사용자의 이야기 누적과 재사용 | 첫 면회의 리포트, 이야기 2개 저장, 다음 카드 2장의 해당 이야기 재사용을 확인했다 | 11월 10일 [실사용 보고 #314](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/314). 같은 시험에서 첫 카드의 개인화 부족과 두 번째 회차의 빈 전사도 기록 |
 | 프롬프트 인젝션 시험 | 이야기, 사진 설명과 전사 등에 넣은 지시를 실제 GPT-6 Luna 출력 28회 모두 따르지 않았다고 보고했다 | 11월 10일 [시험 보고 #316](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/316). 사진 속 글자를 직접 읽는 분석 단계는 시험 범위 밖 |
-| 변경 후 자동 회귀 검사 | Python 정적 검사, BE와 PostgreSQL, 앱과 BE E2E, Flutter, AI, STT 6개 작업 성공 | develop `a9271fad`의 [CI 실행](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42810053493). E2E의 외부 서비스는 합성 응답을 사용 |
+| 변경 후 자동 회귀 검사 | Python 정적 검사, BE와 PostgreSQL, 앱과 BE E2E, Flutter, AI, STT 6개 작업 성공 | develop `951307b9`의 [CI 실행](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42838809211), 11월 11일 00:10 KST 완료. E2E의 외부 서비스는 합성 응답을 사용 |
 
 ### 발견한 문제와 후속 결과
 
@@ -78,24 +78,31 @@
 
 ## 5. 코드와 배포 상태
 
-| 구분 | 11월 10일 확인 상태 |
+| 구분 | 11월 11일 00:28 KST 확인 상태 |
 | --- | --- |
-| develop | `a9271fade0d68e3ace32e28a336b9087ad75e4b6`. 제품 코드는 `a855c87e`와 같고 이후 변경은 README |
-| 운영 BE | 14:37 KST 완료한 [Deploy 실행](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42762899876)에서 `a855c87e` 배포. DB 백업과 격리 복원, migration, 컨테이너 교체 및 사후 점검 성공. DB revision `5d2e8b1c9a47` |
-| GitHub APK | [release](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)의 `saerok-b6bd248a-prod-release.apk`, 18:01 KST 갱신. 이 앱 파일에 열린 앱 PR이 포함된 것은 아님 |
+| develop | `951307b9dfc8862f38673fb57e469a175807f110`. #320 이야기 맥락, #321 사진 설명 보완과 #322, #323 협업 규칙 문서를 포함 |
+| 확인한 운영 BE 배포 | 11월 10일 14:37 KST 완료한 [Deploy 실행](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42762899876)에서 `a855c87e` 배포. DB 백업과 격리 복원, migration, 컨테이너 교체 및 사후 점검 성공. DB revision `5d2e8b1c9a47`. 이후 #320과 #321의 운영 배포 기록은 확인되지 않음 |
+| GitHub APK | [release](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)의 `saerok-b6bd248a-prod-release.apk`, 11월 10일 18:01 KST 갱신. 이 앱 파일에 열린 앱 PR이 포함된 것은 아님 |
 | main 통합 | [#230](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/230) 검토 중. 운영 BE 배포와 main 병합은 별도 절차 |
+
+### 최근 병합된 AI 보완
+
+- **이야기 후보의 인물 관계와 사건 맥락:** 김영석의 [#320](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/320)이 11월 10일 23:53 KST에 병합됐다. 프롬프트를 보완하고 AI 테스트 215개 통과를 보고했다. 실제 모델 비교는 별도 출력 한도를 쓴 단일 시험이며 관계 오류가 일부 남았다.
+- **사진 설명의 인물별 특징과 행동:** 김영석의 [#321](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/321)이 11월 10일 23:54 KST에 병합됐다. AI 테스트 215개와 Linux BE 관련 테스트 54개 통과를 보고했다. 사진 5장 모델 시험에서 일부 오류 개선과 남은 세부 오류를 기록했다.
 
 ### 구현 후 검토 중인 보완
 
-아래 작업은 수정 코드와 검사 결과를 제출했고, develop에 합치기 전 검토와 통합이 남아 있다.
+아래 작업은 구현 PR이 열려 있고, develop에 합치기 전 검토와 통합이 남아 있다. 각 작성자의 검사 보고와 미확인 범위를 함께 표시했다.
 
 | 작업 | 작성 및 확인 상태 | PR |
 | --- | --- | --- |
 | 녹음 상태, 권한, 카드 조작, 입력과 큰 글자 개선 | 김영석의 수정 PR 검토 중. 이서형이 #302에 추가 수정과 실기기 확인 결과를 남김 | [#300](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/300)~[#313](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/313) |
 | 짧은 음성 전사 대기 시간과 서버 전체 요청 상한 | 김민혁이 수정안과 테스트를 제출. 선택적 전체 요청 상한 적용은 PM 검토 대상 | [#317](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/317) |
 | 카드에 사용한 사진 확대 | 김영석이 확대 화면, 녹음 상태 표시와 화면 검사를 제출 | [#318](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/318) |
-| 이야기 후보의 인물 관계와 사건 맥락 | 김영석이 프롬프트 보완과 AI 테스트 215개 통과를 보고. 실제 모델 비교는 별도 출력 한도를 쓴 단일 시험이며 관계 오류가 일부 남음 | [#320](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/320) |
-| 사진 설명의 인물별 특징과 행동 | 김영석이 프롬프트 보완, AI 테스트 215개와 Linux BE 관련 테스트 54개 통과를 보고. 사진 5장 모델 시험에서 일부 오류 개선과 남은 세부 오류를 기록 | [#321](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/321) |
+| 정보가 적은 프로필의 일반 질문 개선 | jsut21이 카드 프롬프트 v3와 BE 기본값 변경을 제출. 실제 GPT-6 Luna로 v2와 v3 각 6회 비교를 보고했으며, BE 기본값 변경 검토 요청 | [#324](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/324) |
+| 카드 생성 단계별 검증 도구 | jsut21이 시뮬레이션 입력을 BE 규칙과 맞추고 탐색, 비교, 선정과 작성 기록 화면을 제출. AI 테스트 131개와 1회차 시뮬레이션 확인을 보고 | [#325](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/325) |
+| 프로필과 이야기의 사진 선택 | 김민혁이 앨범 사진을 이 기기에만 저장하는 기능을 제출. Flutter 테스트 1,153개 통과 보고. 실제 앨범 선택과 자동 백업 제외 확인은 남음 | [#326](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/326) |
+| 생성 모델의 일시적 오류 재시도 | 이문영이 최대 1회 재시도와 엘리스 Claude 연결 준비를 제출. PR 본문은 비어 있으며 연결된 설계 문서에 합성 검사 결과를 기록. 재시도는 기본 비활성이고 실제 모델 호출과 자동 전환은 미검증 | [#327](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/327) |
 
 실사용 보고 [#314](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/314)와 인젝션 시험 보고 [#316](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/316)도 문서 PR로 열려 있다. 보고서 병합 여부와 해당 시험의 실행 기록은 구분한다.
 
@@ -115,9 +122,9 @@
 | 발화량과 응답 지연 등의 수치 | 초기 구상에는 있으나 현재 리포트는 대화 요약과 보호자 평가 중심이다. 수치 기능이 구현됐다고 설명하지 않는다 |
 | 거절한 이야기 후보의 30일 복구 | PM 설계에는 남아 있으나 복구 API와 화면은 연결되지 않았다. 승인된 이야기 직접 수정과 별개의 기능으로 남아 있다 |
 | 3회마다 중간평가와 대화별 추가 질문 | 10월 22일 PM 변경안에 추가하고 리더 검토 후 구현 범위를 정하기로 한 항목이다. 기존 매회 평가와 제안 확인은 구현돼 있으며, 추가 질문은 별도로 관리한다 |
-| 이야기별 실제 사진 연결 | 현재 일대기는 기본 그림을 사용한다. #125에서 작업량에 따라 출시 이후로 미루는 조건부 방향을 정했다. 카드 근거 사진 확대 #318과 다른 기능이다 |
+| 이야기별 실제 사진 연결 | develop의 일대기는 기본 그림을 사용한다. #125의 조건부 후속 계획에 해당하는 기기 내 사진 선택 구현이 [#326](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/326)으로 제출돼 검토 중이다. 서버 사진 연결과 기기 간 공유는 포함하지 않으며, 카드 근거 사진 확대 #318과도 다른 기능이다 |
 
-첫 카드의 개인화, 긴 녹음 분할의 실제 연결 재시험과 여러 사용자 동시 사용은 다음 품질 확인 항목이다. 장기간 사용 효과는 후속 사용자 평가에서 확인한다. 기능 구현과 실제 효과 검증은 각각의 결과로 기록한다.
+첫 카드의 개인화, 긴 녹음 분할의 실제 연결 재시험과 여러 사용자 동시 사용은 다음 품질 확인 항목이다. 정보가 적을 때의 일반 질문은 #324에서 보완 중이며, 입력한 개인 정보를 충분히 사용하는지는 별도 확인 항목으로 남긴다. 장기간 사용 효과는 후속 사용자 평가에서 확인한다. 기능 구현과 실제 효과 검증은 각각의 결과로 기록한다.
 
 ## 7. 개발 충실성에 대한 종합 정리
 
