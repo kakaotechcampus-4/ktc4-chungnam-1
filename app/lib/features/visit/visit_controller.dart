@@ -83,6 +83,9 @@ class VisitState {
   final int currentIndex;
 
   /// 지금 보여주는 꼬리 질문의 자리.
+  ///
+  /// 넘기면 하나 늘고 되돌리면 하나 줄어 음수일 수 있다. 질문은 이 값을 질문
+  /// 수로 나눈 나머지로 고른다([currentFollowUp]).
   final int followUpIndex;
 
   /// 한 번이라도 녹음을 시작했는지. 잠시 멈춤과 시작 전을 가른다.
@@ -661,6 +664,19 @@ class VisitController extends AsyncNotifier<VisitState> {
     if (current == null || current.followUpCount == 0) return;
     state = AsyncData(
       current.copyWith(followUpIndex: current.followUpIndex + 1),
+    );
+  }
+
+  /// 꼬리 질문을 앞 것으로 되돌린다. 처음이면 마지막으로 간다.
+  ///
+  /// [nextFollowUp] 과 거꾸로 자리를 하나 줄인다. 질문은 자리를 질문 수로 나눈
+  /// 나머지로 고르고 Dart 의 `%` 는 음수에도 0 이상을 돌려주므로, 첫 질문의
+  /// 앞은 마지막 질문이다.
+  void previousFollowUp() {
+    final current = state.value;
+    if (current == null || current.followUpCount == 0) return;
+    state = AsyncData(
+      current.copyWith(followUpIndex: current.followUpIndex - 1),
     );
   }
 
