@@ -18,6 +18,7 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
 import 'package:saerok/data/selected_profile_store.dart';
+import 'package:saerok/data/setup_draft_store.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -44,6 +45,7 @@ import 'fake_recording_share.dart';
 import 'fake_report_server.dart';
 import 'fake_profile_relationship_store.dart';
 import 'fake_selected_profile_store.dart';
+import 'fake_setup_draft_store.dart';
 import 'fake_visit_photos.dart';
 import 'sample_profile.dart';
 
@@ -214,6 +216,7 @@ Widget _app({
   LocalPhotos? localPhotos,
   RecordingShare? share,
   SelectedProfileStore? selectedProfile,
+  SetupDraftStore? setupDrafts,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -292,6 +295,9 @@ Widget _app({
       ),
       profileRelationshipStoreProvider.overrideWithValue(
         FakeProfileRelationshipStore(),
+      ),
+      setupDraftStoreProvider.overrideWithValue(
+        setupDrafts ?? FakeSetupDraftStore(),
       ),
       if (session != null)
         sessionProvider.overrideWith(() => _SignedInSession(session)),
@@ -1057,6 +1063,9 @@ void main() {
       final selectedProfile = FakeSelectedProfileStore()
         ..values[_signedIn().account.accountId] = 'p-remembered'
         ..values['account-other'] = 'p-other';
+      final setupDrafts = FakeSetupDraftStore()
+        ..values['${_signedIn().account.accountId}/p-half'] = '{}'
+        ..values['account-other/p-other'] = '{}';
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1077,6 +1086,7 @@ void main() {
           localPhotos: localPhotos,
           share: share,
           selectedProfile: selectedProfile,
+          setupDrafts: setupDrafts,
         ),
       );
 
@@ -1097,6 +1107,9 @@ void main() {
       expect(selectedProfile.values, {
         'account-other': 'p-other',
       }, reason: '탈퇴한 계정이 고른 어르신 기억만 지운다');
+      expect(setupDrafts.values.keys, [
+        'account-other/p-other',
+      ], reason: '탈퇴한 계정이 등록하다 멈춘 세부 정보 초안만 지운다');
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);

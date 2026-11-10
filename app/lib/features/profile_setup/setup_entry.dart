@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,15 +25,28 @@ bool startProfileSetup(BuildContext context, WidgetRef ref) {
 }
 
 /// `입력 중` 인 분의 입력을 가 본 가장 먼 단계부터 다시 연다.
-void resumeProfileSetup(BuildContext context, WidgetRef ref, String id) {
-  // 서버에서 불러온 입력 중인 분은 앱에 남은 입력이 없으니 서버 값으로 연다.
-  final entry = ref.read(careProfilesProvider).byId(id);
-  final saved =
-      ref.read(pendingSetupsProvider)[id] ??
-      (entry == null ? const SetupState() : SetupState.resumeOf(entry));
-  ref.read(setupControllerProvider.notifier).restore(saved);
+///
+/// 서버에서 불러온 입력 중인 분은 앱에 남은 입력이 없으니 서버 값에 단말 초안을
+/// 더해 연다([SetupController.resume]). 초안을 읽는 동안 다시 눌러도 한 번만
+/// 연다.
+Future<void> resumeProfileSetup(
+  BuildContext context,
+  WidgetRef ref,
+  String id,
+) async {
+  if (_resuming) return;
+  _resuming = true;
+  try {
+    await ref.read(setupControllerProvider.notifier).resume(id);
+  } finally {
+    _resuming = false;
+  }
+  if (!context.mounted) return;
   context.push(AppRoutes.profileAddOf(id));
 }
+
+/// [resumeProfileSetup] 이 단말 초안을 읽는 중이다.
+bool _resuming = false;
 
 /// 등록을 마친 분이 없을 때 홈의 `오늘의 대화카드 받기` 가 부른다.
 ///
@@ -45,7 +60,7 @@ void openFirstProfileSetup(BuildContext context, WidgetRef ref) {
       .where((e) => e.pending)
       .firstOrNull;
   if (pending != null) {
-    resumeProfileSetup(context, ref, pending.id);
+    unawaited(resumeProfileSetup(context, ref, pending.id));
     return;
   }
   if (!startProfileSetup(context, ref)) {

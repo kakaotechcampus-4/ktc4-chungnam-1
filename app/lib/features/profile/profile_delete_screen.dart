@@ -16,6 +16,7 @@ import '../auth/auth_providers.dart';
 import '../auth/consent_form.dart';
 import '../local_photos/local_photos.dart';
 import '../profile_setup/setup_controller.dart';
+import '../profile_setup/setup_draft_keeper.dart';
 import '../visit/pending_uploads.dart';
 import '../visit/recording_share.dart';
 import '../visit/visit_photos.dart';
@@ -92,6 +93,7 @@ class _BodyState extends ConsumerState<_Body> {
     final share = ref.read(recordingShareProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
     final relationships = ref.read(profileRelationshipStoreProvider);
+    final setupDrafts = ref.read(setupDraftKeeperProvider);
     try {
       await ref.read(sessionProvider.notifier).deleteAccount();
     } on AuthFailure catch (failure) {
@@ -133,6 +135,8 @@ class _BodyState extends ConsumerState<_Body> {
       await selectedProfile.clear(accountId);
       // 단말에만 둔 관계도 지운다. 저장소가 실패를 삼킨다.
       await relationships.clear(accountId);
+      // 등록하다 멈춘 세부 정보 초안도 지운다. 저장소가 실패를 삼킨다.
+      await setupDrafts.clearAccount(accountId);
     }
 
     if (!mounted) return;

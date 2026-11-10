@@ -475,6 +475,113 @@ void main() {
     });
   });
 
+  // 2026-11-10 UX 점검 1번. `record` 는 파일을 닫은 뒤의 이어 가기를 오류 없이
+  // 무시한다(record_android RecorderController). 그대로 녹음 중으로 바꾸면
+  // 시간만 흐르고 아무것도 남지 않는다.
+  group('파일을 닫은 뒤 이어서 녹음', () {
+    test('만남을 끝내면 닫았다고 남기고, 이어 가기는 장치를 부르지 않고 실패로 둔다', () async {
+      final recorder = FakeVisitRecorder();
+      final (container, controller) = await startVisit(recorder);
+      await controller.startRecording();
+      expect(read(container).recordingFinalized, isFalse);
+
+      await controller.stopRecording(participantCount: 2);
+      expect(read(container).recordingFinalized, isTrue);
+      recorder.calls.clear();
+
+      await controller.startRecording();
+
+      final state = read(container);
+      expect(recorder.calls, isEmpty, reason: '닫은 파일에 이어 쓰지 않는다');
+      expect(state.recording, isFalse);
+      expect(state.problem, VisitRecordingProblem.recordingClosed);
+    });
+
+    test('끝내지 않고 화면을 떠나 닫은 뒤에도 이어 가지 않는다', () async {
+      final recorder = FakeVisitRecorder();
+      final (container, controller) = await startVisit(recorder);
+      await controller.startRecording();
+
+      await controller.stopRecordingOnLeave();
+      expect(read(container).recordingFinalized, isTrue);
+      expect(read(container).participantCount, isNull);
+      recorder.calls.clear();
+
+      await controller.startRecording();
+
+      expect(recorder.calls, isEmpty);
+      expect(read(container).recording, isFalse);
+      expect(read(container).problem, VisitRecordingProblem.recordingClosed);
+    });
+
+    test('파일을 저장하지 못했어도 닫았다고 남기고 저장 실패 안내를 덮지 않는다', () async {
+      final uploads = FakePendingUploads();
+      final recorder = FakeVisitRecorder(failOnStop: true);
+      final container = ProviderContainer(
+        overrides: [
+          visitRecorderProvider.overrideWithValue(recorder),
+          ...mockCardsWith(pendingUploads: uploads),
+        ],
+      );
+      addTearDown(container.dispose);
+      final cards = await container.read(cardsControllerProvider.future);
+      container
+          .read(cardsControllerProvider.notifier)
+          .toggleSelected(cards.cards.first.cardId);
+      await container.read(visitControllerProvider.future);
+      final controller = container.read(visitControllerProvider.notifier);
+      await controller.startRecording();
+      await controller.stopRecording(participantCount: 2);
+      recorder.calls.clear();
+
+      await controller.startRecording();
+      // 화면을 떠날 때 한 번 더 끝내기가 불린다.
+      await controller.stopRecording();
+
+      expect(recorder.calls, isEmpty);
+      expect(read(container).recordingFinalized, isTrue);
+      expect(read(container).recording, isFalse);
+      expect(read(container).problem, VisitRecordingProblem.saveFailed);
+      expect(
+        uploads.saved,
+        isEmpty,
+        reason: '살리지 못한 파일을 다시 보낼 목록에 넣지 않는다',
+      );
+    });
+
+    test('파일을 닫는 중에 이어서 녹음을 눌러도 녹음 중으로 바꾸지 않는다', () async {
+      final recorder = _SlowStopRecorder();
+      final (container, controller) = await startVisit(recorder);
+      await controller.startRecording();
+      // 끝내기 확인 창처럼 멈춘 뒤 닫는다. 닫는 동안 화면은 `이어서 녹음` 을 둔다.
+      await controller.pauseRecording();
+
+      final stopping = controller.stopRecording(participantCount: 2);
+      await controller.startRecording();
+      expect(recorder.calls, isNot(contains('resume')));
+      expect(read(container).recording, isFalse);
+
+      recorder.finishStop();
+      await stopping;
+      expect(read(container).recordingFinalized, isTrue);
+      expect(read(container).recording, isFalse);
+    });
+
+    test('파일을 닫기 전에는 잠시 멈췄다 이어 갈 수 있다', () async {
+      final recorder = FakeVisitRecorder();
+      final (container, controller) = await startVisit(recorder);
+      await controller.startRecording();
+      await controller.pauseRecording();
+
+      await controller.startRecording();
+
+      expect(read(container).recordingFinalized, isFalse);
+      expect(read(container).recording, isTrue);
+      expect(read(container).problem, isNull);
+      expect(recorder.calls.last, 'resume');
+    });
+  });
+
   group('녹음 중에 정리될 때', () {
     test('파일을 닫는 사이 컨테이너가 정리되면 상태를 건드리지 않고 끝낸다', () async {
       // 앱을 통째로 정리하거나 로그아웃으로 provider 를 버리는 경우다. 파일

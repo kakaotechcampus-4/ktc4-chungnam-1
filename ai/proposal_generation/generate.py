@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from common.llm import ENDPOINTS, ChatConfig, chat_model, llm_down
 from common.structured import invoke_structured
+from common.retry import RetryBlocked
 from common.visit_report import (
     Action,
     LifeFactProposalOut,
@@ -35,7 +36,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/proposals.md"
-PROMPT_VERSION = "proposals-9"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "proposals-10"  # 프롬프트나 거르는 규칙을 바꾸면 올림
 _FACT_TITLE_MAX = 100            # #106 응답 검증과 같은 길이
 _FACT_MAX = 30                   # 이야기 후보 안전 상한(PM 결정, 2026-11-09). 넘으면 앞에서부터 이만큼만 쓰고 기록을 남김
 _LIFE_EFFORT = "medium"
@@ -71,6 +72,8 @@ def generate_proposals(request: VisitReportRequest, *, model: str, api_key: str,
         try:
             return invoke_structured(chat_model(config), schema, [("system", prompt), ("user", payload)],
                                      label, attempts, on_retry, usage=usage)
+        except RetryBlocked as blocked:
+            raise blocked.original
         except Exception as error:
             code = "LLM_UNAVAILABLE" if llm_down(error) else "GENERATION_FAILED"
             failed = VisitReportError(code, f"{type(error).__name__}: {error}")

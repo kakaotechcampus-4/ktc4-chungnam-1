@@ -198,12 +198,15 @@ class _ProfileSwitchScreenState extends ConsumerState<ProfileSwitchScreen> {
     }
 
     profiles.remove(profile.id);
-    ref.read(pendingSetupsProvider.notifier).remove(profile.id);
     // 이 기기에만 둔 그분의 사진(프로필 사진, 이야기 사진)도 지운다. 실패를
     // 삼키므로 기다리지 않는다.
     unawaited(
       ref.read(localPhotoIndexProvider.notifier).forget(remoteId ?? profile.id),
     );
+    // 입력 중이던 분이면 단말에 남긴 세부 정보 초안도 함께 지운다.
+    ref
+        .read(pendingSetupsProvider.notifier)
+        .remove(profile.id, remoteId: remoteId);
     setState(() => _removing = false);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()

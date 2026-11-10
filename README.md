@@ -1,7 +1,14 @@
 
 # 💬 새록: 똑똑한 면회 도구
 
-![Saerok Banner](./docs/assets/feature-1024x500.png)
+<div align="center">
+     
+<!-- ![Saerok Banner](./docs/assets/feature-1024x500.png) -->
+
+
+<img width="500" height="625" alt="image" src="https://github.com/user-attachments/assets/a0bdf7fd-8eaa-46bc-aefa-b719601c9fc8" />
+
+</div>
 
 <!-- 📐 배너: 플레이콘솔업로드용/feature-1024x500.png를 옮겨 둔 것. 반영 전에 webp로 바꾸면 용량이 줄어든다. -->
 
@@ -15,7 +22,7 @@
 <!-- 📐 배지 줄: Play 게시 전에는 "Play 검토 중", 게시 뒤 스토어 링크로 바꾼다. 원스토어는 공개 링크(m.onestore.co.kr), 최신 develop APK가 필요하면 GitHub Releases 링크를 따로 단다. 수상 배지는 결과가 나온 뒤에만 단다. -->
 ![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Google Play](https://img.shields.io/badge/Google_Play-검토_중-lightgrey?style=flat-square&logo=googleplay&logoColor=white)
-[![ONE store](https://img.shields.io/badge/ONE_store-내려받기-4F6146?style=flat-square)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+[![ONE store](https://img.shields.io/badge/ONE_store-설치-4F6146?style=flat-square)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
 ![KTC](https://img.shields.io/badge/카카오테크캠퍼스-4기-FFCD00?style=flat-square)
 
 </div>
@@ -25,10 +32,10 @@
      상자 종류: NOTE(파랑) / TIP(초록) / IMPORTANT(보라) / WARNING(노랑) / CAUTION(빨강) -->
 
 > [!TIP]
-> **새록은 보호자를 위한 면회 대화 지원 도구이며, 의료 서비스가 아닙니다.**
+> **새록은 보호자를 위한 면회 대화 지원 도구이며, 의료 서비스는 아닙니다.**
 >
 > - 🩺 진단, 치료, 기억 회복을 제공하지 않습니다.
-> - 🗂 보호자가 면회 대화를 준비하고 기록하도록 돕습니다.
+> - 📄 보호자가 면회 대화를 준비하고 기록하도록 돕습니다.
 > - 📖 보호자가 확인한 이야기만 어르신의 일대기로 모아 줍니다.
 
 <div align="center">
@@ -54,15 +61,18 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 
 ---
 
-### 💡새록이 주는 가치
+### 💡새록의 주요 기능
 
 <!-- 📐 핵심 가치 표: 문구 출처는 플레이콘솔업로드용/스토어등록정보_문구.txt의 첫 문단과 "이런 분께 필요해요". 대상 범위는 PM 제품 기준과 맞는지 PM 확인. -->
 
-|            핵심 가치            | 설명                                                                         |
+|            핵심 기능            | 설명                                                                         |
 | :-----------------------------: | ---------------------------------------------------------------------------- |
 |      **이야기를 준비합니다**      | 부모님이 살아오신 이야기와 사진으로 대화 카드를 만들어 면회 대화를 미리 준비 |
 |     **대화에만 집중합니다**       | 녹음하면서도 준비한 카드를 바로 꺼내 보고, 새록은 대화에 끼어들지 않음       |
 | **보호자가 확인한 것만 남깁니다** | 면회 리포트와 이야기 후보 중 보호자가 확인한 것만 일대기와 다음 대화에 반영  |
+
+<img width="600" height="375" alt="image" src="https://github.com/user-attachments/assets/ab650e48-c325-449b-9022-86637a1da764" />
+
 
 ---
 
@@ -72,41 +82,30 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 
 ---
 
+## 바로가기 링크
+
+- 🚀 **배포**: [원스토어](https://m.onestore.co.kr/v2/ko-kr/app/0001012223) | [GitHub Release](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)
+
+- 🗂️ **협업 공간**: [팀 노션 페이지](https://app.notion.com/p/elice-track/2-32a2bb98425783f789d581889bd816e4?p=3bb2bb98425780578cf2e7b7ba204ba9&pm=s)
+  
+- 📋 **가이드 문서**: [개발자 가이드](https://saerok-docs.vercel.app/docs/portal/)
+
+---
+
 ## 목차
 
 <!-- 📐 제목에 이모지를 넣으면 GitHub 앵커가 깨지기 쉬우므로 본문 제목(##)에는 이모지를 쓰지 않고 목차에만 쓴다.
      오른쪽 열은 참고 README의 Git 규칙/코드 컨벤션 대신 우리 README의 개발자용 섹션으로 바꿨다. 협업 규칙은 CONTRIBUTING.md가 정본. -->
 
-<table>
-<tr>
-<td width="50%" valign="top">
-
 ### 📋 프로젝트 소개
 
 - **[서비스 흐름](#서비스-흐름)** - 면회가 다음 면회로 이어지는 순환
 - **[주요 기능](#주요-기능)** - 5가지 핵심 기능 소개
+- **[개발 결과와 검증](#개발-결과와-검증)** - 기획 대비 구현과 검증 기록
 - **[새록이 지키는 것](#새록이-지키는-것)** - AI와 개인정보 원칙
 - **[시스템 아키텍처](#시스템-아키텍처)** - 시스템 구조와 음성 처리 순서
 - **[기술 스택](#기술-스택)** - 사용된 기술 및 도구
-- **[팀원](#팀원)** - 새록 팀
-
-</td>
-<td width="50%" valign="top">
-
-### 🛠 개발자용
-
-- **[상태 표시](#상태-표시)** - 운영 반영, develop 구현, 미구현 구분
-- **[핵심 흐름](#핵심-흐름)** - 기능별 구현 상태
-- **[로컬 실행](#로컬-실행)** - 준비물과 실행 순서
-- **[테스트](#테스트)** - 영역별 테스트 명령
-- **[배포와 시연](#배포와-시연)** - 앱, 서버, STT 배포 현황
-- **[알려진 제한](#알려진-제한)** - 남은 문제와 미검사 항목
-- **[문서 지도](#문서-지도)** - 상세 문서 찾기
-- **[협업 규칙](CONTRIBUTING.md)** - 브랜치, PR 단위, 검토
-
-</td>
-</tr>
-</table>
+- **[팀원](#팀원)** - 새록 개발 팀
 
 ---
 
@@ -293,7 +292,16 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 
 <!-- 📐 TalkBack은 위젯 테스트만 했고 실기기 확인이 남았다(지금 README 핵심 흐름). 이 문장을 넣을지 FE가 확인. -->
 
-> 화면은 develop 빌드 기준입니다. 기능별 구현 상태는 [핵심 흐름](#핵심-흐름)을 참고하십시오.
+
+---
+
+## 개발 결과와 검증
+
+처음 기획한 기능을 어떻게 구현했고, 개발 중 무엇을 바꿨는지와 검증 결과를 정리했습니다.
+
+- [서비스 개발 결과 보고서](docs/pm/service-development-fidelity-20261110.md): 최초 기획, 변경 이유, 구현 결과, 실사용 개선과 후속 계획
+- [멘토 심사 항목별 근거](docs/pm/mentor-evidence.md): 기능별 테스트와 실행 기록
+- [상세 문서 안내](docs/README.md): 앱, 서버, AI, API와 기술 결정 문서
 
 ---
 
@@ -309,7 +317,7 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 | 💬  | 최근 기억을 시험하는 질문이나 확인되지 않은 생애 정보를 만들지 않습니다 |
 | 🔒  | 녹음 원본은 분석이 끝나면 지우는 것을 기준으로 합니다                   |
 
-자세한 원칙은 [제품 원칙](#제품-원칙)과 [법률 검토](docs/legal/README.md)에 있습니다.
+자세한 원칙은 [제품 원칙](docs/pm/README.md)과 [법률 검토](docs/legal/README.md)에 있습니다.
 
 ---
 
@@ -343,38 +351,16 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 6. 전사가 끝나면 음성 분석 프로세스가 음성 원본 삭제를 요청하고, 전사 내용으로 리포트와 이야기 후보를 만든 뒤 알림 수신에 동의한 보호자의 앱으로 **Firebase Cloud Messaging** 완료 알림을 보냅니다.
 7. 각 프로세스는 역할별 Docker 컨테이너로 나눠 **AWS EC2**에서 운영하고, 코드는 **GitHub**에서 검토를 마친 것만 서버에 반영합니다.
 
-<details>
-<summary><b>면회 음성이 리포트가 되기까지 (시퀀스 다이어그램)</b></summary>
+---
 
-<!-- 📐 접어 두는 선택 다이어그램. 순서와 주체는 backend/docs/async-speech-analysis.md와 맞는지 BE 확인. -->
+## 기능의 흐름 End to End(시퀀스 다이어그램)
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant App as Android 앱
-  participant API as FastAPI 서버
-  participant S3 as AWS S3 Bucket
-  participant DB as PostgreSQL<br/>(작업 대기열)
-  participant SW as 음성 분석 프로세스
-  participant STT as STT 서버
-  participant ML as 엘리스 ML API
+<!-- 📐 접어 두는 선택 다이어그램: docs/assets/saerok-speech-sequence.svg (1600×1176). 기존 mermaid 시퀀스와 순서가 같다(13단계).
+     순서와 주체는 backend/docs/async-speech-analysis.md와 맞는지 BE 확인. -->
 
-  App->>API: 소감 저장
-  App->>API: 면회 음성 업로드
-  API->>S3: 음성 파일 저장
-  API->>DB: 음성 분석 작업 등록
-  SW->>DB: 작업 가져오기
-  SW->>STT: 음성 전사 요청 (사설망)
-  STT->>S3: 음성 파일 내려받기 (임시 링크)
-  STT-->>SW: 전사 + 화자 구분
-  SW->>S3: 음성 원본 삭제 요청
-  SW->>ML: 리포트 생성 요청
-  SW->>DB: 결과 저장
-  SW-->>App: 리포트 완료 알림 (Firebase Cloud Messaging)
-  App->>API: 리포트 조회, 보호자 확인
-```
-
-</details>
+<p align="center">
+  <img src="./docs/assets/saerok-speech-sequence.svg" alt="면회 음성이 리포트가 되기까지: 1) 새록 앱이 소감을 저장하고 면회 음성을 올리면 API 서버가 음성 파일을 AWS S3에 저장하고 PostgreSQL 17에 음성 분석 작업을 등록한다. 2) 음성 분석 worker가 작업을 가져가 Tailscale 사설망의 STT 서버에 전사를 요청하고, STT 서버는 임시 링크로 음성을 내려받아 전사와 화자 구분 결과를 돌려준다. 음성 분석 worker는 음성 원본 삭제를 요청한다. 3) 엘리스 ML API로 리포트를 만들어 결과를 저장하고 Firebase 푸시로 완료 알림을 보내면, 보호자가 앱에서 리포트를 조회하고 확인한다." width="100%" />
+</p>
 
 ---
 
