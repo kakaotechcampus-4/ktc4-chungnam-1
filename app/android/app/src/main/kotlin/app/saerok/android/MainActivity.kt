@@ -71,10 +71,12 @@ class MainActivity : FlutterActivity() {
                     SHOW_RECORDING -> {
                         val title = call.argument<String>("title")
                         val text = call.argument<String>("text")
+                        // 녹음이 멈췄을 때만 소리와 진동이 나는 알림으로 올린다.
+                        val alert = call.argument<Boolean>("alert") ?: false
                         if (title == null || text == null) {
                             result.error("BAD_ARGUMENT", "title 이나 text 값이 없다", null)
                         } else {
-                            result.success(RecordingService.show(this, title, text))
+                            result.success(RecordingService.show(this, title, text, alert))
                         }
                     }
                     HIDE_RECORDING -> {

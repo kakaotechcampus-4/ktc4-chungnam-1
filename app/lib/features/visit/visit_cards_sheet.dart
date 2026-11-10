@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_states.dart';
 import '../cards/card_source_photo.dart';
+import 'recording_stopped_alert.dart';
 import 'visit_controller.dart';
 
 /// E-3, E-4 면회 중 대화 카드.
@@ -125,8 +126,9 @@ class _CardsState extends ConsumerState<_Cards> {
     final state = widget.state;
     final controller = ref.read(visitControllerProvider.notifier);
     final card = state.currentCard!;
+    final alert = recordingAlertOf(state);
 
-    return Column(
+    final cards = Column(
       children: [
         const _DragHandle(),
         _CardBar(
@@ -208,11 +210,47 @@ class _CardsState extends ConsumerState<_Cards> {
         _AddCardsBar(onTap: _openAddCards),
       ],
     );
+    if (alert == null) return cards;
+
+    // 시트가 녹음 화면의 5분의 4를 덮어 녹음 화면 맨 위의 멈춤 띠가 가려진다.
+    // 같은 띠를 손잡이 바로 아래에 겹쳐 둔다. 카드 자리를 줄이면 작은 화면에서
+    // 질문이 넘치므로 카드 위에 덮는다. 녹음이 멈춘 동안은 카드보다 띠가 먼저다.
+    // 이어서 녹음은 시트에서 바로 하고, 만남 끝내기와 소감 쓰기는 녹음 화면에서
+    // 하도록 시트를 닫는다(2026-11-10 PM 결정).
+    return Stack(
+      children: [
+        cards,
+        Positioned(
+          top: _DragHandle.height,
+          left: AppSpacing.screen,
+          right: AppSpacing.screen,
+          child: RecordingStoppedAlert(
+            key: const Key('visitSheetRecordingAlert'),
+            alert: alert,
+            actionLabel: switch (alert) {
+              RecordingAlert.interrupted ||
+              RecordingAlert.resumeFailed => '이어서 녹음',
+              RecordingAlert.deviceStopped ||
+              RecordingAlert.saveFailed => '녹음 화면으로',
+            },
+            onAction: switch (alert) {
+              RecordingAlert.interrupted ||
+              RecordingAlert.resumeFailed => controller.startRecording,
+              RecordingAlert.deviceStopped ||
+              RecordingAlert.saveFailed => () => Navigator.of(context).pop(),
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
 
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
+
+  /// 손잡이와 위아래 여백의 높이.
+  static const height = AppSpacing.md * 2 + 4;
 
   @override
   Widget build(BuildContext context) {

@@ -93,7 +93,30 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text(recordingRetentionNotice), findsOneWidget);
+      expect(find.text(recordingContinuesNotice), findsOneWidget);
       expect(find.text('네, 좋아요').hitTestable(), findsOneWidget);
     });
   }
+
+  // 2026-11-10 PM 결정: 앱을 떠나거나 화면이 꺼져도 녹음은 이어 간다. 녹음을 마치는
+  // 방법도 함께 알린다.
+  testWidgets('화면이 꺼지거나 다른 앱을 써도 녹음이 이어지고 만남 끝내기로 마친다고 알린다', (tester) async {
+    await openIntro(tester);
+
+    expect(find.text(recordingContinuesNotice), findsOneWidget);
+    expect(recordingContinuesNotice, contains('화면이 꺼지거나 다른 앱을 써도'));
+    expect(recordingContinuesNotice, contains('녹음은 이어져요'));
+    expect(recordingContinuesNotice, contains('만남 끝내기'));
+    expect(
+      find.textContaining('화면을 끄거나 다른 앱으로 옮기지 마세요'),
+      findsNothing,
+      reason: '녹음은 이어지므로 막는 안내를 두지 않는다',
+    );
+    // 보관 안내 아래, 마이크 원 위에 둔다.
+    final retention = tester.getRect(find.text(recordingRetentionNotice));
+    final continues = tester.getRect(find.text(recordingContinuesNotice));
+    final mic = tester.getRect(find.byIcon(Icons.mic));
+    expect(continues.top, greaterThan(retention.bottom));
+    expect(continues.bottom, lessThan(mic.top));
+  });
 }

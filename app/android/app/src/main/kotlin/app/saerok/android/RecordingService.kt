@@ -23,6 +23,10 @@ import android.util.Log
 //
 // 알림 문구는 Dart 가 정해 넘긴다. 다시 띄우지 않으므로(`START_NOT_STICKY`) 앱이 죽으면
 // 알림도 함께 사라진다.
+//
+// 보호자가 멈추지 않았는데 녹음이 멈추면(다른 앱의 소리, 전화) Dart 가 `alert` 를 켜
+// 같은 번호의 알림을 소리와 진동이 나는 채널(`visit_recording_stopped`)로 바꿔 올린다.
+// 녹음이 멈춘 뒤라 그 소리가 녹음에 남지 않는다. 다시 녹음하면 소리 없는 채널로 돌린다.
 class RecordingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -31,6 +35,7 @@ class RecordingService : Service() {
             this,
             title = intent?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TITLE,
             text = intent?.getStringExtra(EXTRA_TEXT) ?: "",
+            alert = intent?.getBooleanExtra(EXTRA_ALERT, false) ?: false,
         )
         try {
             // 마이크 유형은 안드로이드 11(API 30)에 생겼다. 그 아래는 매니페스트의 유형을 쓴다.
@@ -63,9 +68,11 @@ class RecordingService : Service() {
     companion object {
         private const val TAG = "RecordingService"
         private const val CHANNEL_ID = "visit_recording"
+        private const val ALERT_CHANNEL_ID = "visit_recording_stopped"
         private const val NOTIFICATION_ID = 7301
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_TEXT = "text"
+        private const val EXTRA_ALERT = "alert"
         private const val DEFAULT_TITLE = "면회를 녹음하고 있어요"
 
         // 서비스가 알림을 띄운 채 떠 있는지. 떠 있으면 알림 문구만 바꾼다.
@@ -74,17 +81,18 @@ class RecordingService : Service() {
 
         // 서비스를 띄운다. 이미 떠 있으면 알림 문구만 바꾼다. 띄우기를 요청하지
         // 못했으면 `false` 다.
-        fun show(context: Context, title: String, text: String): Boolean {
-            createChannel(context)
+        fun show(context: Context, title: String, text: String, alert: Boolean): Boolean {
+            createChannels(context)
             if (running) {
                 // 알림 문구를 바꿀 때는 서비스를 다시 시작하지 않고 같은 번호로 다시 올린다.
                 context.getSystemService(NotificationManager::class.java)
-                    .notify(NOTIFICATION_ID, buildNotification(context, title, text))
+                    .notify(NOTIFICATION_ID, buildNotification(context, title, text, alert))
                 return true
             }
             val intent = Intent(context, RecordingService::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_TEXT, text)
+                .putExtra(EXTRA_ALERT, alert)
             return try {
                 context.startForegroundService(intent)
                 true
@@ -100,25 +108,40 @@ class RecordingService : Service() {
             context.stopService(Intent(context, RecordingService::class.java))
         }
 
-        // 녹음하는 동안 소리나 진동이 나면 그 소리가 녹음에 남는다. 그래서 소리 없는
-        // 낮은 중요도로 만든다. 이미 있으면 그대로 둔다. minSdk 26 이라 버전을 확인하지 않는다.
-        private fun createChannel(context: Context) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "면회 녹음",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "면회를 녹음하는 동안 보여요"
-                setShowBadge(false)
-            }
-            context.getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+        // 녹음하는 동안 소리나 진동이 나면 그 소리가 녹음에 남는다. 그래서 녹음 중 채널은
+        // 소리 없는 낮은 중요도로 만든다. 녹음이 멈췄다는 채널은 높은 중요도라 기본 알림
+        // 소리와 진동이 나고 화면 위에 잠깐 뜬다. 이미 있으면 그대로 둔다(보호자가 설정에서
+        // 바꾼 값을 덮지 않는다). minSdk 26 이라 버전을 확인하지 않는다.
+        private fun createChannels(context: Context) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "면회 녹음",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = "면회를 녹음하는 동안 보여요"
+                    setShowBadge(false)
+                },
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    ALERT_CHANNEL_ID,
+                    "면회 녹음 멈춤",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "면회 녹음이 저절로 멈추면 알려요"
+                    enableVibration(true)
+                    setShowBadge(false)
+                },
+            )
         }
 
         private fun buildNotification(
             context: Context,
             title: String,
             text: String,
+            alert: Boolean = false,
         ): Notification {
             // 알림을 누르면 런처 아이콘을 누른 것처럼 녹음 화면이 있는 앱으로 돌아간다.
             val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
@@ -129,13 +152,14 @@ class RecordingService : Service() {
                 launch,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            val builder = Notification.Builder(context, CHANNEL_ID)
+            val builder = Notification.Builder(context, if (alert) ALERT_CHANNEL_ID else CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_recording_notification)
                 .setContentTitle(title)
                 .setContentIntent(open)
-                .setCategory(Notification.CATEGORY_SERVICE)
+                .setCategory(if (alert) Notification.CATEGORY_ERROR else Notification.CATEGORY_SERVICE)
                 .setOngoing(true)
-                .setOnlyAlertOnce(true)
+                // 멈췄다는 알림은 바꿔 올릴 때도 소리와 진동이 나야 한다.
+                .setOnlyAlertOnce(!alert)
                 .setShowWhen(false)
             if (text.isNotEmpty()) builder.setContentText(text)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

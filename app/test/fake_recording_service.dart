@@ -26,6 +26,9 @@ class FakeRecordingServicePlatform implements RecordingServicePlatform {
   /// 마지막 `show` 의 알림 본문.
   String? lastText;
 
+  /// 마지막 `show` 가 소리와 진동이 나는 알림이었는지.
+  bool lastAlert = false;
+
   /// `hide` 를 받을 때 부른다. 다른 대역의 상태를 그 순간에 보려고 쓴다.
   void Function()? onHide;
 
@@ -46,9 +49,14 @@ class FakeRecordingServicePlatform implements RecordingServicePlatform {
   ];
 
   @override
-  Future<bool> show({required String title, required String text}) async {
+  Future<bool> show({
+    required String title,
+    required String text,
+    bool alert = false,
+  }) async {
     calls.add('show:$title');
     lastText = text;
+    lastAlert = alert;
     return !refusesShow;
   }
 

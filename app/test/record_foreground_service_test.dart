@@ -54,6 +54,29 @@ void main() {
       expect(service.isShown, isFalse);
     });
 
+    test('녹음이 멈추면 소리와 진동이 나는 멈춤 알림으로 바꾸고, 이어 가면 되돌린다', () async {
+      final platform = FakeRecordingServicePlatform(grantsPermission: false);
+      final service = RecordingService(platform);
+
+      service.show(recording: true);
+      await flush();
+      expect(platform.lastAlert, isFalse);
+
+      platform.calls.clear();
+      service.interrupted();
+      service.interrupted();
+      await flush();
+      expect(platform.calls, ['show:${RecordingNoticeText.stopped}']);
+      expect(platform.lastText, RecordingNoticeText.stoppedDetail);
+      expect(platform.lastAlert, isTrue);
+      expect(service.isShown, isTrue, reason: '파일은 열려 있어 서비스는 둔다');
+
+      service.show(recording: true);
+      await flush();
+      expect(platform.calls.last, _recording);
+      expect(platform.lastAlert, isFalse);
+    });
+
     test('알림 권한은 처음 띄울 때 한 번만 묻는다', () async {
       final platform = FakeRecordingServicePlatform();
       final service = RecordingService(platform);
@@ -171,7 +194,11 @@ void main() {
         'hide',
         'requestNotificationPermission',
       ]);
-      expect(calls.first.arguments, {'title': '제목', 'text': '본문'});
+      expect(calls.first.arguments, {
+        'title': '제목',
+        'text': '본문',
+        'alert': false,
+      });
     });
 
     test('받을 쪽이 없으면 띄울 것이 없는 것으로 보고 던지지 않는다', () async {

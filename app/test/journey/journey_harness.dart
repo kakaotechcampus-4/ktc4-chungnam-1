@@ -283,6 +283,9 @@ class JourneyRecorder implements VisitRecorder {
   Future<bool> hasPermission() async => true;
 
   @override
+  Stream<VisitRecorderState> get stateChanges => const Stream.empty();
+
+  @override
   Future<VisitRecording> start() async {
     starts++;
     final path = '${_dir.path}${Platform.pathSeparator}visit-${++_files}.wav';
