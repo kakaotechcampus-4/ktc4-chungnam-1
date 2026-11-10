@@ -165,6 +165,39 @@ void main() {
     await app.close();
   });
 
+  // 위로 화면은 녹음을 서버에 보낸 뒤에만 온다. 기기에 파일은 남지만 보냈다고
+  // 적어 홈에서 이어서 보낼 것이 없다. 녹음을 남겼다는 문구를 쓰지 않는다.
+  testWidgets('녹음을 보낸 뒤 위로 화면에서 세션을 잃으면 이어서 할 녹음이 있다고 말하지 않는다', (tester) async {
+    final (app, _) = await _recording(tester);
+    await app.tap(find.byIcon(Icons.stop));
+    await app.waitFor(find.text('만남을 끝낼까요?'));
+    await app.tap(find.text('끝내기'));
+    await app.waitFor(find.text('오늘 만남은\n어떠셨나요?'));
+    await app.tap(find.text('좋았어요').first);
+    await app.tap(find.text('4'));
+    await app.tap(find.text('기뻐하셨어요'));
+    await app.tap(find.text('리포트 만들기'));
+    await app.waitFor(find.text('제출 완료!'));
+    expect(app.uploads.saved, isEmpty, reason: '보낸 녹음은 다시 보낼 목록에서 뺀다');
+    expect(app.uploads.uploaded, hasLength(1));
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('제출 완료!')),
+    );
+
+    final renewed = container.read(sessionRefresherProvider).refresh();
+    await app.step();
+    expect(await renewed, isFalse);
+
+    await app.waitFor(find.text(VisitSignedOutMessages.title));
+    expect(find.text(VisitSignedOutMessages.noRecording), findsOneWidget);
+    expect(find.text(VisitSignedOutMessages.recordingKept), findsNothing);
+
+    await app.tap(find.text(VisitSignedOutMessages.action));
+    await app.waitFor(find.byType(GoogleSignInButton));
+    expect(find.text(sessionLostSignInNotice), findsOneWidget);
+    await app.close();
+  });
+
   testWidgets('면회 흐름 밖에서 세션을 잃으면 확인 창 없이 로그인 화면으로 가서 이유를 알린다', (tester) async {
     final app = await JourneyDriver.launch(tester, JourneyServer());
     await app.waitFor(find.text('오늘의 대화카드 받기'), maxSteps: 300);

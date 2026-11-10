@@ -84,18 +84,19 @@ class _SaerokAppState extends ConsumerState<SaerokApp> {
   /// 알리고, 보호자가 확인하면 세션을 지워 로그인 화면으로 가게 한다.
   ///
   /// 계정이 사라졌으면(동의 화면으로 가는 경우) 새로 가입한 계정은 남긴 녹음을
-  /// 찾지 못하므로 이어서 보낼 수 있다고 말하지 않는다.
+  /// 찾지 못하므로 이어서 보낼 수 있다고 말하지 않는다. 이미 보낸 녹음도
+  /// 이어서 보낼 것이 없어 말하지 않는다([visitRecordingKept]).
   Future<void> _confirmSessionLoss(SessionLoss loss) async {
+    final recordingKept =
+        loss is SessionSignedOut && await visitRecordingKept(ref);
+    if (!mounted) return;
     // 만남을 끝내면 파일을 닫은 직후 소감 화면을 쌓는다. 창을 먼저 띄우면 새
     // 화면이 창을 덮으므로, 그 이동이 그려진 다음 프레임 뒤에 띄운다.
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     final navigator = _router.routerDelegate.navigatorKey.currentContext;
     if (navigator != null && navigator.mounted) {
-      await showVisitSignedOutDialog(
-        navigator,
-        recordingKept: loss is SessionSignedOut && visitRecordingKept(ref),
-      );
+      await showVisitSignedOutDialog(navigator, recordingKept: recordingKept);
     }
     if (!mounted) return;
     await _refresher.confirmLoss();
