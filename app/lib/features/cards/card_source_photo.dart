@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
+import '../auth/auth_providers.dart';
 
 /// 사진에서 나온 카드(`evidenceSource: photo`)의 그 사진.
 ///
@@ -13,24 +14,20 @@ import '../../design/tokens.dart';
 /// `이 사진은 어디서 찍으셨어요?` 카드가 사진 없이 나와 보호자가 다섯 장 중
 /// 어느 사진인지 알 수 없었다.
 ///
-/// 사진을 찾지 못했거나(지운 사진, 목록을 읽지 못함) 주소가 만료돼 열지 못하면
-/// 아무것도 그리지 않는다. 깨진 그림 표시(`ProfilePhotoImage` 와 다르다)도 빈
-/// 자리도 두지 않는다. 열지 못하면 주소를 다시 읽게 알린다
-/// ([CardPhotoUrlsNotifier.imageFailed]). 사진이 그려지기 전에는 자리를 차지하지
-/// 않고, 그려지면 아래에 [gap] 만큼 띄운다. 높이는 [maxHeight] 를 넘지 않고
-/// 사진의 가로세로 비율을 지킨다. 글자 크기와 상관없다.
+/// 사진을 누르면 같은 앱 안에서 크게 본다. 작은 화면은 [compact] 버튼으로 연다.
+/// 목록을 읽는 중이거나 사진을 열지 못한 경우에도 상태와 다시 시도할 길을 남긴다.
 ///
-/// 올린 원본(최대 20MiB)을 그대로 풀지 않고 [largestHeight] 높이로 줄여 푼다.
-/// 카드 화면은 녹음 화면 아래에 열린 채 남아 그 그림을 면회 내내 들고 있다.
-/// 카드 시트는 남는 높이에 따라 더 작게 그리지만 같은 크기로 풀어 카드 화면이
-/// 이미 푼 그림을 그대로 쓴다. 서버 사진은 주소가 아니라 사진 ID 로 그림을
-/// 기억해, 주소를 새로 받아도 이미 받은 사진을 다시 내려받지 않는다.
+/// 목록 사진은 [largestHeight]에 기기 배율을 곱한 높이로 줄여 푼다.
+/// 확대 화면은 별도로 더 큰 크기를 사용하되 각 변을 3072px 이하로 제한한다.
+/// 서버 사진은 사진 ID로 기억해 주소가 갱신되어도 이미 받은 그림을 재사용한다.
 class CardSourcePhoto extends ConsumerWidget {
   const CardSourcePhoto({
     required this.card,
     this.maxHeight = largestHeight,
     this.gap = AppSpacing.md,
     this.alignment = AlignmentDirectional.centerStart,
+    this.compact = false,
+    this.viewerStatus,
     super.key,
   }) : assert(maxHeight <= largestHeight);
 
@@ -38,6 +35,10 @@ class CardSourcePhoto extends ConsumerWidget {
   final double maxHeight;
   final double gap;
   final AlignmentGeometry alignment;
+  final bool compact;
+
+  /// 면회 화면이 전달하는 읽기 전용 녹음 상태. 카드 선택 화면에서는 비워 둔다.
+  final Widget? viewerStatus;
 
   /// 사진을 그리는 가장 큰 높이. 이 높이에 맞춰 사진을 푼다.
   static const largestHeight = 120.0;
@@ -65,51 +66,313 @@ class CardSourcePhoto extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (card.evidenceSource != 'photo') return const SizedBox.shrink();
-    final urls = ref.watch(cardPhotoUrlsProvider).value;
-    final source = urls == null ? null : sourceOf(card, urls);
-    if (source == null) return const SizedBox.shrink();
-
-    Widget shown(BuildContext context, Widget child, int? frame, bool _) {
-      if (frame == null) return const SizedBox.shrink();
-      return Padding(
-        padding: EdgeInsets.only(bottom: gap),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.image),
-            child: child,
-          ),
+    void open() {
+      final owner = ref.read(_photoOwnerProvider);
+      Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) =>
+              _PhotoViewer(card: card, owner: owner, status: viewerStatus),
         ),
       );
     }
 
-    final asset = source.url.startsWith(_assetScheme);
-    Widget nothing(BuildContext _, Object error, StackTrace? stack) {
-      // 그리는 중에는 주소를 바꾸지 않고 그린 뒤에 알린다.
-      if (!asset) {
-        Future.microtask(() {
-          if (context.mounted) {
-            ref.read(cardPhotoUrlsProvider.notifier).imageFailed(source.url);
-          }
-        });
-      }
-      return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(bottom: gap),
+      child: Align(
+        alignment: alignment,
+        child: compact
+            ? _PhotoButton(label: '사진 보기', onPressed: open)
+            : _PhotoContent(card: card, maxHeight: maxHeight, onOpen: open),
+      ),
+    );
+  }
+}
+
+typedef _PhotoOwner = (String?, String?);
+
+final _photoOwnerProvider = Provider<_PhotoOwner>(
+  (ref) => (
+    ref.watch(sessionProvider.select((session) => session?.account.accountId)),
+    ref.watch(careProfilesProvider.select((profiles) => profiles.selected?.id)),
+  ),
+);
+
+class _PhotoButton extends StatelessWidget {
+  const _PhotoButton({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+    onPressed: onPressed,
+    icon: const Icon(Icons.photo_outlined),
+    label: Text(label, textAlign: TextAlign.center),
+    style: OutlinedButton.styleFrom(
+      foregroundColor: HomeColors.accent,
+      side: const BorderSide(color: HomeColors.outline),
+      minimumSize: const Size(48, 48),
+      textStyle: Theme.of(
+        context,
+      ).textTheme.labelLarge?.merge(AppTypography.button),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    ),
+  );
+}
+
+class _PhotoContent extends ConsumerStatefulWidget {
+  const _PhotoContent({
+    required this.card,
+    required this.maxHeight,
+    this.onOpen,
+  });
+  final ConversationCard card;
+  final double maxHeight;
+  final VoidCallback? onOpen;
+
+  @override
+  ConsumerState<_PhotoContent> createState() => _PhotoContentState();
+}
+
+class _PhotoContentState extends ConsumerState<_PhotoContent> {
+  int _retry = 0;
+  bool _reloading = false;
+
+  Future<void> _reload() async {
+    if (_reloading) return;
+    setState(() {
+      _retry++;
+      _reloading = true;
+    });
+    try {
+      ref.invalidate(cardPhotoUrlsProvider);
+      await ref.read(cardPhotoUrlsProvider.future);
+    } catch (_) {
+      // 오류 원문과 임시 사진 주소는 표시하지 않는다. 아래 상태 안내로 전환한다.
+    } finally {
+      if (mounted) setState(() => _reloading = false);
     }
+  }
 
+  Widget _notice(String message, {bool loading = false}) {
+    // 카드 위에서는 확대 화면에서 상태와 재시도를 볼 수 있게 한다.
+    if (widget.onOpen != null) {
+      return _PhotoButton(label: message, onPressed: widget.onOpen!);
+    }
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.screen),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (loading) const CircularProgressIndicator(),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              message,
+              style: AppTypography.body,
+              textAlign: TextAlign.center,
+            ),
+            if (!loading) ...[
+              const SizedBox(height: AppSpacing.md),
+              _PhotoButton(label: '사진 다시 불러오기', onPressed: _reload),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = ref.watch(cardPhotoUrlsProvider);
+    if (_reloading ||
+        (urls.isLoading && (!urls.hasValue || !urls.isRefreshing))) {
+      return _notice('사진을 불러오고 있어요', loading: true);
+    }
+    final source = CardSourcePhoto.sourceOf(
+      widget.card,
+      urls.value ?? const {},
+    );
+    if (source == null) {
+      return _notice(urls.hasError ? '사진을 불러오지 못했어요' : '이 카드의 사진을 찾을 수 없어요');
+    }
+    final asset = source.url.startsWith(CardSourcePhoto._assetScheme);
     final ImageProvider provider = asset
-        ? AssetImage(source.url.substring(_assetScheme.length))
+        ? AssetImage(source.url.substring(CardSourcePhoto._assetScheme.length))
         : _CardPhotoImage(photoId: source.photoId, url: source.url);
+    final large = widget.onOpen == null;
     final decodeHeight =
-        (largestHeight * MediaQuery.devicePixelRatioOf(context)).round();
+        ((large ? widget.maxHeight * 2 : CardSourcePhoto.largestHeight) *
+                MediaQuery.devicePixelRatioOf(context))
+            .clamp(1, 3072)
+            .round();
+    return Image(
+      key: ValueKey((source.photoId, source.url, _retry)),
+      image: ResizeImage(
+        provider,
+        height: decodeHeight,
+        width: large
+            ? (MediaQuery.sizeOf(context).width *
+                      2 *
+                      MediaQuery.devicePixelRatioOf(context))
+                  .clamp(1, 3072)
+                  .round()
+            : null,
+        policy: ResizeImagePolicy.fit,
+        allowUpscaling: false,
+      ),
+      fit: BoxFit.contain,
+      semanticLabel: CardSourcePhoto.semanticLabel,
+      frameBuilder: (context, child, frame, _) {
+        if (frame == null) return _notice('사진을 불러오고 있어요', loading: true);
+        if (large) {
+          return InteractiveViewer(
+            minScale: 1,
+            maxScale: 4,
+            child: SizedBox.expand(child: child),
+          );
+        }
+        return Semantics(
+          button: true,
+          label: '사진 크게 보기',
+          child: Tooltip(
+            message: '사진 크게 보기',
+            child: InkWell(
+              onTap: widget.onOpen,
+              borderRadius: BorderRadius.circular(AppRadius.image),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: 48,
+                  minWidth: 48,
+                  maxHeight: widget.maxHeight,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.image),
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      child,
+                      const ExcludeSemantics(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(color: HomeColors.bubble),
+                          child: Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.open_in_full,
+                              color: HomeColors.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stack) {
+        if (!asset) {
+          Future.microtask(() {
+            if (mounted) {
+              ref.read(cardPhotoUrlsProvider.notifier).imageFailed(source.url);
+            }
+          });
+        }
+        return _notice('사진을 열지 못했어요');
+      },
+    );
+  }
+}
 
-    return Align(
-      alignment: alignment,
-      child: Image(
-        image: ResizeImage(provider, height: decodeHeight),
-        fit: BoxFit.contain,
-        semanticLabel: semanticLabel,
-        frameBuilder: shown,
-        errorBuilder: nothing,
+class _PhotoViewer extends ConsumerWidget {
+  const _PhotoViewer({required this.card, required this.owner, this.status});
+  final ConversationCard card;
+  final _PhotoOwner owner;
+  final Widget? status;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sameOwner = ref.watch(_photoOwnerProvider) == owner;
+    return Scaffold(
+      backgroundColor: HomeColors.background,
+      appBar: AppBar(
+        backgroundColor: HomeColors.background,
+        automaticallyImplyLeading: false,
+        toolbarHeight: (MediaQuery.textScalerOf(context).scale(18) * 1.5 + 16)
+            .clamp(56, double.infinity)
+            .toDouble(),
+        titleTextStyle: Theme.of(
+          context,
+        ).textTheme.bodyLarge?.merge(AppTypography.bodyStrong),
+        title: const Text('사진 보기'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: sameOwner
+            ? LayoutBuilder(
+                builder: (context, box) => Column(
+                  children: [
+                    if (status != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.screen,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: status,
+                      ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, box) =>
+                            _PhotoContent(card: card, maxHeight: box.maxHeight),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.all(AppSpacing.sm),
+                      child: Text(
+                        '두 손가락으로 사진을 확대할 수 있어요',
+                        style: AppTypography.caption,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    // 긴 질문은 이 영역만 스크롤해 사진과 닫기를 계속 볼 수 있게 한다.
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: box.maxHeight * 0.30,
+                      ),
+                      child: ColoredBox(
+                        color: HomeColors.bubble,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: SingleChildScrollView(
+                            primary: false,
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.lg),
+                              child: Text(
+                                card.primaryQuestion,
+                                style: AppTypography.bodyStrong,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : const Center(
+                child: Text(
+                  '계정이나 어르신이 바뀌어 사진을 닫아주세요.',
+                  style: AppTypography.body,
+                ),
+              ),
       ),
     );
   }
