@@ -387,7 +387,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 - 회차의 `pending` 제안을 모두 담는다. 화면에 남긴 항목은 `accepted`, X로 뺀 항목은 `rejected`
 - `accepted`인 항목에만 보호자가 확인한 최종 값을 담는다. `rejected`인 항목은 `proposalId`와 `reviewStatus`만 보낸다.
   - `lifeFacts[].title`, `content`: 생애 정보로 만들 최종 제목과 내용. 고치지 않았으면 제안 값을 그대로 보낸다. 2-6과 같이 `title`은 100자, `content`는 5,000자 이하이고 둘 다 비울 수 없다.
-  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`). 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`, 7개 밖의 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). develop 반영분이며 운영에는 아직 배포하지 않았다.
+  - `lifeFacts[].storyCategory`: 선택. 보호자가 고른 일대기 분류(`family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`). 빼면 제안의 `storyCategory`(AI가 고른 값)로 만든다. 앱은 보호자가 분류를 바꾼 항목에만 담는다(예시는 `work` 제안을 `hobby`로 바꾼 경우). `null`, 7개 밖의 값, `rejected` 항목의 `storyCategory`는 422 `INVALID_REQUEST`다(2026-11-09 PM 결정, #139). #295로 들어와 2026-11-10 01:41 KST 운영 배포(develop `83695093`)부터 운영에 있다. 분류를 고르는 앱 화면은 새 APK 빌드가 설치돼야 반영된다. 지금 설치된 앱(Play 빌드, 11/8 GitHub Releases APK)은 `storyCategory`를 보내지 않으므로, 그 앱으로 승인한 이야기는 제안의 분류로 만들어진다.
   - `topics[].action`: `more`, `less`, `exclude`. 보호자가 고른 행동이며 제안의 `suggestedAction`과 달라도 된다. 바꾸지 않았으면 제안 값을 그대로 보낸다.
 - `반영하지 않고 마치기`는 모든 항목을 `rejected`로 보낸다.
 - 제안이 없는 회차의 확인 처리는 미정([미정 사항](#미정-사항) 2)
@@ -575,6 +575,7 @@ S3 삭제만 실패하면 삭제 대기열에 요청을 남기고 리포트 생�
 - 생성기 안에서 8-3 호출은 트랜잭션 밖에서 하고, 리포트와 변경 제안 저장만 `async with connection.transaction():`으로 묶는다. 실패는 `AppError`로 올리면 대기열이 작업을 실패로 기록한다.
 - (PR #123) 8-3은 HTTP가 아니라 `ai/`의 리포트·변경 제안 생성 함수를 직접 부른다. 요청 조립부터 검증까지 `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS`(기본 600초, 임대보다 60초 이상 짧게)를 넘으면 `AI_SERVER_TIMEOUT`이다. 저장 트랜잭션은 작업 행을 잠가 `generatingReport`이고 임대가 남았을 때만 저장하며, 아니면 `WORKER_LEASE_EXPIRED`로 아무것도 저장하지 않는다. 자세한 내용은 [README 평가와 리포트 API](../../README.md#평가와-리포트-api).
 - 요청 조립: `visitDate`, `evaluation`(만족도, 반응, 메모), `cards`(선택 카드의 `cardId`, `cardTitle`, `topic`, `reaction = review_reaction`), `profileFacts`, `lifeFacts`, `transcript`. 이름, 성별, 생년월일은 넣지 않는다.
+- 30분을 넘는 녹음은 30분 이하 조각으로 나눠 전사한 뒤 합친 `transcript`가 온다(2026-11-10 PM 결정, `fix/long-recording-30min-stt`, 미병합). 시각은 원본 기준이고 화자 라벨은 조각 번호가 붙은 `PART1_SPEAKER_00` 꼴이라 조각이 다르면 같은 사람인지 알 수 없다([비동기 면회 음성 STT 5.1절](../async-speech-analysis.md#51-30분을-넘는-녹음의-조각-전사)).
 - 응답 검증: `cardSummaries`는 `positive`, `neutral`, `negative` 카드만, `topicProposals`는 요청 `cards` 안에서 카드당 최대 1개다. 미사용과 미응답만으로 `less`, `exclude`를 제안하면 안 된다는 PM 결정을 어긴 응답을 실패로 볼지 그 제안만 뺄지는 AI 담당과 정한다.
 - 저장은 한 트랜잭션이다: `visit_sessions`의 `report_title`, `report_body`, `report_model`, `report_prompt_version`, `report_generated_at`(CHECK: 다섯 값은 함께, `evaluated_at` 필요), `conversation_cards.report_summary`(CHECK: 평가한 카드만), `life_fact_proposals`, `topic_proposals`(`topic_id`는 그 카드의 주제)를 넣는다. 작업의 `completed`와 전사문 삭제도 같은 트랜잭션에서 한다(PR #123, 늦은 결과 저장 방지). worker의 `mark_completed`는 이미 끝난 작업을 바꾸지 않는다.
 

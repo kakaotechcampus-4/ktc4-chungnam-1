@@ -152,6 +152,62 @@ void main() {
       expect(find.text('리포트가 도착했어요'), findsNothing);
       expect(find.text('눌러서 확인하기'), findsNothing);
     });
+
+    // 2026-11-10 E2E: 말소리 없는 녹음과 너무 긴 녹음이 같은 문구로만 실패했다.
+    for (final (code, reason) in [
+      ('EMPTY_TRANSCRIPT', '녹음에서 말소리를 찾지 못했어요.'),
+      ('AI_SERVER_TIMEOUT', '녹음이 너무 길거나 서버가 바빠 시간 안에 끝내지 못했어요.'),
+    ]) {
+      testWidgets('$code 로 실패했으면 제목은 두고 이유를 한 줄 덧붙인다', (tester) async {
+        final server = FakeReportServer(
+          sessions: {
+            'p1': [
+              FakeReportServer.session(
+                id: 's1',
+                status: 'failed',
+                analysisId: 'a1',
+              ),
+            ],
+          },
+          analyses: {
+            'a1': ['failed'],
+          },
+        )..analysisErrors['a1'] = code;
+        await _open(tester, server, AppRoutes.home);
+
+        expect(find.text('리포트를 만들지 못했어요'), findsOneWidget);
+        expect(find.text(reason), findsOneWidget);
+        expect(find.text('눌러서 분석 다시 요청하기'), findsOneWidget);
+
+        _router.push(AppRoutes.notifications);
+        await _settle(tester);
+        expect(find.text('알림'), findsWidgets);
+        expect(find.text(reason), findsOneWidget);
+      });
+    }
+
+    testWidgets('모르는 이유로 실패했으면 이유 줄 없이 원래 문구만 둔다', (tester) async {
+      final server = FakeReportServer(
+        sessions: {
+          'p1': [
+            FakeReportServer.session(
+              id: 's1',
+              status: 'failed',
+              analysisId: 'a1',
+            ),
+          ],
+        },
+        analyses: {
+          'a1': ['failed'],
+        },
+      )..analysisErrors['a1'] = 'AI_SERVER_ERROR';
+      await _open(tester, server, AppRoutes.home);
+
+      expect(find.text('리포트를 만들지 못했어요'), findsOneWidget);
+      expect(find.text('눌러서 분석 다시 요청하기'), findsOneWidget);
+      expect(find.textContaining('말소리'), findsNothing);
+      expect(find.textContaining('시간 안에'), findsNothing);
+    });
   });
 
   testWidgets('회차 상태를 묻지 못하면 알리고, 눌러서 다시 묻는다', (tester) async {

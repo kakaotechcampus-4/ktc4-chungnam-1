@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../app/screen_awake.dart';
+import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
@@ -114,6 +115,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   @override
   Widget build(BuildContext context) {
     final visit = ref.watch(visitControllerProvider);
+    // 사진에서 나온 카드가 있으면 그 사진 주소를 면회 동안 들고 있는다. 카드
+    // 시트를 여닫을 때마다 다시 읽지 않고, 만료 전에 새로 받는다
+    // (`CardPhotoUrlsNotifier`).
+    if (visit.value?.cards.any((c) => c.evidenceSource == 'photo') ?? false) {
+      ref.watch(cardPhotoUrlsProvider);
+    }
     ref.listen(
       visitControllerProvider.select(
         (v) => (v.value?.photoUpload, v.value?.participantCount != null),

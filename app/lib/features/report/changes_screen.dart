@@ -34,7 +34,7 @@ import 'story_edit_screen.dart';
 /// 내용을 고칠 수 있다. AI 가 고른 일대기 분류를 보여주고 보호자가 바꿀 수
 /// 있으며, 아픈 기억일 수 있는 이야기에는 그렇다고 적는다(2026-11-09 PM 결정).
 /// 이야기를 지우면 `되돌리기` 알림을 띄워 원래 자리로 되돌릴 수 있게 한다
-/// (2026-11-09 PM 결정).
+/// (2026-11-09 PM 결정). 알림은 아래 반영 버튼을 가리지 않게 그 위에 뜬다.
 ///
 /// 반영 버튼을 누르면 남긴 항목, 고른 행동과 고친 이야기로 7-4 요청
 /// ([ProposalReview]) 을 만들어 저장소에 넘기고, 리포트 알림을 지운 뒤 홈으로
@@ -148,7 +148,8 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
     final controller = messenger.showSnackBar(
       SnackBar(
         content: const Text('이 이야기는 일대기에 더하지 않아요.'),
-        // 되돌리기가 있어도 저절로 닫혀 아래 반영 버튼을 오래 가리지 않게 한다.
+        // 되돌리기가 있어도 저절로 닫힌다(2026-11-09 PM 결정). 알림 띠는 아래
+        // 반영 버튼 자리([_ApplyBar]) 위에 떠서 버튼을 가리지 않는다.
         persist: false,
         action: SnackBarAction(
           label: '되돌리기',
@@ -253,38 +254,53 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
     context.go(AppRoutes.home);
   }
 
+  /// 화면의 틀. [bottom] 은 반영 버튼 자리이며 `Scaffold.bottomNavigationBar`
+  /// 에 둔다. 아래 알림 띠(되돌리기)는 그 위에 떠서 버튼을 가리지 않는다.
+  Widget _frame({required Widget body, Widget? bottom}) => Scaffold(
+    backgroundColor: HomeColors.background,
+    appBar: const AppTopBar(backgroundColor: HomeColors.background),
+    body: body,
+    bottomNavigationBar: bottom,
+  );
+
   @override
   Widget build(BuildContext context) {
     final proposal = ref.watch(reportProposalsProvider(widget.reportId));
 
-    return Scaffold(
-      backgroundColor: HomeColors.background,
-      appBar: const AppTopBar(backgroundColor: HomeColors.background),
-      body: proposal.when(
-        loading: () => const LoadingView(),
-        error: (error, _) => ErrorStateView(
+    return proposal.when(
+      loading: () => _frame(body: const LoadingView()),
+      error: (error, _) => _frame(
+        body: ErrorStateView(
           message: '변경 사항을 불러오지 못했어요.',
           onRetry: () =>
               ref.invalidate(reportProposalsProvider(widget.reportId)),
         ),
-        data: (data) {
-          if (data.nothingPending) return _NothingToReview(onDone: _finish);
+      ),
+      data: (data) {
+        if (data.nothingPending) {
+          return _frame(body: _NothingToReview(onDone: _finish));
+        }
 
-          final topics = data.pendingTopics
-              .where((t) => !_removed.contains(t.proposalId))
-              .toList();
-          final facts = data.pendingLifeFacts
-              .where((f) => !_removed.contains(f.proposalId))
-              .toList();
+        final topics = data.pendingTopics
+            .where((t) => !_removed.contains(t.proposalId))
+            .toList();
+        final facts = data.pendingLifeFacts
+            .where((f) => !_removed.contains(f.proposalId))
+            .toList();
 
-          // 골라 둔 행동이 없고(AI 제안을 읽지 못했거나 AI 가 제외하기를
-          // 제안했다) 보호자도 고르지 않은 주제는 보낼 행동이 없다.
-          final undecided = topics.any((t) => _actionOf(t) == null);
+        // 골라 둔 행동이 없고(AI 제안을 읽지 못했거나 AI 가 제외하기를
+        // 제안했다) 보호자도 고르지 않은 주제는 보낼 행동이 없다.
+        final undecided = topics.any((t) => _actionOf(t) == null);
+        final empty = topics.isEmpty && facts.isEmpty;
 
-          return _Body(
-            empty: topics.isEmpty && facts.isEmpty,
+        return _frame(
+          bottom: _ApplyBar(
+            empty: empty,
             undecided: undecided,
             onApply: _submitting || undecided ? null : () => _apply(data),
+          ),
+          body: _Body(
+            empty: empty,
             sections: [
               if (topics.isNotEmpty)
                 _Section(
@@ -327,9 +343,9 @@ class _ReportChangesScreenState extends ConsumerState<ReportChangesScreen> {
                   ],
                 ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -358,11 +374,15 @@ class _NothingToReview extends StatelessWidget {
   }
 }
 
-class _Body extends StatelessWidget {
-  const _Body({
+/// 아래 반영 버튼 자리. `Scaffold.bottomNavigationBar` 에 두어 되돌리기 알림
+/// 띠가 그 위에 뜨게 한다. 본문(`ScreenBody`)의 아래 자리에 두었을 때는 알림
+/// 띠가 버튼을 덮어, 알림이 닫히는 순간 되돌리기를 누르려던 손가락이 반영
+/// 버튼을 눌러 확인 없이 반영됐다(2026-11-10 E2E). 여백은 `ScreenBody` 의 아래
+/// 자리와 같다.
+class _ApplyBar extends StatelessWidget {
+  const _ApplyBar({
     required this.empty,
     required this.undecided,
-    required this.sections,
     required this.onApply,
   });
 
@@ -370,35 +390,56 @@ class _Body extends StatelessWidget {
 
   /// 행동을 고르지 않은 주제가 남아 반영할 수 없다.
   final bool undecided;
-  final List<_Section> sections;
 
   /// `null` 이면 반영 버튼을 막는다.
   final VoidCallback? onApply;
 
   @override
   Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screen,
+          AppSpacing.lg,
+          AppSpacing.screen,
+          AppSpacing.xxl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (undecided) ...[
+              const Text(
+                '어떻게 할지 고르지 않은 주제가 있어요.',
+                style: AppTypography.sub,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            PrimaryButton(
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
+              onPressed: onApply,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Body extends StatelessWidget {
+  const _Body({required this.empty, required this.sections});
+
+  final bool empty;
+  final List<_Section> sections;
+
+  @override
+  Widget build(BuildContext context) {
     return ScreenBody(
       scrollable: true,
-      bottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (undecided) ...[
-            const Text(
-              '어떻게 할지 고르지 않은 주제가 있어요.',
-              style: AppTypography.sub,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
-          PrimaryButton(
-            color: HomeColors.accent,
-            loadingColor: HomeColors.accentLoading,
-            label: empty ? '반영하지 않고 마치기' : '이대로 반영하기',
-            onPressed: onApply,
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

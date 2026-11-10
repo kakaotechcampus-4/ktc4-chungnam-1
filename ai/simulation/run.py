@@ -365,13 +365,14 @@ def run_visits(run, backend: Backend, persona, visits, first, rng, url, pid, con
                 f["decision"] = d.model_dump() if d else {"keep": True, "why": "따로 손대지 않음"}
                 title = d.new_title if d and d.new_title else f["title"]
                 content = d.new_content if d and d.new_content else f["content"]
+                # 아픈 기억 표시는 7-4처럼 제안에서 이야기로 그대로 옮김. 그래야 다음 면회의 카드 생성이 표시를 봄
                 proposal = rw.execute(
-                    "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, reason, status) "
-                    "VALUES (%s, %s, %s, %s, %s, 'settled') RETURNING proposal_id",
-                    (session, pid, f["title"], f["content"], f["reason"])).fetchone()[0]
+                    "INSERT INTO life_fact_proposals (session_id, profile_id, title, content, reason, status, sensitive) "
+                    "VALUES (%s, %s, %s, %s, %s, 'settled', %s) RETURNING proposal_id",
+                    (session, pid, f["title"], f["content"], f["reason"], f["sensitive"])).fetchone()[0]
                 if keep:
-                    rw.execute("INSERT INTO life_facts (profile_id, title, content, source_proposal_id, created_at) "
-                               "VALUES (%s, %s, %s, %s, %s)", (pid, title, content, proposal, decided_at))
+                    rw.execute("INSERT INTO life_facts (profile_id, title, content, source_proposal_id, created_at, sensitive) "
+                               "VALUES (%s, %s, %s, %s, %s, %s)", (pid, title, content, proposal, decided_at, f["sensitive"]))
                     applied_facts.append({"title": title, "content": content, "edited": bool(d and (d.new_title or d.new_content))})
             for t in topics:
                 d = topic_ch.get(t["index"])

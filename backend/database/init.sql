@@ -90,7 +90,9 @@ CREATE TABLE life_facts (
                      CONSTRAINT life_facts_story_category_check CHECK (story_category IN
                        ('family', 'hobby', 'work', 'hometown', 'friend', 'travel', 'other')),
     image_number   SMALLINT     NOT NULL DEFAULT 1
-                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5)
+                     CONSTRAINT life_facts_image_number_check CHECK (image_number BETWEEN 1 AND 5),
+    -- 아픈 기억일 수 있는 이야기. 7-4가 제안의 표시를 옮기고 보호자가 2-7로 바꾼다. 카드 생성 입력에 담는다.
+    sensitive      BOOLEAN      NOT NULL DEFAULT false
 );
 CREATE INDEX idx_life_facts_profile ON life_facts(profile_id, created_at);
 
@@ -135,6 +137,9 @@ CREATE TABLE card_sets (
     attempt_count    SMALLINT   NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     -- worker가 작업을 가져간 시각. 작업이 끝나도 남겨 worker가 일하고 있는지 판단하는 데 쓴다.
     claimed_at       TIMESTAMPTZ,
+    photo_wait_ids   UUID[] NOT NULL DEFAULT '{}',
+    photo_wait_until TIMESTAMPTZ,
+    photo_ready_at   TIMESTAMPTZ,
     -- 카드 묶음을 받은 뒤 프로필이나 일대기를 고친 시각. 값이 있으면 이 묶음으로 면회를 시작할 수 없다.
     stale_at         TIMESTAMPTZ,
     FOREIGN KEY (session_id, profile_id)

@@ -18,6 +18,21 @@ class CamelModel(ApiModel):
     model_config = ConfigDict(alias_generator=to_camel)
 
 
+class PhotoPreparation(CamelModel):
+    set_id: UUID
+    state: Literal["waiting", "choice"]
+    total: int
+    completed: int
+    failed: int
+    pending: int
+    reason: Literal["analysisFailed", "timedOut", "consentRequired"] | None = None
+
+
+class PhotoPreparationChoice(CamelModel):
+    set_id: UUID
+    action: Literal["retry", "continue"]
+
+
 class CardGenerationStatus(CamelModel):
     """4-1, 4-2 응답. 상태별 홈 버튼은 API 명세 4절 표 참고."""
 
@@ -25,6 +40,7 @@ class CardGenerationStatus(CamelModel):
     status: Literal["none", "running", "ready", "inVisit", "failed"]
     # 카드를 받은 뒤 프로필이나 일대기를 고쳐서 새로 만들어야 하면 true. 이 묶음으로는 면회를 시작할 수 없음
     needs_refresh: bool = False
+    photo_preparation: PhotoPreparation | None = None
 
 
 class CardTopic(CamelModel):
@@ -79,6 +95,9 @@ class LifeFact(CamelModel):
     created_at: datetime
     # visit: 면회 뒤 제안을 승인해 생긴 이야기, caregiver: 보호자가 직접 넣은 이야기
     source: Literal["visit", "caregiver"]
+    # 아픈 기억일 수 있는 이야기(`life_facts.sensitive`). 카드 생성 2판은 이 이야기를 근거로 한 카드를
+    # 아픈 경험 카드(`sensitive`)로 냄(2026-11-10 PM 결정)
+    sensitive: bool
 
 
 class Photo(CamelModel):

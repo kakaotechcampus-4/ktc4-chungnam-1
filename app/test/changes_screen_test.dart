@@ -133,10 +133,9 @@ FilledButton _doneButton(WidgetTester tester) =>
 FilledButton _applyButton(WidgetTester tester, String label) =>
     tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
 
-/// 아래 반영 버튼을 누르고 홈으로 갈 때까지 기다린다. 이야기를 지운 뒤 뜬
-/// 되돌리기 알림이 버튼을 가릴 수 있어, 알림이 저절로 닫힐 때까지 먼저 기다린다.
+/// 아래 반영 버튼을 누르고 홈으로 갈 때까지 기다린다. 되돌리기 알림은 버튼
+/// 위에 떠서 버튼을 가리지 않으므로 알림이 닫히기를 기다리지 않는다.
 Future<void> _apply(WidgetTester tester, String label) async {
-  await _waitUndoClosed(tester);
   await tester.tap(find.widgetWithText(FilledButton, label));
   await tester.pumpAndSettle();
 }
@@ -584,12 +583,46 @@ void main() {
       await _remove(tester, 1);
       expect(find.text('되돌리기'), findsOneWidget);
 
-      // 알림이 닫히기 전에 반영한다. 알림이 버튼을 가리므로 버튼을 직접 부른다.
-      _applyButton(tester, '이대로 반영하기').onPressed!();
+      // 알림이 닫히기 전에 반영 버튼을 누른다.
+      await tester.tap(find.widgetWithText(FilledButton, '이대로 반영하기'));
       await tester.pumpAndSettle();
 
       expect(find.text('홈 화면'), findsOneWidget);
       expect(find.text('되돌리기'), findsNothing);
+    });
+
+    // 2026-11-10 E2E: 알림 띠가 반영 버튼을 덮어, 알림이 닫힌 직후 되돌리기
+    // 자리를 누른 손가락이 반영 버튼에 맞아 확인 없이 반영됐다.
+    testWidgets('되돌리기 알림은 반영 버튼 위에 떠서 버튼을 가리지 않는다', (tester) async {
+      await _open(tester, topics: const [], facts: const [_fact, _secondFact]);
+
+      await _remove(tester, 0);
+
+      final snackBar = tester.getRect(find.byType(SnackBar));
+      final button = tester.getRect(
+        find.widgetWithText(FilledButton, '이대로 반영하기'),
+      );
+      expect(snackBar.bottom, lessThanOrEqualTo(button.top));
+    });
+
+    testWidgets('알림이 닫힌 뒤 같은 자리를 눌러도 반영되지 않는다', (tester) async {
+      final repository = _RecordingRepository();
+      await _open(
+        tester,
+        repository: repository,
+        topics: const [],
+        facts: const [_fact, _secondFact],
+      );
+
+      await _remove(tester, 0);
+      final undo = tester.getCenter(find.text('되돌리기'));
+      await _waitUndoClosed(tester);
+
+      await tester.tapAt(undo);
+      await tester.pumpAndSettle();
+
+      expect(repository.sent, isNull, reason: '반영 버튼은 알림 자리 아래에 있다');
+      expect(find.text('홈 화면'), findsNothing);
     });
   });
 

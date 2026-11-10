@@ -1,6 +1,6 @@
 # BE 영역
 
-담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. STT는 연결돼 있다. speech-worker가 [AiServerClient](app/clients/ai_server.py)로 `stt-server`를 HTTP로 부르고, 결과 전사로 같은 작업에서 리포트를 만든다([비동기 면회 음성 STT](docs/async-speech-analysis.md)). 세부 정보의 짧은 음성 전사 API(6-6, #214)도 같은 서버를 부른다([short-speech-transcription](docs/short-speech-transcription.md)). VLM(프로필 사진 설명)은 연결되지 않았다. 사진 분석 대기열(`PhotoAnalysisQueue`)만 있고 처리 함수와 worker는 없으며, 계정별 사진 분석 동의 필드도 없다.
+담당 리더: 김민혁. Python 3.12와 FastAPI의 상태 확인, 공통 오류 및 요청 로그, 구글 인증 API와 PostgreSQL 개발 스키마가 있으며 계정, 프로필과 생애 정보는 PostgreSQL에 저장한다. STT는 연결돼 있다. speech-worker가 [AiServerClient](app/clients/ai_server.py)로 `stt-server`를 HTTP로 부르고, 결과 전사로 같은 작업에서 리포트를 만든다([비동기 면회 음성 STT](docs/async-speech-analysis.md)). 세부 정보의 짧은 음성 전사 API(6-6, #214)도 같은 서버를 부른다([short-speech-transcription](docs/short-speech-transcription.md)). 프로필 사진 설명은 photo-worker가 ML API로 만든다(#257, [사진 분석](docs/photo-analysis.md)). 계정별 AI 사진 분석 동의(`photoAnalysis`, `consent_records.photo_analysis`)가 켜진 계정의 사진만 분석하며, photo-worker는 11/8부터 운영 서버에서 돈다. 사진 보관 동의는 따로 없다. 첫 카드의 사진 대기, 실패 시 선택과 적용 조건은 [사진 분석 연결](docs/photo-analysis.md)에 있다(#294).
 
 STT는 Tailscale 사설망으로 연결하는 개인 GPU 서버, 사진 설명과 카드 및 리포트 생성은 ML API를 활용하는 방향이다. 10월 6일 BE 논의와 [ADR-006의 후속 정정](../docs/architecture/decisions/ADR-006-server-side-ai-processing.md#현재-적용할-방향-2026-10-11-정정)을 따른다. 생성 함수와 HTTP의 구체적인 연결은 각 담당 PR에서 맞춘다. 현재 개인 GPU의 처리 성능은 해당 환경에서 검증한 결과로 별도 기록한다.
 
@@ -48,7 +48,7 @@ SAEROK_BACKEND_HOST=0.0.0.0 ./scripts/run_backend.sh
 uv run pytest
 ```
 
-컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 개발 서버는 develop에 병합된 코드와 합성 데이터만 쓴다. HTTPS는 sslip.io와 Caddy로 임시 구성하며, BE 공개 범위는 별도 검토하며, STT는 개인 GPU 서버의 Tailscale IP로 연결한다.
+컨테이너 실행과 EC2 개발 서버 배포 절차는 [컨테이너 실행과 개발 서버 배포](docs/deployment.md)에 둔다. 이 EC2 서버는 develop에 병합된 코드와 합성 데이터만 쓰는 개발 서버로 만들었고 지금은 운영 서버로 쓴다. 갱신은 [승인 배포 workflow](../docs/deploy-workflows.md)로만 하고 배포 문서의 손 갱신 절차는 쓰지 않는다. 다만 workflow는 caddy를 교체하지 않으므로, [Caddyfile](Caddyfile)이 바뀐 배포는 Deploy 뒤 caddy만 따로 다시 만든다([배포 문서의 갱신](docs/deployment.md#갱신)). HTTPS는 sslip.io와 Caddy로 임시 구성하며, BE 공개 범위는 별도 검토하며, STT는 개인 GPU 서버의 Tailscale IP로 연결하고 연결에 실패하면 예비 STT로 한 번 전환한다([STT 예비 서버 전환](#stt-예비-서버-전환)). 이 workflow는 STT 서버를 배포하지 않는다. 현재 구현 (2026-11-10 기준): 11/10 01:41 KST Deploy run 42656825849(PM 승인)로 develop `83695093`을 배포했고 migration은 `9c4e2b7a1f63`까지 적용했다. 11/9까지 병합한 BE 수정(#275, #277~#291)과 11/10 병합한 #295가 모두 운영에 있어, 이 README의 서버 동작 설명은 운영 서버와 같은 코드 기준이다. 그 전 배포는 11/9 Deploy run 42568179490(develop `59190ba7`, migration `685f243e9f1f`), 그 전은 11/8 Deploy run 42485750502(develop `9c2b8276`)였다. 처음 배포할 때 손으로 할 일(#278의 caddy 다시 만들기, #280 이전부터 멈춘 `sttCompleted` 작업 정리)은 [배포 workflow의 실제 실행 기록](../docs/deploy-workflows.md#실제-실행-기록-2026-11-09-기준)에 있고, 팀 운영 기록에는 11/9 배포 뒤 이 둘을 한 기록이 없다. #287의 백업 정리 timer도 승인 배포 workflow가 설치하지 않으며 서버에 설치한 기록이 없다([release-safety](docs/release-safety.md#오래된-백업-정리14일-보관)).
 
 | 확인 항목 | 위치 / 현재 범위 |
 | --- | --- |
@@ -117,16 +117,17 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 구성 | 하는 일 | 준비된 것 |
 | --- | --- | --- |
 | 대기열 (`JobQueue`) | 임대 만료 정리, 작업 하나 임대(`claim`), 실패 기록(`fail`). 각 메서드는 짧은 트랜잭션 하나 | 음성 `SpeechAnalysisQueue`, 카드 생성 [CardGenerationQueue](app/services/card_generation_jobs.py), 사진 분석 [PhotoAnalysisQueue](app/services/photo_analysis_jobs.py) |
-| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 분석 처리 함수는 아직 없다 |
+| 처리 함수 (`JobProcessor`) | `async def process(connection, job)`. AI 서버 호출과 응답 검증은 트랜잭션 밖에서 하고 결과 저장만 트랜잭션으로 묶는다 | 음성 `SpeechAnalysisProcessor`, 카드 생성 [CardGenerationProcessor](app/services/card_sets.py), 사진 분석 [PhotoAnalysisProcessor](app/services/photo_analysis_pipeline.py) |
 
 - `Worker`는 한 번 돌 때 임대 만료 정리 → 작업 하나 임대 → 처리 순서로 실행한다. 처리 함수가 `AppError`를 내면 그 `error_code`로, 그 밖의 예외는 대기열의 기본 실패 코드로 작업을 실패시킨다. 예외 메시지는 로그에 남기지 않고 종류만 남긴다.
 - 임대 시간 안에 끝나지 않은 작업은 다음 정리에서 `WORKER_LEASE_EXPIRED`로 실패한다. 음성의 업로드 단계에서 멈춘 작업은 접수 전 실패와 같으므로 지워서 다시 제출할 수 있게 한다. 음성 작업이 전사 저장 뒤 리포트 시작 전에 멈추면 실패시키지 않고 인계 임대가 끝난 뒤 리포트 생성을 이어받는다([AI 음성 분석 연동](#ai-음성-분석-연동)). 실패한 작업의 자동 재시도는 하지 않는다.
-- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
+- 종료 신호(SIGTERM, SIGINT)를 받으면 새 작업을 가져오지 않고, 처리 중인 작업을 마친 뒤 끝난다. 대기 중이면 바로 끝나고, 같은 신호를 한 번 더 받으면 기다리지 않고 끝난다. Windows의 SelectorEventLoop는 `loop.add_signal_handler`를 지원하지 않아 `signal.signal`로 받는다. 처리 함수는 `Worker.stopping`으로 종료 요청을 볼 수 있으며, 음성 worker는 30분 조각으로 나눈 긴 녹음을 전사하는 중이면 진행 중인 조각만 마치고 작업을 `queued`로 되돌린다. compose의 유예 시간과 근거는 [배포 문서](docs/deployment.md#worker-종료와-유예-시간)에 있다.
 - 결과를 저장해 작업을 끝낼 때는 임대도 함께 지운다. `card_sets`는 `completed`로 바꿀 때 `lease_expires_at = NULL`이어야 하고(CHECK `card_sets_lease_check`), `photos`는 `processing`일 때만 임대가 있다(CHECK `photos_lease_check`).
 - 카드 생성은 임대가 남은 `running` 작업에만 결과를 저장한다(`card_sets.save_result`). 생성하는 동안 임대 시각이 지났으면 다음 정리를 기다리지 않고 결과를 버린 뒤 작업을 `WORKER_LEASE_EXPIRED`로 끝낸다. `CardGenerationQueue.fail`도 임대 시각이 지난 작업에는 넘겨받은 코드 대신 `WORKER_LEASE_EXPIRED`를 남기고, 이미 끝난 작업(`failed`, `completed`)은 바꾸지 않는다. 시각은 `clock_timestamp()`로 비교한다. 저장 트랜잭션은 프로필 잠금을 기다린 뒤 임대를 확인하는데, 트랜잭션 안의 `now()`는 시작 시각이라 기다리는 동안 끝난 임대를 남은 것으로 보기 때문이다.
 - 카드 생성 처리 함수가 AI에 보낸 요청을 남기며 실패시키려면 `CardGenerationQueue.fail(..., generation_input=...)`을 직접 부르고 정상 반환한다.
 - 카드 생성 대기열은 작업을 가져갈 때 `card_sets.claimed_at`을 남기고 작업이 끝나도 지우지 않는다. 4-1과 4-2는 시작 대기 시간(기본 360초)보다 오래 기다린 작업을, 그 시간 동안 가져간 작업도 임대가 남은 작업도 없을 때만 `CARD_GENERATION_NOT_STARTED`로 정리한다. worker가 다른 계정의 작업을 처리하는 동안 기다리는 작업은 실패시키지 않는다([API 4절](../docs/architecture/api-spec.md#4-대화-카드)).
-- **`PhotoAnalysisQueue`와 worker 연결은 합성 사진만 있는 개발 환경에서 먼저 구현하고 검증한다.** 지금은 `pending`인 프로필 사진을 모두 가져온다. 실제 사용자 사진을 처리하기 전에는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)에 따라 유효한 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증해야 한다. 테스트 통과만으로 실제 사용자 사진을 처리하도록 개방하지 않는다.
+- **`PhotoAnalysisQueue`는 계정의 현재 동의(`current_consents.photo_analysis`)가 켜진 프로필 사진만 가져온다(#257).** 동의하지 않은 계정의 사진은 `pending`으로 남고 나중에 동의하면 그때 분석한다. 처리 함수는 ML 업체를 부르기 바로 전(#288)과 저장 직전(#257)에 동의를 다시 확인하고, 그사이 동의를 거뒀으면 업체를 부르지 않거나 결과를 버린 뒤 `pending`으로 되돌린다. 동의를 거두면 이미 저장된 AI 설명도 지운다(#288, [로그인 API](#로그인-api)의 `PATCH /auth/me/consents`). 사진 보관 동의는 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)의 남은 항목이다. 처음에는 합성 사진만 있는 개발 환경에서 먼저 구현했다. 실제 사용자 사진을 처리하기 전에 ADR-001의 계정별 분석 동의 조건, 분석하지 않는 사진의 상태와 철회 시 작업 중단을 구현하고 검증하며, 테스트 통과만으로 실제 사용자 사진 처리를 개방하지 않는다는 기준은 지금도 그대로다. 세 조건의 구현은 #257로 들어갔지만 실제 사용자 사진 처리를 승인한 것은 아니다([ADR-001 현재 구현](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#현재-구현과-적용-조건)). 11/8 운영 시험은 공개 라이선스 사진으로만 했고 실제 사용자 사진은 확인하지 않았다.
+- 첫 카드의 사진 대기(#294)는 worker와 DB 연결을 붙잡지 않고 `card_sets`에 저장하며, 다른 프로필의 카드 생성을 막지 않는다. 동의 철회와 실패 처리의 현재 규칙은 [사진 분석 문서](docs/photo-analysis.md)를 따른다.
 - 새 worker의 실행 진입점은 [speech_analysis.py](app/workers/speech_analysis.py)처럼 `run_worker_main`으로 만든다. `--once`면 대기 작업을 최대 하나 처리하고 끝낸다.
 
 ## 담당과 다음 결정
@@ -136,8 +137,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 | 모델 실행 | AI와 입력 형식, 모델 로딩, 자원 해제, STT 및 화자 처리 파이프라인 검토 |
 | 앱 연동 | [공통 데이터 계약](../docs/architecture/data-contracts.md)의 입력 검증, 응답과 상태 전달 |
 | 작업 처리 | 타임아웃, 재시도 상한, 취소, 장애 복구와 수동 전환 |
-| 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 개발 스키마와 Alembic은 반영됐으며 앱의 실제 저장 연결은 후속 작업 |
-| 운영 | 현재 개인 GPU에서 STT 처리 시간·메모리와 동시 처리 조건 측정. PM과 운영 방식 확인. 모델 파일 배포와 무결성 확인 |
+| 데이터 저장 | 서버 저장 항목, 단말 보관 여부, 접근 권한, 보관 기간과 삭제 조건을 제안. PostgreSQL 스키마와 Alembic이 반영됐고 앱은 API로 서버에 저장한다. 앱과 실제 BE의 연결은 PR마다 E2E로 검사한다(#258) |
+| 운영 | 현재 개인 GPU에서 STT 처리 시간, 메모리와 동시 처리 조건 측정. PM과 운영 방식 확인. 모델 파일 배포와 무결성 확인 |
 | 데이터 이동 | 업로드 허용 필드, 인증, 마스킹, 임시 파일과 로그의 삭제 확인 |
 | 외부 서비스 | 외부 LLM 중계 필요 여부와 개인정보 처리 조건 확인 |
 
@@ -152,7 +153,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
     → 보호자 검토
     → 승인된 사실 반영, 서버 중심 관리
 
-이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. DB와 GPU를 같은 장비에 배치할지도 미정이다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. PR #92는 병합됐고 사진 보관과 AI 분석을 가입 시 선택 동의로 받아 계정별로 저장하는 방향은 2026-10-14 PM이 확정했지만, 동의 및 삭제 연결과 실제 사용자 자료 처리 검증은 남아 있다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
+이 흐름은 구현해야 할 목표다. BE가 데이터별 저장 위치, 단말 보관 여부, 기간과 접근 및 삭제 조건을 PR로 정리하고 FE, AI와 PM이 함께 확인한다. 현재 DB는 EC2의 Compose(`db` 서비스)에 두고 STT는 별도 GPU 서버(개인 GPU, ck 예비)에서 실행한다. 녹음 원본은 STT 완료 후 즉시 삭제하며 업로드 후 최대 24시간 제한을 유지한다. 등록 사진과 AI 분석용 임시 사본은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#등록-사진과-분석용-임시-사본의-구분)에서 구분한다. PR #92는 병합됐고 사진 보관과 AI 분석을 가입 시 선택 동의로 받아 계정별로 저장하는 방향은 2026-10-14 PM이 확정했다. 이 중 AI 분석 동의는 #257로 연결됐다. 사진 보관 동의, 삭제 대기열의 실제 삭제 실행과 실제 사용자 자료 처리 검증은 남아 있다. 실제 사용자 자료와 마스킹한 실제 자료는 개발 골격의 테스트에 사용하지 않는다.
 
 직접 식별정보와 허용 목록 밖의 원본은 외부 AI로 보내지 않는다. 데이터 경로 변경 전 [법률 문서](../docs/legal/README.md), [동의 및 임시 처리 ADR](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md)과 데이터 흐름을 갱신한다. 외부 업체의 이름, 국가, 목적, 항목, 보유기간과 자체 학습 여부가 정해지기 전에는 실제 사용자 자료로 호출하지 않는다.
 
@@ -164,7 +165,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 ### 흐름
 
-다음은 목표 흐름이다. 서버 엔드포인트는 아래 표에 있고, 앱의 세션 보관과 재실행 시 복원은 [PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)의 후속 보완 항목이다.
+다음은 현재 흐름이다. 서버 엔드포인트는 아래 표에 있다. 앱은 세션을 기기 보안 저장소에 두고 다시 켤 때 `GET /auth/me`로 확인해 복원한다([PR #50](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/50)). 보관한 세션이 만료됐거나 서버가 거절하면 구글 무음 로그인으로 새 ID 토큰을 받아 `POST /auth/google`을 다시 부른다(PR #50). 쓰는 중에 세션이 만료돼도 같은 방식으로 다시 받는다(#175).
 
     앱 시작
     → (세션 있음) GET /auth/me → 홈
@@ -172,8 +173,8 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
         → status=authenticated  → 홈
         → status=consentRequired → 동의 화면 → POST /auth/consent → 홈
 
-    프로필 설정의 선택 동의 변경 → PATCH /auth/me/consents
-    프로필 설정의 로그아웃 → POST /auth/logout → 로그인 화면
+    설정의 계정 약관 동의에서 선택 동의 변경 → PATCH /auth/me/consents
+    설정의 로그아웃 → POST /auth/logout → 로그인 화면
     회원 탈퇴 확인의 탈퇴하기 → DELETE /auth/me (탈퇴 이유는 선택) → 로그인 화면
 
 구글 인증에 성공한 것만으로는 계정을 만들지 않는다. 필수 동의가 모두 완료될 때 계정과 동의 이력을 함께 만든다. 필수 동의를 거부하거나 중단하면 계정이 남지 않는다.
@@ -195,7 +196,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 `POST /auth/google` 은 `{"idToken": "..."}` 를 받고 `status` 로 갈라지는 두 응답 가운데 하나를 준다.
 
-사진 보관과 AI 분석을 가입 화면에서 선택 동의로 받는 2026-10-14 PM 결정은 [보관 기준과 후속 작업](#보관-기준과-후속-작업)에 기록했다. 아래 네 항목의 API 예시는 현재 구현이며 새 두 항목은 아직 포함하지 않는다.
+사진 보관과 AI 분석을 가입 화면에서 선택 동의로 받는 2026-10-14 PM 결정은 [보관 기준과 후속 작업](#보관-기준과-후속-작업)에 기록했다. 아래 API 예시는 현재 구현이며, 두 항목 중 AI 사진 분석(`photoAnalysis`)은 #257로 선택 동의에 들어갔고 사진 보관 동의는 아직 없다.
 
 아래 동의 목록은 현재 BE 구현의 예시다. [PR #49](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/49)에서 알림 수신을 선택 동의로 옮겨 공통 계약과 FE의 기준에 맞췄다. 알림을 거부해도 필수 동의를 완료하면 계정이 생성된다.
 
@@ -207,7 +208,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
   "expiresIn": 600,
   "consentVersion": "2026-09-06",
   "requiredConsents": ["serviceData", "sensitiveData"],
-  "optionalConsents": ["serviceImprovement", "pushNotification"]
+  "optionalConsents": ["serviceImprovement", "pushNotification", "photoAnalysis"]
 }
 ```
 
@@ -222,7 +223,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 }
 ```
 
-`POST /auth/consent` 는 `registrationToken`, `consentVersion`, `consents`(네 항목 모두 boolean)와 선택값 `displayName` 을 받고 `status=authenticated` 응답을 준다.
+`POST /auth/consent` 는 `registrationToken`, `consentVersion`, `consents`(네 항목은 필수 boolean, `photoAnalysis`는 선택이며 빠지면 거부로 저장)와 선택값 `displayName` 을 받고 `status=authenticated` 응답을 준다.
 
 - `consents` 의 값은 `PATCH /auth/me/consents` 와 같이 JSON `true`, `false`만 받는다(`StrictBool`). `"yes"`, `"on"`, `1` 은 `INVALID_REQUEST`(422)이며 계정을 만들지 않는다.
 - 등록 토큰은 한 번만 쓴다. 같은 토큰을 다시 보내면 로그아웃이나 탈퇴 뒤에도 `INVALID_REGISTRATION_TOKEN`(401)이며, 구글 인증 없이 세션을 받거나 지운 계정을 다시 만들지 못한다. 계정을 만들지 못한 `409`, `422` 는 토큰을 쓴 것으로 치지 않는다. 응답을 받지 못해 같은 토큰으로 다시 보낸 앱은 401 을 받고 `POST /auth/google` 부터 다시 하며, 계정이 이미 있으면 그때 세션을 받는다([API 1-2](../docs/architecture/api-spec.md#1-2-post-authconsent--완료)).
@@ -237,12 +238,12 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 값은 `true`, `false`만 받는다. 필수 동의(`serviceData`, `sensitiveData`)를 보내면 `REQUIRED_CONSENT_NOT_CHANGEABLE`(422), 본문이 비었거나 `null`을 보내면 `INVALID_REQUEST`(422)다.
 - 로그아웃은 계정이 이미 없어도 세션을 폐기한다. 같은 계정의 다른 세션은 그대로 둔다.
 - 탈퇴는 `users` 행을 지운다. 같은 계정의 다른 세션은 이후 `ACCOUNT_NOT_FOUND`(404)로 거절된다. 같은 구글 계정으로 다시 로그인하면 지운 계정이 되살아나지 않고 `status=consentRequired`를 받는다.
-- DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체는 삭제 실행기(#204)가 지우며, 운영 배포와 주기 실행은 남아 있다. 대기열 등록만으로 삭제 완료를 표시하지 않는다.
+- DB의 `ON DELETE CASCADE`로 동의 이력, 프로필과 그 아래의 모든 기록이 함께 지워지고, 사진과 음성 원본의 객체 키는 trigger가 S3 삭제 대기열(`storage_deletion_request_queue`)에 넣는다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위다. 대기열의 S3 객체는 삭제 실행기(#204)가 지운다. 운영에서 실제 삭제를 실행했는지는 [보관 기준과 후속 작업](#보관-기준과-후속-작업)을 따른다. 대기열 등록만으로 삭제 완료를 표시하지 않는다.
 - 탈퇴 이유는 계정 삭제와 같은 트랜잭션에서 `withdrawal_feedback(reasons, other_text)`에 넣고 계정 ID는 넣지 않는다. `reasons`는 1개 이상이고 중복을 받지 않으며, `otherText`는 `other`를 고른 경우에만 비우지 않고 보낸다. 조건이 맞지 않으면 `INVALID_REQUEST`(422)이며 계정을 지우지 않는다. `otherText`는 로그에 남기지 않는다.
 
 #### 푸시 받을 기기
 
-리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다([API 1-7, 1-8](../docs/architecture/api-spec.md#1-7-put-authmepush-devicesfid--미병합), [서비스](app/services/push_devices.py)). 발송은 아래 "리포트 완료 푸시"에 있다.
+리포트 완료 푸시를 보낼 기기를 `push_devices(fid, user_id, registered_at)`에 둔다(#248, [API 1-7, 1-8](../docs/architecture/api-spec.md#1-계정), [서비스](app/services/push_devices.py)). 발송은 아래 "리포트 완료 푸시"에 있다.
 
 - `fid`는 앱이 FCM에 등록하고 받은 Firebase Installation ID다. FCM HTTP v1은 기기 토큰(`token`) 대신 `fid`로 보내도록 바꿨다. 경로로 받으며 영문 대소문자, 숫자, `-`, `_`로 된 1~64자만 받는다(DB CHECK도 같다). 기기를 가리키는 값이라 로그에 남기지 않는다.
 - 등록(1-7)은 알림 수신 동의가 켜진 계정만 받고, 아니면 `PUSH_NOTIFICATION_CONSENT_REQUIRED`(403)다. 동의를 바꾸는 1-6, 같은 계정의 다른 등록과 겹치지 않도록 계정 행을 `FOR UPDATE`로 잠근 뒤 현재 동의를 읽고 저장한다. 같은 FID를 다시 보내면 `registered_at`만 새로 하고, 다른 계정의 FID면 이 계정으로 옮긴다.
@@ -253,15 +254,15 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 
 #### 리포트 완료 푸시
 
-음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)).
+음성 worker가 리포트를 완료로 저장한 뒤 FCM HTTP v1으로 알린다([report_notifications.py](app/services/report_notifications.py), [fcm.py](app/clients/fcm.py)). 실패로 끝난 작업도 같은 방식으로 알린다(아래 마지막 항목).
 
 - 완료 처리(`mark_completed`)가 커밋된 다음에 보낸다. 대상은 DB에서 다시 고른다. 작업이 `completed`이고, 그 회차 계정의 현재 동의(`current_consents`)에서 알림 수신이 켜져 있고, 그 계정의 `push_devices`에 등록된 기기만이다. 임대를 잃어 리포트를 저장하지 못한 작업이나 그사이 동의를 거둔 계정에는 보내지 않는다. 대상을 읽을 때 트랜잭션을 열지 않아 발송 중 잠금을 잡지 않는다.
-- 알림은 고정 문구(`새록`, `리포트가 준비되었어요`)와 `data`의 `type: reportReady`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `sessionId`로 리포트(7-2)를 다시 읽는다. `data` 항목은 FE와 합의 전인 테스트 가정이다.
+- 알림은 고정 문구(`새록`, `리포트가 준비되었어요`)와 `data`의 `type: reportReady`, `sessionId`, `analysisId`만 담는다. 어르신 이름과 리포트 내용은 담지 않는다. 앱은 `type`이 `reportReady`인 알림을 누르면 `sessionId`로 리포트(7-2)를 다시 읽어 연다(#247, 홈이 아닌 보기 화면에서도 바로 여는 것은 #264, `app/lib/features/push/push_messaging.dart`).
 - 인증은 Firebase 서비스 계정 키로 서명한 JWT를 Google 토큰 주소에 보내 접근 토큰을 받는다(`pyjwt[crypto]`와 `httpx`, 새 의존성 없음). 접근 토큰은 만료 60초 전까지 다시 쓰고 401을 받으면 버린다.
 - 응답이 404 `UNREGISTERED`면 그 계정의 그 등록을 지운다. 400 `INVALID_ARGUMENT`는 알림 본문 문제일 수도 있어 지우지 않는다. 그 밖의 실패(429, 5xx, 연결 실패, 토큰 실패)는 이번 알림만 포기하고 다시 보내지 않는다. 알림을 놓쳐도 앱은 홈에서 회차 상태(5-4)로 리포트 도착을 보여준다.
 - 발송 실패는 리포트 작업을 실패로 만들지 않는다. 로그에는 HTTP 상태, FCM 오류 코드와 건수만 남기고 FID, 키와 접근 토큰은 남기지 않는다.
 - 설정: `SAEROK_FCM_CREDENTIALS_PATH`(키 파일 경로, 비우면 푸시 없음), `SAEROK_FCM_TIMEOUT_SECONDS`(요청 하나의 제한 시간, 기본 10초). 경로를 넣었는데 키 파일을 읽지 못하면 음성 worker가 시작하지 않는다. `--stt-only`는 리포트를 만들지 않으므로 키를 보지 않는다. 컨테이너 배포는 [배포 문서](docs/deployment.md)의 "리포트 완료 푸시 키"를 따른다.
-- 리포트 생성 실패를 알릴지는 정하지 않아 보내지 않는다(PM 확인 필요). 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
+- 실패 알림: worker가 작업을 `failed`로 기록한 뒤(`SpeechAnalysisQueue.fail`) 같은 조건(작업이 실제로 `failed`, 현재 알림 동의, 등록 기기)으로 `새록`, `리포트를 만들지 못했어요`와 `data`의 `type: reportFailed`, `sessionId`, `analysisId`만 보낸다. 실패 코드와 이유는 담지 않는다. 지금 앱은 `reportFailed`를 눌러도 화면을 옮기지 않고 앱만 열며 홈의 실패 안내가 다시 요청하기를 보여 준다. 멈춘 worker의 작업을 다른 worker의 임대 정리가 끝낸 경우(`WORKER_LEASE_EXPIRED`)와 전사 기한 정리(`TRANSCRIPT_EXPIRED`)는 여러 행을 한 문장으로 바꾸므로 알리지 않는다. 현재 구현 (2026-11-10 기준): 11/10 E2E 문제 9를 고치는 `fix/long-recording-30min-stt` 브랜치의 변경이며 아직 병합하지 않았다. 이전에는 실패를 알릴지 정하지 않아 보내지 않았으므로 병합 전에 PM이 문구와 범위를 확인한다. 실제 FCM 발송은 합성 계정과 실기기로만 확인하며, 실제 사용자 계정에 쓰기 전 조건은 [법률 문서](../docs/legal/README.md#개발-우선과-실제-사용자-자료-사용-전-확인)를 따른다.
 
 ### 세션
 
@@ -270,7 +271,7 @@ psycopg 비동기 연결은 Windows 기본 이벤트 루프(ProactorEventLoop)�
 - 형식: HS256 으로 서명한 JWT. 리프레시 토큰을 따로 두지 않는다. 세션마다 무작위 `jti` 를 넣고, `jti` 가 없는 세션은 `UNAUTHENTICATED` 로 거절한다.
 - 수명: `SAEROK_SESSION_TTL_SECONDS`(기본 1시간).
 - 폐기: 로그아웃과 탈퇴는 그 세션의 `jti` 를 만료 시각까지 `session_revocations` 테이블(`PostgresSessionRevocationStore`)에 남긴다. 폐기한 세션은 만료 전이라도 `UNAUTHENTICATED`(401)다. 테이블에는 `jti` 와 만료 시각만 두고 계정 식별자와 토큰 원문은 두지 않으며, 계정을 참조하지 않으므로 탈퇴 뒤에도 만료까지 남는다. 서버를 다시 띄우거나 여러 개 띄워도 같은 기록을 본다. 만료가 지난 행은 다음 폐기나 동의 제출 때 지운다. 인증이 필요한 요청은 세션의 형식, 서명, 만료와 종류(`typ`)를 먼저 확인하고, 통과한 요청만 폐기 여부를 확인하려고 DB 연결을 연다([deps.py](app/api/deps.py)의 `read_signed_session`, `get_current_session`). 업로드 네 경로는 본문을 읽기 전에 서명과 만료를 먼저 확인하고, 폐기 여부는 본문을 받은 뒤 같은 의존성에서 확인한다([요청 본문 크기 상한](#요청-본문-크기-상한)). 메모리 구현(`InMemorySessionRevocationStore`)은 DB 없이 인증 경로를 검사하는 테스트에만 쓴다.
-- 갱신 방향: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 새 구글 ID 토큰을 받아 `POST /auth/google`을 다시 호출하도록 연결한다. 앱의 자동 재인증은 PR #50 후속 작업이며 아직 완료되지 않았다. 서버가 보관하는 갱신 자격증명은 없다.
+- 갱신: 앱이 사용자에게 매번 로그인 버튼을 누르게 하지 않고 구글 무음 로그인으로 새 ID 토큰을 받아 `POST /auth/google`을 다시 호출한다. 앱을 다시 켤 때의 재인증은 PR #50, 쓰는 중 세션이 만료됐을 때의 재인증은 #175로 들어왔다(`app/lib/features/auth/session_restore.dart`, `session_refresher.dart`). 무음 로그인으로 받지 못하면 로그인 화면으로 보낸다. 계정이 사라졌으면 쓰는 중에는 동의 화면으로 보내고(#175), 앱을 다시 켤 때는 세션을 지우고 로그인 화면에서 다시 시작하게 한다(ADR-007). 서버가 보관하는 갱신 자격증명은 없다.
 - 등록 토큰은 구글 인증과 동의 제출 사이에서만 쓰는 별도 토큰이며 `typ` 으로 세션과 구분한다. 아직 계정이 없는 상태를 이어주기 위해 제공자 식별자를 담으므로, 서명은 되어 있지만 내용은 토큰을 가진 쪽이 읽을 수 있다. 앱은 자신의 구글 `sub` 를 이미 ID 토큰으로 갖고 있어 새로 드러나는 값은 없으나, 서버 측 임시 저장으로 바꿀지는 검토 대상이다.
 - 등록 토큰에도 무작위 `jti` 를 넣고 한 번만 쓴다. 동의 제출이 계정을 만들거나 세션을 줄 때 그 `jti` 를 토큰 만료 시각까지 `session_revocations` 에 남긴다. 기록과 계정 생성은 같은 트랜잭션이라, 계정을 만들지 못하면 기록도 되돌린다. 같은 토큰을 동시에 두 번 보내면 뒤 요청은 앞 트랜잭션이 끝나기를 기다렸다가 401 을 받는다. `jti` 가 없는 등록 토큰(이 변경 전에 발급한 토큰)은 `INVALID_REGISTRATION_TOKEN` 이므로, 배포 시점에 동의 화면에 있던 사용자는 다시 로그인한다.
 
@@ -328,10 +329,10 @@ ID 토큰의 `kid`는 서명을 확인하기 전에 읽으므로 로그인하지
 
 - **계정 저장 항목** — ADR-007의 PM 제안은 이메일과 구글 계정 이름을 저장하지 않는 방향이며 기본 설정은 `false`다. 현재 스키마의 `users`는 구글 `sub`, 표시 이름과 가입 시각만 두고 이메일 컬럼이 없다. 표시 이름이 비어 있으면 `보호자`를 쓴다. 추가 수집 필요성은 별도 검토한다. 설정 스위치가 실제 사용자 정보 수집을 승인하는 것은 아니다.
 - **`Account.email`의 널 허용** — 공통 계약, Flutter `Account`와 합성 예시는 nullable 응답을 읽도록 맞췄다. 이것으로 이메일 미저장 정책이나 DB 연결까지 확정한 것은 아니다. PR #50의 `AuthAccount`를 하나의 클래스로 합치는 작업도 포함하지 않는다.
-- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `app.saerok.android` 와 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51에서 다룬다.
+- **`aud` 로 쓸 클라이언트 ID** — `google_sign_in` 에 `serverClientId` 를 넘기면 `aud` 가 웹 클라이언트 ID가 된다. FE 가 쓰는 값을 확인해서 `SAEROK_GOOGLE_CLIENT_IDS` 에 넣는다. Google Cloud Console 에 패키지명 `app.saerok.android` 와 디버그 및 릴리스 SHA-1 등록이 선행되어야 한다. 쉼표 구분 설정의 읽기 보완은 PR #51로 병합됐다.
 - **재동의** — 약관 버전이 올라갔을 때 기존 계정에 다시 동의를 받는 흐름은 넣지 않았다. 응답의 `account.consent.consentVersion` 으로 앱이 비교할 수는 있다.
-- **약관 본문 제공과 로그인 유지** — 약관 본문, 버전과 필수 여부의 서버 관리, 앱 재실행 시 세션 복원과 만료 후 자동 재인증은 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하거나 앱이 로그인 상태를 복원하는 것으로 읽지 않는다.
-- **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. DB 백업은 계정별로 지우지 않고 만든 지 14일이 지나면 통째로 지운다(2026-11-09 PM 결정). 복원 확인된 가장 최근 백업 1개는 14일이 지나도 남는다([배포 DB 백업 보관](../docs/legal/README.md#배포-db-백업-보관)). 그 기간 동안 백업에 남는 탈퇴 계정 자료의 안내와 복원 때 탈퇴를 다시 적용하는 절차는 남아 있다. 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
+- **약관 본문 제공** — 약관 본문, 버전과 필수 여부의 서버 관리는 PR #50에 남긴 후속 요청이다. 현재 API가 약관 본문까지 제공하는 것으로 읽지 않는다. 앱 재실행 시 세션 복원(PR #50)과 만료 후 자동 재인증(#175)은 앱에 구현됐다([세션](#세션)).
+- **탈퇴와 계정 삭제** — `DELETE /auth/me`는 `users` 삭제의 `ON DELETE CASCADE`로 계정 아래의 서버 기록을 모두 지운다. [API 명세 1-5](../docs/architecture/api-spec.md#1-5-delete-authme--수정)의 범위이며, [법률 문서의 PM 검토안](../docs/legal/README.md#구글-로그인-데이터-이동에-대한-pm-검토안)이 적은 범위(인증 제공자, `sub`, 내부 계정 식별자와 동의 이력)보다 넓다. 이 범위의 법률 검토, S3 삭제 대기열의 처리, 단말 자료의 삭제 범위, 탈퇴 후 보관 기간과 재가입 허용 여부는 정해지지 않았다. DB 백업은 계정별로 지우지 않고 만든 지 14일이 지나면 통째로 지운다(2026-11-09 PM 결정). 복원 확인된 가장 최근 백업 1개는 14일이 지나도 남는다([배포 DB 백업 보관](../docs/legal/README.md#배포-db-백업-보관)). 그 기간 동안 백업에 남는 탈퇴 계정 자료의 안내와 복원 때 탈퇴를 다시 적용하는 절차는 남아 있다. 현재 구현 (2026-11-09 기준): 정리 스크립트와 매일 실행할 timer(#287)는 저장소에 있지만, 승인 배포 workflow는 timer를 설치하지 않고 서버에 설치한 기록도 없다([release-safety](docs/release-safety.md#오래된-백업-정리14일-보관)). 지금 코드는 재가입을 막지 않으며, 이것으로 재가입 허용을 정한 것은 아니다. ADR-007의 재검토 조건(탈퇴 시 삭제 범위, 세션 형식 변경)에 해당한다.
 
 ## 최소 지원 앱 버전
 
@@ -424,17 +425,18 @@ HTTPS 앞단 [Caddyfile](Caddyfile)은 `request_body`의 `max_size 514MiB`로 �
 - 생애 정보의 제목은 100자, 내용은 5,000자 이하다(`LIFE_FACT_TITLE_MAX_LENGTH`, `LIFE_FACT_CONTENT_MAX_LENGTH`, 2026-11-09 PM 결정). 2-6, 2-7과 7-4가 같은 요청 형식(`LifeFactTitle`, `LifeFactContent`)을 쓰며 넘으면 `INVALID_REQUEST`(422)다. 길이는 파이썬 문자열 길이(유니코드 코드 포인트)로 센다.
 - 프로필 하나의 생애 정보는 300개까지다(`life_facts.LIFE_FACT_LIMIT`, 2026-11-09 PM 결정). DB 제약이 없으므로 2-6과 7-4가 함께 쓰는 `create_life_fact`가 넣기 전에 센다. 동시 요청에도 넘지 않도록 부르는 쪽이 같은 트랜잭션에서 프로필 행을 먼저 잠근다(2-6은 트랜잭션 안에서 `card_sets.lock_profile`을 부르고, 7-4는 제안을 확인하기 전에 이미 잠근다). 넘으면 `LIFE_FACT_LIMIT_EXCEEDED`(409)다.
 - 다른 계정의 자원과 없는 자원은 같은 `PROFILE_NOT_FOUND` 또는 `LIFE_FACT_NOT_FOUND`(404)다.
-- 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 실행기는 #204로 들어왔고 운영 배포는 남아 있다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
+- 프로필 삭제는 `ON DELETE CASCADE`로 생애 정보, 사진, 주제와 대화 카드, 면회 기록을 함께 지우고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 카드와 주제가 함께 있는 프로필의 삭제와 탈퇴는 테스트로 확인했다. 대기열을 처리해 S3 원본을 지우는 실행기는 #204로 들어왔고, 운영 실행 상태는 [보관 기준과 후속 작업](#보관-기준과-후속-작업)을 따른다. 처리 중인 작업이 있는 프로필의 삭제는 미정이다([API 명세 미정 사항](../docs/architecture/api-spec.md#미정-사항) 8).
 - 응답의 `photos`는 프로필 사진(`session_id IS NULL`)을 올린 순서대로 담고, 사진마다 `storage.create_download`로 `imageUrl`을 만든다. 사진이 없으면 사진 저장소를 부르지 않으므로 버킷 설정 없이도 응답한다. 업로드는 아래 [사진 저장 (S3)](#사진-저장-s3)의 3-1이다.
-- 실제 사용자 사진을 받기 전에는 계정별 동의 확인과 철회 처리를 구현하고 검증한다(후속 3). 현재 업로드와 조회 테스트는 합성 사진과 메모리 저장소를 사용하며 실제 S3 업로드는 미검증이다.
-- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다. 7-4는 보호자가 고른 분류(`storyCategory`)를, 고르지 않았으면 AI가 제안에 붙인 분류를 넘기고 그림 번호는 서버가 1~5 중에서 고른다(2026-11-09 PM 결정).
+- AI 분석 동의 확인과 분석 중 철회 처리는 #257, 철회 때 저장된 AI 설명 삭제는 #288로 구현했다. 실제 사용자 사진을 받기 전에는 사진 보관 동의 확인을 구현하고 검증한다(후속 3). 자동 테스트는 합성 사진과 메모리 저장소를 쓴다. 실제 S3 업로드와 조회는 11/8 운영 안정성 시험에서 공개 라이선스 사진 43장으로 확인했다([stability-test-20261108](docs/stability-test-20261108.md)).
+- `create_life_fact(connection, *, profile_id, title, content, source_proposal_id=None, story_category="other", image_number=None)`는 7-4(작업 C)도 쓴다. 트랜잭션을 열지 않으므로 부르는 쪽의 트랜잭션에 묶이고, 소유 확인은 부르는 쪽이 한다. 7-4는 보호자가 고른 분류(`storyCategory`)를, 고르지 않았으면 AI가 제안에 붙인 분류를 넘기고 그림 번호는 서버가 1~5 중에서 고른다(2026-11-09 PM 결정, #295, 11/10 배포부터 운영). 11/10 배포 전 운영(`59190ba7`)의 7-4는 분류를 넘기지 않아 모두 `other`로 만들었다. 설치된 앱(Play와 11/8 GitHub Releases APK)에는 분류를 고르는 화면이 없어 `storyCategory`를 보내지 않으므로 AI가 붙인 분류로 만든다. 분류 고르기는 #295의 앱 변경을 넣어 새로 빌드한 APK부터 쓸 수 있다.
 - 생애 정보는 일대기의 분류(`storyCategory`: `family`, `hobby`, `work`, `hometown`, `friend`, `travel`, `other`)와 기본 그림 번호(`imageNumber`, 1~5)를 가진다. 2-6은 둘 다 필수이고 2-7은 보낸 것만 바꾼다. 그림 파일은 앱에 있고 서버는 번호만 저장한다. 필드 이름과 삭제 뒤 카드 처리는 미정이며 [작업 D 문서](docs/work-split/D-life-story.md)에 모았다.
-- 이야기 후보(`life_fact_proposals`)에는 AI가 고른 분류(`story_category`)와 아픈 기억일 수 있다는 표시(`sensitive`)가 있다(2026-11-09 PM 결정, migration `9c4e2b7a1f63`, 기존 행은 `other`, `false`). 8-3 결과의 이야기 후보는 30개까지이며 두 값이 모두 있어야 한다. 7-3은 두 값을 그대로 돌려주고, 7-4의 승인 항목은 `storyCategory`를 선택으로 받아 보호자가 바꾼 분류로 이야기를 만든다. 제안 행의 분류와 표시는 확인 뒤에도 바뀌지 않는다.
-- 대화 카드(`conversation_cards.sensitive`)도 저장된 이야기나 세부 정보의 아픈 경험을 다루면 표시한다. 4-3, 4-4 카드에 `sensitive`로 나오며 카드 생성 2판부터 채워진다(`SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 기본값).
+- 이야기 후보(`life_fact_proposals`)에는 AI가 고른 분류(`story_category`)와 아픈 기억일 수 있다는 표시(`sensitive`)가 있다(2026-11-09 PM 결정, migration `9c4e2b7a1f63`, 기존 행은 `other`, `false`). 8-3 결과의 이야기 후보는 30개까지이며 두 값이 모두 있어야 한다. 7-3은 두 값을 그대로 돌려주고, 7-4의 승인 항목은 `storyCategory`를 선택으로 받아 보호자가 바꾼 분류로 이야기를 만든다. 제안 행의 분류와 표시는 확인 뒤에도 바뀌지 않는다. #295로 들어갔고 11/10 배포(develop `83695093`)부터 운영에 있다.
+- 생애 정보(`life_facts.sensitive`)에도 아픈 기억 표시가 있다(2026-11-10 PM 결정, migration `5d2e8b1c9a47`, 운영 배포 전). 7-4는 승인한 제안의 표시를 `create_life_fact(..., sensitive=)`로 옮기고, 2-6은 `false`로 만들며, 2-7은 `sensitive`를 받아 보호자가 바꾼다. 값이 바뀌면 제목, 내용처럼 아직 면회에 안 쓴 묶음을 `needsRefresh`로 바꾼다(카드 생성 입력이라서). 2-3, 2-6, 2-7 응답과 4-1 입력 `lifeFacts[].sensitive`에 담고, 카드 생성 2판은 그 이야기를 근거로 한 카드를 늘 `sensitive`로 낸다. migration은 이미 승인한 이야기에 출처 제안의 표시를 옮긴다.
+- 대화 카드(`conversation_cards.sensitive`)도 저장된 이야기나 세부 정보의 아픈 경험을 다루면 표시한다. 4-3, 4-4 카드에 `sensitive`로 나오며 카드 생성 2판부터 채워진다(`SAEROK_CARD_GENERATION_PROMPT_VERSION=2`가 기본값). 이것도 #295로 11/10 배포부터 운영에 있다. 운영 `.env`에 판 번호를 적지 않아 기본값 2가 쓰이므로 운영 카드는 2판이다. migration 적용 순서와 판 번호 설정은 [배포 문서](docs/deployment.md#이야기-후보-분류와-아픈-기억-표시)를 따른다.
 - 2-9는 생애 정보 행만 지운다. 다음 카드 생성(4-1)의 입력에서 빠지고, 이미 만든 카드와 주제는 남는다. 주제와 지난 카드의 근거에 남은 지운 이야기의 `factId`는 저장된 값은 두고 4-1 입력을 만들 때만 뺀다(`card_sets._without_missing_evidence`).
 - 보호자가 제외(`exclude`)한 주제의 근거 이야기와 사진도 4-1 입력에서 뺀다(`card_sets._excluded_evidence`). 제외는 주제 하나에 걸리므로, 근거가 입력에 남으면 같은 이야기로 이름만 다른 새 주제가 다시 만들어진다. 세부 정보 네 칸은 칸 전체가 빠지면 다른 주제까지 사라지므로 남긴다. 저장된 이야기와 사진은 그대로이며 일대기에도 그대로 보인다.
 - 위 두 규칙으로 이야기나 사진 근거가 하나도 남지 않은 주제는 4-1 입력의 `topics`에 넣지 않는다(PM 결정 2026-11-08, `card_sets._material_gone`). 원래 근거가 없던 주제와 세부 정보 칸 근거가 남은 주제는 넣는다. 보호자가 제외한 주제는 근거 이야기와 사진이 늘 입력에서 빠지므로 DB에 남은 이야기와 입력에 넣을 수 있는 사진(보호자 설명이 있거나 분석이 끝난 사진)으로 정한다. 하나라도 남아 있으면 넣고, 보호자가 모두 지웠으면 넣지 않는다(PM 결정 2026-11-09). 세부 정보 칸 근거가 있는 제외 주제는 이야기와 사진을 모두 지워도 다른 주제처럼 넣는다. AI 사진 분석 동의를 거둬 AI 설명이 지워진 사진(보호자 설명 없음)도 입력에서 빠지므로, 근거가 그런 사진뿐인 주제는 제외 여부와 상관없이 넣지 않고 다시 분석이 끝나면 넣는다. 빠진 주제를 가리키는 지난 카드는 `pastCards`에 그대로 넣는다.
-- 카드 생성 기록(`card_sets.generation_log`)에는 보낸 글을 복사하지 않고 ID와 숫자만 남긴다(PM 결정 2026-11-08, [card_generation_log.py](app/services/card_generation_log.py)). 형태는 [API 명세 4-1 카드 생성 처리](../docs/architecture/api-spec.md#4-1-카드-생성-처리)의 카드 생성 기록에 있다. 이전에 저장된 기록은 migration `685f243e9f1f`가 고치며, 배포 순서는 [배포 문서](docs/deployment.md#카드-생성-기록-정리)를 따른다.
+- 카드 생성 기록(`card_sets.generation_log`)에는 보낸 글을 복사하지 않고 ID와 숫자만 남긴다(PM 결정 2026-11-08, [card_generation_log.py](app/services/card_generation_log.py)). 형태는 [API 명세 4-1 카드 생성 처리](../docs/architecture/api-spec.md#4-1-카드-생성-처리)의 카드 생성 기록에 있다. 이전에 저장된 기록은 migration `685f243e9f1f`가 고치며, 배포 순서는 [배포 문서](docs/deployment.md#카드-생성-기록-정리)를 따른다. 운영 DB에는 11/9 배포(Deploy run 42568179490)에서 적용했다.
 
 ## AI 음성 분석 연동
 
@@ -479,6 +481,15 @@ URL을 만들어 AI 서버의 기존 동기 `POST /internal/v1/speech-analyses`�
 `participantCount`는 `speakerCount`로 전달한다. STT 응답 뒤 전사를 저장하고 S3 원본
 삭제를 즉시 시도한다. 삭제 요청은 먼저 DB에 남기며 S3 삭제만 실패해도 리포트 생성은
 계속한다. 리포트 생성과 저장까지 성공해야 작업을 `completed`로 바꾼다.
+
+30분을 넘는 녹음은 원본을 임시 파일로 내려받아 30분 이하 조각으로 나누고, 조각마다 같은
+버킷의 임시 객체로 올려 STT를 차례로 부른 뒤 결과를 합친다(2026-11-10 PM 결정, 11/10 E2E에서
+71분과 88분 녹음이 600초 제한에 걸림). 조각 사이마다 작업 임대를 다시 늘린다. 조각은 STT 직후가
+아니라 원본과 같은 때(합친 전사 저장 뒤, 실패하면 실패 처리)에 함께 지운다(11/10 PM 정정). 30분
+이하 녹음은 지금처럼 원본 하나로 한 번 부른다. 자르는 위치,
+화자 라벨, 삭제 등록, 임대와 종료 처리는 [비동기 면회 음성 STT 5.1절](docs/async-speech-analysis.md#51-30분을-넘는-녹음의-조각-전사)에 있다.
+보호자가 공유하는 녹음은 기기의 전체 WAV이고 이 조각과 관계없다. 현재 구현 (2026-11-10 기준):
+`fix/long-recording-30min-stt` 브랜치의 변경이며 아직 병합하지 않았다.
 
 화자 라벨이 누락되거나 라벨 수가 입력 인원보다 적어도 리포트와 변경 제안 모델을
 호출한다. 빈 전사는 `EMPTY_TRANSCRIPT`로 거절한다. 프롬프트의 출처 구분과 보호자의
@@ -531,7 +542,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | 환경 변수 | 설명 |
 | --- | --- |
 | `SAEROK_AI_SERVER_URL` | 내부 AI 서버 주소, 기본 `http://127.0.0.1:8001` |
-| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초 |
+| `SAEROK_AI_SERVER_TIMEOUT_SECONDS` | worker가 AI 동기 응답을 기다리는 제한, 기본 600초. 30분을 넘는 녹음은 조각 호출마다 따로 적용. `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS`보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
 | `SAEROK_AI_SERVER_BACKUP_URL` | 선택한 예비 STT 주소. 기본은 비어 있어 기존 단일 서버 동작을 유지 |
 | `SAEROK_AI_SERVER_FAILOVER_CONNECT_TIMEOUT_SECONDS` | 예비 주소를 설정한 경우 서버별 연결 제한. 기본 5초, 0초 초과 30초 이하 |
 | `SAEROK_SPEECH_AUDIO_S3_BUCKET` | 비공개 음성 임시 저장 버킷. DB와 함께 설정해야 업로드 API 활성화 |
@@ -541,7 +552,7 @@ bash ./scripts/run_speech_worker.sh --stt-only --once
 | `SAEROK_SPEECH_AUDIO_PRESIGNED_TTL_SECONDS` | AI 다운로드 URL 수명, 기본 900초 |
 | `SAEROK_SPEECH_AUDIO_RETENTION_SECONDS` | 원본 최종 삭제 기한, 기본 86100초. STT가 24시간을 넘는 기한을 거절하므로 서버 시계 차이를 감안해 86100초보다 길게 줘도 86100초로 쓴다(86400초까지 받음) |
 | `SAEROK_MAX_AUDIO_BYTES` | BE와 AI가 함께 맞출 업로드 크기 상한. 면회 음성 경로의 본문 상한은 이 값 + 1 MiB다([요청 본문 크기 상한](#요청-본문-크기-상한)) |
-| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계, 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음. 리포트 생성은 남은 전사 기한이 이 값 이상일 때만 시작 |
+| `SAEROK_SPEECH_ANALYSIS_LEASE_SECONDS` | worker 작업 임대 시간, 기본 900초. 전사 단계(30분 조각으로 나눴으면 조각마다), 전사 저장 뒤 리포트 시작까지의 인계, 리포트 생성 단계에서 각각 새로 잡음. 인계 임대가 끝난 `sttCompleted` 작업은 다른 worker가 리포트 생성을 이어받음. 리포트 생성은 남은 전사 기한이 이 값 이상일 때만 시작 |
 | `SAEROK_SPEECH_WORKER_POLL_SECONDS` | 대기 작업이 없을 때 조회 간격, 기본 2초 |
 | `SAEROK_REPORT_GENERATION_MODEL` | 리포트 생성(8-3) 모델, 기본 `gpt-6-luna`. `ai/common/llm.py`의 `ENDPOINTS`에 있는 이름이어야 하며 아니면 worker가 시작하지 않음(`--stt-only`는 제외) |
 | `SAEROK_REPORT_GENERATION_TIME_LIMIT_SECONDS` | 리포트 생성 전체 제한 시간, 기본 600초(제안값, PM 확인 필요). 임대 시간보다 60초 이상 짧아야 하며 아니면 worker가 시작하지 않음 |
@@ -561,8 +572,10 @@ S3 Lifecycle의 일 단위 만료는 UTC 날짜 계산과 비동기 삭제 때�
 두 시도는 기존 전체 STT 제한 시간을 공유하고 같은 작업 ID, 입력과 삭제 기한을 사용한다.
 다음 작업은 다시 기본 서버부터 시작한다. 종료된 실패 작업을 다시 여는 기능은 아니다.
 
-현재 문영 GPU의 Tailscale 경로는 유지하고 ck는 선택적인 SSH 예비 경로로 검증한다.
-주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다.
+현재 문영 GPU의 Tailscale 경로를 기본으로 두고 ck SSH 예비 경로를 함께 쓴다. 운영 기록에 따르면
+11/5 운영 배포(#187의 배포 기록)부터 운영 api와 speech-worker에 예비 주소가 설정돼 있고, 11/8에는 기본 경로에 연결되지 않아 예비로 처리했다.
+주소를 설정하는 것만으로 SSH 터널이나 GPU 서버가 실행되지는 않는다. STT 서버 코드는 승인 배포 workflow로 배포되지 않는다.
+전사 기본값 변경(#276, VAD 켬, 앞 문장 조건 끔)은 11/9 ck 예비 서버에만 손으로 적용했고 기본 GPU 서버는 아직 갱신하지 않았다(운영 기록).
 [연결 제한, 검증과 운영 반영 조건](docs/stt-backup.md)을 확인한다.
 기본 GPU와 ck 예비 경로의 상태 확인, 재시작과 증상별 대응은 [STT 운영 절차](docs/stt-operations.md)를 따른다.
 
@@ -595,12 +608,13 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 
 - 프로필당 5장이다(`PHOTO_LIMIT_EXCEEDED`, 409). 면회 사진은 세지 않는다. 큰 파일을 S3에 올린 뒤에야 거절하지 않도록 올리기 전에 한 번 세고, 행을 넣을 때 프로필 행을 `FOR UPDATE`로 잠근 뒤 다시 센다. S3 업로드 동안에는 잠그지 않는다.
 - 올리기 전에 객체 키를 `storage_deletion_request_queue`에 1시간 뒤 `not_before`로 먼저 넣고, 행을 넣는 트랜잭션에서 지운다. 행이 없으면 trigger가 넣어 주지 않으므로, 업로드 뒤 행을 넣기 전에 프로세스가 끝나도 객체가 대기열 밖에 남지 않게 하기 위해서다. 행을 넣지 못하면(상한 경합, 그 사이 프로필 삭제, DB 오류, S3 업로드 실패) 그 요청의 `not_before`를 지금으로 앞당기고 올린 객체를 `storage.delete`로 지운다. 지웠어도 요청은 남겨 삭제 실행기가 확인한다.
-- 넣은 `pending` 행은 사진 분석 worker(8-4)가 가져간다. [합성 사진 분석 실행과 운영 적용 조건](docs/photo-analysis.md)을 따른다. 현재 운영 환경 실행은 거절하며 실제 ML API 품질 검사는 별도다.
+- 넣은 `pending` 행은 AI 사진 분석에 동의한 계정의 것만 사진 분석 worker(8-4)가 가져간다. 실행과 설정은 [사진 분석](docs/photo-analysis.md)을 따른다. 운영 서버에서는 11/8부터 photo-worker가 돌고, 11/8 운영 시험에서 공개 사진 43장을 두 번씩 분석해 86건 모두 완료했다. 실제 사용자 사진의 설명 품질은 확인하지 않았다.
+- 분석이 끝나 설명이 생겨도 이미 받은 카드 묶음은 갱신 대상으로 바꾸지 않고 다음 카드부터 쓴다. 카드를 만드는 중에 분석이 끝난 사진도 입력에 없던 새 재료로 보고, 입력에 쓴 사진이 생성 중에 지워졌거나 설명이 바뀐 경우만 생성 결과에 `stale_at`을 남긴다(#275, `card_sets.save_result`). 설명 수정(3-3)과 사진 삭제(3-4)는 그대로 갱신 대상으로 표시한다. 현재 구현 (2026-11-09 기준): #275는 11/9 배포(develop `59190ba7`)부터 운영에 있다. 그 전 운영 서버(`9c2b8276`)는 보호자가 고친 설명이 없는 사진의 분석이 끝나면 아직 안 쓴 완료 묶음에 `stale_at`을 남겨, 온보딩 `마치기`로 받은 첫 카드가 `needsRefresh: true`가 될 수 있었다.
 - 면회 사진과 다른 계정의 사진은 3-2에서 없는 사진과 같은 `PROFILE_PHOTO_NOT_FOUND`(404)다.
 
 ### 공통 처리 순서
 
-아래는 3-1의 처리 순서이며 5-2도 같은 순서를 따른다. 합성 사진과 메모리 저장소로 검증했으며 실제 S3 업로드와 조회는 미검증이다.
+아래는 3-1의 처리 순서이며 5-2도 같은 순서를 따른다. 자동 테스트는 합성 사진과 메모리 저장소로 검증한다. 실제 S3 업로드와 조회는 11/8 운영 안정성 시험의 프로필 사진으로 확인했다.
 
 프로필 사진(3-1)과 면회 사진(5-2)은 같은 어댑터로 저장한다. 라우트는 `ImageStorageDep`으로
 [image_storage.py](app/services/image_storage.py)의 저장소를 받고, 업로드 전에
@@ -622,21 +636,22 @@ PR #92의 사진 검증과 S3 저장, 조회 URL 생성 및 삭제 어댑터를 
 - AI 서버에 넘기는 8-4의 `downloadUrl`도 같은 `create_download`로 만든다.
 - 사진 메타데이터는 AI 분석과 주제 추천 입력에서 제외한다. 사진 파일 자체에서 EXIF를 제거하는 처리와 저장 정책은 별도 사항이며, 이 미결 항목을 메타데이터 입력 재허용으로 해석하지 않는다.
 - 사전 등록은 업로드 중이거나 행을 넣기 전에 프로세스가 끝난 경우를 위한 것이다. 기한 전에는 [삭제 실행기](docs/storage-deletion.md)가 건너뛰고, 기한이 지나면 행이 없는 객체로 보고 지운다. 요청 취소로 업로드가 아직 진행 중일 수 있으면 앞당기지 않고 기한까지 둔다. 업로드가 1시간보다 오래 걸리면 실행기가 먼저 지울 수 있다.
-- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣는다. 대기열은 삭제 실행기(#204)가 처리하며 운영 배포와 주기 실행은 남아 있다.
+- DB에서 지운 사진의 객체 키는 trigger가 `storage_deletion_request_queue`에 넣는다. 대기열을 처리해 S3 객체를 지우는 실행기는 #204로 들어왔다([storage-deletion](docs/storage-deletion.md)). 운영에서 실제 삭제를 실행했는지는 아래 [보관 기준과 후속 작업](#보관-기준과-후속-작업)을 따른다.
 
 ### 보관 기준과 후속 작업
 
 PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장 방식은 [ADR-001](../docs/architecture/decisions/ADR-001-consent-and-temporary-processing.md#사진-보관과-ai-분석-동의-시점과-저장-방식)을 따른다.
 
 - 사진 서버 보관과 AI 분석을 가입 화면의 별도 선택 동의로 받는다. 기존 `consent_records`에 두 항목을 추가하고 `current_consents`에서 최신 상태를 조회하도록 확장한다. 유효한 동의는 반복 요청하지 않으며 미동의, 철회 또는 기록 없는 계정이 기능을 사용하려고 할 때 필요한 동의를 받는다. 거부해도 가입과 사진 없는 기본 서비스는 이용할 수 있다.
-- BE는 업로드 전에 보관 동의를, AI 작업 생성 전에 분석 동의를 각각 검사한다. 보관만 동의한 사진은 분석하지 않는다. 두 동의의 계정별 저장 방향은 확정됐다. AI 분석 동의(`photoAnalysis`)는 필드, 가입과 1-6 변경, worker의 동의 확인과 철회 뒤 분석 중단(#257), 철회 때 저장된 AI 설명 삭제(아래)까지 들어왔다. 사진 보관 동의의 필드명, migration, API와 FE 연결, 철회 뒤 삭제는 후속 구현이다.
-- 현재 3-1 코드에는 사진 보관 동의 검사가 없고, 업로드한 사진은 모두 `pending`으로 저장한다. 이는 합성 사진을 사용하는 개발 단계의 구현 상태이며, 보관 또는 분석 동의를 없애기로 한 결정이 아니다. 실제 사용자 사진을 받기 전에는 위 동의 검사와 분석 대상 구분을 구현하고 검증한다.
+- BE는 업로드 전에 보관 동의를, AI 작업 생성 전에 분석 동의를 각각 검사한다. 보관만 동의한 사진은 분석하지 않는다. 두 동의의 계정별 저장 방향은 확정됐지만 필드명, migration, 가입 및 동의 변경 API와 FE 연결, 철회 후 중단 및 삭제는 후속 구현이다.
+  - 현재 구현 (2026-11-09 기준): AI 분석 동의는 #257로 `consent_records.photo_analysis`, 가입(1-2)과 동의 변경(1-6) API의 `photoAnalysis`, 대기열의 동의 확인과 철회 뒤 분석 중단까지 들어왔고, 철회 때 저장된 AI 설명 삭제와 ML 업체 호출 직전의 동의 재확인은 #288로 들어왔다(아래, 11/9 배포부터 운영). 앱은 가입 화면의 선택 항목(#257), 미동의 계정의 직접 설명 칸(#261), 업로드 전 동의 시트(#272), 설정의 계정 약관 동의 화면(#271)으로 연결했다. 사진 보관 동의의 필드명, migration, API와 FE 연결, 업로드 전 보관 동의 검사와 철회 뒤 삭제는 남아 있다.
+- 현재 3-1 코드에는 사진 보관 동의 검사가 없고, 업로드한 사진은 모두 `pending`으로 저장한다. 분석 동의가 없는 계정의 사진은 worker가 가져가지 않아 `pending`으로 남는다. 보관 동의 검사가 없는 것은 보관 동의를 없애기로 한 결정이 아니다. 실제 사용자 사진을 받기 전에는 보관 동의 검사를 구현하고 검증한다.
 - 등록 사진은 앨범, 일대기와 면회 기록 표시를 위한 보관 동의를 확인한 뒤 저장한다. 해당 사진 삭제, 보관 동의 철회, 프로필 삭제, 탈퇴 또는 보관 목적 종료 시 지체 없이 삭제한다.
 - 현재 5-2 코드에도 사진 보관 동의 검사가 없다. 가입 시 계정별 동의를 받는 정책은 위 ADR-001로 확정했으며, 실제 사용자 사진을 받기 전 동의 조회와 미동의 차단 구현 및 검증이 남아 있다. 테스트 자료로 개발을 먼저 진행하는 기준은 유지한다.
 - AI 분석은 별도 동의를 확인한다. 분석용 임시 사본은 처리 완료 후 즉시 삭제하고 해당 작업의 최초 임시 사본 생성부터 최대 24시간을 넘기지 않는다. 재시도로 기한을 연장하지 않는다.
 - 분석 동의만 철회하면 분석을 중단하고 임시 사본을 삭제한다. 별도로 동의받은 보관 목적이 유지되는 등록 사진까지 자동 삭제하는 의미는 아니다. 저장된 AI 설명은 2026-11-09 PM 결정에 따라 1-6에서 지운다([로그인 API](#로그인-api)의 `PATCH /auth/me/consents`).
-- 사진 API의 동의 확인, 분석하지 않는 등록 사진의 상태, 철회 및 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 현재 API 명세의 모든 프로필 사진 자동 분석이 이 구분을 이미 구현한 것은 아니다.
-- S3 삭제 대기열 실행과 삭제 결과 확인은 #204로 들어왔다([storage-deletion](docs/storage-deletion.md)). 운영 배포, 주기 실행과 운영 버킷 검증은 남아 있다. AI는 임시 사본의 기한 삭제를 구현해야 한다. 실제 사용자 사진을 받기 전에 동의 화면부터 원본 삭제까지 검증한다. 어댑터 제공, DB 행 삭제 또는 대기열 등록만으로 삭제 완료를 표시하지 않는다.
+- 사진 API의 보관 동의 확인, 보관 동의 철회 뒤 삭제 경로는 FE, BE와 AI가 계약에 반영할 후속 작업이다. 분석 동의 쪽은 위 현재 구현처럼 분석하지 않는 사진을 `pending`으로 두고, 철회 때 진행 중인 결과를 버리고 저장된 AI 설명을 지운다.
+- S3 삭제 대기열 실행과 삭제 결과 확인은 #204로 들어왔다([storage-deletion](docs/storage-deletion.md)). 코드는 운영 이미지에 들어 있다. 운영 기록에 따르면 11/6에 조회 모드로 대상만 확인했고(사진 대상은 버킷 버전 관리 때문에 실행기가 삭제를 보류한다), 실제 삭제는 PM 결정으로 보류했으며 주기 실행을 설치한 기록은 없다. photo-worker는 별도 임시 사본을 만들지 않고 S3 원본의 짧은 수명 조회 주소를 ML API에 넘긴다(#257). ML API 쪽 사본의 보관 조건은 확인하지 않았다. 실제 사용자 사진을 받기 전에 동의 화면부터 원본 삭제까지 검증한다. 어댑터 제공, DB 행 삭제 또는 대기열 등록만으로 삭제 완료를 표시하지 않는다.
 
 ### 사진 저장 설정
 
@@ -710,7 +725,7 @@ PR #92의 문서는 병합됐다. 2026-10-14 PM이 정한 사진 보관과 AI �
   모델이나 SDK가 남긴 오류 메시지는 작업 실패에 담지 않는다.
 - 출력 한도(`max_tokens`)는 BE가 넘기지 않고 `ai/common/llm.py`의 `ChatConfig` 기본값 16000을 쓴다.
   BE의 전체 시간 제한과 늦은 결과 저장 방지는 출력 한도와 관계없이 적용된다.
-- 11/3 로컬 전환본은 카드와 리포트의 기본 모델을 `gpt-6-luna`로 맞췄다. 운영 적용은 별도다.
+- 11/3 로컬 전환본은 카드와 리포트의 기본 모델을 `gpt-6-luna`로 맞췄다. 운영 적용은 별도다. 현재 구현 (2026-11-09 기준): 이 기본값은 11/5 운영 배포부터 들어갔고, 운영 기록(#187의 11/5 운영 배포 기록)에는 그날 운영 서버에서 `gpt-6-luna`로 카드 12장을 만든 기록이 있다.
   기존 `.env`의 `SAEROK_CARD_GENERATION_MODEL`, `SAEROK_REPORT_GENERATION_MODEL`에
   이전 모델이 명시돼 있으면 그 값이 우선한다. 적용할 때 두 값을 함께 확인한다.
   이미 접수한 카드 작업의 모델은 DB에 저장된 값을 유지하므로 이전 모델 주소도 남긴다.

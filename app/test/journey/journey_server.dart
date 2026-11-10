@@ -593,6 +593,8 @@ class JourneyServer {
           'title': review['title'],
           'content': review['content'],
           'imageNumber': 1,
+          // 아픈 기억 표시는 BE 가 제안의 값을 그대로 옮긴다.
+          'sensitive': facts[index]['sensitive'] ?? false,
           'createdAt': session.startedAt.replaceFirst('14:00', '17:00'),
         });
       }

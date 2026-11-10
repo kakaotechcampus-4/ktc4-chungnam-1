@@ -9,13 +9,16 @@ import '../../data/api_client.dart';
 import '../../data/card_api.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
+import '../../data/report_api.dart' show analysisFailureReason;
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/profile_avatar.dart';
 import '../cards/card_generation_controller.dart';
+import '../cards/photo_preparation_view.dart';
 import '../profile/profile_dialogs.dart';
 import '../profile_setup/setup_entry.dart';
+import 'failed_report_sheet.dart';
 import 'home_talk.dart';
 
 /// 시작 화면.
@@ -70,122 +73,148 @@ class HomeScreen extends ConsumerWidget {
                     needsProfile(() => context.push(AppRoutes.notifications)),
               ),
               Expanded(
-                child: ScreenBody(
-                  bottom: Column(
-                    children: [
-                      _CardButton(hasProfile: hasProfile),
-                      // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
-                      // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
-                      if (notice != null) ...[
-                        const SizedBox(height: AppSpacing.lg),
-                        switch (notice) {
-                          // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
-                          ReportNotice.generating => _GeneratingNotice(
-                            date: date,
-                          ),
-                          ReportNotice.ready => _ReportNotice(
-                            date: date,
-                            // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
-                            onTap: () {
-                              if (reportId == null) return;
-                              context.push(AppRoutes.reportOf(reportId));
-                            },
-                          ),
-                          ReportNotice.failed => _ResumeNotice(
-                            date: date,
-                            title: '리포트를 만들지 못했어요',
-                            hint: '눌러서 분석 다시 요청하기',
-                            icon: Icons.error_outline,
-                            onTap: () {
-                              final analysisId = info?.analysisId;
-                              if (reportId == null || analysisId == null) {
-                                return;
-                              }
-                              context.push(
-                                AppRoutes.analysisRetryOf(reportId, analysisId),
-                              );
-                            },
-                          ),
-                          // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
-                          // 서버의 알림이라 회차 ID 가 있다.
-                          ReportNotice.evaluationPending => _ResumeNotice(
-                            date: date,
-                            title: '평가 이어서 하기',
-                            hint: '평가를 마치면 리포트를 만들어요',
-                            onTap: () {
-                              if (reportId == null) return;
-                              context.push(AppRoutes.visitReviewOf(reportId));
-                            },
-                          ),
-                          ReportNotice.audioPending => _ResumeNotice(
-                            date: date,
-                            title: '음성 다시 보내기',
-                            hint: '녹음을 보내면 리포트를 만들어요',
-                            onTap: () {
-                              if (reportId == null) return;
-                              context.push(AppRoutes.visitUploadOf(reportId));
-                            },
-                          ),
-                          // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
-                          ReportNotice.checkFailed => _ResumeNotice(
-                            date: null,
-                            icon: Icons.refresh,
-                            title: '리포트 상태를 확인하지 못했어요',
-                            hint: '눌러서 다시 확인하기',
-                            onTap: () =>
-                                ref.read(reportNoticeProvider.notifier).retry(),
-                          ),
-                        },
-                      ],
-                    ],
-                  ),
-                  // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
-                  // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
-                  // 붙는 순간 아래로 넘친다.
-                  //
-                  // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
-                  // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문을
-                  // 스크롤한다. 글자를 잘리게 두지 않는다(`app/DESIGN.md`).
-                  child: LayoutBuilder(
-                    builder: (context, box) {
-                      final roomy =
-                          MediaQuery.textScalerOf(context).scale(1) <= 1.3 &&
-                          box.maxHeight >= 300;
-                      final content = Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
-                          // 이름을 읽는 동안에는 이름 없이 묻는다.
-                          Text(
-                            name == null
-                                ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
-                                : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
-                            // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
-                            style: AppTypography.sectionTitle,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: AppSpacing.xxl),
-                          // 어르신을 바꾸면 인사말부터 다시 시작한다.
-                          if (roomy)
-                            Flexible(child: HomeTalk(key: ValueKey(profileKey)))
-                          else
-                            HomeTalk(
-                              key: ValueKey(profileKey),
-                              mascotSize: 140,
-                            ),
-                        ],
-                      );
-                      const alignment = Alignment(0, -0.2);
-                      if (roomy) {
-                        return Align(alignment: alignment, child: content);
-                      }
-                      return SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: box.maxHeight),
-                          child: Align(alignment: alignment, child: content),
+                child: LayoutBuilder(
+                  builder: (context, available) => ScreenBody(
+                    bottom: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: available.maxHeight * 0.7,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _CardButton(hasProfile: hasProfile),
+                            // 같은 자리에서 만드는 중이 도착으로 바뀐다. 로딩 화면을
+                            // 없앤 뒤로 만드는 중을 알리는 자리가 여기뿐이다.
+                            if (notice != null) ...[
+                              const SizedBox(height: AppSpacing.lg),
+                              switch (notice) {
+                                // 리포트를 아직 읽는 중이면 날짜 없이 보여준다.
+                                ReportNotice.generating => _GeneratingNotice(
+                                  date: date,
+                                ),
+                                ReportNotice.ready => _ReportNotice(
+                                  date: date,
+                                  // 여기서는 지우지 않는다. 변경 사항을 반영해야 사라진다.
+                                  onTap: () {
+                                    if (reportId == null) return;
+                                    context.push(AppRoutes.reportOf(reportId));
+                                  },
+                                ),
+                                ReportNotice.failed => _ResumeNotice(
+                                  date: date,
+                                  title: '리포트를 만들지 못했어요',
+                                  reason: analysisFailureReason(
+                                    info?.failureCode,
+                                  ),
+                                  hint: '눌러서 분석 다시 요청하기',
+                                  icon: Icons.error_outline,
+                                  // 녹음이 남았으면 공유도 고르게 한다.
+                                  onTap: () {
+                                    final analysisId = info?.analysisId;
+                                    if (reportId == null ||
+                                        analysisId == null) {
+                                      return;
+                                    }
+                                    openFailedReport(
+                                      context,
+                                      ref,
+                                      sessionId: reportId,
+                                      analysisId: analysisId,
+                                    );
+                                  },
+                                ),
+                                // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
+                                // 서버의 알림이라 회차 ID 가 있다.
+                                ReportNotice.evaluationPending => _ResumeNotice(
+                                  date: date,
+                                  title: '평가 이어서 하기',
+                                  hint: '평가를 마치면 리포트를 만들어요',
+                                  onTap: () {
+                                    if (reportId == null) return;
+                                    context.push(
+                                      AppRoutes.visitReviewOf(reportId),
+                                    );
+                                  },
+                                ),
+                                ReportNotice.audioPending => _ResumeNotice(
+                                  date: date,
+                                  title: '음성 다시 보내기',
+                                  hint: '녹음을 보내면 리포트를 만들어요',
+                                  onTap: () {
+                                    if (reportId == null) return;
+                                    context.push(
+                                      AppRoutes.visitUploadOf(reportId),
+                                    );
+                                  },
+                                ),
+                                // 묻지 못한 것을 알릴 것이 없는 것처럼 두지 않는다.
+                                ReportNotice.checkFailed => _ResumeNotice(
+                                  date: null,
+                                  icon: Icons.refresh,
+                                  title: '리포트 상태를 확인하지 못했어요',
+                                  hint: '눌러서 다시 확인하기',
+                                  onTap: () => ref
+                                      .read(reportNoticeProvider.notifier)
+                                      .retry(),
+                                ),
+                              },
+                            ],
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                    ),
+                    // 남는 높이를 위 2, 아래 3 으로 나눈다. 높이가 모자라면 그림이
+                    // 줄어든다. 그림이 크기를 고집하면 화면이 낮을 때 알림 배너가
+                    // 붙는 순간 아래로 넘친다.
+                    //
+                    // 글자를 크게 키웠거나 남는 높이가 아주 낮으면 그림을 줄여도 안내
+                    // 문구와 말풍선만으로 넘친다. 그때는 그림 크기를 정해 두고 본문을
+                    // 스크롤한다. 글자를 잘리게 두지 않는다(`app/DESIGN.md`).
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        final roomy =
+                            MediaQuery.textScalerOf(context).scale(1) <= 1.3 &&
+                            box.maxHeight >= 300;
+                        final content = Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // 어느 어르신의 대화 카드를 받는지 가장 큰 안내에서 알린다.
+                            // 이름을 읽는 동안에는 이름 없이 묻는다.
+                            Text(
+                              name == null
+                                  ? '오늘은 무슨 주제로\n대화를 나눠볼까요?'
+                                  : '오늘은 $name 님과\n무슨 주제로 대화를 나눠볼까요?',
+                              // '새록' 제목을 뺀 뒤로 이 문구가 화면의 제목이다.
+                              style: AppTypography.sectionTitle,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: AppSpacing.xxl),
+                            // 어르신을 바꾸면 인사말부터 다시 시작한다.
+                            if (roomy)
+                              Flexible(
+                                child: HomeTalk(key: ValueKey(profileKey)),
+                              )
+                            else
+                              HomeTalk(
+                                key: ValueKey(profileKey),
+                                mascotSize: 140,
+                              ),
+                          ],
+                        );
+                        const alignment = Alignment(0, -0.2);
+                        if (roomy) {
+                          return Align(alignment: alignment, child: content);
+                        }
+                        return SingleChildScrollView(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: box.maxHeight,
+                            ),
+                            child: Align(alignment: alignment, child: content),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -285,14 +314,55 @@ class _HillsPainter extends CustomPainter {
 ///
 /// 등록을 마친 분이 없으면 카드를 준비하지 않고 기본 정보 입력을 연다. 입력하다
 /// 나간 분이 있으면 그 입력을 이어서 연다([openFirstProfileSetup]).
-class _CardButton extends ConsumerWidget {
+class _CardButton extends ConsumerStatefulWidget {
   const _CardButton({required this.hasProfile});
 
   final bool hasProfile;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CardButton> createState() => _CardButtonState();
+}
+
+class _CardButtonState extends ConsumerState<_CardButton>
+    with WidgetsBindingObserver {
+  String? _seenProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _resume() {
+    final id = ref.read(serverProfileIdProvider).value;
+    if (id != null && ref.read(cardApiProvider) is PhotoPreparationApi) {
+      unawaited(ref.read(cardGenerationProvider(id).notifier).resume());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _resume();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final profileId = ref.watch(serverProfileIdProvider).value;
+    if (_seenProfile != profileId) {
+      _seenProfile = profileId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resume();
+      });
+    }
+    final photos = profileId == null
+        ? null
+        : ref.watch(cardPhotoPreparationProvider(profileId));
     final generation = profileId == null
         ? null
         : ref.watch(cardGenerationProvider(profileId));
@@ -311,16 +381,24 @@ class _CardButton extends ConsumerWidget {
 
     return Column(
       children: [
-        PrimaryButton(
-          label: making ? '대화 카드를 만들고 있어요' : '오늘의 대화카드 받기',
-          loading: making,
-          color: HomeColors.accent,
-          loadingColor: HomeColors.accentLoading,
-          onPressed: () => hasProfile
-              ? _getCards(context, ref)
-              : openFirstProfileSetup(context, ref),
-        ),
-        if (stage == CardMaking.remaking) ...[
+        if (!(photos?.needsChoice ?? false))
+          PrimaryButton(
+            label: photos != null && !photos.needsChoice
+                ? '사진을 준비하고 있어요'
+                : making
+                ? '대화 카드를 만들고 있어요'
+                : '오늘의 대화카드 받기',
+            loading: making,
+            color: HomeColors.accent,
+            loadingColor: HomeColors.accentLoading,
+            onPressed: () => widget.hasProfile
+                ? _getCards(context, ref)
+                : openFirstProfileSetup(context, ref),
+          ),
+        if (photos != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          PhotoPreparationView(profileId: profileId!),
+        ] else if (stage == CardMaking.remaking) ...[
           const SizedBox(height: AppSpacing.md),
           const _RemakingNotice(),
         ] else if (notice != null) ...[
@@ -649,10 +727,14 @@ class _NoticeText extends StatelessWidget {
     required this.date,
     required this.title,
     required this.hint,
+    this.reason,
   });
 
   final String? date;
   final String title;
+
+  /// 제목 아래의 이유. 없으면 `null` 이다.
+  final String? reason;
 
   /// 할 일이 없으면 `null` 이다.
   final String? hint;
@@ -667,6 +749,10 @@ class _NoticeText extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
         ],
         Text(title, style: AppTypography.bodyStrong),
+        if (reason != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(reason!, style: AppTypography.sub),
+        ],
         if (hint != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(hint!, style: AppTypography.sub),
@@ -782,10 +868,14 @@ class _ResumeNotice extends StatelessWidget {
     required this.hint,
     required this.onTap,
     this.icon = Icons.history,
+    this.reason,
   });
 
   final String? date;
   final String title;
+
+  /// 제목 아래에 덧붙이는 이유. 분석 실패의 이유를 알 때만 있다.
+  final String? reason;
   final String hint;
   final VoidCallback onTap;
   final IconData icon;
@@ -807,7 +897,12 @@ class _ResumeNotice extends StatelessWidget {
             Icon(icon, size: 32, color: AppColors.ink),
             const SizedBox(width: AppSpacing.md),
             Expanded(
-              child: _NoticeText(date: date, title: title, hint: hint),
+              child: _NoticeText(
+                date: date,
+                title: title,
+                reason: reason,
+                hint: hint,
+              ),
             ),
             const Icon(Icons.chevron_right, color: AppColors.textSub),
           ],

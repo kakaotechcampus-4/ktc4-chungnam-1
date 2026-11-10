@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import AfterValidator, Field, StrictBool, model_validator
 
 from app.schemas.common import ApiModel
 
@@ -130,23 +130,27 @@ class LifeFactCreateRequest(ApiModel):
 
 
 class LifeFactUpdateRequest(ApiModel):
-    """보낸 필드만 바꾼다. 모두 비울 수 없으므로 `null`도 받지 않는다."""
+    """보낸 필드만 바꾼다. 모두 비울 수 없으므로 `null`도 받지 않는다.
+
+    `sensitive`는 아픈 기억일 수 있는 이야기라는 표시다. 보호자가 켜고 끈다(2026-11-10 PM 결정).
+    """
 
     story_category: StoryCategory | None = Field(default=None, alias="storyCategory")
     title: LifeFactTitle | None = None
     content: LifeFactContent | None = None
     image_number: ImageNumber | None = Field(default=None, alias="imageNumber")
+    sensitive: StrictBool | None = None
 
     @model_validator(mode="after")
     def _fields_are_not_cleared(self) -> "LifeFactUpdateRequest":
-        _reject_null(self, "story_category", "title", "content", "image_number")
+        _reject_null(self, "story_category", "title", "content", "image_number", "sensitive")
         return self
 
     def column_changes(self) -> dict[str, Any]:
         """보낸 필드를 `life_facts`의 열 이름과 값으로 옮긴다."""
         return {
             field: getattr(self, field)
-            for field in ("story_category", "title", "content", "image_number")
+            for field in ("story_category", "title", "content", "image_number", "sensitive")
             if field in self.model_fields_set
         }
 
@@ -159,6 +163,9 @@ class LifeFactResponse(ApiModel):
     title: str
     content: str
     image_number: int = Field(alias="imageNumber")
+    # 아픈 기억일 수 있는 이야기. 7-4가 제안의 표시를 옮기고 보호자가 2-7로 바꾼다. 앱은 일대기에 표시를
+    # 붙이고 홈 추천에서 뺀다(2026-11-10 PM 결정). 이 필드를 모르는 앱은 무시하면 된다
+    sensitive: bool = False
     created_at: datetime = Field(alias="createdAt")
 
 

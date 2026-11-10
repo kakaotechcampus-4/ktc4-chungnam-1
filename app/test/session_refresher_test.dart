@@ -228,6 +228,116 @@ void main() {
     });
   });
 
+  // 2026-11-10 E2E: 녹음 중 매시간 뜨는 계정 선택 창을 취소하면 로그인 화면으로
+  // 가서 녹음 화면이 닫히고 녹음이 멈출 수 있었다.
+  group('면회를 녹음하는 동안 잃은 세션', () {
+    void hold(_Harness h) =>
+        h.container.read(sessionHoldProvider.notifier).hold();
+
+    void release(_Harness h) =>
+        h.container.read(sessionHoldProvider.notifier).release();
+
+    test('계정 선택을 취소해도 세션을 지우지 않고 녹음이 끝나면 로그인부터 하게 한다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      hold(h);
+
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.session!.accessToken, 'old-token', reason: '녹음 화면이 닫히지 않게 둔다');
+      expect(h.loss, isNull);
+
+      release(h);
+      await pumpEventQueue();
+
+      expect(h.session, isNull);
+      expect(h.store.stored, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+    });
+
+    test('녹음하는 동안에는 계정 선택 창을 다시 띄우지 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      hold(h);
+
+      expect(await h.refresher.refresh(), isFalse);
+      expect(
+        await h.refresher.retryAfterUnauthorized('Bearer old-token'),
+        isFalse,
+      );
+      expect(await h.refresher.refresh(), isFalse);
+
+      expect(h.google.silentCalls, 1);
+    });
+
+    test('다른 계정을 골라도 녹음이 끝난 뒤에 로그인부터 하게 한다', () async {
+      final h = _Harness(
+        server: (_) async => _json(
+          _authenticated('other-token', accountId: 'acc_test_0002'),
+          200,
+        ),
+      );
+      addTearDown(h.container.dispose);
+      hold(h);
+
+      expect(await h.refresher.refresh(), isFalse);
+      expect(h.session!.accessToken, 'old-token');
+      expect(h.loss, isNull);
+
+      release(h);
+      await pumpEventQueue();
+
+      expect(h.session, isNull);
+      expect(h.loss, isA<SessionSignedOut>());
+    });
+
+    test('계정이 사라졌어도 녹음이 끝난 뒤에 동의 화면으로 가게 한다', () async {
+      final h = _Harness(server: (_) async => _json(_consentRequired, 200));
+      addTearDown(h.container.dispose);
+      hold(h);
+
+      expect(await h.refresher.refresh(), isFalse);
+      expect(h.loss, isNull);
+
+      release(h);
+      await pumpEventQueue();
+
+      expect(h.loss, isA<SessionConsentRequired>());
+    });
+
+    test('녹음 중에도 같은 계정으로 받으면 그대로 바꾼다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      hold(h);
+
+      expect(await h.refresher.refresh(), isTrue);
+
+      expect(h.session!.accessToken, 'new-token');
+      release(h);
+      await pumpEventQueue();
+      expect(h.loss, isNull);
+    });
+
+    test('녹음하는 동안 로그아웃하고 다시 로그인했으면 녹음이 끝나도 그 세션을 지우지 않는다', () async {
+      final h = _Harness();
+      addTearDown(h.container.dispose);
+      h.google.silent = null;
+      hold(h);
+      expect(await h.refresher.refresh(), isFalse);
+
+      h.container
+          .read(sessionProvider.notifier)
+          .restore(_session(expiresAt: DateTime(2100)));
+      release(h);
+      await pumpEventQueue();
+
+      expect(h.session, isNotNull);
+      expect(h.loss, isNull);
+    });
+  });
+
   group('다시 받는 동안 바뀐 것', () {
     test('계정 선택 창에서 다른 계정을 고르면 바꾸지 않고 로그인부터 하게 한다', () async {
       final h = _Harness(

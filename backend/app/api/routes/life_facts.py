@@ -80,7 +80,7 @@ async def update_life_fact(
     connection: DbConnectionDep,
     settings: SettingsDep,
 ) -> LifeFactResponse:
-    """생애 정보 중 보낸 필드(`storyCategory`, `title`, `content`, `imageNumber`)만 수정.
+    """생애 정보 중 보낸 필드(`storyCategory`, `title`, `content`, `imageNumber`, `sensitive`)만 수정.
 
     API 명세 2-7
     """

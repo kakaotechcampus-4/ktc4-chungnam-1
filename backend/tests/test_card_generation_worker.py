@@ -929,6 +929,55 @@ def test_card_generator_saves_what_the_ai_package_returns(migrated_database_url,
     assert len(cards) == 12 and str(cards[0]["topic_id"]) == request.context.topics[0].topic_id
 
 
+def test_story_sensitive_mark_reaches_the_ai_package_and_cards_keep_it(
+    migrated_database_url, monkeypatch
+):
+    """이야기의 아픈 기억 표시(`life_facts.sensitive`)를 4-1 요청 `lifeFacts[].sensitive`로 넘긴다
+    (2026-11-10 PM 결정). 카드 생성이 그 이야기를 근거로 한 카드에 낸 `sensitive`는 그대로 저장한다."""
+    seen = {}
+
+    def generate_cards(request, *, api_key):
+        seen["request"] = request
+        result = fake_ai_result(request)
+        painful = next(f.fact_id for f in request.context.life_facts if f.sensitive)
+        # 5번 카드는 아픈 기억 이야기를 근거로 한 카드. 카드 생성 2판은 이 카드를 늘 sensitive로 낸다
+        data = result.model_dump(mode="json", by_alias=True)
+        data["cards"][4].update(evidenceSource="lifeFact", evidence=[{"factId": painful}], sensitive=True)
+        data["cards"][4]["topic"]["evidence"] = [{"factId": painful}]
+        return ai.GenerationResult.model_validate(data)
+
+    queue = CardGenerationQueue()
+    processor = CardGenerationProcessor(
+        queue=queue, generate=_ai_generator(monkeypatch, generate_cards)
+    )
+
+    async def scenario():
+        async with connect(migrated_database_url) as connection:
+            profile_id, set_id, _, _ = await _seed(connection)
+            await connection.execute(
+                "INSERT INTO life_facts (profile_id, title, content, sensitive)"
+                " VALUES (%s, '합성 사별 이야기', '합성 내용', true)",
+                (profile_id,),
+            )
+            job = await queue.claim(connection, lease_seconds=600)
+            await processor(connection, job)
+            cursor = await connection.execute(
+                "SELECT position, sensitive FROM conversation_cards WHERE set_id = %s"
+                " ORDER BY position",
+                (set_id,),
+            )
+            return await cursor.fetchall()
+
+    cards = run(scenario())
+
+    sent = seen["request"].context.life_facts
+    assert [(f.title, f.sensitive) for f in sent] == [
+        ("합성 제목", False),
+        ("합성 사별 이야기", True),
+    ]
+    assert {c["position"] for c in cards if c["sensitive"]} == SENSITIVE_POSITIONS | {5}
+
+
 def test_card_generator_keeps_the_ai_failure_code(migrated_database_url, monkeypatch):
     def generate_cards(request, *, api_key):
         raise ai.CardGenerationError("NOT_ENOUGH_TOPICS", "다시 찾아도 주제가 모자람")

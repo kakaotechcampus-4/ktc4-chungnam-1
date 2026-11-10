@@ -1,6 +1,13 @@
 # S3 원본과 DB 참조 점검
 
-로컬에서 작성하고 합성 자료로 검사한 도구다. 운영에서 실행하거나 삭제한 기록은 없다.
+로컬에서 작성하고 합성 자료로 검사한 도구다. 처음 작성할 때는 운영에서 실행하거나 삭제한 기록이 없었다.
+
+현재 구현 (2026-11-09 기준, 운영 배포 기록과 #187): 이 도구와 [삭제 실행기](storage-deletion.md)는 #204로 들어가 11/5 배포부터 운영 이미지에 있다. 아래 `unreferenced_queued` 구분(#283)은 11/9 배포(develop `59190ba7`, Deploy run 42568179490)부터 운영 이미지에 있다. 운영에서는 11/6에 읽기 검사만 실행했다.
+
+- DB 검사: 기한이 지났는데 삭제 표시가 없는 녹음 원본 8건(모두 실패 작업)을 셌다. 대기열에는 넣지 않았다.
+- `--s3`: 인스턴스 역할에 `GetBucketLifecycleConfiguration` 권한이 없어 실패했다. 이 권한은 점검용이며 삭제 실행에는 필요 없다. 코드상 Lifecycle 조회가 거절되면 객체 목록 집계까지 전체가 `STORAGE_AUDIT_FAILED`로 끝나므로, 운영 S3 객체 목록과 Lifecycle 상태는 이 도구로 확인하지 못했다.
+- 같은 날 삭제 실행기의 조회 모드(S3 접근 없음)로 대기열 18건(녹음 10, 사진 8)이 대상임을 확인했다. 사진 8건은 운영 배포 기록상 사진 버킷이 버전 관리 상태라 `--apply`로 실행해도 실행기가 `VERSIONED_BUCKET_REQUIRES_REVIEW`로 삭제하지 않는다. 조회 모드는 S3를 읽지 않으므로 이 결과를 직접 확인한 것은 아니며, 처리 방식은 정하지 않았다.
+- 실제 삭제(`--enqueue-safe-expired` 뒤 삭제 실행기 `--apply`)는 11/6 PM 결정으로 보류했고, 11/9 기준 기록에 실행한 기록이 없다. 읽기 검사 실행을 원본 삭제 완료로 보고하지 않는다.
 
 ## 읽기 검사
 
@@ -29,7 +36,7 @@ uv run python -m app.ops.storage_audit --enqueue-safe-expired --limit 100
 
 `uploading`, `queued`, `transcribing` 원본은 건드리지 않는다. 기한이 지났는데 여전히 이 상태라면 worker가 멈췄는지 확인해야 한다. 기존 임대 만료 처리 후 다시 검사한다. 단순 시간 초과만으로 진행 중 파일을 지우는 정책은 이 도구에 넣지 않았다. 이 제한 때문에 이 도구 하나로 모든 원본의 24시간 이내 삭제를 보장한다고 적으면 안 된다.
 
-대기열에 넣은 뒤 [삭제 실행기](storage-deletion.md)를 먼저 읽기 모드로 확인하고, 삭제 승인 후 `--apply`로 실행한다. 운영 예약 실행은 아직 설치하지 않았다. 예약할 때 조회, 큐 추가, 삭제 결과와 오래된 대기열 경보를 함께 확인해야 한다.
+대기열에 넣은 뒤 [삭제 실행기](storage-deletion.md)를 먼저 읽기 모드로 확인하고, 삭제 승인 후 `--apply`로 실행한다. 운영 예약 실행은 11/9 기준 운영 배포 기록에 설치 기록이 없다. 예약할 때 조회, 큐 추가, 삭제 결과와 오래된 대기열 경보를 함께 확인해야 한다.
 
 ## Lifecycle 적용 전 확인
 
@@ -40,4 +47,4 @@ uv run python -m app.ops.storage_audit --enqueue-safe-expired --limit 100
 
 근거: [AWS 객체 만료 안내](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html), [Lifecycle 접두사 필터 예시](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html). 2026-11-03 확인.
 
-테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 대기열에 있는 비참조 객체 구분, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS 권한과 Lifecycle 실행 결과는 검증하지 않았다.
+테스트는 임시 PostgreSQL과 S3 목록 대역으로 읽기 전용, 중복 방지, 전사 보존, 진행 중 원본 제외, 대기열에 있는 비참조 객체 구분, 페이지 조회와 불완전 조회 표시를 검사한다. 실제 AWS에서는 11/6 운영 읽기 검사에서 Lifecycle 조회 권한이 없다는 것만 확인했다. Lifecycle 적용과 실행 결과는 검증하지 않았다.

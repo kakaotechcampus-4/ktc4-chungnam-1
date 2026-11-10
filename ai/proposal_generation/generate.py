@@ -35,7 +35,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/proposals.md"
-PROMPT_VERSION = "proposals-8"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "proposals-9"   # 프롬프트나 거르는 규칙을 바꾸면 올림
 _FACT_TITLE_MAX = 100            # #106 응답 검증과 같은 길이
 _FACT_MAX = 30                   # 이야기 후보 안전 상한(PM 결정, 2026-11-09). 넘으면 앞에서부터 이만큼만 쓰고 기록을 남김
 _LIFE_EFFORT = "medium"
@@ -168,7 +168,10 @@ def _facts(out: _LifeFacts) -> list[LifeFactProposalOut]:
 
 
 def _topics(out: _Topics, request: VisitReportRequest, refs: dict[str, str]) -> list[TopicProposalOut]:
-    """#106 규칙으로 거른 주제 조정. 없는 카드, 같은 카드의 두 번째 조정, 이유가 빈 조정, 반응이 notUsed거나 없는 카드의 less와 exclude는 버림."""
+    """#106 규칙으로 거른 주제 조정. 없는 카드, 같은 카드의 두 번째 조정, 이유가 빈 조정, 반응이 notUsed거나 없는 카드의 less와 exclude는 버림.
+    보호자가 아쉬웠다고 평가한(negative) 카드의 more도 버림(proposals-9). 앱은 AI 제안을 미리 골라 두므로, 보호자의 평가와
+    거꾸로 가는 '더 자주'가 그대로 반영되지 않게 하려는 것. 버린 뒤 같은 카드의 다음 조정은 받음.
+    """
     by_ref = {refs[c.card_id]: c for c in request.cards}
     kept, seen = [], set()
     for t in out.topic_proposals:
@@ -176,6 +179,8 @@ def _topics(out: _Topics, request: VisitReportRequest, refs: dict[str, str]) -> 
         if card is None or card.card_id in seen or not t.reason.strip():
             continue
         if t.suggested_action in ("less", "exclude") and card.reaction in ("notUsed", None):
+            continue
+        if t.suggested_action == "more" and card.reaction == "negative":
             continue
         seen.add(card.card_id)
         kept.append(TopicProposalOut(card_id=card.card_id, suggested_action=t.suggested_action, reason=t.reason))

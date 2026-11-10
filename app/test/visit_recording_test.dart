@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
+import 'package:saerok/features/auth/session_refresher.dart';
 import 'package:saerok/features/cards/cards_controller.dart';
 import 'package:saerok/features/visit/record_screen.dart';
 import 'package:saerok/features/visit/visit_controller.dart';
@@ -118,6 +119,64 @@ void main() {
 
       expect(recorder.calls.where((call) => call == 'stop'), hasLength(1));
       expect(read(container).problem, isNull);
+    });
+  });
+
+  // 녹음하는 동안 세션을 잃어도 로그인 화면으로 보내지 않도록 세션을 붙잡아
+  // 둔다(2026-11-10 E2E). 파일을 닫으면 놓는다.
+  group('녹음하는 동안 세션 붙잡기', () {
+    bool held(ProviderContainer container) =>
+        container.read(sessionHoldProvider);
+
+    test('녹음을 시작하면 붙잡고 잠시 멈춰도 놓지 않는다', () async {
+      final (container, controller) = await startVisit(FakeVisitRecorder());
+      expect(held(container), isFalse);
+
+      await controller.startRecording();
+      expect(held(container), isTrue);
+
+      await controller.pauseRecording();
+      expect(held(container), isTrue, reason: '파일은 아직 열려 있다');
+    });
+
+    test('만남을 끝내 파일을 닫으면 놓는다', () async {
+      final (container, controller) = await startVisit(FakeVisitRecorder());
+      await controller.startRecording();
+
+      await controller.stopRecording(participantCount: 2);
+
+      expect(held(container), isFalse);
+    });
+
+    test('끝내지 않고 녹음 화면을 떠나도 파일을 닫은 뒤 놓는다', () async {
+      final (container, controller) = await startVisit(FakeVisitRecorder());
+      await controller.startRecording();
+
+      await controller.stopRecordingOnLeave();
+
+      expect(held(container), isFalse);
+    });
+
+    test('녹음을 마무리하지 못한 채 면회가 정리돼도 놓는다', () async {
+      final (container, controller) = await startVisit(FakeVisitRecorder());
+      await controller.startRecording();
+      expect(held(container), isTrue);
+
+      container.invalidate(visitControllerProvider);
+      await container.read(visitControllerProvider.future);
+      // 정리하는 중에는 미뤄 놓는다.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(held(container), isFalse);
+    });
+
+    test('녹음을 시작하지 못하면 붙잡지 않는다', () async {
+      final recorder = FakeVisitRecorder(permitted: false);
+      final (container, controller) = await startVisit(recorder);
+
+      await controller.startRecording();
+
+      expect(held(container), isFalse);
     });
   });
 

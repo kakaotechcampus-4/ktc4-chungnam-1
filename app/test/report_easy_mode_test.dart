@@ -21,6 +21,9 @@ void main() {
     bool noChanges = false,
     List<CardReview>? cardReviews,
     bool noCardSummaries = false,
+    // 고른 카드를 바꿀 때 넘긴다. [unknownSelection] 이면 고른 카드를 모른다.
+    List<String>? selectedCardIds,
+    bool unknownSelection = false,
   }) async {
     tester.view.physicalSize = const Size(1236, 2751);
     tester.view.devicePixelRatio = 3;
@@ -37,6 +40,11 @@ void main() {
         ProviderScope(
           overrides: [
             visitSessionProvider.overrideWith((ref) async => session),
+            if (selectedCardIds != null || unknownSelection)
+              reportSelectedCardIdsProvider.overrideWith(
+                (ref, reportId) async =>
+                    unknownSelection ? null : selectedCardIds,
+              ),
             // 화자를 확인하지 못한 리포트처럼 카드 요약이 비어 있다.
             if (noCardSummaries)
               visitReportProvider.overrideWith(
@@ -129,7 +137,10 @@ void main() {
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         await openReport(tester, noChanges: true);
 
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, -20000));
+        await tester.drag(
+          find.byType(Scrollable).first,
+          const Offset(0, -20000),
+        );
         await tester.pumpAndSettle();
 
         final easy = tester.getRect(find.text('쉬운 모드'));
@@ -145,7 +156,11 @@ void main() {
           final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
           if (bottom > lowest) lowest = bottom;
         }
-        expect(lowest, lessThanOrEqualTo(easy.top), reason: '마지막 글이 버튼 위에서 끝난다');
+        expect(
+          lowest,
+          lessThanOrEqualTo(easy.top),
+          reason: '마지막 글이 버튼 위에서 끝난다',
+        );
       });
     }
 
@@ -255,12 +270,72 @@ void main() {
       expect(find.text('다루지 않은 카드 1장, 평가하지 않은 카드 2장'), findsOneWidget);
     });
 
-    testWidgets('하나도 답하지 않았으면 다룬 카드가 없다고 하고 모두 평가하지 않은 카드로 센다', (tester) async {
+    // 2026-11-10 E2E: 평가 화면의 카드 질문을 넘기면 '다룬 카드가 없어요'와
+    // '평가하지 않은 카드 1장'이 함께 나왔다. 답하지 않은 카드는 썼을 수 있다.
+    testWidgets('하나도 답하지 않았으면 다룬 카드가 없다고 하지 않고 모두 평가하지 않은 카드로 센다', (
+      tester,
+    ) async {
       await openReport(tester, cardReviews: const []);
 
-      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsOneWidget);
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsNothing);
+      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsOneWidget);
       expect(find.text('평가하지 않은 카드 4장'), findsOneWidget);
       expect(find.textContaining('다루지 않은 카드'), findsNothing);
+    });
+
+    testWidgets('일부만 쓰지 않았다고 답하고 나머지를 넘겼으면 다룬 카드가 없다고 하지 않는다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: const [
+          CardReview(cardId: 'card_demo_001', wasUsed: false),
+        ],
+      );
+
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsNothing);
+      expect(find.text('다루지 않은 카드 1장, 평가하지 않은 카드 3장'), findsOneWidget);
+    });
+
+    testWidgets('고른 카드 모두 쓰지 않았다고 답했으면 다룬 카드가 없다고 한다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: [
+          for (final id in [
+            'card_demo_001',
+            'card_demo_004',
+            'card_demo_007',
+            'card_demo_010',
+          ])
+            CardReview(cardId: id, wasUsed: false),
+        ],
+      );
+
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsOneWidget);
+      expect(find.text('다루지 않은 카드 4장'), findsOneWidget);
+    });
+
+    testWidgets('고른 카드가 없으면 다룬 카드가 없다고 한다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: const [],
+        selectedCardIds: const [],
+      );
+
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsOneWidget);
+      expect(find.textContaining('카드 '), findsNothing);
+    });
+
+    testWidgets('고른 카드를 모르면 다룬 카드가 없다고 단정하지 않는다', (tester) async {
+      await openReport(
+        tester,
+        cardReviews: const [
+          CardReview(cardId: 'card_demo_001', wasUsed: false),
+        ],
+        unknownSelection: true,
+      );
+
+      expect(find.text('이번 만남에서 다룬 카드가 없어요.'), findsNothing);
+      expect(find.text('이번 리포트에는 카드별 요약이 없어요.'), findsOneWidget);
+      expect(find.text('다루지 않은 카드 1장'), findsOneWidget);
     });
 
     testWidgets('쓴 카드가 있는데 요약이 없으면 다룬 카드가 없다고 하지 않는다', (tester) async {

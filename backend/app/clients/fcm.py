@@ -1,4 +1,4 @@
-"""FCM HTTP v1 로 리포트 완료 푸시를 보낸다.
+"""FCM HTTP v1 로 리포트 완료와 실패 푸시를 보낸다.
 
 Firebase 서비스 계정 키로 Google OAuth 접근 토큰을 받고(JWT bearer 방식),
 `projects/{projectId}/messages:send` 에 기기의 FID 를 대상으로 보낸다. FCM 은 기기
@@ -104,12 +104,32 @@ class FcmClient:
         알림에는 고정 문구와 회차·분석 ID 만 담는다. 어르신 이름과 리포트 내용은 담지
         않는다. 앱은 회차 ID 로 리포트(7-2)를 다시 읽는다.
         """
+        return await self._send(
+            fid, body="리포트가 준비되었어요", kind="reportReady",
+            session_id=session_id, analysis_id=analysis_id,
+        )
+
+    async def send_report_failed(
+        self, fid: str, *, session_id: str, analysis_id: str
+    ) -> SendResult:
+        """리포트를 만들지 못했다고 알린다. 실패 코드와 이유는 담지 않는다.
+
+        앱은 홈의 회차 상태(5-4)로 실패 안내와 다시 요청하기를 보여 준다.
+        """
+        return await self._send(
+            fid, body="리포트를 만들지 못했어요", kind="reportFailed",
+            session_id=session_id, analysis_id=analysis_id,
+        )
+
+    async def _send(
+        self, fid: str, *, body: str, kind: str, session_id: str, analysis_id: str
+    ) -> SendResult:
         message = {
             "message": {
                 "fid": fid,
-                "notification": {"title": "새록", "body": "리포트가 준비되었어요"},
+                "notification": {"title": "새록", "body": body},
                 "data": {
-                    "type": "reportReady",
+                    "type": kind,
                     "sessionId": session_id,
                     "analysisId": analysis_id,
                 },

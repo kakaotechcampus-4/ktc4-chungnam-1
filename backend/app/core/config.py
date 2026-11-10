@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     # 가져가지 않은 작업은 4-1, 4-2가 실패로 정리함. worker가 앞 작업을 처리하는 중이면
     # 기다리게 둠. 앞 작업 하나가 임대 시간까지 걸릴 수 있어 임대 시간보다 길게 둠.
     card_generation_start_timeout_seconds: int = Field(default=360, ge=60)
+    # 첫 등록 사진 대기 상한. 카드 실행 임대와 별개이며, 넘으면 사용자 선택을 기다린다.
+    card_photo_wait_timeout_seconds: int = Field(default=180, ge=10)
     card_worker_poll_seconds: float = Field(default=2.0, ge=0.1)
     # 리포트 생성(8-3). 음성 worker가 STT 뒤 `ai/`의 생성 함수를 이 모델과 ML API 키로 부름.
     report_generation_model: str = "gpt-6-luna"
