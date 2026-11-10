@@ -180,6 +180,11 @@ const recordingRetentionNotice =
 /// 회차마다 피보호자 동의를 확인하지 않는다. 녹음과 음성 처리 동의는 가입 때
 /// 보호자의 필수 동의로 받는다(`docs/architecture/data-contracts.md`). 녹음 전
 /// 동의 확인 체크는 팀 회의에서 빼기로 했다(2026-10-13 확인).
+///
+/// `네, 좋아요` 를 누르면 마이크 권한, 회차 만들기(5-1, 최대 15초)와 장치
+/// 열기를 기다리는 동안 버튼이 돌고 그 위에 `녹음을 준비하고 있어요` 를 둔다.
+/// 그동안은 다시 누를 수 없다. 실패 안내도 같은 자리, 버튼 바로 위에 둔다.
+/// 본문 끝에 두면 360x640 같은 낮은 화면에서는 스크롤해야 보였다.
 class _Intro extends ConsumerWidget {
   const _Intro();
 
@@ -187,15 +192,54 @@ class _Intro extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(visitControllerProvider).value;
     final controller = ref.read(visitControllerProvider.notifier);
-    final problem = state?.problem;
+    final starting = state?.starting ?? false;
+    final problem = starting ? null : state?.problem;
+    // 이 카드로 시작한 면회가 이미 있으면 새로 녹음하지 않고 그 평가로 간다.
+    final existingSessionId =
+        problem == VisitRecordingProblem.visitAlreadyStarted
+        ? state?.existingSessionId
+        : null;
 
     return ScreenBody(
       scrollable: true,
-      bottom: PrimaryButton(
-        label: '네, 좋아요',
-        color: HomeColors.accent,
-        loadingColor: HomeColors.accentLoading,
-        onPressed: controller.startRecording,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 시작 중과 실패는 화면 낭독기가 바로 읽는다.
+          if (starting) ...[
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                '녹음을 준비하고 있어요',
+                style: AppTypography.sub,
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ] else if (problem != null) ...[
+            Semantics(
+              liveRegion: true,
+              child: _ProblemNotice(problem: problem),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (existingSessionId != null)
+            PrimaryButton(
+              label: '평가 이어서 하기',
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              onPressed: () => _openEvaluation(context, ref, existingSessionId),
+            )
+          else
+            PrimaryButton(
+              label: '네, 좋아요',
+              color: HomeColors.accent,
+              loadingColor: HomeColors.accentLoading,
+              loading: starting,
+              onPressed: controller.startRecording,
+            ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -237,16 +281,21 @@ class _Intro extends ConsumerWidget {
 
           const Spacer(),
 
-          if (problem != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            _ProblemNotice(problem: problem),
-          ],
-
           const SizedBox(height: AppSpacing.lg + AppSpacing.xxl),
         ],
       ),
     );
   }
+}
+
+/// 이 카드로 이미 시작한 회차의 평가로 간다. 카드 화면과 홈의 `평가 이어서
+/// 하기` 와 같은 화면이다.
+///
+/// 받아 둔 묶음(4-3)은 회차를 만들기 전에 받은 것이라 이 회차를 모른다. 평가
+/// 화면이 새 묶음에서 이 회차가 고른 카드를 찾도록 버린다(`reviewTargetProvider`).
+void _openEvaluation(BuildContext context, WidgetRef ref, String sessionId) {
+  ref.invalidate(currentCardSetProvider);
+  unawaited(context.push(AppRoutes.visitReviewOf(sessionId)));
 }
 
 /// 끝내기를 누르면 묻고 나서 끝낸다.
@@ -296,8 +345,14 @@ class _ProblemNotice extends StatelessWidget {
       '녹음 파일을 저장하지 못했어요.\n기억나는 내용은 소감에 적어주세요.',
     VisitRecordingProblem.sessionFailed =>
       '면회를 시작하지 못했어요.\n인터넷 연결을 확인한 뒤 다시 눌러주세요.',
+    VisitRecordingProblem.sessionServerError =>
+      '서버 문제로 면회를 시작하지 못했어요.\n잠시 후 다시 눌러주세요.',
+    VisitRecordingProblem.sessionRefused =>
+      '이 카드로는 면회를 시작할 수 없어요.\n홈에서 오늘의 대화카드 받기를 눌러주세요.',
     VisitRecordingProblem.cardsOutdated =>
       '카드를 받은 뒤 어르신 정보가 바뀌었어요.\n홈에서 오늘의 대화카드 받기를 누르면 새로 만들어요.',
+    VisitRecordingProblem.visitAlreadyStarted =>
+      '이 카드로 시작한 면회가 있어요.\n평가를 이어서 하면 리포트를 만들어요.',
   };
 
   @override
