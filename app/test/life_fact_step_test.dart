@@ -88,6 +88,23 @@ class _FixedRecording implements SpeechRecording {
   Future<void> cancel() async => _speech.cancelled += 1;
 }
 
+/// [started] 를 완료할 때까지 녹음을 시작하지 않는다. 마이크 권한을 묻는
+/// 동안처럼 마이크를 눌렀지만 아직 녹음하지 않는 때를 본다.
+class _SlowStartSpeech extends _FixedSpeech {
+  _SlowStartSpeech() : super(const SpeechNotHeard(), Duration.zero);
+
+  final started = Completer<void>();
+
+  @override
+  Future<SpeechRecording> start({
+    required String category,
+    required int attempt,
+  }) async {
+    await started.future;
+    return super.start(category: category, attempt: attempt);
+  }
+}
+
 final _step = lifeFactSteps.first;
 
 Widget _wrap({
@@ -1089,6 +1106,33 @@ void main() {
 
       expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
       expect(pulsing(tester), isFalse);
+    });
+
+    testWidgets('마이크를 누른 뒤 녹음이 시작되기 전에는 물결이 없다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      final speech = _SlowStartSpeech();
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+      // 권한을 묻는 동안처럼 녹음 시작을 기다리고 있다.
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isFalse, reason: '아직 녹음하지 않는다');
+      expect(tester.hasRunningAnimations, isFalse);
+
+      speech.started.complete();
+      await afterTap(tester);
+      expect(pulsing(tester), isTrue);
+      expect(tester.hasRunningAnimations, isTrue);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pumpAndSettle();
+      expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
     });
 
     testWidgets('움직임 줄이기가 켜져 있으면 듣는 중에도 움직이지 않는다', (tester) async {
