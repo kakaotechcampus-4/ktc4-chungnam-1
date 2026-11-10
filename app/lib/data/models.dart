@@ -106,6 +106,7 @@ class Profile {
     required this.lifeFactIds,
     required this.photoIds,
     this.relationship,
+    this.birthByAge = false,
     this.symptomNote,
     this.occupation,
     this.hometown,
@@ -143,6 +144,10 @@ class Profile {
   /// 보호자와의 관계. 받기 전에 등록한 분은 `null` 이다.
   final String? relationship;
   final String birthDate;
+
+  /// 생년월일 대신 나이로 입력했는지. 계약에 없는 단말 값이다(`localOnly` 에도
+  /// 없다). [birthDate] 가 지어낸 날짜라 화면은 `82세(나이로 입력)` 로 보여준다.
+  final bool birthByAge;
 
   final String ageRange;
   final ConditionStage? stage;

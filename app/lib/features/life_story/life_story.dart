@@ -10,6 +10,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../data/birth_date.dart';
 import '../../data/models.dart';
 import '../profile_setup/setup_steps.dart';
 
@@ -187,11 +188,10 @@ class LifeStoryBook {
   }
 }
 
-/// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다.
-String birthDateLabel(String isoDate) {
-  final date = DateTime.tryParse(isoDate);
-  return date == null ? isoDate : fullDateLabel(date);
-}
+/// `1943-03-12` 를 `1943년 3월 12일` 로 바꾼다. 나이로 입력한 분([byAge])은
+/// 지어낸 날짜 대신 `82세(나이로 입력)` 로 보여준다([birthDateText]).
+String birthDateLabel(String isoDate, {bool byAge = false}) =>
+    birthDateText(isoDate, byAge: byAge);
 
 String fullDateLabel(DateTime date) =>
     '${date.year}년 ${date.month}월 ${date.day}일';

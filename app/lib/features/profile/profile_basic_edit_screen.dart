@@ -43,6 +43,7 @@ class _ProfileBasicEditScreenState
         now.gender != before.gender ||
         now.relationship != before.relationship ||
         now.birthDate != before.birthDate ||
+        now.birthByAge != before.birthByAge ||
         now.stage != before.stage;
   }
 
@@ -63,15 +64,17 @@ class _ProfileBasicEditScreenState
         final saved = await ref
             .read(profileApiProvider)
             .updateBasicInfo(remoteId, info);
-        // 관계는 서버에 없으므로 고친 값을 그대로 붙인다.
-        info = saved.basicInfo.withRelationship(info.relationship);
+        // 관계와 나이로 입력했는지는 서버에 없으므로 고친 값을 그대로 붙인다.
+        info = saved.basicInfo
+            .withRelationship(info.relationship)
+            .withBirthByAge(info.birthByAge);
       } on ApiFailure catch (failure) {
         if (!mounted) return;
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(content: Text(profileFailureMessage(failure))),
+            SnackBar(content: Text(basicInfoFailureMessage(failure))),
           );
         return;
       }

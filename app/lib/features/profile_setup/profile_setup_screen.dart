@@ -181,8 +181,12 @@ class _ActionsState extends ConsumerState<_Actions> {
   /// 서버에 저장하는 중이다. 같은 요청을 두 번 보내지 않게 버튼을 막는다.
   bool _saving = false;
 
-  /// 저장을 기다리고, 실패하면 이유를 알리고 이 단계에 남는다.
-  Future<bool> _save(Future<void> Function() action) async {
+  /// 저장을 기다리고, 실패하면 이유를 알리고 이 단계에 남는다. 기본 정보는
+  /// 서버의 형식 거절을 생년월일 안내로 보여준다([basicInfoFailureMessage]).
+  Future<bool> _save(
+    Future<void> Function() action, {
+    String Function(ApiFailure) message = profileFailureMessage,
+  }) async {
     setState(() => _saving = true);
     try {
       await action();
@@ -191,7 +195,7 @@ class _ActionsState extends ConsumerState<_Actions> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(profileFailureMessage(failure))));
+        ..showSnackBar(SnackBar(content: Text(message(failure))));
       return false;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -220,7 +224,10 @@ class _ActionsState extends ConsumerState<_Actions> {
         loadingColor: HomeColors.accentLoading,
         label: '다음',
         onPressed: state.draft.basicInfoFilled
-            ? () => _save(() => controller.submitBasicInfo(addingId: addingId))
+            ? () => _save(
+                () => controller.submitBasicInfo(addingId: addingId),
+                message: basicInfoFailureMessage,
+              )
             : null,
       );
     }
