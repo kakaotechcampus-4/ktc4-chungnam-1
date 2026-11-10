@@ -7,6 +7,7 @@ import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import 'failed_report_sheet.dart';
 
 /// 알림. 홈의 왼쪽 상단 알림 아이콘을 누르면 뜬다(피그마 설계 없음).
 ///
@@ -56,6 +57,17 @@ class NoticeScreen extends ConsumerWidget {
                           return;
                         }
                         if (id == null) return;
+                        // 홈 배너와 같이 녹음이 남았으면 공유도 고르게 한다.
+                        if (notice == ReportNotice.failed &&
+                            info.analysisId != null) {
+                          openFailedReport(
+                            context,
+                            ref,
+                            sessionId: id,
+                            analysisId: info.analysisId!,
+                          );
+                          return;
+                        }
                         context.push(switch (notice) {
                           // 앱을 떠난 사이 멈춘 면회 흐름은 그 회차로 이어간다.
                           ReportNotice.evaluationPending =>
@@ -63,13 +75,8 @@ class NoticeScreen extends ConsumerWidget {
                           ReportNotice.audioPending => AppRoutes.visitUploadOf(
                             id,
                           ),
-                          ReportNotice.failed =>
-                            info.analysisId == null
-                                ? AppRoutes.home
-                                : AppRoutes.analysisRetryOf(
-                                    id,
-                                    info.analysisId!,
-                                  ),
+                          // 작업 ID 를 모르면 다시 요청할 수 없다.
+                          ReportNotice.failed => AppRoutes.home,
                           _ => AppRoutes.reportOf(id),
                         });
                       },

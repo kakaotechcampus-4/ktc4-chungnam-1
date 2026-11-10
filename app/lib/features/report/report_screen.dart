@@ -203,30 +203,6 @@ class _BodyState extends ConsumerState<_Body> {
   /// 저장 구조가 걸린 결정이라 따로 정한다(`app/CLAUDE.md`).
   bool _easy = false;
 
-  /// 녹음 파일 공유 창을 여는 중. 두 번 열지 않도록 버튼을 막는다.
-  bool _sharing = false;
-
-  /// 기기에 남은 이 회차의 녹음 파일로 공유 창을 연다. 그 사이 파일이
-  /// 사라졌으면 알리고 버튼을 거둔다.
-  Future<void> _shareRecording(String path) async {
-    setState(() => _sharing = true);
-    final result = await ref.read(recordingShareProvider).share(path);
-    if (!mounted) return;
-    setState(() => _sharing = false);
-    final message = switch (result) {
-      RecordingShareResult.opened => null,
-      RecordingShareResult.missing => '녹음 파일을 찾지 못했어요.',
-      RecordingShareResult.failed => '녹음 파일을 공유하지 못했어요.',
-    };
-    if (result == RecordingShareResult.missing) {
-      ref.invalidate(visitRecordingPathProvider(widget.report.sessionId));
-    }
-    if (message == null) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
   @override
   void initState() {
     super.initState();
@@ -361,9 +337,7 @@ class _BodyState extends ConsumerState<_Body> {
 
               if (recordingPath case final path?) ...[
                 const SizedBox(height: AppSpacing.section - AppSpacing.lg),
-                _RecordingShare(
-                  onShare: _sharing ? null : () => _shareRecording(path),
-                ),
+                RecordingShareButton(sessionId: report.sessionId, path: path),
                 const SizedBox(height: AppSpacing.lg),
               ],
 
@@ -517,27 +491,6 @@ class _CardSummaryTile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// 이 기기에 남은 면회 녹음 파일을 다른 앱으로 보내는 버튼.
-///
-/// 안내 문구 없이 버튼만 둔다(2026-11-09 PM 결정). 보낼 곳은 공유 창에서
-/// 보호자가 고른다.
-class _RecordingShare extends StatelessWidget {
-  const _RecordingShare({required this.onShare});
-
-  /// `null` 이면 공유 창을 여는 중이라 막는다.
-  final VoidCallback? onShare;
-
-  @override
-  Widget build(BuildContext context) {
-    return SecondaryButton(
-      borderColor: HomeColors.outline,
-      icon: Icons.share_outlined,
-      label: '녹음 파일 공유',
-      onPressed: onShare,
     );
   }
 }

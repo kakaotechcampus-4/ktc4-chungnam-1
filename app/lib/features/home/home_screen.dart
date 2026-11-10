@@ -17,6 +17,7 @@ import '../cards/card_generation_controller.dart';
 import '../cards/photo_preparation_view.dart';
 import '../profile/profile_dialogs.dart';
 import '../profile_setup/setup_entry.dart';
+import 'failed_report_sheet.dart';
 import 'home_talk.dart';
 
 /// 시작 화면.
@@ -103,17 +104,18 @@ class HomeScreen extends ConsumerWidget {
                                   title: '리포트를 만들지 못했어요',
                                   hint: '눌러서 분석 다시 요청하기',
                                   icon: Icons.error_outline,
+                                  // 녹음이 남았으면 공유도 고르게 한다.
                                   onTap: () {
                                     final analysisId = info?.analysisId;
                                     if (reportId == null ||
                                         analysisId == null) {
                                       return;
                                     }
-                                    context.push(
-                                      AppRoutes.analysisRetryOf(
-                                        reportId,
-                                        analysisId,
-                                      ),
+                                    openFailedReport(
+                                      context,
+                                      ref,
+                                      sessionId: reportId,
+                                      analysisId: analysisId,
                                     );
                                   },
                                 ),

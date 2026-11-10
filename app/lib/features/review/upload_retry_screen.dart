@@ -6,6 +6,7 @@ import '../../app/routes.dart';
 import '../../data/api_client.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_scaffold.dart';
+import '../visit/recording_share.dart';
 import '../visit/stop_recording_dialog.dart';
 import 'status_notice.dart';
 import 'upload_retry_controller.dart';
@@ -15,6 +16,9 @@ import 'upload_retry_controller.dart';
 /// 피그마 설계는 없다. 앱을 다시 켠 뒤 홈의 `음성 다시 보내기` 배너가
 /// `/visit/upload?session=<회차 ID>` 로 연다. 들어오자마자 보내고, 결과에 따라
 /// 안내와 버튼만 바꾼다.
+///
+/// 보내거나 다시 요청하지 못했을 때 이 기기에 그 회차의 녹음 파일이 남아
+/// 있으면 `녹음 파일 공유` 를 함께 둔다(2026-11-10 PM 결정).
 class UploadRetryScreen extends ConsumerWidget {
   const UploadRetryScreen({
     required this.sessionId,
@@ -35,6 +39,16 @@ class UploadRetryScreen extends ConsumerWidget {
           ));
     final result = ref.watch(provider);
     void goHome() => context.go(AppRoutes.home);
+    // 공유는 실패 안내에만 두지만 녹음은 들어오자마자 찾는다. 실패한 뒤에
+    // 찾으면 공유가 늦게 나타나 이미 보이던 버튼이 자리를 옮긴다. 찾는 중이거나
+    // 찾지 못하면 공유를 두지 않는다.
+    final share = switch (sessionId) {
+      final id? => switch (ref.watch(visitRecordingPathProvider(id)).value) {
+        final path? => RecordingShareButton(sessionId: id, path: path),
+        null => null,
+      },
+      null => null,
+    };
 
     return Scaffold(
       backgroundColor: HomeColors.background,
@@ -55,6 +69,7 @@ class UploadRetryScreen extends ConsumerWidget {
               : '잠시 후 다시 보내주세요.',
           primaryLabel: '다시 시도하기',
           onPrimary: ref.read(provider.notifier).retry,
+          extraAction: share,
           onHome: goHome,
         ),
         data: (outcome) => switch (outcome) {
