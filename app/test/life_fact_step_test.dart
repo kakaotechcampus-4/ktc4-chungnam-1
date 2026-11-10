@@ -8,12 +8,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:saerok/app/mic_settings.dart';
+import 'package:saerok/data/models.dart';
 import 'package:saerok/design/theme.dart';
 import 'package:saerok/design/tokens.dart';
 import 'package:saerok/features/profile_setup/life_fact_step.dart';
+import 'package:saerok/features/profile_setup/profile_setup_screen.dart';
+import 'package:saerok/features/profile_setup/setup_controller.dart';
 import 'package:saerok/features/profile_setup/setup_steps.dart';
 import 'package:saerok/features/profile_setup/speech_input.dart';
+import 'package:saerok/widgets/recording_pulse.dart';
 
+import 'fake_mic_settings.dart';
 import 'fake_screen_awake.dart';
 
 /// 정해진 결과만 돌려주는 대역이다. 목 데이터가 아니라 화면 흐름만 본다.
@@ -23,6 +29,7 @@ class _FixedSpeech implements SpeechInput {
     this.delay, {
     List<SpeechOutcome> queued = const [],
     this.startFailure,
+    this.startGate,
   }) : _queued = [...queued];
 
   /// [_queued] 를 다 쓰면 늘 돌려주는 결과.
@@ -33,6 +40,9 @@ class _FixedSpeech implements SpeechInput {
 
   /// 있으면 녹음을 시작하지 못한다.
   final SpeechStartFailure? startFailure;
+
+  /// 있으면 이것이 끝날 때까지 시작을 붙든다. 권한 창이 떠 있는 동안이다.
+  final Completer<void>? startGate;
 
   /// 옮기는 중 화면을 보려면 결과가 바로 나오면 안 된다. 기본은 지연 없음이다.
   final Duration delay;
@@ -53,6 +63,7 @@ class _FixedSpeech implements SpeechInput {
     required String category,
     required int attempt,
   }) async {
+    if (startGate case final gate?) await gate.future;
     if (startFailure case final failure?) throw failure;
     return last = _FixedRecording(this);
   }
@@ -87,6 +98,23 @@ class _FixedRecording implements SpeechRecording {
   Future<void> cancel() async => _speech.cancelled += 1;
 }
 
+/// [started] 를 완료할 때까지 녹음을 시작하지 않는다. 마이크 권한을 묻는
+/// 동안처럼 마이크를 눌렀지만 아직 녹음하지 않는 때를 본다.
+class _SlowStartSpeech extends _FixedSpeech {
+  _SlowStartSpeech() : super(const SpeechNotHeard(), Duration.zero);
+
+  final started = Completer<void>();
+
+  @override
+  Future<SpeechRecording> start({
+    required String category,
+    required int attempt,
+  }) async {
+    await started.future;
+    return super.start(category: category, attempt: attempt);
+  }
+}
+
 final _step = lifeFactSteps.first;
 
 Widget _wrap({
@@ -97,12 +125,15 @@ Widget _wrap({
   _FixedSpeech? speech,
   String? initialText,
   FakeScreenAwakePlatform? screen,
+  FakeMicSettingsPlatform? micSettings,
 }) => ProviderScope(
   overrides: [
     speechInputProvider.overrideWith(
       (ref) async => speech ?? _FixedSpeech(outcome, delay),
     ),
     if (screen != null) screen.asOverride,
+    // 실제 채널은 테스트에서 답이 오지 않아 마이크 거부 뒤 화면이 멈춘다.
+    (micSettings ?? FakeMicSettingsPlatform()).asOverride,
   ],
   child: MaterialApp(
     theme: buildAppTheme(),
@@ -643,6 +674,330 @@ void main() {
     });
   });
 
+  group('마이크 권한과 설정 열기 (UX 점검 9번)', () {
+    const micDeniedNotice = '마이크가 꺼져 있어요.\n휴대전화 설정에서 새록의 마이크를 켜 주세요.';
+
+    _FixedSpeech deniedSpeech() => _FixedSpeech(
+      const SpeechNotHeard(),
+      Duration.zero,
+      startFailure: const SpeechStartFailure(SpeechStartProblem.micDenied),
+    );
+
+    /// 말로 답하기를 골라 마이크를 누르고, 권한이 없어 글 입력으로 넘어온다.
+    Future<void> denyMic(WidgetTester tester) async {
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pumpAndSettle();
+      expect(find.text(micDeniedNotice), findsOneWidget);
+    }
+
+    /// 다른 앱(설정)이 앞에 왔다가 새록으로 돌아온다.
+    void leaveAndReturn(WidgetTester tester) {
+      for (final state in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+    }
+
+    testWidgets('다시 물을 수 있으면 다시 녹음하기 옆에 설정 열기를 둔다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+
+      await denyMic(tester);
+
+      expect(settings.checked, 1);
+      expect(find.text('다시 녹음하기'), findsOneWidget);
+      expect(find.text('설정에서 마이크 켜기'), findsNothing);
+
+      await tester.tap(find.text('설정 열기'));
+      await tester.pumpAndSettle();
+
+      expect(settings.opened, 1);
+      expect(find.byType(TextField), findsOneWidget, reason: '글 입력은 그대로다');
+      expect(find.text(micSettingsOpenFailedNotice), findsNothing);
+    });
+
+    testWidgets('안드로이드가 다시 묻지 않으면 다시 녹음하기 대신 설정에서 마이크 켜기를 둔다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(permanentlyDenied: true);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+
+      await denyMic(tester);
+
+      expect(
+        find.text('다시 녹음하기'),
+        findsNothing,
+        reason: '눌러도 같은 안내로 돌아오는 버튼을 두지 않는다',
+      );
+      expect(find.text('설정 열기'), findsNothing, reason: '같은 일을 하는 버튼을 둘 두지 않는다');
+
+      await tester.tap(find.text('설정에서 마이크 켜기'));
+      await tester.pumpAndSettle();
+
+      expect(settings.opened, 1);
+      expect(find.text(micDeniedNotice), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('설정에서 켜고 돌아오면 다시 녹음하기를 되살린다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(permanentlyDenied: true);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+      await denyMic(tester);
+      await tester.tap(find.text('설정에서 마이크 켜기'));
+      await tester.pumpAndSettle();
+
+      // 설정 화면이 앞에 있는 동안 마이크를 켜고 새록으로 돌아온다.
+      settings.permanentlyDenied = false;
+      leaveAndReturn(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('설정에서 마이크 켜기'), findsNothing);
+      await tester.tap(find.text('다시 녹음하기'));
+      await tester.pumpAndSettle();
+      expect(find.text('마이크를 누르고 말씀해주세요'), findsOneWidget);
+    });
+
+    testWidgets('돌아왔는데 아직 꺼져 있으면 설정에서 마이크 켜기를 그대로 둔다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(permanentlyDenied: true);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+      await denyMic(tester);
+
+      leaveAndReturn(tester);
+      await tester.pumpAndSettle();
+
+      expect(settings.checked, 2);
+      expect(find.text('설정에서 마이크 켜기'), findsOneWidget);
+      expect(find.text('다시 녹음하기'), findsNothing);
+    });
+
+    testWidgets('설정을 열지 못하면 알림 띠로 알린다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(opens: false);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+      await denyMic(tester);
+
+      await tester.tap(find.text('설정 열기'));
+      await tester.pumpAndSettle();
+
+      expect(settings.opened, 1);
+      expect(find.text(micSettingsOpenFailedNotice), findsOneWidget);
+    });
+
+    testWidgets('마이크 거부가 아닌 이유로 넘어오면 설정 버튼을 두지 않고 묻지도 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(permanentlyDenied: true);
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), micSettings: settings),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await _speak(tester);
+      await _speak(tester);
+
+      expect(find.text('목소리를 잘 듣지 못했어요.\n글로 적어 보시겠어요?'), findsOneWidget);
+      expect(find.text('다시 녹음하기'), findsOneWidget);
+      expect(find.text('설정 열기'), findsNothing);
+      expect(find.text('설정에서 마이크 켜기'), findsNothing);
+
+      leaveAndReturn(tester);
+      await tester.pumpAndSettle();
+      expect(settings.checked, 0);
+    });
+
+    testWidgets('다시 녹음하기를 눌러 마이크 화면으로 가면 설정 버튼이 사라지고 더 묻지 않는다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform();
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: deniedSpeech(),
+          micSettings: settings,
+        ),
+      );
+      await denyMic(tester);
+
+      await tester.tap(find.text('다시 녹음하기'));
+      await tester.pumpAndSettle();
+      final checks = settings.checked;
+
+      expect(find.text('마이크를 누르고 말씀해주세요'), findsOneWidget);
+      expect(find.text('설정 열기'), findsNothing);
+
+      await tester.tap(find.text('글로 답할게요'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('말로 답할게요'), findsOneWidget);
+      expect(find.text('설정 열기'), findsNothing);
+      leaveAndReturn(tester);
+      await tester.pumpAndSettle();
+      expect(settings.checked, checks);
+    });
+
+    testWidgets('권한 창이 떠 있는 동안 화면을 벗어나면 거부되어도 조용히 끝낸다', (tester) async {
+      _useReferenceScreen(tester);
+      final settings = FakeMicSettingsPlatform(permanentlyDenied: true);
+      final gate = Completer<void>();
+      final speech = _FixedSpeech(
+        const SpeechNotHeard(),
+        Duration.zero,
+        startFailure: const SpeechStartFailure(SpeechStartProblem.micDenied),
+        startGate: gate,
+      );
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechNotHeard(),
+          speech: speech,
+          micSettings: settings,
+        ),
+      );
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await tester.pump();
+
+      // 같은 ProviderScope 를 두고 입력 화면만 내린 뒤 권한이 거부된다.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            speechInputProvider.overrideWith((ref) async => speech),
+            // `_wrap` 과 override 수가 같아야 한다.
+            settings.asOverride,
+          ],
+          child: const MaterialApp(home: SizedBox.shrink()),
+        ),
+      );
+      gate.complete();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(settings.checked, 0, reason: '벗어난 화면은 권한 상태를 묻지 않는다');
+    });
+
+    // 등록 화면은 내용 높이를 미리 재어 모자라면 스크롤한다. 작은 화면에서
+    // 글자를 키워도 알약이 넘치지 않고 끝까지 내리면 눌린다. 글자 2배에서는
+    // `설정에서 마이크 켜기` 가 한 줄에 들어가지 않아 글자를 줄인다.
+    for (final (size, scale) in const [
+      (Size(360, 640), 1.3),
+      (Size(360, 640), 2.0),
+      (Size(390, 844), 2.0),
+    ]) {
+      final screen = '${size.width.toInt()}x${size.height.toInt()}';
+      for (final blocked in [false, true]) {
+        final label = blocked ? '설정에서 마이크 켜기' : '설정 열기';
+        testWidgets('$screen 글자 $scale배에서도 $label 이 넘치지 않고 눌린다', (
+          tester,
+        ) async {
+          tester.view.physicalSize = size * 3;
+          tester.view.devicePixelRatio = 3;
+          addTearDown(tester.view.reset);
+          final settings = FakeMicSettingsPlatform(permanentlyDenied: blocked);
+          final container = ProviderContainer(
+            overrides: [
+              speechInputProvider.overrideWith((ref) async => deniedSpeech()),
+              settings.asOverride,
+            ],
+          );
+          addTearDown(container.dispose);
+          container
+              .read(setupControllerProvider.notifier)
+              .restore(
+                const SetupState(
+                  reachedIndex: 1,
+                  draft: SetupDraft(
+                    name: '김○○',
+                    gender: 'female',
+                    relationship: '어머니',
+                    birthYear: 1943,
+                    birthMonth: 3,
+                    birthDay: 12,
+                    stage: ConditionStage.mildCognitiveImpairment,
+                  ),
+                ),
+              );
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                theme: buildAppTheme(),
+                builder: (context, child) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: TextScaler.linear(scale)),
+                  child: child!,
+                ),
+                home: const ProfileSetupScreen(),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('말로 답하기'));
+          await tester.pumpAndSettle();
+          await _choose(tester, '말로 답하기');
+          await tester.pumpAndSettle();
+          if (scale > 1.3) {
+            // 답하는 방법 두 버튼은 높이 96 으로 정해져 글자 2배에서 넘친다. 이
+            // 변경과 별개로 UX 점검 2026-11-10 12번이 다룬다. 마이크를 거부한
+            // 뒤의 넘침만 보려고 여기까지의 오류는 비운다.
+            tester.takeException();
+          }
+          await tester.ensureVisible(find.byIcon(Icons.mic));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byIcon(Icons.mic));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          await tester.ensureVisible(find.text(label));
+          await tester.pumpAndSettle();
+          expect(find.text(label).hitTestable(), findsOneWidget);
+          if (!blocked) {
+            expect(find.text('다시 녹음하기').hitTestable(), findsOneWidget);
+          }
+          await tester.tap(find.text(label));
+          await tester.pumpAndSettle();
+          expect(settings.opened, 1);
+        });
+      }
+    }
+  });
+
   group('서버 실패', () {
     const canResend = SpeechFailed(canResend: true);
     const cannotResend = SpeechFailed(canResend: false);
@@ -995,6 +1350,8 @@ void main() {
           overrides: [
             speechInputProvider.overrideWith((ref) async => speech),
             screen.asOverride,
+            // `_wrap` 과 override 수가 같아야 한다.
+            FakeMicSettingsPlatform().asOverride,
           ],
           child: const MaterialApp(home: SizedBox.shrink()),
         ),
@@ -1028,6 +1385,115 @@ void main() {
 
       expect(find.byType(TextField), findsOneWidget);
       expect(screen.calls, isEmpty);
+    });
+  });
+
+  // PM이 녹음 버튼을 누른 뒤 녹음이 시작됐는지 알 수 없었다(2026-11-10).
+  // 녹음이 시작된 뒤 듣는 동안에만 마이크 원 둘레로 물결이 퍼진다. 물결
+  // 자체(움직임, 고정 고리)는 `recording_pulse_test.dart` 에서 본다.
+  group('녹음 중 표시', () {
+    bool pulsing(WidgetTester tester) =>
+        tester.widget<RecordingPulse>(find.byType(RecordingPulse)).active;
+
+    /// 누른 자리의 잉크 번짐이 끝날 때까지 흘린다. 그 움직임과 물결을 섞지
+    /// 않으려는 것이다.
+    Future<void> afterTap(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+    }
+
+    testWidgets('듣는 동안만 물결이 퍼지고 옮기는 중에는 멈춘다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        _wrap(
+          outcome: const SpeechHeard('합성 문장입니다'),
+          delay: const Duration(seconds: 3),
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await afterTap(tester);
+      expect(pulsing(tester), isFalse, reason: '마이크를 누르기 전이다');
+      expect(tester.hasRunningAnimations, isFalse);
+
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isTrue);
+      expect(tester.hasRunningAnimations, isTrue, reason: '잉크가 끝나도 물결은 이어진다');
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('말씀을 글로 옮기고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isFalse, reason: '글로 옮기는 중에는 녹음하지 않는다');
+
+      await tester.pumpAndSettle();
+      expect(find.text('합성 문장입니다'), findsOneWidget);
+      expect(find.byType(RecordingPulse), findsNothing);
+    });
+
+    testWidgets('알아듣지 못하면 물결 없이 다시 누르기를 기다린다', (tester) async {
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(_wrap(outcome: const SpeechNotHeard()));
+
+      await _choose(tester, '말로 답하기');
+      await _speak(tester);
+
+      expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
+      expect(pulsing(tester), isFalse);
+    });
+
+    testWidgets('마이크를 누른 뒤 녹음이 시작되기 전에는 물결이 없다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      final speech = _SlowStartSpeech();
+      await tester.pumpWidget(
+        _wrap(outcome: const SpeechNotHeard(), speech: speech),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+      // 권한을 묻는 동안처럼 녹음 시작을 기다리고 있다.
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isFalse, reason: '아직 녹음하지 않는다');
+      expect(tester.hasRunningAnimations, isFalse);
+
+      speech.started.complete();
+      await afterTap(tester);
+      expect(pulsing(tester), isTrue);
+      expect(tester.hasRunningAnimations, isTrue);
+
+      await tester.tap(find.text('다 말했어요'));
+      await tester.pumpAndSettle();
+      expect(find.text('목소리를 잘 듣지 못했어요.'), findsOneWidget);
+    });
+
+    testWidgets('움직임 줄이기가 켜져 있으면 듣는 중에도 움직이지 않는다', (tester) async {
+      RecordingPulse.motion = true;
+      addTearDown(() => RecordingPulse.motion = false);
+      _useReferenceScreen(tester);
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData.fromView(
+            tester.view,
+          ).copyWith(disableAnimations: true),
+          child: _wrap(outcome: const SpeechNotHeard()),
+        ),
+      );
+
+      await _choose(tester, '말로 답하기');
+      await tester.tap(find.byIcon(Icons.mic));
+      await afterTap(tester);
+
+      expect(find.text('듣고 있어요'), findsOneWidget);
+      expect(pulsing(tester), isTrue, reason: '고정된 고리로 듣는 중임을 알린다');
+      expect(tester.hasRunningAnimations, isFalse);
     });
   });
 }

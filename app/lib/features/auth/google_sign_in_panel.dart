@@ -89,11 +89,10 @@ class _GoogleSignInPanelState extends ConsumerState<GoogleSignInPanel> {
           const SizedBox(height: AppSpacing.xl),
         ],
 
-        Center(
-          child: GoogleSignInButton(
-            onPressed: _busy ? null : _signInWithGoogle,
-            busy: _busy,
-          ),
+        // 화면 폭을 채우는 버튼이라 가운데 맞춤을 따로 두지 않는다.
+        GoogleSignInButton(
+          onPressed: _busy ? null : _signInWithGoogle,
+          busy: _busy,
         ),
 
         if (skipping) ...[
