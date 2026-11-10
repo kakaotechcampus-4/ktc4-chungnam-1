@@ -472,8 +472,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
 
         // 마이크 화면에서는 원 아래 빈 공간의 맨 위에 보조 내용(다 말했어요,
         // 둘째 줄 안내)을 둔다. 원과 첫 줄 안내는 위아래 같은 빈 공간 사이
-        // 한가운데에 오고, 보조 내용은 높이 계산에 들지 않아 상태가 바뀌어도 원이
-        // 오르내리지 않는다.
+        // 한가운데에 온다. 보조 영역은 상태마다 다른 보조 내용 가운데 가장 긴
+        // 것의 높이를 미리 잡아 두므로 상태가 바뀌어도 원이 오르내리지 않는다.
         if (!choosing && _phase != _Phase.manualInput && _phase != _Phase.heard)
           Expanded(
             flex: 3,
