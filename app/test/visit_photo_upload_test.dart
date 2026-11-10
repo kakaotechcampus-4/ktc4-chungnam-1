@@ -351,21 +351,21 @@ void main() {
     });
 
     // 끝내지 않고 나간 뒤 사진 화면에서 다시 찍고 돌아온 경우다. 녹음 화면은
-    // 끝낸 면회로 보이므로 녹음이 이어진다고 하지 않는다(2026-11-10 UX 점검 1번).
-    testWidgets('녹음 파일을 닫은 뒤 다시 찍은 사진을 올리지 못하면 녹음이 이어진다고 하지 않는다', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(1236, 2751);
+    // 끝낸 면회로 보이므로 녹음이 이어진다고 하지 않는다(2026-11-10 UX 점검
+    // 1번). 알림 띠는 아래 `평가 이어서 하기` 를 닫을 때까지 덮어서, 본문 안에
+    // 알린다(2026-11-10 UX 점검 2차).
+    //
+    // [size] 는 논리 크기다. 사진은 [failures] 를 차례로 던진 뒤 올라간다.
+    Future<void> openFinished(
+      WidgetTester tester,
+      ProviderContainer container, {
+      Size size = const Size(412, 917),
+    }) async {
+      tester.view.physicalSize = size * 3;
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
-      final api = FakeVisitApi()
-        ..photoFailures.addAll([
-          const ApiNetworkFailure(),
-          const ApiNetworkFailure(),
-        ]);
-      final container = _container(api);
       await tester.runAsync(() async {
         final visit = await _prepare(container, photo: null);
         await visit.startRecording();
@@ -386,13 +386,76 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 80));
       });
       await tester.pump();
+      // 알림 띠였다면 올라왔을 시간을 준다.
       await tester.pump(const Duration(milliseconds: 500));
+    }
 
-      expect(_read(container).photoUpload, VisitPhotoUpload.failed);
-      expect(find.text('이미 끝낸 면회예요'), findsOneWidget);
-      expect(find.text('사진을 올리지 못했어요.'), findsOneWidget);
-      expect(find.textContaining('녹음은 그대로 이어져요'), findsNothing);
-      expect(find.text('사진 다시 올리기'), findsOneWidget);
+    for (final size in const [Size(360, 640), Size(390, 844)]) {
+      final label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('$label 녹음 파일을 닫은 뒤 다시 찍은 사진을 올리지 못하면 '
+          '본문 안에 알려 평가 이어서 하기를 덮지 않는다', (tester) async {
+        final api = FakeVisitApi()
+          ..photoFailures.addAll([
+            const ApiNetworkFailure(),
+            const ApiNetworkFailure(),
+          ]);
+        final container = _container(api);
+        await openFinished(tester, container, size: size);
+
+        expect(_read(container).photoUpload, VisitPhotoUpload.failed);
+        expect(find.text('이미 끝낸 면회예요'), findsOneWidget);
+        expect(find.byType(SnackBar), findsNothing, reason: '알림 띠를 띄우지 않는다');
+        expect(find.text('사진을 올리지 못했어요.'), findsOneWidget);
+        expect(find.textContaining('녹음은 그대로 이어져요'), findsNothing);
+        expect(find.text('사진 다시 올리기'), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: '넘치지 않는다');
+
+        // 안내와 다시 올리기 버튼이 첫 화면 안에 있고, 주 버튼과 겹치지 않는다.
+        final main = tester.getRect(find.text('평가 이어서 하기'));
+        final retry = tester.getRect(find.text('사진 다시 올리기'));
+        expect(retry.bottom, lessThan(main.top));
+        expect(retry.bottom, lessThanOrEqualTo(size.height));
+        expect(find.text('평가 이어서 하기').hitTestable(), findsOneWidget);
+        expect(find.text('사진 다시 올리기').hitTestable(), findsOneWidget);
+
+        // 화면 낭독기가 나타날 때 읽는다.
+        final semantics = tester.ensureSemantics();
+        expect(
+          tester.getSemantics(find.text('사진을 올리지 못했어요.')),
+          matchesSemantics(label: '사진을 올리지 못했어요.', isLiveRegion: true),
+        );
+        semantics.dispose();
+
+        await tester.tap(find.text('사진 다시 올리기'));
+        await tester.runAsync(pumpEventQueue);
+        await tester.pump();
+
+        expect(_read(container).photoUpload, VisitPhotoUpload.uploaded);
+        expect(find.textContaining('사진을 올리지 못'), findsNothing);
+        expect(find.text('사진 다시 올리기'), findsNothing);
+        expect(find.text('평가 이어서 하기'), findsOneWidget);
+      });
+    }
+
+    testWidgets('녹음 파일을 닫은 뒤 다시 찍은 사진을 받지 않으면 다시 올리기 없이 본문에 알린다', (
+      tester,
+    ) async {
+      final api = FakeVisitApi()
+        ..photoFailures.add(
+          const ApiServerFailure(statusCode: 413, errorCode: 'IMAGE_TOO_LARGE'),
+        );
+      final container = _container(api);
+      await openFinished(tester, container, size: const Size(360, 640));
+
+      expect(_read(container).photoUpload, VisitPhotoUpload.rejected);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.text('사진을 올리지 못해 리포트에 사진 없이 담겨요.'), findsOneWidget);
+      expect(find.text('사진 다시 올리기'), findsNothing);
+
+      // 알림 띠처럼 잠시 뒤 사라지지 않는다.
+      await tester.pump(const Duration(seconds: 10));
+      expect(find.text('사진을 올리지 못해 리포트에 사진 없이 담겨요.'), findsOneWidget);
     });
 
     testWidgets('받지 않는 거절이면 다시 올리기를 숨긴다', (tester) async {

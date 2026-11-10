@@ -13,6 +13,7 @@ import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/app_surfaces.dart' show AppSurfaceBox;
 import '../profile/profile_dialogs.dart' show showChoiceDialog;
 import 'stop_recording_dialog.dart';
 import 'visit_cards_sheet.dart';
@@ -55,22 +56,22 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
 
   /// 사진 업로드 결과를 알린다. 녹음 화면이 뜨기 전에 끝나도 놓치지 않게
   /// 녹음 전 안내부터 지켜본다. 만남을 끝내면(참여자 수 확인) 닫는다.
+  ///
+  /// 녹음 파일을 닫은 끝낸 면회([_Finished])에서는 알림 띠를 띄우지 않는다. 띠가
+  /// 아래 `평가 이어서 하기` 를 닫을 때까지 덮어서, 그 화면은 본문 안에
+  /// [_PhotoNotice] 로 알린다(2026-11-10 UX 점검 2차). 띠가 떠 있는 사이 파일을
+  /// 닫아도 띠를 닫는다.
   void _onPhotoUpload(
-    (VisitPhotoUpload?, bool)? previous,
-    (VisitPhotoUpload?, bool) next,
+    (VisitPhotoUpload?, bool, bool)? previous,
+    (VisitPhotoUpload?, bool, bool) next,
   ) {
-    final (upload, stopped) = next;
+    final (upload, stopped, finalized) = next;
     _closePhotoNotice();
-    if (stopped) return;
-    if (upload == VisitPhotoUpload.failed ||
-        upload == VisitPhotoUpload.rejected ||
-        upload == VisitPhotoUpload.missing) {
+    if (stopped || finalized) return;
+    if (_photoNoticeShown(upload)) {
       _photoNotice = _showPhotoNotice(
         context,
         upload: upload!,
-        recordingClosed:
-            ref.read(visitControllerProvider).value?.recordingFinalized ??
-            false,
         onRetry: _controller.retryPhotoUpload,
       );
     }
@@ -127,7 +128,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     }
     ref.listen(
       visitControllerProvider.select(
-        (v) => (v.value?.photoUpload, v.value?.participantCount != null),
+        (v) => (
+          v.value?.photoUpload,
+          v.value?.participantCount != null,
+          v.value?.recordingFinalized ?? false,
+        ),
       ),
       _onPhotoUpload,
     );
@@ -343,6 +348,76 @@ class _ProblemNotice extends StatelessWidget {
   }
 }
 
+/// 사진 업로드 결과 중 알려야 하는 실패인지.
+bool _photoNoticeShown(VisitPhotoUpload? upload) =>
+    upload == VisitPhotoUpload.failed ||
+    upload == VisitPhotoUpload.rejected ||
+    upload == VisitPhotoUpload.missing;
+
+/// 사진을 올리지 못한 까닭이다. 녹음이 이어지는지는 말하지 않는다.
+String _photoFailureMessage(VisitPhotoUpload upload) => switch (upload) {
+  VisitPhotoUpload.failed => '사진을 올리지 못했어요.',
+  VisitPhotoUpload.missing => '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.',
+  _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+};
+
+/// 끝낸 면회 화면([_Finished])의 사진 업로드 실패 안내다(API 5-2).
+///
+/// 끝내지 않고 나간 뒤 사진을 다시 찍고 돌아왔는데 올리지 못한 드문 경우다.
+/// 알림 띠는 화면 아래의 `평가 이어서 하기` 를 닫을 때까지 덮어서, 본문 안
+/// 문구 바로 아래에 둔다(2026-11-10 UX 점검 2차). 녹음 실패가 아니므로 붉은
+/// 경고 상자가 아니라 연초록 면에 둔다. 다시 올릴 수 있는 실패에만
+/// `사진 다시 올리기` 를 단다. 나타날 때 화면 낭독기가 읽는다.
+class _PhotoNotice extends StatelessWidget {
+  const _PhotoNotice({required this.upload, required this.onRetry});
+
+  final VisitPhotoUpload upload;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSurfaceBox(
+      color: HomeColors.bubble,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const ExcludeSemantics(
+                  child: Icon(
+                    Icons.no_photography_outlined,
+                    size: 22,
+                    color: AppColors.ink,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    _photoFailureMessage(upload),
+                    style: AppTypography.body,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (upload == VisitPhotoUpload.failed) ...[
+            const SizedBox(height: AppSpacing.md),
+            SecondaryButton(
+              label: '사진 다시 올리기',
+              icon: Icons.refresh,
+              borderColor: HomeColors.outline,
+              onPressed: onRetry,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// 면회 사진을 올리지 못했으면 화면 아래 알림 띠로 알린다(API 5-2).
 ///
 /// 녹음 화면은 아래 카드 자리 때문에 안내를 둘 높이가 남지 않아, 본문에 두면
@@ -350,24 +425,21 @@ class _ProblemNotice extends StatelessWidget {
 /// 다시 올릴 수 있는 실패는 버튼을 달아 닫을 때까지 남기고, 받지 않는 거절은
 /// 잠시 보여주고 사라진다. 사진 파일을 찾지 못했을 때도 다시 올릴 수 없다.
 ///
-/// [recordingClosed] 면 녹음 파일을 닫은 끝낸 면회 화면([_Finished])이다. 나간
-/// 뒤 사진 화면에서 다시 찍으면 새 사진을 올리므로 이 화면에서도 알리지만,
-/// 녹음이 이어진다고는 하지 않는다.
+/// 녹음 파일을 닫은 끝낸 면회 화면([_Finished])에서는 쓰지 않는다. 그 화면은
+/// [_PhotoNotice] 로 본문 안에 알린다.
 ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _showPhotoNotice(
   BuildContext context, {
   required VisitPhotoUpload upload,
-  required bool recordingClosed,
   required VoidCallback onRetry,
 }) {
   final retryable = upload == VisitPhotoUpload.failed;
-  final recordingGoesOn = recordingClosed ? '' : '\n녹음은 그대로 이어져요.';
   return ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(switch (upload) {
-        VisitPhotoUpload.failed => '사진을 올리지 못했어요.$recordingGoesOn',
+        VisitPhotoUpload.failed => '사진을 올리지 못했어요.\n녹음은 그대로 이어져요.',
         VisitPhotoUpload.missing =>
-          '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.$recordingGoesOn',
-        _ => '사진을 올리지 못해 리포트에 사진 없이 담겨요.',
+          '찍은 사진을 찾지 못해 리포트에 사진 없이 담겨요.\n녹음은 그대로 이어져요.',
+        _ => _photoFailureMessage(upload),
       }),
       action: retryable
           ? SnackBarAction(label: '사진 다시 올리기', onPressed: onRetry)
@@ -527,17 +599,20 @@ class _Recording extends ConsumerWidget {
 ///   그 회차의 평가(`/visit/review?session=<회차 ID>`)로 간다.
 ///
 /// 제목과 원은 녹음 안내([_Intro])와 같은 자리에 둔다.
-class _Finished extends StatelessWidget {
+class _Finished extends ConsumerWidget {
   const _Finished({required this.state});
 
   final VisitState state;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final ended = state.participantCount != null;
     final sessionId = state.sessionId;
     // 저장 실패만 함께 알린다. 이어 가기를 막은 것은 제목이 이미 말한다.
     final saveFailed = state.problem == VisitRecordingProblem.saveFailed;
+    // 끝내지 않고 나간 뒤 다시 찍은 사진을 올리지 못했다. 만남을 끝낸 뒤에는
+    // 녹음 화면도 알리지 않았으므로 같게 둔다.
+    final photoFailed = !ended && _photoNoticeShown(state.photoUpload);
 
     return ScreenBody(
       scrollable: true,
@@ -572,12 +647,23 @@ class _Finished extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
 
-          // 저장하지 못했으면 끝났다는 체크 원 대신 그 안내를 문구 바로 아래에
-          // 둔다. 360x640 에서 원 아래에 두면 글자 1배에서도 첫 화면 밖이다.
+          // 저장하지 못했거나 사진을 올리지 못했으면 끝났다는 체크 원 대신 그
+          // 안내를 문구 바로 아래에 둔다. 360x640 에서 원 아래에 두면 글자
+          // 1배에서도 첫 화면 밖이다.
           if (saveFailed) ...[
             const SizedBox(height: AppSpacing.xxl),
             const _ProblemNotice(problem: VisitRecordingProblem.saveFailed),
-          ] else ...[
+          ],
+          if (photoFailed) ...[
+            SizedBox(height: saveFailed ? AppSpacing.lg : AppSpacing.xxl),
+            _PhotoNotice(
+              upload: state.photoUpload,
+              onRetry: ref
+                  .read(visitControllerProvider.notifier)
+                  .retryPhotoUpload,
+            ),
+          ],
+          if (!saveFailed && !photoFailed) ...[
             const SizedBox(height: AppSpacing.xxl * 2),
             Center(
               child: Container(
