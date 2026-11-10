@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from psycopg.types.json import Jsonb
+from common.retry import retry_scope
 
 from app.core.database import DbConnection
 from app.core.errors import AppError
@@ -36,6 +37,7 @@ from app.schemas.card_generation import (
 from app.services.card_generation_jobs import CardGenerationJob, CardGenerationQueue
 from app.services.card_generation_log import PROFILE_FIELDS, reference_log
 from app.services.card_photo_preparation import advance_ready, progress as photo_progress
+from app.services.llm_retry_guard import retry_guard
 from app.workers.base import LEASE_EXPIRED_ERROR
 
 logger = logging.getLogger("saerok.card_generation")
@@ -680,7 +682,18 @@ class CardGenerationProcessor:
         )
         try:
             # LLM 호출은 동기 코드라 이벤트 루프를 막지 않게 별도 스레드에서 실행
-            result = await asyncio.to_thread(self._generate, request)
+            async def check_retry() -> None:
+                active = await (await connection.execute(
+                    "SELECT 1 FROM card_sets WHERE set_id=%s AND profile_id=%s "
+                    "AND status='running' AND attempt_count=%s "
+                    "AND lease_expires_at > clock_timestamp()",
+                    (job.set_id, job.profile_id, job.attempt_count),
+                )).fetchone()
+                if active is None:
+                    raise CardGenerationError(LEASE_EXPIRED_ERROR, "카드 생성 작업이 만료되거나 삭제됨")
+
+            with retry_scope(before_retry=retry_guard(check_retry)):
+                result = await asyncio.to_thread(self._generate, request)
         except CardGenerationError as error:
             logger.warning("card_generation_failed code=%s", error.code)
             await self._queue.fail(connection, job, error_code=error.code, generation_input=sent)

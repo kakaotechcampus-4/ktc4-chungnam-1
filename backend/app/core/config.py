@@ -45,9 +45,13 @@ class Settings(BaseSettings):
 
     # 카드 생성(API 4-1). 모델과 promptVersion은 작업을 만들 때 저장하고 생성 함수에 넘김.
     # ML API 키가 비어 있으면 4-1은 503. 2판부터 아픈 경험 카드에 `sensitive`를 붙임(2026-11-09).
+    # 기본은 v3(general을 어르신의 취향과 겪은 일을 여쭙는 열린 소재로 바꾼 버전, 2026-11-10). ai 패키지의 최신 버전과 같아야 함
     card_generation_model: str = "gpt-6-luna"
-    card_generation_prompt_version: int = Field(default=2, ge=1)
+    card_generation_prompt_version: int = Field(default=3, ge=1)
     ml_api_key: SecretStr = SecretStr("")
+    # 운영 동작 보존: 합성 검증 뒤 명시적으로 켠다. 횟수는 최대 1회로 고정.
+    llm_retry_enabled: bool = False
+    llm_retry_delay_seconds: float = Field(default=1.0, ge=0, le=30)
     # 카드 생성 worker(4-1 처리). 생성에 1~2분 걸려 임대는 300초로 둠.
     card_generation_lease_seconds: int = Field(default=300, ge=60)
     # 4-1 뒤 이 시간이 지나도 worker가 가져가지 않았고, 이 시간 동안 worker가 어떤 작업도
@@ -120,6 +124,13 @@ class Settings(BaseSettings):
     # 않게 한다. 짧은 음성 전사(6-6)를 한 계정이 동시에 보낼 수 있는 수. 넘으면 429.
     # 앱은 전사 중에도 `건너뛰기`로 다음 항목을 녹음해 보낼 수 있어 기본을 2로 둔다.
     short_transcription_concurrency_per_account: int = Field(default=2, ge=1)
+    # 짧은 음성 전사(6-6)를 서버 전체에서 동시에 처리하는 수. 넘으면 S3와 STT를 부르지 않고
+    # 503. STT 서버가 동시에 처리하는 수를 확인하기 전이라 기본은 제한 없음(비워 둠).
+    short_transcription_concurrency_total: int | None = Field(default=None, ge=1)
+    # 6-6이 STT 응답을 기다리는 시간. 앱은 업로드를 포함해 2분에 포기하므로(speech_api.dart)
+    # 그보다 짧게 둬서, 앱이 떠난 뒤 서버가 DB 연결과 STT를 붙잡고 있지 않게 한다. 잠정값이며
+    # 실제 처리 시간 측정 뒤 #138에서 정한다. `ai_server_timeout_seconds`보다 길면 그 값을 쓴다.
+    short_transcription_timeout_seconds: float = Field(default=90.0, gt=0)
     # 계정당 푸시 받을 기기 수(1-7). 넘으면 등록 시각이 가장 오래된 기기를 지운다.
     push_devices_per_account: int = Field(default=5, ge=1)
     # 면회 회차당 리포트 재요청(6-5) 수. 넘으면 409.
@@ -135,6 +146,13 @@ class Settings(BaseSettings):
     @field_validator("ai_server_backup_url", mode="before")
     @classmethod
     def _empty_backup_url_is_disabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("short_transcription_concurrency_total", mode="before")
+    @classmethod
+    def _empty_total_is_unlimited(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip() or None
         return value

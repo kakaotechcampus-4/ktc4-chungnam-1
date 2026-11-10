@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import card_generation as ai
 from common.llm import ENDPOINTS
+from common.retry import retry_scope
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -46,7 +47,9 @@ def card_generator(settings: Settings) -> Generate:
         except ValidationError as error:
             raise CardGenerationError("INVALID_CONTEXT", "생성 함수가 요청 형식을 받지 않음") from error
         try:
-            result = ai.generate_cards(sent, api_key=api_key)
+            with retry_scope(enabled=settings.llm_retry_enabled,
+                             delay_seconds=settings.llm_retry_delay_seconds):
+                result = ai.generate_cards(sent, api_key=api_key)
         except ai.CardGenerationError as error:
             # 실패 코드를 card_sets.error_code에 그대로 남김
             raise CardGenerationError(error.code, error.message) from error

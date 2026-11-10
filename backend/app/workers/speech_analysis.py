@@ -6,6 +6,7 @@ import proposal_generation
 import report_generation
 from common import visit_report as ai
 from common.llm import ENDPOINTS
+from common.retry import retry_scope
 from pydantic import ValidationError
 
 from app.clients.ai_server import AiServerClient
@@ -158,12 +159,14 @@ def report_generator(settings: Settings) -> GenerateReport:
             raise generation_failed("INVALID_REQUEST") from error
         try:
             deadline.check()
-            report = report_generation.generate_report(sent, model=model, api_key=api_key)
-            # 리포트 응답이 시간 초과 확정 뒤에 와도 변경 제안 호출을 시작하지 않는다.
-            # 작업이 지워졌거나 끝났거나 전사 기한이 지났어도 전사문을 다시 보내지 않는다.
-            proposals = proposal_generation.generate_proposals(
-                sent, model=model, api_key=api_key, before_call=deadline.check_job
-            )
+            with retry_scope(enabled=settings.llm_retry_enabled,
+                             delay_seconds=settings.llm_retry_delay_seconds,
+                             remaining=deadline.left, before_retry=lambda _: deadline.check_job()):
+                report = report_generation.generate_report(sent, model=model, api_key=api_key)
+                # 리포트 응답이 늦게 와도 작업·전사 상태를 확인한 뒤 변경 제안을 보낸다.
+                proposals = proposal_generation.generate_proposals(
+                    sent, model=model, api_key=api_key, before_call=deadline.check_job
+                )
         except ai.VisitReportError as error:
             failed = generation_failed(error.code)
             # 끊긴 응답(incomplete_responses)도 숫자로 남기려고 생성 함수의 토큰 수를 옮긴다.

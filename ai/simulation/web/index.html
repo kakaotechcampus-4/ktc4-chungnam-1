@@ -120,8 +120,10 @@ a { color: var(--accent); }
       <div class="runbar">
         <label>페르소나 <select id="run-persona"></select></label>
         <label>추천 판 <select id="run-recommender"><option value="topics">주제판 (PR #84 스키마)</option></select></label>
+        <label title="카드 생성 프롬프트 버전(card_generation/_versions). 운영 backend 기본 버전과 다를 수 있음">프롬프트 버전 <select id="run-version"></select></label>
         <label>회차 <input type="number" id="run-visits" min="1" max="10" value="5"></label>
         <label>시드 <input type="number" id="run-seed" value="7"></label>
+        <label title="생애 질문 네 칸과 사진을 모두 건너뛰고 기본 정보만 입력"><input type="checkbox" id="run-blank"> 초기 정보 없이 시작</label>
         <button type="button" class="btn primary" id="run-start">시작</button>
         <button type="button" class="btn" id="run-stop" disabled>다음 회차 전에 멈춤</button>
         <span class="muted" id="run-info"></span>
@@ -251,7 +253,7 @@ function applyFilters() {
 }
 document.querySelector(".filters").addEventListener("change", applyFilters);
 function handle(e) {
-  if (e.kind === "run_start") { $("run-info").textContent = `${e.run} · ${REC[e.recommender] || ""} · ${e.visits}회차`; liveRun = e.run; }
+  if (e.kind === "run_start") { $("run-info").textContent = `${e.run} · ${REC[e.recommender] || ""}v${e.prompt_version ? ` · ${e.prompt_version}` : ""}${e.blank_profile ? " · 초기 정보 없음" : ""} · ${e.visits}회차`; liveRun = e.run; }
   if (e.kind === "db_snapshot") { liveSnaps.push({ id: e.id, label: e.label, visit: e.visit, tables: e.tables });
     $("feed").append(h("p", { class: "note" }, `DB 스냅숏: ${e.visit ? e.visit + "회차 · " : ""}${e.label} (DB 탭에서 보기)`));
     if ($("db-run").value === "__live__") dbView.set(liveSnaps, { follow: true });
@@ -267,9 +269,9 @@ function handle(e) {
       h("span", { class: "name" }, e.speaker === "patient" ? "어르신" : "보호자", e.card_position ? h("span", { class: "cardref" }, `카드 #${e.card_position}`) : null,
         e.story_ids && e.story_ids.length ? h("span", { class: "faint" }, `생애 ${e.story_ids.join(", ")}`) : null,
         e.probe ? h("span", { class: "cardref" }, "시험용 메모 뒤") : null),
-      h("div", { class: "bubble" }, e.text)));
-    $("feed").scrollTop = $("feed").scrollHeight; }
-  if (e.kind === "output") { $("feed").append(outputView(e)); $("feed").scrollTop = $("feed").scrollHeight; }
+      h("div", { class: "bubble" }, e.text))); }
+  // 새 내용이 와도 스크롤 위치를 바꾸지 않는다. 읽던 곳에 머문다
+  if (e.kind === "output") { $("feed").append(outputView(e)); }
   if (e.kind === "llm_start") { pending[e.id] = e; }
   if (e.kind === "llm_end") { const s = pending[e.id] || {}; delete pending[e.id];
     $("reqs").append(reqRow("llm", "LLM", [h("span", {}, s.stage || e.stage || "-"), `${e.seconds}초 · 입력 ${e.input_tokens} / 출력 ${e.output_tokens}`],
@@ -306,7 +308,7 @@ setInterval(poll, 3000);
 $("run-start").addEventListener("click", async () => {
   resetLive();
   try {
-    await api("/api/run", { method: "POST", body: JSON.stringify({ persona: $("run-persona").value, recommender: $("run-recommender").value, visits: +$("run-visits").value, seed: +$("run-seed").value }) });
+    await api("/api/run", { method: "POST", body: JSON.stringify({ persona: $("run-persona").value, recommender: $("run-recommender").value, visits: +$("run-visits").value, seed: +$("run-seed").value, blank_profile: $("run-blank").checked, prompt_version: +$("run-version").value || null }) });
     follow(0); poll();
   } catch (err) { $("run-info").textContent = err.message; }
 });
@@ -382,7 +384,8 @@ async function loadHistory() {
   const rows = await api("/api/runs");
   $("history").replaceChildren(...rows.map(r => h("tr", {}, h("td", { class: "mono" }, r.name), h("td", {}, REC[r.recommender] || r.recommender), h("td", {}, (r.started_at || "").slice(0, 16).replace("T", " ")),
     h("td", { class: "mono" }, r.visits), h("td", {}, r.failure ? h("span", { class: "msgline bad" }, r.failure) : "완료"),
-    h("td", {}, h("a", { href: `/runs/${r.name}/view`, target: "_blank", rel: "noopener" }, "결과 보기"),
+    h("td", {}, h("a", { href: `/runs/${r.name}/view`, target: "_blank", rel: "noopener" }, "결과 보기"), " · ",
+      h("a", { href: `/runs/${r.name}/steps`, target: "_blank", rel: "noopener" }, "카드 생성 단계"),
       r.has_events ? [" · ", h("a", { href: "#", "data-replay": r.name }, "진행 로그 다시 보기")] : null))));
 }
 $("history").addEventListener("click", async (e) => {
@@ -395,6 +398,9 @@ $("history").addEventListener("click", async (e) => {
 (async () => {
   const names = await api("/api/personas").catch(() => []);
   $("run-persona").replaceChildren(...names.map(n => h("option", { value: n }, n)));
+  const vers = await api("/api/versions").catch(() => []);
+  $("run-version").replaceChildren(...vers.map(v => h("option", { value: v.number, title: v.note, ...(v.latest ? { selected: "" } : {}) },
+    `v${v.number}${v.latest ? " (최신)" : ""}`)));
   const s = await poll();
   if (s && s.running) follow(0);
 })();

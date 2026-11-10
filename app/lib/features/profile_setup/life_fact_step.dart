@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/mic_settings.dart';
 import '../../app/screen_awake.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
@@ -99,6 +100,14 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   /// 동의 없음, 형식 오류처럼 다시 해도 안 되는 실패로 넘어온 경우다.
   bool _voiceUnavailable = false;
 
+  /// 마이크 권한을 받지 못해 직접 입력으로 넘어왔다. 화면 아래에 휴대전화
+  /// 설정의 새록 화면을 여는 버튼을 둔다.
+  bool _micDenied = false;
+
+  /// 안드로이드가 마이크 권한 창을 더 띄우지 않는다. 이때 `다시 녹음하기` 는
+  /// 누르자마자 같은 안내로 돌아오므로 `설정에서 마이크 켜기` 로 바꾼다.
+  bool _micBlocked = false;
+
   /// 재시도를 이만큼 실패하면 직접 입력으로 넘어간다.
   static const _maxResends = 2;
 
@@ -137,6 +146,22 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   /// 읽고, 바뀔 때는 [didChangeMetrics] 로 다시 그린다.
   bool get _keyboardOpen => View.of(context).viewInsets.bottom > 0;
 
+  /// 설정에서 마이크를 켜고 돌아오면 `다시 녹음하기` 를 되살린다.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _micDenied) {
+      unawaited(_recheckMicBlocked());
+    }
+  }
+
+  Future<void> _recheckMicBlocked() async {
+    final blocked = await ref
+        .read(micSettingsPlatformProvider)
+        .isMicPermanentlyDenied();
+    if (!mounted || !_micDenied || blocked == _micBlocked) return;
+    setState(() => _micBlocked = blocked);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -173,11 +198,25 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
         attempt: _attempt + 1,
       );
     } on SpeechStartFailure catch (failure) {
+      // 권한 창이 떠 있는 동안 화면을 벗어났을 수 있다. 벗어난 뒤에 `ref` 를
+      // 쓰면 던진다.
       if (!mounted) return;
-      _toManual(switch (failure.problem) {
-        SpeechStartProblem.micDenied => _micDeniedNotice,
-        SpeechStartProblem.unavailable => _unavailableNotice,
-      }, voiceUnavailable: failure.problem == SpeechStartProblem.unavailable);
+      final micDenied = failure.problem == SpeechStartProblem.micDenied;
+      // 안드로이드가 권한 창을 더 띄우지 않는지 넘어가기 전에 알아 둔다. 넘어간
+      // 뒤에 알면 `다시 녹음하기` 가 잠깐 보였다가 바뀐다.
+      final micBlocked =
+          micDenied &&
+          await ref.read(micSettingsPlatformProvider).isMicPermanentlyDenied();
+      if (!mounted) return;
+      _toManual(
+        switch (failure.problem) {
+          SpeechStartProblem.micDenied => _micDeniedNotice,
+          SpeechStartProblem.unavailable => _unavailableNotice,
+        },
+        voiceUnavailable: failure.problem == SpeechStartProblem.unavailable,
+        micDenied: micDenied,
+        micBlocked: micBlocked,
+      );
       return;
     }
     if (!mounted) {
@@ -278,12 +317,19 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
   }
 
   /// 실패해서 직접 입력으로 넘어간다. [notice] 로 이유를 알린다.
-  void _toManual(String notice, {bool voiceUnavailable = false}) {
+  void _toManual(
+    String notice, {
+    bool voiceUnavailable = false,
+    bool micDenied = false,
+    bool micBlocked = false,
+  }) {
     unawaited(_dropUnsent());
     setState(() {
       _phase = _Phase.manualInput;
       _manualNotice = notice;
       _voiceUnavailable = voiceUnavailable;
+      _micDenied = micDenied;
+      _micBlocked = micBlocked;
       _heardText = null;
       _manual.clear();
     });
@@ -314,6 +360,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
       _stoppedAtLimit = false;
       _manualNotice = null;
       _voiceUnavailable = false;
+      _micDenied = false;
+      _micBlocked = false;
       _manual.clear();
     });
     widget.onCleared();
@@ -333,6 +381,8 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
       _stoppedAtLimit = false;
       _manualNotice = null;
       _voiceUnavailable = false;
+      _micDenied = false;
+      _micBlocked = false;
       if (heard != null) _manual.text = heard;
     });
     if (heard == null) widget.onCleared();
@@ -464,6 +514,36 @@ class _LifeFactStepViewState extends ConsumerState<LifeFactStepView>
         // 바로 밑에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지 않는다.
         if (typing || (_phase == _Phase.manualInput && _voiceUnavailable))
           const SizedBox.shrink()
+        else if (_phase == _Phase.manualInput && _micDenied)
+          // 마이크 권한이 없으면 휴대전화 설정의 새록 화면을 여는 길을 같은
+          // 알약으로 둔다. 안드로이드가 권한 창을 더 띄우지 않으면 `다시
+          // 녹음하기` 는 누르자마자 같은 안내로 돌아와 고장 난 버튼처럼 보이므로
+          // `설정에서 마이크 켜기` 하나로 바꾼다.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              if (_micBlocked)
+                _SwitchMethodButton(
+                  icon: Icons.settings_outlined,
+                  label: '설정에서 마이크 켜기',
+                  onTap: () => openMicSettings(context, ref),
+                )
+              else ...[
+                _SwitchMethodButton(
+                  icon: Icons.record_voice_over_outlined,
+                  label: '다시 녹음하기',
+                  onTap: _startVoice,
+                ),
+                _SwitchMethodButton(
+                  icon: Icons.settings_outlined,
+                  label: '설정 열기',
+                  onTap: () => openMicSettings(context, ref),
+                ),
+              ],
+            ],
+          )
         else if (_phase == _Phase.manualInput)
           Center(
             child: _SwitchMethodButton(
@@ -645,7 +725,8 @@ class _MethodButtonState extends State<_MethodButton>
   }
 }
 
-/// 답하는 방법을 바꾸는 버튼이다.
+/// 답하는 방법을 바꾸는 버튼이다. 마이크 권한이 없을 때 설정을 여는 버튼도
+/// 같은 모양으로 둔다.
 ///
 /// 안내 문구 바로 아래에 글자만 두면 안내의 일부인지 누르는 것인지 구분되지
 /// 않는다. 면과 테두리를 준 알약 모양으로 감싸고 화면 아래로 내린다.
@@ -681,11 +762,19 @@ class _SwitchMethodButton extends StatelessWidget {
             children: [
               Icon(icon, size: 20, color: HomeColors.accent),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                label,
-                style: AppTypography.sub.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w600,
+              // 긴 이름(`설정에서 마이크 켜기`)은 좁은 화면에서 글자를 키우면
+              // 한 줄에 들어가지 않는다. 높이가 정해져 있어 줄을 바꾸지 않고
+              // 줄인다. 아이콘이 있는 보조 버튼과 같다.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: AppTypography.sub.copyWith(
+                      color: AppColors.ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],

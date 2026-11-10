@@ -9,6 +9,8 @@ from typing import Any, Callable, TypeVar
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
+from openai import APIError
+from common.retry import RetryBlocked
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -33,6 +35,8 @@ def invoke_structured(model: BaseChatModel, schema: type[T], messages: list[tupl
                 raise ValueError("정해진 형식의 답이 없음")
             return out["parsed"]
         except Exception as error:  # 파싱 실패, 출력 잘림 등
+            if isinstance(error, (RetryBlocked, APIError)):
+                raise  # 전송 재시도는 공통 호출부가 관리. 형식 재시도로 중복하지 않음
             if on_retry:
                 on_retry({"role": label, "attempt": str(attempt), "error": f"{type(error).__name__}: {str(error)[:200]}"})
             if attempt == attempts:
