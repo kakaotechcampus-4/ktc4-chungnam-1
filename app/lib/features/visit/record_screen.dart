@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/mic_settings.dart';
 import '../../app/routes.dart';
 import '../../app/screen_awake.dart';
 import '../../data/providers.dart';
@@ -302,8 +303,10 @@ Future<void> _confirmStop(
 /// 녹음이 되지 않았을 때 그 자리에서 알린다.
 ///
 /// 성공 화면만 두지 않는다(`app/CLAUDE.md`). 권한을 대신 켜 줄 수는 없으므로
-/// 무엇을 해야 하는지만 적는다.
-class _ProblemNotice extends StatelessWidget {
+/// 무엇을 해야 하는지만 적는다. 마이크 권한이 없으면 휴대전화 설정의 새록
+/// 화면을 여는 `설정 열기` 를 함께 둔다. 설정에서 켜고 돌아와 `네, 좋아요` 를
+/// 다시 누르면 녹음을 시작한다.
+class _ProblemNotice extends ConsumerWidget {
   const _ProblemNotice({required this.problem});
 
   final VisitRecordingProblem problem;
@@ -323,7 +326,7 @@ class _ProblemNotice extends StatelessWidget {
   };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -337,9 +340,24 @@ class _ProblemNotice extends StatelessWidget {
           const Icon(Icons.mic_off_outlined, size: 22, color: AppColors.danger),
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Text(
-              _message,
-              style: AppTypography.body.copyWith(color: AppColors.danger),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _message,
+                  style: AppTypography.body.copyWith(color: AppColors.danger),
+                ),
+                if (problem == VisitRecordingProblem.permissionDenied) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  SecondaryButton(
+                    label: '설정 열기',
+                    icon: Icons.settings_outlined,
+                    borderColor: HomeColors.outline,
+                    expand: false,
+                    onPressed: () => openMicSettings(context, ref),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
