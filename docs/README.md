@@ -20,7 +20,7 @@
 | 앱과 BE, BE와 AI 서버 사이의 API | [API 명세](architecture/api-spec.md) | [DB 스키마](../backend/database/init.sql) |
 | 기술 결정과 변경 이유 | [ADR 목록](architecture/decisions/README.md) | 개별 ADR |
 | 개인정보와 동의 | [법률 검토](legal/README.md) | [동의안](legal/consent-draft.md), [기능 대응표](legal/consent-mapping.md) |
-| 이슈 작성과 Git, PR 절차 | [협업 규칙](../CONTRIBUTING.md) | PR 템플릿 |
+| 이슈 작성과 Git, PR 절차, 커밋 메시지와 코드 검사 | [협업 규칙](../CONTRIBUTING.md) | PR 템플릿 |
 | 발표 준비 | [발표 예상 질문](pm/presentation-qna.md) | 과거 준비 자료, 현재 구현 정본 아님 |
 
 ## 문서의 역할
