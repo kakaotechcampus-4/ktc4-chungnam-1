@@ -19,6 +19,7 @@ import '../review/review_controller.dart';
 import '../visit/visit_camera.dart';
 import '../visit/visit_controller.dart';
 import '../visit/visit_photos.dart';
+import 'card_expand_cue.dart';
 import 'card_generation_controller.dart';
 import 'card_source_photo.dart';
 import 'cards_controller.dart';
@@ -28,7 +29,8 @@ import 'sensitive_card_badge.dart';
 /// C 오늘의 대화 카드.
 ///
 /// 피그마 C-1 ~ C-3 은 별도 화면이 아니라 이 화면의 상태다. 카드를 누르면
-/// 꼬리 질문이 펼쳐지고(C-2), 끝에서 고리가 다 찰 때까지 당기면 카드가 늘어난다(C-3).
+/// 꼬리 질문이 펼쳐지고(C-2), 끝의 `카드 3장 더 보기` 를 누르거나 고리가 다 찰
+/// 때까지 당기면 카드가 늘어난다(C-3).
 class CardsScreen extends ConsumerWidget {
   const CardsScreen({super.key});
 
@@ -267,11 +269,15 @@ class _Body extends ConsumerStatefulWidget {
 
 /// 카드를 고르는 본문.
 ///
-/// 처음 3장을 보여주고, 끝에서 더 당기면 3장씩 더 보여준다. 끝을 넘겨 당기면
-/// 고무줄처럼 버티며 늘어나고(BouncingScrollPhysics), 아래 고리가 당긴 만큼
-/// 채워진다. 손을 뗀 채가 아니라 당기는 채로 고리가 한 바퀴 다 차야 잠깐 돌며
-/// 불러온 뒤 새 카드가 나온다. 살짝 밀었을 때 카드가 나오지 않게 하려는 것이다.
-/// 당길 수 없는 화면 낭독기 사용자를 위해 고리는 `n장 더 보기` 버튼으로도 읽힌다.
+/// 처음 3장을 보여주고, 목록 끝의 `카드 3장 더 보기` 버튼을 누르면 고리가 잠깐
+/// 돌며 불러온 뒤 3장씩 더 보여준다. 당기기만으로는 찾지 못해 나머지 6장을 보지
+/// 못할 수 있어 버튼으로 두었다(2026-11-10 UX 점검 5).
+///
+/// 당기기는 지름길로 남긴다. 끝을 넘겨 당기면 고무줄처럼 버티며
+/// 늘어나고(BouncingScrollPhysics), 버튼 안의 고리가 당긴 만큼 채워진다. 손을 뗀
+/// 채가 아니라 당기는 채로 고리가 한 바퀴 다 차야 버튼을 누른 것처럼 불러온다.
+/// 살짝 밀었을 때 카드가 나오지 않게 하려는 것이다. 화면 낭독기는 버튼을
+/// `대화 카드 n장 더 보기` 로 읽는다.
 class _BodyState extends ConsumerState<_Body> {
   /// 이만큼 끝을 넘겨 당겨야 고리가 한 바퀴 찬다.
   static const _pullToLoad = 96.0;
@@ -399,7 +405,7 @@ class _BodyState extends ConsumerState<_Body> {
                 ],
 
                 if (state.hasMore)
-                  _PullToLoad(
+                  _MoreCardsButton(
                     pull: _pull,
                     loading: _loading,
                     count: state.remaining < CardRules.pageSize
@@ -418,9 +424,10 @@ class _BodyState extends ConsumerState<_Body> {
   }
 }
 
-/// 목록 끝의 고리. 당긴 만큼 채워지고, 다 차면 돌며 불러온다.
-class _PullToLoad extends StatelessWidget {
-  const _PullToLoad({
+/// 목록 끝의 `카드 n장 더 보기` 버튼. 누르면 고리가 돌며 불러온다. 끝을 넘겨
+/// 당기면 안의 고리가 당긴 만큼 채워지고, 다 차면 누른 것처럼 불러온다.
+class _MoreCardsButton extends StatelessWidget {
+  const _MoreCardsButton({
     required this.pull,
     required this.loading,
     required this.count,
@@ -434,21 +441,41 @@ class _PullToLoad extends StatelessWidget {
   /// 이번에 더 나올 장수.
   final int count;
 
-  /// 화면 낭독기로 눌렀을 때. 당기지 않고 바로 불러온다.
+  /// 버튼을 누르거나 화면 낭독기로 눌렀을 때. 당기지 않고 바로 불러온다.
   final VoidCallback onLoad;
 
   @override
   Widget build(BuildContext context) {
+    // 불러오는 동안에는 누를 수 없는 버튼으로 읽는다(`app/DESIGN.md` 화면 낭독기).
     return Semantics(
       button: true,
-      label: '대화 카드 $count장 더 보기',
-      onTap: onLoad,
+      enabled: !loading,
+      label: loading ? '카드를 불러오고 있어요' : '대화 카드 $count장 더 보기',
+      onTap: loading ? null : onLoad,
       excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      // 보조 버튼과 같은 흰 면, 진한 테두리다. 높이를 못 박지 않고 48 이상으로
+      // 두어 글자를 키우면 함께 커진다.
+      child: OutlinedButton(
+        onPressed: loading ? null : onLoad,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.ink,
+          disabledForegroundColor: AppColors.textSub,
+          backgroundColor: AppColors.background,
+          // 불러오는 동안에도 흰 면을 둔다. 회색 면은 비활성처럼 보인다.
+          disabledBackgroundColor: AppColors.background,
+          side: const BorderSide(color: HomeColors.outline),
+          minimumSize: const Size.fromHeight(AppSizes.minTouch),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(AppRadius.button)),
+          ),
+        ),
         // 고리와 문구를 한 줄에 둔다. 글자를 키워 줄이 넘치면 문구만 줄을 바꾼다.
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox.square(
               dimension: 18,
@@ -463,8 +490,10 @@ class _PullToLoad extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
             Flexible(
               child: Text(
-                loading ? '카드를 불러오고 있어요' : '끝까지 당기면 $count장 더 나와요',
-                style: AppTypography.sub,
+                loading ? '카드를 불러오고 있어요' : '카드 $count장 더 보기',
+                style: AppTypography.bodyStrong.copyWith(
+                  color: loading ? AppColors.textSub : AppColors.ink,
+                ),
               ),
             ),
           ],
@@ -520,8 +549,8 @@ class _CardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 카드 본문을 누르면 펼쳐지고, 오른쪽 3분의 1을 눌러야 선택된다. 화면
-    // 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
+    // 카드 본문을 누르면 펼쳐지고, 오른쪽 원 둘레의 자리(폭 84)를 눌러야
+    // 선택된다. 화면 낭독기도 두 동작을 따로 읽는다(접근성 보고서 10쪽).
     return SelectableCard(
       accent: HomeColors.accent,
       shadows: AppShadows.cardSoft,
@@ -563,15 +592,10 @@ class _CardTile extends StatelessWidget {
                   ],
                 ),
               ),
-          ] else ...[
+            const SizedBox(height: AppSpacing.xs),
+          ] else
             const SizedBox(height: AppSpacing.md),
-            Text(
-              '눌러서 질문 보기',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDisabled,
-              ),
-            ),
-          ],
+          CardExpandCue(expanded: expanded),
         ],
       ),
     );

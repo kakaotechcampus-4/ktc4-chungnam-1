@@ -34,7 +34,8 @@ class PhotoUploadStep extends ConsumerStatefulWidget {
   /// 사진을 더하거나 뺄 수 있는지. 올리는 중에는 막는다.
   final bool canEdit;
 
-  /// 이미 서버에 올린 사진 수. 등록 뒤 사진을 더할 때 쓴다. 이만큼 덜 고른다.
+  /// 이미 서버에 올린 사진 수. 등록 뒤 사진을 더할 때와 앱을 다시 켜 등록을
+  /// 이어 갈 때 쓴다. 이만큼 덜 고른다.
   final int existing;
 
   final ValueChanged<List<PickedPhoto>> onAdded;
@@ -106,6 +107,9 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
         Text(
           widget.existing == 0
               ? '최대 $maxProfilePhotos장까지 올릴 수 있어요. 넣지 않으셔도 괜찮아요.'
+              // 등록하다 앱을 다시 켜면 이미 다 올렸을 수 있다.
+              : widget.existing >= maxProfilePhotos
+              ? '사진 $maxProfilePhotos장을 모두 올렸어요.'
               : '${widget.existing}장을 올렸어요. '
                     '${maxProfilePhotos - widget.existing}장 더 올릴 수 있어요.',
           style: AppTypography.sub,
@@ -113,7 +117,10 @@ class _PhotoUploadStepState extends ConsumerState<PhotoUploadStep> {
         ),
         const Spacer(flex: 2),
 
-        if (photos.isEmpty)
+        // 더 고를 수 없으면 눌러도 열리지 않는 빈 자리를 두지 않는다.
+        if (photos.isEmpty && _remaining < 1)
+          const SizedBox.shrink()
+        else if (photos.isEmpty)
           _EmptyPicker(onTap: _picking ? null : _pick)
         else ...[
           Align(
