@@ -35,7 +35,7 @@ from common.visit_report import (
 )
 
 PROMPT = Path(__file__).resolve().parent / "prompts/proposals.md"
-PROMPT_VERSION = "proposals-9"   # 프롬프트나 거르는 규칙을 바꾸면 올림
+PROMPT_VERSION = "proposals-10"  # 프롬프트나 거르는 규칙을 바꾸면 올림
 _FACT_TITLE_MAX = 100            # #106 응답 검증과 같은 길이
 _FACT_MAX = 30                   # 이야기 후보 안전 상한(PM 결정, 2026-11-09). 넘으면 앞에서부터 이만큼만 쓰고 기록을 남김
 _LIFE_EFFORT = "medium"
