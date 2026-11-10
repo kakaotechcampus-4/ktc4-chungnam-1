@@ -1,3 +1,4 @@
+
 # 💬 새록: 똑똑한 면회 도구
 
 ![Saerok Banner](./docs/assets/feature-1024x500.png)
@@ -49,7 +50,11 @@
   (#273 이후 보호자에게 보이는 글에 처리 과정의 말을 쓰지 않음) 다시 캡처한 것으로 바꾼다.
 -->
 
-`시연 영상 준비 중`
+
+
+https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
+
+
 
 ---
 
@@ -140,7 +145,8 @@
 <tr>
 <td width="40%" align="center">
   <!-- 📐 영상: docs/assets/새록_대화카드준비.mp4 (5.3MB) → user-attachments 주소로 교체 -->
-  <video src="./docs/assets/새록_대화카드준비.mp4" width="260" controls muted playsinline></video>
+  https://github.com/user-attachments/assets/d7414136-7bc9-445d-a815-8a4690103906
+
 </td>
 <td width="60%" valign="middle">
 
