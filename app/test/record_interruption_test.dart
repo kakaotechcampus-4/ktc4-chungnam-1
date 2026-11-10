@@ -280,32 +280,40 @@ void main() {
     await leave(tester, container);
   });
 
-  testWidgets('대화 카드 시트를 보고 있어도 시트 맨 위에 같은 띠가 뜨고 거기서 이어 간다', (tester) async {
+  // 2026-11-10 PM 확인: 띠를 시트와 녹음 화면 두 곳에 띄우지 않고, 시트를 닫아
+  // 녹음 화면의 띠를 보게 한다.
+  testWidgets('대화 카드 시트를 보고 있을 때 녹음이 멈추면 시트를 닫고 녹음 화면의 띠를 보인다', (tester) async {
     final recorder = FakeVisitRecorder();
     final (container, _) = await open(tester, recorder: recorder);
 
     await tester.tap(find.bySemanticsLabel('대화 카드 꺼내기'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final sheetAlert = find.byKey(const Key('visitSheetRecordingAlert'));
-    expect(sheetAlert, findsNothing);
+    expect(find.byType(BottomSheet), findsOneWidget);
+    container.read(visitControllerProvider.notifier).nextCard();
+    await tester.pump();
+    final shownIndex = read(container).currentIndex;
 
     recorder.deviceChanged(VisitRecorderState.paused);
     await settle(tester);
+    // 시트가 내려가는 동안을 기다린다.
+    await tester.pump(const Duration(milliseconds: 400));
 
-    expect(sheetAlert, findsOneWidget);
-    expect(
-      find.descendant(of: sheetAlert, matching: find.text('녹음이 멈췄어요')),
-      findsOneWidget,
-    );
-    expect(haptics, hasLength(1), reason: '시트와 화면이 따로 진동하지 않는다');
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(alertFinder, findsOneWidget);
+    expect(haptics, hasLength(1));
 
-    await tester.tap(
-      find.descendant(of: sheetAlert, matching: find.text('이어서 녹음')),
-    );
+    await tester.tap(find.byKey(const Key('recordingAlertAction')));
     await settle(tester);
     expect(recorder.calls.last, 'resume');
-    expect(sheetAlert, findsNothing);
+    expect(alertFinder, findsNothing);
+
+    // 다시 꺼내면 보던 카드가 그대로다.
+    await tester.tap(find.bySemanticsLabel('대화 카드 꺼내기'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(read(container).currentIndex, shownIndex);
 
     await leave(tester, container);
   });

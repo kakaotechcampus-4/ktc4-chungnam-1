@@ -31,6 +31,8 @@ Future<void> showVisitCardsSheet(
   return showModalBottomSheet<void>(
     context: context,
     transitionAnimationController: controller,
+    // 녹음이 멈추면 녹음 화면이 이 이름으로 시트를 찾아 닫는다.
+    routeSettings: const RouteSettings(name: visitCardsSheetRouteName),
     isScrollControlled: true,
     backgroundColor: HomeColors.background,
     // 위쪽 빈 곳을 누르면 닫힌다.
@@ -74,6 +76,23 @@ class VisitCardsSheetPreview extends StatelessWidget {
 
 /// 시트가 화면 높이에서 차지하는 비율.
 const visitCardsSheetHeightFactor = 0.8;
+
+/// 대화 카드 시트 경로의 이름.
+const visitCardsSheetRouteName = 'visitCardsSheet';
+
+/// 대화 카드 시트가 맨 위에 떠 있으면 닫는다.
+///
+/// 보호자 모르게 녹음이 멈추면 시트를 닫아 녹음 화면 맨 위의 멈춤 띠를 보게 한다
+/// (2026-11-10 PM 확인). 시트와 녹음 화면 두 곳에 같은 띠를 띄우면 헷갈려서
+/// 띠는 녹음 화면에만 둔다. 카드 추가 화면이 시트 위에 있으면 보던 화면을 빼앗지
+/// 않고, 시트로 돌아왔을 때 닫는다.
+void closeVisitCardsSheet(BuildContext context) {
+  final navigator = Navigator.maybeOf(context);
+  if (navigator == null) return;
+  navigator.popUntil(
+    (route) => route.settings.name != visitCardsSheetRouteName,
+  );
+}
 
 class _SheetBody extends ConsumerWidget {
   const _SheetBody();
@@ -119,6 +138,9 @@ class _CardsState extends ConsumerState<_Cards> {
     await context.push(AppRoutes.visitAddCards);
     if (!mounted) return;
     setState(() => _hiddenFrom = null);
+    // 카드를 더하는 동안 녹음이 멈췄으면 시트를 닫아 녹음 화면의 띠를 보게 한다.
+    final visit = ref.read(visitControllerProvider).value;
+    if (recordingAlertOf(visit) != null) closeVisitCardsSheet(context);
   }
 
   @override
@@ -126,9 +148,8 @@ class _CardsState extends ConsumerState<_Cards> {
     final state = widget.state;
     final controller = ref.read(visitControllerProvider.notifier);
     final card = state.currentCard!;
-    final alert = recordingAlertOf(state);
 
-    final cards = Column(
+    return Column(
       children: [
         const _DragHandle(),
         _CardBar(
@@ -210,47 +231,11 @@ class _CardsState extends ConsumerState<_Cards> {
         _AddCardsBar(onTap: _openAddCards),
       ],
     );
-    if (alert == null) return cards;
-
-    // 시트가 녹음 화면의 5분의 4를 덮어 녹음 화면 맨 위의 멈춤 띠가 가려진다.
-    // 같은 띠를 손잡이 바로 아래에 겹쳐 둔다. 카드 자리를 줄이면 작은 화면에서
-    // 질문이 넘치므로 카드 위에 덮는다. 녹음이 멈춘 동안은 카드보다 띠가 먼저다.
-    // 이어서 녹음은 시트에서 바로 하고, 만남 끝내기와 소감 쓰기는 녹음 화면에서
-    // 하도록 시트를 닫는다(2026-11-10 PM 결정).
-    return Stack(
-      children: [
-        cards,
-        Positioned(
-          top: _DragHandle.height,
-          left: AppSpacing.screen,
-          right: AppSpacing.screen,
-          child: RecordingStoppedAlert(
-            key: const Key('visitSheetRecordingAlert'),
-            alert: alert,
-            actionLabel: switch (alert) {
-              RecordingAlert.interrupted ||
-              RecordingAlert.resumeFailed => '이어서 녹음',
-              RecordingAlert.deviceStopped ||
-              RecordingAlert.saveFailed => '녹음 화면으로',
-            },
-            onAction: switch (alert) {
-              RecordingAlert.interrupted ||
-              RecordingAlert.resumeFailed => controller.startRecording,
-              RecordingAlert.deviceStopped ||
-              RecordingAlert.saveFailed => () => Navigator.of(context).pop(),
-            },
-          ),
-        ),
-      ],
-    );
   }
 }
 
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
-
-  /// 손잡이와 위아래 여백의 높이.
-  static const height = AppSpacing.md * 2 + 4;
 
   @override
   Widget build(BuildContext context) {

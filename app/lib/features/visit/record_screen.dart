@@ -78,11 +78,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   }
 
   /// 보호자 모르게 녹음이 멈췄다. 화면 맨 위 띠와 함께 진동과 화면 낭독기로도
-  /// 알린다. 카드 시트가 화면을 덮고 있어도 이 화면은 남아 있어 여기서 한 번만
-  /// 알린다. 화면을 끄거나 다른 앱에 있을 때는 녹음 알림이 소리와 진동으로 알린다
-  /// (`RecordingService.interrupted`).
+  /// 알린다. 카드 시트가 떠 있으면 닫아 이 화면의 띠를 보게 한다(2026-11-10
+  /// PM 확인, [closeVisitCardsSheet]). 화면을 끄거나 다른 앱에 있을 때는 녹음
+  /// 알림이 소리와 진동으로 알린다(`RecordingService.interrupted`).
   void _onRecordingAlert(RecordingAlert? previous, RecordingAlert? next) {
     if (next == null || next == previous) return;
+    closeVisitCardsSheet(context);
     unawaited(HapticFeedback.vibrate());
     final view = View.maybeOf(context);
     if (view != null) {
@@ -655,6 +656,18 @@ class _CardPeekState extends State<_CardPeek>
   /// 푼다. 끌기 시작에서만 풀면 끌 수 없는 화면 낭독기 사용자는 한 번 닫은 뒤
   /// 다시 꺼낼 수 없다.
   bool _opening = false;
+
+  @override
+  void didUpdateWidget(_CardPeek old) {
+    super.didUpdateWidget(old);
+    // 끌어올리는 도중에 녹음이 멈춰 띠가 떴다. 그리던 시트를 거두고 이번 끌기는
+    // 열지 않는다. 띠를 먼저 보게 한다.
+    if (old.showFan && !widget.showFan && _following) {
+      _following = false;
+      _sheet.value = 0;
+      _preview.hide();
+    }
+  }
 
   @override
   void dispose() {
