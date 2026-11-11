@@ -552,18 +552,28 @@ void main() {
       return container;
     }
 
-    testWidgets('사진 카드는 질문 밖의 고정 사진 보기 버튼으로 연다', (tester) async {
+    testWidgets('사진 카드는 카드 제목 자리의 사진 보기 버튼으로 연다', (tester) async {
       await openSheet(
         tester,
         set: _set(photo: {1}),
         urls: {'photo_test_1': 'asset:$_asset'},
       );
 
-      expect(find.text('[ 합성 카드 1 ]'), findsOneWidget);
-      final photo = tester.getRect(find.text('사진 보기'));
-      final title = tester.getRect(find.text('[ 합성 카드 1 ]'));
-      expect(photo.height, greaterThan(0));
-      expect(photo.bottom, lessThanOrEqualTo(title.top));
+      // 제목 대신 그 자리, 메인 질문 바로 위에 버튼을 둔다.
+      expect(find.text('[ 합성 카드 1 ]'), findsNothing);
+      final button = tester.getRect(
+        find.widgetWithText(OutlinedButton, '사진 보기'),
+      );
+      final question = tester.getRect(find.text('이 사진은 어디서 찍으셨어요?'));
+      expect(button.height, greaterThanOrEqualTo(48));
+      expect(button.width, greaterThanOrEqualTo(200));
+      expect(button.bottom, lessThanOrEqualTo(question.top));
+      expect(button.center.dx, closeTo(question.center.dx, 1));
+      // 시트 맨 위 녹음 표시 줄보다 아래, 질문 칸 안에 있다.
+      final bar = tester.getRect(
+        find.byKey(const Key('visitSheetRecordingStatus')),
+      );
+      expect(button.top, greaterThan(bar.bottom));
       expect(find.text('사진 보기').hitTestable(), findsOneWidget);
       expect(find.byType(RawImage), findsNothing);
       expect(tester.takeException(), isNull);
@@ -674,7 +684,7 @@ void main() {
       });
     }
 
-    testWidgets('긴 질문을 스크롤해도 사진 버튼과 확대 화면 닫기는 남는다', (tester) async {
+    testWidgets('긴 질문에서도 사진 버튼을 열 수 있고 확대 화면 닫기는 남는다', (tester) async {
       const question =
           '사진 속 풍경을 함께 보면서 그곳에서 보내셨던 하루에 대해 편하게 이야기해 주세요. 어떤 일을 하며 시간을 보내셨는지도 궁금해요.';
       await openSheet(
@@ -684,8 +694,7 @@ void main() {
         size: const Size(360, 640),
         textScale: 2,
       );
-      await tester.drag(find.text(question), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      // 버튼은 질문 위에 있어 질문 칸의 맨 위에서 바로 보인다.
       expect(find.text('사진 보기').hitTestable(), findsOneWidget);
       await tester.tap(find.text('사진 보기'));
       await tester.pump();
@@ -752,7 +761,7 @@ void main() {
           await tester.tap(find.text('닫기'));
           await tester.pumpAndSettle();
           expect(container.read(visitControllerProvider), before);
-          expect(find.text('[ 합성 카드 1 ]'), findsOneWidget);
+          expect(find.text('사진 보기').hitTestable(), findsOneWidget);
         });
       }
     }

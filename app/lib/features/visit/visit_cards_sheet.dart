@@ -165,21 +165,20 @@ class _CardsState extends ConsumerState<_Cards> {
     final state = widget.state;
     final controller = ref.read(visitControllerProvider.notifier);
     final card = state.currentCard!;
+    // 사진 카드는 메인 질문 위의 카드 제목 자리에 `사진 보기` 를 둔다.
+    final photo = card.evidenceSource == 'photo'
+        ? CardSourcePhoto(
+            card: card,
+            compact: true,
+            gap: 0,
+            alignment: Alignment.center,
+            viewerStatus: _PhotoVisitStatus(sessionId: state.sessionId),
+          )
+        : null;
 
     return Column(
       children: [
         _SheetTop(state: state),
-        if (card.evidenceSource == 'photo')
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
-            child: CardSourcePhoto(
-              card: card,
-              compact: true,
-              gap: 0,
-              alignment: Alignment.centerRight,
-              viewerStatus: _PhotoVisitStatus(sessionId: state.sessionId),
-            ),
-          ),
         _CardBar(
           state: state,
           shownCount: _hiddenFrom ?? state.cards.length,
@@ -191,12 +190,12 @@ class _CardsState extends ConsumerState<_Cards> {
           child: LayoutBuilder(
             builder: (context, box) {
               final scaler = MediaQuery.textScalerOf(context);
-              // 사진 버튼이 차지한 높이와 큰 글자를 고려해 질문 칸을 확보한다.
+              // 낮은 화면과 큰 글자에서는 질문 칸을 확보하려고 통째로 스크롤한다.
               if (box.maxHeight < scaler.scale(320)) {
                 return SingleChildScrollView(
                   child: Column(
                     children: [
-                      _MainQuestion(card: card),
+                      _MainQuestion(card: card, photo: photo),
                       Wrap(
                         alignment: WrapAlignment.center,
                         spacing: AppSpacing.md,
@@ -243,7 +242,7 @@ class _CardsState extends ConsumerState<_Cards> {
                       Expanded(
                         child: Semantics(
                           sortKey: const OrdinalSortKey(0),
-                          child: _MainQuestion(card: card),
+                          child: _MainQuestion(card: card, photo: photo),
                         ),
                       ),
                       Expanded(
@@ -695,10 +694,20 @@ class _PhotoVisitStatus extends ConsumerWidget {
   }
 }
 
-/// 사진은 고정된 상단 버튼으로 연다. 질문 영역에는 사진을 넣지 않는다.
+/// 메인 질문과 그 위의 카드 제목.
+///
+/// 사진 카드는 제목(`[ 국수에 곁들인 김치 ]` 처럼 AI 가 사진을 보고 붙인 말) 대신
+/// 그 자리에 [photo] 의 `사진 보기` 버튼을 둔다. 사진을 보면 무엇인지 알 수 있어
+/// 제목이 같은 말을 되풀이하고, 사진을 잘못 읽은 제목이 면회 중에 보이지 않게
+/// 한다(2026-11-11). 질문 칸에 사진 자체는 넣지 않고 버튼으로 전체 화면에서 본다.
+/// 예전에는 버튼이 카드 막대 위에 따로 한 줄을 차지해, 사진 카드와 아닌 카드를
+/// 넘길 때 카드 막대가 오르내렸다.
 class _MainQuestion extends StatelessWidget {
-  const _MainQuestion({required this.card});
+  const _MainQuestion({required this.card, this.photo});
   final ConversationCard card;
+
+  /// 사진 카드의 `사진 보기` 버튼. 사진 카드가 아니면 `null` 이고 제목을 둔다.
+  final Widget? photo;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -719,11 +728,12 @@ class _MainQuestion extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                '[ ${card.cardTitle} ]',
-                style: AppTypography.sub,
-                textAlign: TextAlign.center,
-              ),
+              photo ??
+                  Text(
+                    '[ ${card.cardTitle} ]',
+                    style: AppTypography.sub,
+                    textAlign: TextAlign.center,
+                  ),
               const SizedBox(height: AppSpacing.lg),
               Text(
                 card.primaryQuestion,
