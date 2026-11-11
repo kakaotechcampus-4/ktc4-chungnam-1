@@ -1,5 +1,6 @@
-// 등록을 마친 어르신의 사진을 프로필 설정 갤러리에서 더 올리는지 확인한다
-// (`lib/features/profile/profile_photo_add_screen.dart`, api-spec 3-1, 2-3).
+// 등록을 마친 어르신의 사진을 프로필 설정 갤러리에서 더 올리고 지우는지 확인한다
+// (`lib/features/profile/profile_photo_add_screen.dart`, `profile_gallery.dart`,
+// api-spec 3-1, 3-4, 2-3).
 //
 // 서버는 `FakeProfileServer`, 앨범은 대역이다. 사진 파일과 값은 모두 합성이다.
 
@@ -143,6 +144,11 @@ _openProfile(WidgetTester tester, {int photos = 2}) async {
 }
 
 final _addButton = find.widgetWithText(OutlinedButton, '사진 추가하기');
+final _deleteButton = find.byTooltip('사진 지우기');
+
+/// 최상위 변수는 처음 쓸 때 만들어진다. 시맨틱스 파인더는 테스트 안에서
+/// 만들어야 해서 그룹 안에 두지 않는다.
+final _tiles = find.bySemanticsLabel(RegExp('^사진 [0-9]'));
 
 int _uploads(FakeProfileServer server) => server.requests
     .where((r) => r.method == 'POST' && r.path.endsWith('/photos'))
@@ -228,5 +234,95 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, '올리지 못한 사진은 빼고 마치기'));
     await _settle(tester);
     expect(find.text('갤러리'), findsOneWidget, reason: '프로필 설정으로 돌아온다');
+  });
+
+  group('사진 지우기', () {
+    int deletes(FakeProfileServer server) =>
+        server.requests.where((r) => r.method == 'DELETE').length;
+
+    Future<void> openFirstPhoto(WidgetTester tester) async {
+      await tester.tap(_tiles.first);
+      await _settle(tester);
+    }
+
+    testWidgets('다섯 장 중 하나를 지우면 갤러리에서 빠지고 다시 올릴 수 있다', (tester) async {
+      final (:server, picker: _, router: _) = await _openProfile(
+        tester,
+        photos: 5,
+      );
+      expect(tester.widget<OutlinedButton>(_addButton).onPressed, isNull);
+
+      await openFirstPhoto(tester);
+      await tester.tap(_deleteButton);
+      await _settle(tester);
+      expect(find.text('이 사진을 지울까요?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '지우기'));
+      await _settle(tester);
+
+      expect(
+        server.requests.where((r) => r.method == 'DELETE').single.path,
+        '/api/v1/profile-photos/photo-1',
+      );
+      expect(_tiles, findsNWidgets(4));
+      expect(_deleteButton, findsNothing, reason: '지운 사진의 설명 칸이 닫혀 휴지통도 사라진다');
+      expect(tester.widget<OutlinedButton>(_addButton).onPressed, isNotNull);
+      expect(find.text('사진은 5장까지 올릴 수 있어요.'), findsNothing);
+    });
+
+    testWidgets('취소하면 지우지 않는다', (tester) async {
+      final (:server, picker: _, router: _) = await _openProfile(tester);
+      await openFirstPhoto(tester);
+      await tester.tap(_deleteButton);
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, '취소'));
+      await _settle(tester);
+
+      expect(deletes(server), 0);
+      expect(_tiles, findsNWidgets(2));
+    });
+
+    testWidgets('카드를 만드는 중이라 거절하면 이유를 알리고 사진을 남긴다', (tester) async {
+      final (:server, picker: _, router: _) = await _openProfile(tester);
+      server.failures['DELETE /api/v1/profile-photos/photo-1'] = (
+        status: 409,
+        errorCode: 'CARD_GENERATION_IN_PROGRESS',
+      );
+      await openFirstPhoto(tester);
+      await tester.tap(_deleteButton);
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, '지우기'));
+      await _settle(tester);
+
+      expect(find.textContaining('대화 카드를 만드는 중이라'), findsOneWidget);
+      expect(_tiles, findsNWidgets(2));
+      expect(_deleteButton, findsOneWidget, reason: '다시 시도할 수 있다');
+    });
+
+    testWidgets('서버에 닿지 못하면 다시 시도하게 알린다', (tester) async {
+      final (:server, picker: _, router: _) = await _openProfile(tester);
+      await openFirstPhoto(tester);
+      await tester.tap(_deleteButton);
+      await _settle(tester);
+      server.offline = true;
+      await tester.tap(find.widgetWithText(FilledButton, '지우기'));
+      await _settle(tester);
+
+      expect(find.text('사진을 지우지 못했어요. 잠시 뒤 다시 시도해주세요.'), findsOneWidget);
+      expect(_tiles, findsNWidgets(2));
+    });
+
+    testWidgets('이미 없는 사진이면 지운 것으로 보고 목록을 다시 읽는다', (tester) async {
+      final (:server, picker: _, router: _) = await _openProfile(tester);
+      // 다른 기기에서 먼저 지웠다.
+      (server.profiles.single['photos'] as List).removeAt(0);
+      await openFirstPhoto(tester);
+      await tester.tap(_deleteButton);
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, '지우기'));
+      await _settle(tester);
+
+      expect(find.textContaining('지우지 못했어요'), findsNothing);
+      expect(_tiles, findsOneWidget);
+    });
   });
 }
