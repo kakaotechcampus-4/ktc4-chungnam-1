@@ -34,6 +34,7 @@ import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/profile_birth_input_store.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
 import 'package:saerok/data/providers.dart';
+import 'package:saerok/data/dismissed_failed_report_store.dart';
 import 'package:saerok/data/selected_profile_store.dart';
 import 'package:saerok/features/auth/auth_providers.dart';
 import 'package:saerok/features/auth/auth_session.dart';
@@ -53,6 +54,7 @@ import '../fake_recording_service.dart';
 import '../fake_screen_awake.dart';
 import '../fake_profile_birth_input_store.dart';
 import '../fake_profile_relationship_store.dart';
+import '../fake_dismissed_failed_report_store.dart';
 import '../fake_selected_profile_store.dart';
 import '../fake_visit_camera.dart';
 import '../fake_visit_gallery.dart';
@@ -131,6 +133,9 @@ class JourneyDriver {
       );
     }),
     selectedProfileStoreProvider.overrideWithValue(FakeSelectedProfileStore()),
+    dismissedFailedReportStoreProvider.overrideWithValue(
+      FakeDismissedFailedReportStore(),
+    ),
     profileRelationshipStoreProvider.overrideWithValue(
       FakeProfileRelationshipStore(),
     ),
