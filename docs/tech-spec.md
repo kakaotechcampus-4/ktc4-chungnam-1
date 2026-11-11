@@ -1,6 +1,6 @@
 # 새록 테크스펙
 
-상태: 개발 중, 미결 항목 포함 | 갱신: 2026-11-10, 결정 상태에 현재 구현 표기 추가 | 이전 갱신: 2026-10-14, 녹음 동의 확인 시점 정리, 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장 결정
+상태: 최종 제출본, 실제 구현 기준 | 갱신: 2026-11-11, [처음 설계와 바뀐 점](#처음-설계와-바뀐-점) 추가 | 이전 갱신: 2026-11-10, 결정 상태에 현재 구현 표기 추가 | 이전 갱신: 2026-10-14, 녹음 동의 확인 시점 정리, 사진 보관과 AI 분석의 가입 시 선택 동의 및 계정별 저장 결정
 문서 책임: 김영석, 이예은 | 기술 검토: 이서형, 김민혁, 이문영 | QA: 성채원, AI 평가 협력: 이문영, 이인성
 
 이 문서는 구현 목표와 검증 기준을 설명한다. 아래의 ‘확정’은 제품 또는 설계 결정이며 구현 완료를 뜻하지 않는다. 결정 상태 열의 ‘현재 구현’은 2026-11-10 develop `83695093` 기준이다. 운영 서버의 BE도 11/10 01:41 KST 승인 배포([Deploy run 42656825849](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42656825849))로 올린 같은 커밋이며, 11/9 배포(develop `59190ba7`) 뒤 병합된 #293(처리방침과 엘리스 ML API 문서)과 #295(이야기 후보 AI 분류와 아픈 기억 표시, 리포트 화제별 단락, 카드 2판)가 이 배포로 들어갔다. 운영 `.env`에 `SAEROK_CARD_GENERATION_PROMPT_VERSION`을 두지 않아 코드 기본값 2가 적용되므로 운영 카드도 2판이다. 그 전 11/9 승인 배포([Deploy run 42568179490](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/actions/runs/42568179490))에는 11/8 배포(develop `9c2b8276`) 뒤 병합된 #275, #277~#291이 들어갔다([API 명세](architecture/api-spec.md#api-목록)). STT 서버는 BE 배포 대상이 아니다(FR-007). 앱의 현재 구현도 develop 기준이며, Play 앱은 프로덕션 첫 게시를 검토 중이라(11/8) 이전 빌드가 남아 있고 최근 앱 수정이 들어 있지 않다([루트 README](../README.md)). GitHub Releases의 APK도 11/8 18:31 KST에 게시한 빌드라 그 뒤 병합된 앱 수정(#270~#272, #295의 일대기 분류 고르기, 녹음 파일 공유, 아픈 기억 표시)이 없다. #295의 앱 수정은 서버 배포와 별개로 새 APK를 빌드해야 휴대폰에 들어간다. 현재 구현은 [루트 README](../README.md), 상세 문서의 위치는 [문서 안내](README.md)에서 확인한다.
@@ -149,6 +149,26 @@
 대화가 이어지면 기존 주제인지 새 주제인지와 관계없이 기록하며 개입하지 않는다. 소재가 필요하면 보호자가 미리 준비한 꼬리 질문이나 다른 카드를 선택한다. 부적절한 카드는 보호자가 대체할 수 있다. 면회 중 실시간으로 새 질문을 생성하지 않는다.
 
 음성 처리에 실패하거나 신뢰도가 낮으면 이유를 표시하고 계산 불가능한 발화량, 지연 등 수치는 비워 둔다. 보호자가 사용 카드와 반응을 직접 입력하며, 잘못된 자동 값은 다음 회차에 반영하지 않는다. 승인, 거절과 반복 흐름은 [구조도](architecture/README.md#목표-사용자-흐름)를 참고한다.
+
+## 처음 설계와 바뀐 점
+
+8월 초안에서 설계한 방식과 실제로 만든 방식이 다른 곳과 그 이유다. 각 행의 근거는 ADR, 회의 결정과 PR에 있다. 개발 중 바꾼 결정의 상세는 [서비스 개발 충실성 보고서의 2절](pm/service-development-fidelity-20261110.md#2-개발-중-바꾼-결정과-이유)에 함께 정리했다.
+
+| 처음 설계 | 실제 구현 | 바꾼 이유 | 근거 |
+| --- | --- | --- | --- |
+| STT, 이미지 분석과 데이터 저장을 단말에서 처리 | STT는 GPU 서버, 사진 설명과 카드, 리포트 생성은 ML API. 프로필과 기록은 서버 PostgreSQL | 갤럭시 S21에서 Whisper Small의 문자 오류율 18.1%, 1시간 음성 처리 43분, 3B 이하 VLM 10종 모두 품질 미달로 모바일 처리가 어려웠다 | [ADR-006](architecture/decisions/ADR-006-server-side-ai-processing.md), 9월 14일 팀 결정 |
+| 녹음을 제출하면 서버가 바로 분석 결과를 돌려주는 흐름 검토 | PostgreSQL 작업 대기열과 worker(카드 생성, 음성 분석, 사진 분석)로 나눠 비동기 처리. 작업 임대 만료, 재시도와 실패 후 재요청 | 긴 녹음은 처리 시간이 길고, worker가 멈추면 면회가 끝나지 않고 다시 보낼 수도 없다는 멘토 지적이 있었다 | [ADR-008](architecture/decisions/ADR-008-stt-pipeline.md), [#81 리뷰](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/81#pullrequestreview-5373721907), [#101](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/101) |
+| STT를 엘리스 클라우드에서 실행 | 개인 GPU 서버를 Tailscale 사설망으로만 연결하고, 기본 서버에 연결하지 못하면 예비 서버로 한 번 전환 | 엘리스 클라우드를 쓸 수 없게 됐고, 공개 주소로 열린 STT 서버에 호출자 확인이 없다는 멘토 지적이 있었다 | [#169 리뷰](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/169#pullrequestreview-5708083570), [#174](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/174), [#189](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/189) |
+| 고정된 주제 목록에서 카드 주제를 고름 | 조사 에이전트가 읽기 전용 도구 6개로 프로필, 이야기, 사진 설명, 지난 주제를 살펴 후보를 내고, 규칙 검사 뒤 12장을 고름 | 어르신마다 다른 생애 정보에서 구체적인 소재를 찾아야 했다 | [주제 카드 설계](architecture/card-generation-flow.md), [#97](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/97), [#324](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/324) |
+| 리포트에 발화량, 응답 지연 같은 관찰 수치 | 수치 없이 대화 요약, 카드별 반응과 보호자 평가 중심 리포트 | 화자 분리가 불완전하면 수치가 틀리고, 발화량이 좋은 대화를 대표하지 않는다(R-003) | [서비스 개발 충실성 보고서 6절](pm/service-development-fidelity-20261110.md#6-후속-계획과-남은-차이) |
+| 사진 단서를 보호자가 따로 확인한 뒤 사용 | 사진 설명은 바로 카드 입력에 쓰고, 보호자가 원할 때 앨범에서 고침. 승인된 생애 사실로 자동 저장하지는 않음 | 사진마다 확인하는 부담이 컸다 | [주제 카드 설계](architecture/card-generation-flow.md#4-사진-설명은-바로-사용하고-앨범에서-선택적으로-수정) |
+| 면회 중 추가 질문을 실시간 생성 | 카드마다 첫 질문과 꼬리 질문을 미리 준비하고, 필요하면 대화 카드를 더 꺼냄 | 면회 중 대기 없이 바로 꺼내 쓸 수 있어야 했다 | 9월 23일 회의, [주제 카드 설계](architecture/card-generation-flow.md#첫-질문과-꼬리-질문) |
+| 일대기를 생애 시기별로 표시 | 주제별 분류(가족, 취미, 일, 고향, 친구, 여행, 기타)와 등록순. 시기별 보기는 출시 이후 | 시기를 추론하거나 계속 묻는 부담이 컸다 | 10월 16일 결정, [#125](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/125) |
+| 이야기 분류를 보호자가 매번 고름 | AI가 이야기 후보와 분류를 함께 내고, 보호자는 틀렸을 때만 고침 | 별도 분류 호출과 필수 선택 단계를 줄였다 | [#139](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/139), [#295](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/295) |
+| 사실을 고칠 때마다 카드를 새로 만들거나 일부만 교체 | 정정은 바로 저장하고, 다음 대화 준비에서 누적 정정을 반영해 12장을 한 번에 다시 만듦 | 고칠 때마다 생기는 생성 비용과 대기를 줄였다 | [#161 논의](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/161#issuecomment-6529648361) |
+| 이야기 삭제를 추천 비선호로 해석 | 삭제한 이야기는 새 입력에서 빼고, 추천 제외는 보호자가 명시적으로 고를 때만 적용 | 지우는 이유가 싫어서인지 틀려서인지 알 수 없다 | [10월 22일 멘토링 후 PM 변경](pm/mentoring-followup-20261022.md#삭제와-추천-제외의-구분) |
+| 화자 라벨이 부족하면 리포트 생성을 막음 | 문맥으로 리포트와 후보를 만들고, 누가 한 말인지 불확실한 후보에 '확인 필요'를 붙임 | 같은 녹음으로 다시 요청해도 계속 막혔다는 멘토 지적이 있었다 | [#230 리뷰](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/230#pullrequestreview-5778396716), [#251](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/251) |
+| Android Application ID `com.saelog.app` | `app.saerok.android` | 프로젝트 영문명 `saerok`에 맞췄다 | [ADR-009](architecture/decisions/ADR-009-android-application-id-saerok.md) |
 
 ## 트레이드오프
 
