@@ -21,9 +21,9 @@
 
 <!-- 📐 배지 줄: Play 게시 전에는 "Play 검토 중", 게시 뒤 스토어 링크로 바꾼다. 원스토어는 공개 링크(m.onestore.co.kr), 최신 develop APK가 필요하면 GitHub Releases 링크를 따로 단다. 수상 배지는 결과가 나온 뒤에만 단다. -->
 ![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)
-[![Google Play](https://img.shields.io/badge/Google_Play-설치-lightgrey?style=flat-square&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=app.saerok.android&hl=ko)
-[![ONE store](https://img.shields.io/badge/ONE_store-설치-4F6146?style=flat-square)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
-![KTC](https://img.shields.io/badge/카카오테크캠퍼스-4기-FFCD00?style=flat-square)
+[![Google Play](https://img.shields.io/badge/Google_Play-설치-2F80ED?style=flat-square&logo=googleplay&logoColor=white&labelColor=2F80ED)](https://play.google.com/store/apps/details?id=app.saerok.android&hl=ko)
+[![ONE store](https://img.shields.io/badge/ONE_store-설치-E9464A?style=flat-square&labelColor=E9464A)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+![KTC](https://img.shields.io/badge/카카오테크캠퍼스-4기-FFCD00?style=flat-square&labelColor=FFCD00)
 
 </div>
 
@@ -85,9 +85,9 @@ https://github.com/user-attachments/assets/6d12bdbd-5db5-4738-90bf-acb7acb7d49a
 ## 바로가기 링크
 
 - 🚀 **배포**:
-     - [원스토어](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
-     - [구글 플레이스토어](https://play.google.com/store/apps/details?id=app.saerok.android&hl=ko)
-     - [GitHub Release](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)
+     - [![ONE store](https://img.shields.io/badge/ONE_store-설치-E9464A?style=flat-square&labelColor=E9464A)](https://m.onestore.co.kr/v2/ko-kr/app/0001012223)
+     - [![Google Play](https://img.shields.io/badge/Google_Play-설치-2F80ED?style=flat-square&logo=googleplay&logoColor=white&labelColor=2F80ED)](https://play.google.com/store/apps/details?id=app.saerok.android&hl=ko)
+     - [![GitHub Release](https://img.shields.io/badge/GitHub-Release-181717?style=flat-square&logo=github&logoColor=white&labelColor=181717)](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release)
 
 - 🗂️ **협업 공간**: [팀 노션 페이지](https://app.notion.com/p/elice-track/2-32a2bb98425783f789d581889bd816e4?p=3bb2bb98425780578cf2e7b7ba204ba9&pm=s)
   
