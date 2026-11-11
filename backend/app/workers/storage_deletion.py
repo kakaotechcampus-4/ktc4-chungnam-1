@@ -14,7 +14,9 @@ from app.services.storage_deletion import (
 )
 
 
-async def run_once(settings: Settings, *, apply: bool, limit: int):
+async def run_once(
+    settings: Settings, *, apply: bool, limit: int, allow_versioned_photos: bool = False
+):
     if not settings.database_url:
         raise ValueError("SAEROK_DATABASE_URL이 필요합니다.")
     targets = []
@@ -42,7 +44,7 @@ async def run_once(settings: Settings, *, apply: bool, limit: int):
         return await process_deletions(
             conn,
             targets=tuple(targets),
-            backend=S3DeleteBackend(),
+            backend=S3DeleteBackend(allow_versioned_photos=allow_versioned_photos),
             apply=apply,
             limit=limit,
         )
@@ -56,12 +58,22 @@ def main():
         "--apply", action="store_true", help="DB 기록과 실제 S3 삭제 실행"
     )
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument(
+        "--allow-versioned-photos",
+        action="store_true",
+        help="삭제 대기 사진의 모든 버전을 영구 삭제. 운영 승인 후에만 사용",
+    )
     args = parser.parse_args()
     try:
         factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
         with asyncio.Runner(loop_factory=factory) as runner:
             result = runner.run(
-                run_once(Settings(), apply=args.apply, limit=args.limit)
+                run_once(
+                    Settings(),
+                    apply=args.apply,
+                    limit=args.limit,
+                    allow_versioned_photos=args.allow_versioned_photos,
+                )
             )
     except Exception:  # noqa: BLE001 - DSN과 S3 예외 본문을 CLI에 노출하지 않는다.
         print(json.dumps({"status": "error", "code": "DELETION_CHECK_FAILED"}))

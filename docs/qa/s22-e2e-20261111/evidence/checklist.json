@@ -1,0 +1,408 @@
+{
+  "date": "2026-11-11",
+  "timezone": "Asia/Seoul",
+  "appCommit": "de1b1e9e968d67ea2c7148ae6781a130eb1d50a5",
+  "serverCommit": "96e33d89f8c53757ebcef929d279bf5c590e16a0",
+  "sameSourceTree": true,
+  "device": "Galaxy S22 SM-S901N, Android 16",
+  "apkSha256": "294d170c30fb2f5f1a3e6ba2aeb34f1ef25cf0f27c177fb82bd7cadaf73d22da",
+  "rules": [
+    "기존 사용자 자료와 계정을 삭제하거나 수정하지 않는다.",
+    "실기기, 운영 API, 합성 자동 시험을 구분한다.",
+    "실제 사용자 자료를 캡처나 로그에 남기지 않는다.",
+    "확인하지 못한 항목을 통과로 기록하지 않는다.",
+    "운영 서버 고장, 시간 변경, 원본 삭제 등은 인위적으로 유발하지 않는다."
+  ],
+  "items": [
+    {
+      "id": "ENV-01",
+      "test": "S22 연결과 Android 버전",
+      "status": "pass",
+      "evidence": "adb devices, Android 16"
+    },
+    {
+      "id": "ENV-02",
+      "test": "main과 배포 코드 일치",
+      "status": "pass",
+      "evidence": "Git tree 510e45d08d84469f8160adb398b108d6b74bdd1a 동일"
+    },
+    {
+      "id": "ENV-03",
+      "test": "운영 주소와 Google, FCM 설정을 넣은 APK 빌드",
+      "status": "pass",
+      "evidence": "release arm64 APK 22.2MB, SHA256 기록"
+    },
+    {
+      "id": "ENV-04",
+      "test": "서명 확인 후 데이터 보존 업데이트 설치",
+      "status": "pass",
+      "evidence": "11/11 04:09 KST adb36 install -r success, existing data kept"
+    },
+    {
+      "id": "AUTH-01",
+      "test": "업데이트 후 로그인과 선택 프로필 유지",
+      "status": "pass",
+      "evidence": "Home opened without signing in again; existing selected profile retained"
+    },
+    {
+      "id": "AUTH-02",
+      "test": "로그아웃과 같은 계정 재로그인",
+      "status": "pass",
+      "evidence": "S22 원래 APK에서 로그아웃 후 같은 Google 계정으로 재로그인. 추가 시험 프로필 복원."
+    },
+    {
+      "id": "AUTH-03",
+      "test": "신규 가입, 필수와 선택 동의, 도움말",
+      "status": "partial",
+      "constraint": "도움말은 S22 확인. 신규 가입은 별도 시험 계정 필요. 기존 계정 탈퇴로 대신하지 않음"
+    },
+    {
+      "id": "AUTH-04",
+      "test": "회원 탈퇴와 재가입",
+      "status": "not_run_on_device",
+      "constraint": "실제 자료가 있는 계정은 삭제하지 않음. auth_test.dart 자동 검사 실행"
+    },
+    {
+      "id": "PROFILE-01",
+      "test": "기본 정보 필수값과 날짜, 나이 입력",
+      "status": "pass",
+      "evidence": "날짜 1951-01-01 저장, 1951년 1월 1일과 70대 표시 확인."
+    },
+    {
+      "id": "PROFILE-02",
+      "test": "세부 정보 직접 입력, 건너뛰기, 저장과 재조회",
+      "status": "pass",
+      "evidence": "네 항목 입력과 재조회에 더해, 추가 시험 프로필에서 직업만 입력하고 고향, 취미, 가족과 사진을 건너뛰어 완료."
+    },
+    {
+      "id": "PROFILE-03",
+      "test": "음성 입력, 전사 결과 확인과 수정",
+      "status": "pass",
+      "evidence": "S22에서 합성 WAV를 실제 짧은 전사 API에 제출. 반환한 96자를 직접 수정해 저장. 실제 마이크 음질 검사는 아님."
+    },
+    {
+      "id": "PROFILE-04",
+      "test": "무음, 마이크 거부와 직접 입력 전환",
+      "status": "pass",
+      "evidence": "합성 무음 2회 뒤 직접 입력 전환. 원래 앱에서 Android 마이크 권한 거부 후 설정 안내와 입력칸 표시. 권한 복원."
+    },
+    {
+      "id": "PROFILE-05",
+      "test": "입력 도중 종료 후 초안 복원",
+      "status": "pass",
+      "evidence": "E2E1111 occupation typed; force-stop and relaunch; pending third profile resumed same text"
+    },
+    {
+      "id": "PROFILE-06",
+      "test": "프로필 전환과 재시작 후 선택 유지",
+      "status": "pass",
+      "evidence": "다른 프로필로 전환 후 E2E1111로 복귀. 선택 완료 화면을 확인한 뒤 강제 종료하고 재실행해 E2E1111 유지 확인. selected-profile-after-restart.json"
+    },
+    {
+      "id": "PROFILE-07",
+      "test": "최대 3명 제한과 시험 프로필 삭제",
+      "status": "pass",
+      "evidence": "3명일 때 추가 버튼 없음. 합성 E2E1111만 삭제하자 추가 버튼 복원. 원래 두 프로필은 유지."
+    },
+    {
+      "id": "PHOTO-01",
+      "test": "합성 사진 선택, 업로드, 추가와 개수 제한",
+      "status": "pass",
+      "evidence": "합성 PNG를 5장까지 등록. 추가 버튼 비활성 및 최대 5장 안내."
+    },
+    {
+      "id": "PHOTO-02",
+      "test": "AI 사진 분석과 결과 표시",
+      "status": "pass",
+      "evidence": "photo-ai-description.json; production photo-worker generated accurate description of synthetic app artwork"
+    },
+    {
+      "id": "PHOTO-03",
+      "test": "설명 수정 후 서버 저장과 재실행 유지",
+      "status": "pass",
+      "evidence": "photo-description-after-restart.json: caregiver description survived process restart. ServerPhotoDescriptionStore validates PATCH response and does not persist a local description cache."
+    },
+    {
+      "id": "PHOTO-04",
+      "test": "분석 동의 거부와 철회 후 직접 설명 유지",
+      "status": "partial",
+      "evidence": "실제 계정의 사진 분석 동의는 변경하지 않음. S22 합성 서버 응답으로 동의 안내, 거절, 저장 실패와 업로드 검사."
+    },
+    {
+      "id": "CARD-01",
+      "test": "실제 AI 첫 카드 생성과 프로필 근거 확인",
+      "status": "pass",
+      "evidence": "S22 production API: tailor, market, orchids and family reflected. cards-first-page.json and cards-next-page.json"
+    },
+    {
+      "id": "CARD-02",
+      "test": "첫 카드 사진 준비 대기와 선택 처리",
+      "status": "partial",
+      "evidence": "S22 합성 서버 응답으로 실패, 시간 초과, 동의 필요와 계속하기 화면 검사. 버튼이 보이도록 스크롤한 재검사 통과. 운영 장애를 유발한 검사는 아님."
+    },
+    {
+      "id": "CARD-03",
+      "test": "선택 9장과 보충 3장, 선택과 해제",
+      "status": "pass",
+      "evidence": "S22: nine cards, supplementary selection and follow-up controls observed; cards-nine.json, visit-card-sheet.json"
+    },
+    {
+      "id": "CARD-04",
+      "test": "카드 근거 사진 확대와 조심스러운 이야기 표시",
+      "status": "partial",
+      "evidence": "실제 사진 확대 확인. S22 합성 민감 카드 배지와 선택 검사 통과. 실제 모델이 민감 카드를 생성한 시험은 아님."
+    },
+    {
+      "id": "CARD-05",
+      "test": "생성 중 화면 이탈과 재진입, 중복 요청 방지",
+      "status": "pass",
+      "evidence": "04:44 KST second generation survived force-stop; button stayed disabled until completion; no duplicate UI request."
+    },
+    {
+      "id": "VISIT-01",
+      "test": "면회 사진 촬영과 사진 없이 시작",
+      "status": "partial",
+      "evidence": "사진 없이 시작 통과. 합성 카메라 결과로 PNG를 실제 저장하고 운영 서버 업로드와 리포트 표시까지 통과. 실제 주변 촬영과 셔터음은 사용하지 않음."
+    },
+    {
+      "id": "VISIT-02",
+      "test": "녹음 전 안내와 승인 뒤 녹음",
+      "status": "pass",
+      "layer": "S22, fixture microphone",
+      "evidence": "Recording notice required before both visits."
+    },
+    {
+      "id": "VISIT-03",
+      "test": "실제 마이크 녹음과 시간 표시",
+      "status": "pass",
+      "layer": "S22 production-equivalent APK, real microphone, no upload",
+      "evidence": "real-mic-font2-started.json and real-microphone-lifecycle.json: active foreground service and increasing native audio frames; on-screen timer."
+    },
+    {
+      "id": "VISIT-04",
+      "test": "일시 정지와 다시 녹음, 뒤로 가기 확인",
+      "status": "pass",
+      "evidence": "실제 마이크 파일 350764바이트로 정지 유지. 재개 후 358444에서 916524바이트로 증가. 시간 표시 재개. 음성 청취 안 함."
+    },
+    {
+      "id": "VISIT-05",
+      "test": "화면 잠금과 다른 앱 전환 중 녹음 유지",
+      "status": "partial",
+      "layer": "S22 real microphone, no upload",
+      "evidence": "real-microphone-lifecycle.json: 녹음 데이터 프레임 272320 -> 565120 -> 774080 증가, 전경 서비스 유지. 백그라운드와 화면 꺼짐 확인. 이 녹음은 재생하거나 서버에 제출하지 않음"
+    },
+    {
+      "id": "VISIT-06",
+      "test": "카드 시트, 이전과 다음, 꼬리 질문과 보충 카드",
+      "status": "pass",
+      "layer": "S22, fixture microphone",
+      "evidence": "Question cycling, next card, supplementary card added; visit-card-sheet.json"
+    },
+    {
+      "id": "VISIT-07",
+      "test": "강제 종료 후 녹음 복구와 평가 이어가기",
+      "status": "partial",
+      "evidence": "실제 마이크 강제 종료 뒤 평가 복원. 헤더 44바이트가 빈 합성 WAV를 앱 제출 함수가 정상 복원한 뒤 운영 리포트 완료. 실제 마이크 음질 미확인."
+    },
+    {
+      "id": "REVIEW-01",
+      "test": "참여 인원, 만족도, 반응, 카드 평가와 소감",
+      "status": "pass",
+      "evidence": "First visit positive, neutral and unused plus note; second visit optional card reviews omitted. Recovery submission prompted participant count."
+    },
+    {
+      "id": "REVIEW-02",
+      "test": "평가와 녹음 제출 중복 방지",
+      "status": "partial",
+      "evidence": "실제 제출 버튼 4회 연속 조작 후 완료 화면과 회차 하나 확인. 운영 DB 작업 수는 AWS 자격 만료로 미확인. 자동 중복 방지 검사 별도."
+    },
+    {
+      "id": "REVIEW-03",
+      "test": "네트워크 차단 후 제출 실패와 재전송",
+      "status": "pass",
+      "evidence": "WiFi와 모바일 데이터 차단 후 제출 실패 안내와 WAV 보존. 연결 복원 후 같은 회차 제출 완료."
+    },
+    {
+      "id": "REPORT-01",
+      "test": "실제 STT와 리포트 완료, 대본과 내용 대조",
+      "status": "pass",
+      "layer": "S22, synthetic WAV, production S3/STT/AI",
+      "evidence": "report1-top.json, report1-pages.json: tailor shop, blue vests and red button box retained; future orchid plans remained future."
+    },
+    {
+      "id": "REPORT-02",
+      "test": "앱 재실행 후 분석 상태 복원",
+      "status": "pass",
+      "evidence": "홈에서 분석 중 확인 직후 강제 종료. 재실행 후 같은 회차의 리포트 도착과 내용 확인."
+    },
+    {
+      "id": "REPORT-03",
+      "test": "완료 알림과 알림에서 해당 리포트 열기",
+      "status": "pass",
+      "evidence": "Production report_ready push received within 36 sec; tapping notification opened first report."
+    },
+    {
+      "id": "REPORT-04",
+      "test": "리포트 목록, 상세, 사진, 카드 평가와 요약 구분",
+      "status": "pass",
+      "evidence": "목록과 상세, 카드별 평가와 요약 확인. 추가 합성 PNG를 실제 업로드하고 운영 리포트의 면회 사진 표시까지 확인. supplement-report-photo.png"
+    },
+    {
+      "id": "REPORT-05",
+      "test": "기기 녹음 파일 공유 창과 파일 존재",
+      "status": "pass",
+      "evidence": "Android share sheet opened with test WAV. No recipient or external share selected."
+    },
+    {
+      "id": "REPORT-06",
+      "test": "무음 분석 실패 안내와 수동 재요청",
+      "status": "pass",
+      "evidence": "5초 합성 무음으로 말소리 없음 안내. 분석 다시 요청하기 후 실제 재요청되고 같은 무음 결과."
+    },
+    {
+      "id": "STORY-01",
+      "test": "이야기 후보 이유, 수정 승인과 거절, 되돌리기",
+      "status": "pass",
+      "evidence": "S22: first candidate removed and undone, corrected title/body accepted; second candidate rejected. proposal-corrected-before-approval.json, approved-story.json"
+    },
+    {
+      "id": "STORY-02",
+      "test": "분류 자동 표시와 사용자 수정",
+      "status": "pass",
+      "evidence": "AI work category changed to other before approval; persisted after process restart. story-category-manual-persisted.json"
+    },
+    {
+      "id": "STORY-03",
+      "test": "승인된 이야기만 일대기에 저장",
+      "status": "pass",
+      "evidence": "Four initial details plus one accepted story; work category two entries. Rejected orchid proposal not added."
+    },
+    {
+      "id": "STORY-04",
+      "test": "일대기 직접 추가, 수정, 분류 이동, 삭제 취소",
+      "status": "pass",
+      "evidence": "direct-story-created.json, story-corrected-after-approval.json. 직접 추가, 본문 수정, 기타에서 일로 분류 이동, 삭제 취소와 작성 중 나가기 확인"
+    },
+    {
+      "id": "STORY-05",
+      "test": "시험 이야기 삭제와 관련 카드 처리",
+      "status": "pass",
+      "evidence": "미사용 카드 묶음을 준비한 뒤 합성 여행 이야기 삭제. 다음 카드 요청에서 정보 변경과 재생성 안내 표시, 기존 카드 즉시 사용 불가. 완료 후 새 카드 선택 화면 확인. supplement-deletion-card-result.json"
+    },
+    {
+      "id": "LOOP-01",
+      "test": "누적 정정 저장 후 이전 카드 사용 제한",
+      "status": "pass",
+      "evidence": "Existing ready cards were not opened after post-save correction; next-card request started regeneration with explicit changed-info notice. refresh-after-post-save-correction.json"
+    },
+    {
+      "id": "LOOP-02",
+      "test": "다음 대화 준비에서 12장 일괄 재생성",
+      "status": "pass",
+      "evidence": "정정 후 재생성 완료. 이후 만든 새 묶음에서 선택 카드 9장과 보충 카드 3장을 전부 확인."
+    },
+    {
+      "id": "LOOP-03",
+      "test": "승인과 정정 정보가 다음 카드에 반영",
+      "status": "pass",
+      "evidence": "cards2-approved-story-reflected.json: ten blue vests and red button box used in next questions. Corrected shop name was not asked; no assertion about every detail appearing."
+    },
+    {
+      "id": "LOOP-04",
+      "test": "두 번째 면회 녹음부터 리포트까지",
+      "status": "pass",
+      "layer": "S22, synthetic WAV, actual production S3/STT/AI",
+      "evidence": "report2-top.json, report2-pages.json, proposals2-top.json. Recovery after force-stop submitted WAV; second report and proposals completed."
+    },
+    {
+      "id": "SETTINGS-01",
+      "test": "동의 조회, 설명과 도움말",
+      "status": "pass",
+      "evidence": "Five consent entries loaded, privacy details sheet opened; help next and skip worked. No consent changed."
+    },
+    {
+      "id": "SETTINGS-02",
+      "test": "알림 설정과 수신 여부",
+      "status": "pass",
+      "evidence": "알림 설정을 끈 뒤 재실행 유지 확인. 계정 약관의 알림 수신 동의를 다시 켜 원래 true로 복원."
+    },
+    {
+      "id": "A11Y-01",
+      "test": "큰 글자에서 입력, 카드, 녹음, 리포트 버튼",
+      "status": "pass",
+      "evidence": "글자 크기 2.0에서 홈, 카드, 녹음, 리포트 확인. 세부 정보 입력 중 키보드가 떠 있어도 저장 버튼까지 스크롤 가능. details-font2-keyboard.png, details-font2-save-reachable.json"
+    },
+    {
+      "id": "A11Y-02",
+      "test": "가로 화면과 키보드 중 내용 접근",
+      "status": "partial",
+      "evidence": "가로 홈에서 스크롤로 카드 버튼과 평가 이어가기에 도달. 세로 입력 화면 키보드 접근 확인. 모든 화면 가로 배치를 검사한 것은 아님"
+    },
+    {
+      "id": "A11Y-03",
+      "test": "TalkBack 읽기와 주요 버튼 조작",
+      "status": "not_run_on_device",
+      "constraint": "무음 요청으로 TalkBack 음성 읽기는 하지 않음. accessibility_semantics_test.dart 자동 검사 실행"
+    },
+    {
+      "id": "AUTO-01",
+      "test": "앱 화면 여정 자동 검사와 계약 검사",
+      "status": "pass",
+      "layer": "synthetic external services",
+      "evidence": "PC 앱 여정과 계약 검사 7개 통과. S22에서 외부 서비스를 대체한 정상 두 회차, 분석 재요청, 화자 정보 부족의 3개 여정 재검사 통과. supplement-device-journey-recheck.log"
+    },
+    {
+      "id": "AUTO-02",
+      "test": "실제 앱 API와 BE, PostgreSQL, worker E2E",
+      "status": "pass",
+      "layer": "synthetic model, STT, S3 and Google",
+      "evidence": "server-e2e.log: E2E_PASSED, secondReport true, approved true, nextCards 12"
+    },
+    {
+      "id": "AUTO-03",
+      "test": "Flutter 전체 검사",
+      "status": "pass",
+      "layer": "host automated tests",
+      "evidence": "flutter-all.log: 1447 passed, exit 0"
+    },
+    {
+      "id": "AUTO-04",
+      "test": "Flutter 정적 검사",
+      "status": "pass",
+      "evidence": "flutter-analyze.log: No issues found. Six relative-import notices in local fixture tool corrected; product code unchanged."
+    },
+    {
+      "id": "RELEASE-01",
+      "test": "Play 업데이트 유도와 실제 스토어 설치",
+      "status": "not_run_on_device",
+      "constraint": "같은 소스를 로컬 서명으로 빌드한 시험 APK. Play 신규 배포와 스토어 업데이트는 이번 검증에서 하지 않음"
+    },
+    {
+      "id": "CRASH-01",
+      "test": "실기기 비정상 종료 기록",
+      "status": "pass",
+      "evidence": "11/11 시험 시간대 Android 종료 이력은 시험자가 실행한 강제 종료와 APK 업데이트뿐. app-exit-history.json. 모든 내부 예외가 없다는 보증은 아님"
+    },
+    {
+      "id": "AUTO-05",
+      "test": "백엔드 전체 검사와 PostgreSQL",
+      "status": "pass",
+      "evidence": "Linux 전체 1047 통과, 3 skip 뒤 현 소스 Docker 이미지와 시험 DB를 준비. 해당 3개를 포함한 관련 11개 모두 통과. Windows 최초 실패 표시는 별도 보존."
+    },
+    {
+      "id": "AUTO-06",
+      "test": "AI 패키지 자동 검사",
+      "status": "pass",
+      "layer": "합성 모델 응답, 시험 전용 DB",
+      "evidence": "ai-db-tests.log: 247 passed, exit 0. 실제 모델의 품질 정확도 시험과 구분"
+    }
+  ],
+  "coverageCounts": {
+    "pass": 50,
+    "partial": 9,
+    "not_run_on_device": 3
+  },
+  "supplementState": "추가 검사 완료. 원래 APK, 권한과 기기 설정 복원 확인",
+  "supplementCompletedAt": "2026-11-11T14:07:16+09:00",
+  "evidencePolicy": "본문의 실행 기록과 공개용 발췌를 참조한다. evidence에 적힌 원본 파일명은 로컬 보관 원본이며, 모든 원본을 저장소에 첨부한 것은 아니다."
+}

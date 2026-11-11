@@ -358,7 +358,7 @@ AI 서버 호출이 실패하면 해당 작업을 `failed`로 바꾸고 다음 `
 
 **구현 메모**
 
-- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리하는 삭제 실행기는 #204로 들어왔지만 운영의 실제 삭제는 아직 보류 중이다(1-5 구현 메모).
+- `require_owned(connection, PROFILE, profile_id, account_id=...)`로 확인한 뒤 `DELETE FROM profiles`로 지운다. `ON DELETE CASCADE`로 아래 기록이 지워지고, 사진과 음성의 객체 키는 trigger가 S3 삭제 대기열에 넣는다. 1-5 계정 삭제와 같은 경로이며, 대기열을 처리하는 삭제 실행기는 #204로 들어왔고, 운영의 실제 삭제는 보류했다가 11/11부터 #341의 5분 주기 실행으로 처리한다(1-5 구현 메모, #185).
 - 카드와 주제가 있는 프로필을 지우는 테스트를 더한다. `conversation_cards`의 `profile_topics` 참조에는 `ON DELETE`가 없어 같은 삭제 안의 CASCADE 순서에 기대며, 1-5에도 아직 이 경우의 테스트가 없다.
 
 <br>

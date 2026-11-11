@@ -17,6 +17,7 @@
 | AI 품질 개선, 안전 검사와 실패 복구 자료 | [AI 품질 개선과 안전성 검증 자료](pm/ai-quality-safety-evidence-20261111.md) | 모델 비교, 실제 생성 시험, 수정 전후 결과와 관련 PR |
 | 보안 조치와 남은 확인 사항 | [보안 조치 최종 보고서](pm/security-review-20261111/README.md) | 보호 조치 76개, PR 이력, 기존 점검의 처리 상태와 우선순위 |
 | PR 자동 테스트와 범위 | [제품 테스트 CI](product-tests.md) | 테스트 DB 격리, 실행 명령과 미검증 범위 |
+| S22와 운영 서버 연결 검사 | [S22 E2E 검증 보고서](qa/s22-e2e-20261111/README.md) | 두 회차 리포트, 이야기 반영, 실패 복구, 최신 코드 자동 검사와 미확인 범위 |
 | 배포 후보 빌드와 승인 배포 workflow | [배포 workflow](deploy-workflows.md) | 자동화 범위, 설정할 시크릿과 변수, 되돌리기 |
 | 공통 JSON 형식 | [데이터 계약](architecture/data-contracts.md) | [합성 목 데이터](architecture/mock/README.md) |
 | 주제 카드의 첫 생성과 다음 면회 반영 | [주제 카드 전체 설계 검토안](architecture/card-generation-flow.md) | 입력, 사진 설명 사용, 피드백, AI 프롬프트와 남은 선택 |

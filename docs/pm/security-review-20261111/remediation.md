@@ -45,11 +45,11 @@
 | STT 오류 기록에 임시 파일 접근 주소가 남을 가능성 | 다운로드 오류의 원인 정보에 원래 주소가 남는 코드가 있다. 운영 로그에 그 주소가 실제로 출력되는지는 확인되지 않았다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/audio/providers.py) |
 | 음성 모델을 어떤 버전으로 설치하는지 고정 | 학교 CK 예비 서버에는 이미 받은 모델을 쓰는 설정이 있다. 승인한 모델 버전이나 파일 확인값을 고정하는지, 주 서버가 어떻게 내려받는지는 별도 확인이다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/stt-server/src/stt_server/main.py) |
 
-## PM 결정으로 보류한 작업 1개
+## PM 결정으로 보류했다가 운영에 적용한 작업 1개
 
 | 확인했던 내용 | 처리 결과와 남은 범위 | 코드 |
 |---|---|---|
-| 저장소 파일 삭제를 자동으로 실행 | 삭제 목록과 실행 도구는 구현됐다. 시험 자료를 보존하기 위해 PM이 실제 실행과 예약을 출시 전 처리로 보류했다. | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/workers/storage_deletion.py) |
+| 저장소 파일 삭제를 자동으로 실행 | 삭제 목록과 실행 도구는 구현됐다. 시험 자료를 보존하기 위해 PM이 실제 실행과 예약을 보류했다가, 11/11 승인으로 [#341](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/pull/341)의 5분 주기 실행과 사진 과거 버전 삭제를 운영에 적용했다([#185](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/issues/185)). | [코드](https://github.com/kakaotechcampus-4/ktc4-chungnam-1/blob/951307b9dfc8862f38673fb57e469a175807f110/backend/app/workers/storage_deletion.py) |
 
 ## 이번 팀 수정 범위에서 제외한 항목 4개
 
@@ -69,7 +69,7 @@
 
 ## 혼동하기 쉬운 부분
 
-- **백업 정리와 음성 파일 삭제**: 백업 정리 예약 작업은 11월 9일 적용 기록이 있다. S3 파일 삭제 자동 운영은 보류다.
+- **백업 정리와 음성 파일 삭제**: 백업 정리 예약 작업은 11월 9일 적용 기록이 있다. S3 파일 삭제는 11월 11일부터 5분 주기로 자동 실행된다.
 - **사진 설명 삭제와 원본 삭제**: 분석 동의를 끄면 AI 설명을 지우는 것과, 저장소의 사진 및 이전 버전을 삭제하는 것은 다른 작업이다.
 - **동시 요청 수와 하루 비용**: 동시에 두 개만 처리해도 하루 종일 반복하면 비용이 쌓인다.
 - **인젝션 시험과 사실 정확성**: 자료 속 명령을 따르지 않는 것과 가족 관계나 사진을 정확히 설명하는 것은 별도로 평가한다.
