@@ -22,6 +22,7 @@
 <!-- 📐 배지 줄: Play 게시 전에는 "Play 검토 중", 게시 뒤 스토어 링크로 바꾼다. 원스토어는 공개 링크(m.onestore.co.kr), 최신 develop APK가 필요하면 GitHub Releases 링크를 따로 단다. 수상 배지는 결과가 나온 뒤에만 단다. -->
 <a href="https://play.google.com/store/apps/details?id=app.saerok.android&hl=ko"><img src="docs/assets/badge-google-play-ko.png" alt="Google Play에서 다운로드" height="56"></a>
 <a href="https://m.onestore.co.kr/v2/ko-kr/app/0001012223"><img src="docs/assets/badge-onestore-ko.png" alt="원스토어에서 다운로드하기" height="56"></a>
+<a href="https://github.com/kakaotechcampus-4/ktc4-chungnam-1/releases/tag/release"><img src="docs/assets/badge-github-release-ko.png" alt="GitHub에서 APK 다운로드" height="56"></a>
 
 </div>
 
