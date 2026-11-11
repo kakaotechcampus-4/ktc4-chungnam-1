@@ -1,0 +1,9 @@
+{
+  "time": "2026-11-10T20:05:46.433Z",
+  "initialFrames": 272320,
+  "backgroundFrames": 565120,
+  "screenOffFrames": 774080,
+  "screenState": "Dozing",
+  "foregroundService": true,
+  "audioUploaded": false
+}
