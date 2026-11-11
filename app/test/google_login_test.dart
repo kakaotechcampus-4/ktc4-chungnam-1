@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:saerok/app/routes.dart';
 import 'package:saerok/data/auth_api.dart';
+import 'package:saerok/data/dismissed_failed_report_store.dart';
 import 'package:saerok/data/mock_repository.dart';
 import 'package:saerok/data/profile_birth_input_store.dart';
 import 'package:saerok/data/profile_relationship_store.dart';
@@ -39,6 +40,7 @@ import 'package:saerok/features/visit/pending_uploads.dart';
 import 'package:saerok/features/visit/recording_share.dart';
 import 'package:saerok/features/visit/visit_photos.dart';
 
+import 'fake_dismissed_failed_report_store.dart';
 import 'fake_local_photos.dart';
 import 'fake_pending_uploads.dart';
 import 'fake_profile_server.dart';
@@ -219,6 +221,7 @@ Widget _app({
   RecordingShare? share,
   SelectedProfileStore? selectedProfile,
   SetupDraftStore? setupDrafts,
+  DismissedFailedReportStore? dismissedFailed,
 }) {
   final router = GoRouter(
     initialLocation:
@@ -294,6 +297,9 @@ Widget _app({
       recordingShareProvider.overrideWithValue(share ?? FakeRecordingShare()),
       selectedProfileStoreProvider.overrideWithValue(
         selectedProfile ?? FakeSelectedProfileStore(),
+      ),
+      dismissedFailedReportStoreProvider.overrideWithValue(
+        dismissedFailed ?? FakeDismissedFailedReportStore(),
       ),
       profileRelationshipStoreProvider.overrideWithValue(
         FakeProfileRelationshipStore(),
@@ -1071,6 +1077,9 @@ void main() {
       final setupDrafts = FakeSetupDraftStore()
         ..values['${_signedIn().account.accountId}/p-half'] = '{}'
         ..values['account-other/p-other'] = '{}';
+      final dismissedFailed = FakeDismissedFailedReportStore()
+        ..values[_signedIn().account.accountId] = {'s-mine'}
+        ..values['account-other'] = {'s-other'};
       final paths = <String>[];
 
       await _pumpWithProfile(
@@ -1092,6 +1101,7 @@ void main() {
           share: share,
           selectedProfile: selectedProfile,
           setupDrafts: setupDrafts,
+          dismissedFailed: dismissedFailed,
         ),
       );
 
@@ -1115,6 +1125,9 @@ void main() {
       expect(setupDrafts.values.keys, [
         'account-other/p-other',
       ], reason: '탈퇴한 계정이 등록하다 멈춘 세부 정보 초안만 지운다');
+      expect(dismissedFailed.values, {
+        'account-other': {'s-other'},
+      }, reason: '탈퇴한 계정이 지운 실패 알림의 기억만 지운다');
       expect(store.stored, isNull);
       expect(find.byType(GoogleSignInPanel), findsOneWidget);
       expect(find.text('탈퇴가 완료됐어요.'), findsOneWidget);

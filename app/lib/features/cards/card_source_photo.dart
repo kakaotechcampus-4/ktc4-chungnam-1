@@ -82,7 +82,7 @@ class CardSourcePhoto extends ConsumerWidget {
       child: Align(
         alignment: alignment,
         child: compact
-            ? _PhotoButton(label: '사진 보기', onPressed: open)
+            ? _PhotoButton(label: '사진 보기', onPressed: open, wide: true)
             : _PhotoContent(card: card, maxHeight: maxHeight, onOpen: open),
       ),
     );
@@ -99,23 +99,37 @@ final _photoOwnerProvider = Provider<_PhotoOwner>(
 );
 
 class _PhotoButton extends StatelessWidget {
-  const _PhotoButton({required this.label, required this.onPressed});
+  const _PhotoButton({
+    required this.label,
+    required this.onPressed,
+    this.wide = false,
+  });
   final String label;
   final VoidCallback onPressed;
+
+  /// 면회 카드 시트의 `사진 보기`. 메인 질문 위 카드 제목 자리에 두므로 가로로
+  /// 길게(최소 200) 둔다. 글자는 다른 버튼과 같은 18이다(15로 줄였더니 상자 높이
+  /// 48은 그대로라 글자만 작아 보였다, 2026-11-11). 아이콘은 글자 크기를 따라
+  /// 커진다.
+  final bool wide;
 
   @override
   Widget build(BuildContext context) => OutlinedButton.icon(
     onPressed: onPressed,
-    icon: const Icon(Icons.photo_outlined),
+    // 글자를 키우면 아이콘도 함께 키워 글자 옆에서 작아 보이지 않게 한다.
+    icon: Icon(
+      Icons.photo_outlined,
+      size: wide ? MediaQuery.textScalerOf(context).scale(22) : null,
+    ),
     label: Text(label, textAlign: TextAlign.center),
     style: OutlinedButton.styleFrom(
       foregroundColor: HomeColors.accent,
       side: const BorderSide(color: HomeColors.outline),
-      minimumSize: const Size(48, 48),
+      minimumSize: Size(wide ? 200 : 48, 48),
       textStyle: Theme.of(
         context,
       ).textTheme.labelLarge?.merge(AppTypography.button),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 24 : 16, vertical: 12),
     ),
   );
 }
