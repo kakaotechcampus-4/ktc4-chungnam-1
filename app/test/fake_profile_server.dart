@@ -77,7 +77,7 @@ class FakeProfileServer {
     final segments = request.url.pathSegments;
     // /api/v1/profile-photos/{photoId}
     if (segments.length == 4 && segments[2] == 'profile-photos') {
-      return _photo(segments[3]);
+      return _photo(request.method, segments[3]);
     }
     // /api/v1/life-facts/{factId}
     if (segments.length == 4 && segments[2] == 'life-facts') {
@@ -182,13 +182,19 @@ class FakeProfileServer {
   }
 
   /// 3-2. [analysisResults] 대로 분석 상태를 바꾼 사진을 돌려준다.
-  http.Response _photo(String photoId) {
+  /// 3-4. `DELETE` 면 사진을 지운다.
+  http.Response _photo(String method, String photoId) {
     for (var p = 0; p < profiles.length; p++) {
       final photos = [...profiles[p]['photos'] as List];
       final i = photos.indexWhere(
         (photo) => (photo as Map)['photoId'] == photoId,
       );
       if (i < 0) continue;
+      if (method == 'DELETE') {
+        photos.removeAt(i);
+        profiles[p] = {...profiles[p], 'photos': photos};
+        return http.Response('', 204);
+      }
       final queue = analysisResults[photoId];
       final status = queue == null || queue.isEmpty
           ? (photos[i] as Map)['analysisStatus']

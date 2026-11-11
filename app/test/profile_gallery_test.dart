@@ -179,6 +179,11 @@ void main() {
       isFalse,
       reason: '고치지 않았으면 저장할 것이 없다',
     );
+    expect(
+      find.byTooltip('사진 지우기'),
+      findsNothing,
+      reason: '목 사진은 지울 곳이 없어 휴지통을 두지 않는다',
+    );
   });
 
   testWidgets('고쳐서 저장하면 보호자가 고친 설명이 된다', (tester) async {

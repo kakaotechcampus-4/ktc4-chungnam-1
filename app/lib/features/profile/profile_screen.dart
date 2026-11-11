@@ -193,8 +193,9 @@ class _Body extends StatelessWidget {
                   // 세부 정보 네 항목 밖의 생애 정보는 일대기에서 더한다. 여기서는 두지 않는다.
                   const SizedBox(height: AppSpacing.section),
 
-                  // 사진 설명은 갤러리에서 사진을 눌러 바로 고친다(`ProfileGallery`). 사진을
-                  // 더하거나 지우는 화면은 없어서 머리글의 수정하기를 두지 않는다.
+                  // 사진 설명은 갤러리에서 사진을 눌러 바로 고치고 지운다(`ProfileGallery`).
+                  // 사진은 갤러리 아래에서 더 올린다. 따로 갈 수정 화면이 없어 머리글의
+                  // 수정하기를 두지 않는다.
                   _Section(
                     title: '갤러리',
                     child: _Gallery(mockPhotos: bundle.photos),
@@ -307,7 +308,9 @@ class _Avatar extends ConsumerWidget {
 /// 서버 사진을 읽지 못하면 사진이 없다고 하지 않고 다시 시도를 둔다.
 ///
 /// 서버에 저장한 분은 갤러리 아래에서 사진을 더 올린다. [maxProfilePhotos] 장을
-/// 채웠으면 막고 이유를 알린다. 목 사진은 올릴 곳이 없어 두지 않는다.
+/// 채웠으면 막고 이유를 알린다. 사진을 눌러 펼친 설명 칸의 휴지통으로 지울 수도
+/// 있다(3-4).
+/// 목 사진은 올리거나 지울 곳이 없어 두 버튼 모두 두지 않는다.
 class _Gallery extends ConsumerWidget {
   const _Gallery({required this.mockPhotos});
 
@@ -322,7 +325,7 @@ class _Gallery extends ConsumerWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ProfileGallery(photos: photos),
+                ProfileGallery(photos: photos, canDelete: true),
                 const SizedBox(height: AppSpacing.lg),
                 if (photos.length < maxProfilePhotos)
                   SecondaryButton(

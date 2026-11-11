@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api_client.dart';
 import '../../data/models.dart';
+import '../../data/profile_api.dart';
 import '../../data/providers.dart';
 import '../../design/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/app_text_field.dart';
 import '../auth/auth_providers.dart';
 import 'photo_description_store.dart';
+import 'profile_dialogs.dart';
 
 /// 프로필 설정의 갤러리.
 ///
@@ -21,10 +24,22 @@ import 'photo_description_store.dart';
 /// 설명 칸은 높이가 늘어나며 아래에서 살짝 떠오르듯 펼쳐진다. 다 펼쳐지면
 /// 끝까지 내려 칸을 화면 맨 아래에 붙이고, 이미 끝이면 그대로 둔다. 접으면
 /// 펼치기 전 자리로 다시 올라간다. 움직임 줄이기가 켜져 있으면 바로 바꾼다.
+///
+/// [canDelete] 면 펼친 설명 칸의 첫 줄 오른쪽 끝에 빨간 휴지통을 둔다. 한 번 더
+/// 물은 뒤 서버에서 지우고(3-4) 갤러리의 사진을 다시 읽는다. 카드를 만드는 중이면 서버가 거절하므로 그 이유를 설명 칸
+/// 아래에 알린다. 이미 없는 사진이면 지운 것과 같이 다룬다.
 class ProfileGallery extends ConsumerStatefulWidget {
-  const ProfileGallery({required this.photos, super.key});
+  const ProfileGallery({
+    required this.photos,
+    this.canDelete = false,
+    super.key,
+  });
 
   final List<ProfilePhoto> photos;
+
+  /// 서버에 올린 사진이라 지울 수 있는지. 로그인 없이 보는 목 사진은 지울 곳이
+  /// 없어 `false` 다.
+  final bool canDelete;
 
   @override
   ConsumerState<ProfileGallery> createState() => _ProfileGalleryState();
@@ -61,6 +76,10 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
   String? _savedId;
   String? _failedId;
 
+  /// 지우는 중인 사진과, 지우지 못한 사진 하나와 그 이유.
+  final _deletingIds = <String>{};
+  ({String photoId, String message})? _deleteFailure;
+
   @override
   void dispose() {
     _text.dispose();
@@ -88,6 +107,7 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
     setState(() {
       _savedId = null;
       _failedId = null;
+      _deleteFailure = null;
       if (closing) {
         _selectedId = null;
         return;
@@ -188,6 +208,55 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
       });
     }
   }
+
+  Future<void> _delete(ProfilePhoto photo) async {
+    final confirmed = await showChoiceDialog(
+      context,
+      title: '이 사진을 지울까요?',
+      detail: '지운 사진은 되돌릴 수 없어요.',
+      primaryLabel: '지우기',
+      secondaryLabel: '취소',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() {
+      _deletingIds.add(photo.photoId);
+      _deleteFailure = null;
+    });
+
+    String? failure;
+    try {
+      await ref.read(profileApiProvider).deletePhoto(photo.photoId);
+    } on ApiServerFailure catch (error) {
+      failure = switch (error.errorCode) {
+        // 다른 기기에서 먼저 지웠다. 지우려던 결과와 같다.
+        'PROFILE_PHOTO_NOT_FOUND' => null,
+        'CARD_GENERATION_IN_PROGRESS' =>
+          '대화 카드를 만드는 중이라 지금은 지울 수 없어요. '
+              '카드가 다 만들어진 뒤 다시 시도해주세요.',
+        _ => _deleteFailedMessage,
+      };
+    } catch (_) {
+      failure = _deleteFailedMessage;
+    }
+    if (!mounted) return;
+
+    final position = Scrollable.maybeOf(context)?.position;
+    final wasOpen = _selectedId == photo.photoId;
+    setState(() {
+      _deletingIds.remove(photo.photoId);
+      if (failure != null) {
+        _deleteFailure = (photoId: photo.photoId, message: failure);
+      } else if (wasOpen) {
+        _selectedId = null;
+      }
+    });
+    if (failure != null) return;
+    if (wasOpen) _restoreScroll(position);
+    // 지운 사진이 빠진 목록을 다시 읽는다. 5장보다 적어지면 더 올릴 수 있다.
+    ref.invalidate(serverProfilePhotosProvider);
+  }
+
+  static const _deleteFailedMessage = '사진을 지우지 못했어요. 잠시 뒤 다시 시도해주세요.';
 
   @override
   Widget build(BuildContext context) {
@@ -296,7 +365,31 @@ class _ProfileGalleryState extends ConsumerState<ProfileGallery> {
                           _failedId = null;
                         }),
                         onSave: () => _save(selected),
+                        trash: widget.canDelete
+                            ? _TrashButton(
+                                // 지우는 중이거나 설명을 저장하는 중에는 막는다.
+                                onPressed:
+                                    _deletingIds.contains(selected.photoId) ||
+                                        _savingIds.contains(selected.photoId)
+                                    ? null
+                                    : () => _delete(selected),
+                              )
+                            : null,
                       ),
+                      // 지우지 못한 이유는 설명 칸 아래에 적는다.
+                      if (_deleteFailure case (
+                        :final photoId,
+                        :final message,
+                      ) when photoId == selected.photoId) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          message,
+                          style: AppTypography.sub.copyWith(
+                            color: AppColors.danger,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ],
                   ),
           ),
@@ -406,6 +499,7 @@ class _DescriptionPanel extends StatelessWidget {
     required this.saveFailed,
     required this.onChanged,
     required this.onSave,
+    this.trash,
   });
 
   final ProfilePhoto photo;
@@ -427,15 +521,36 @@ class _DescriptionPanel extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onSave;
 
+  /// 첫 줄 오른쪽 끝에 두는 휴지통. 지울 수 없는 사진이면 `null` 이다.
+  final Widget? trash;
+
   @override
   Widget build(BuildContext context) {
+    final content = _content();
+    final trash = this.trash;
+    if (trash == null) return content;
+    // 이름표(`AI가 만든 설명`) 줄의 오른쪽 끝에 올린다. 안내 글로 시작하면 글이
+    // 휴지통 아래로 들어가지 않게 첫 안내의 오른쪽을 비운다([_PanelNotice]).
+    return Stack(
+      children: [
+        content,
+        Positioned(top: 0, right: 0, child: trash),
+      ],
+    );
+  }
+
+  Widget _content() {
     final status = photo.analysisStatus;
     final failed = status == PhotoAnalysisStatus.failed;
     final waiting = status != PhotoAnalysisStatus.completed && !failed && !edited;
     // 동의하지 않은 계정의 사진은 분석하지 않는다. 기다리게 하지 않고 바로 적게 한다.
     final notAnalyzed = waiting && analysisWanted == false;
+    final besideTrash = trash != null;
     if (waiting && !notAnalyzed) {
-      return const _PanelNotice('사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.');
+      return _PanelNotice(
+        '사진 설명을 만들고 있어요. 잠시 뒤 다시 확인해주세요.',
+        besideTrash: besideTrash,
+      );
     }
 
     // 보호자가 적은 설명이 있으면 AI 설명이 아니다. 실패했거나 분석하지 않는
@@ -448,13 +563,18 @@ class _DescriptionPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (failed && !edited) ...[
-          const _PanelNotice('AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.', danger: true),
+          _PanelNotice(
+            'AI가 설명을 만들지 못했어요. 직접 적어주셔도 돼요.',
+            danger: true,
+            besideTrash: besideTrash,
+          ),
           const SizedBox(height: AppSpacing.lg),
         ],
         if (notAnalyzed) ...[
-          const _PanelNotice(
+          _PanelNotice(
             'AI 사진 분석에 동의하지 않아 설명을 자동으로 만들지 않아요. '
             '직접 적어주시면 대화 카드에 쓰여요. 설정에서 동의하면 AI가 만들어 드려요.',
+            besideTrash: besideTrash,
           ),
           const SizedBox(height: AppSpacing.lg),
         ],
@@ -506,18 +626,53 @@ class _DescriptionPanel extends StatelessWidget {
   }
 }
 
+/// 펼친 칸 첫 줄 오른쪽 끝의 빨간 휴지통.
+///
+/// 누름 영역(48)은 지키고 아이콘은 오른쪽 위에 붙여 이름표 줄과 높이를 맞춘다.
+class _TrashButton extends StatelessWidget {
+  const _TrashButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: '사진 지우기',
+      alignment: Alignment.topRight,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(
+        width: AppSizes.minTouch,
+        height: AppSizes.minTouch,
+      ),
+      color: AppColors.danger,
+      icon: const Icon(Icons.delete_outline),
+    );
+  }
+}
+
 class _PanelNotice extends StatelessWidget {
-  const _PanelNotice(this.message, {this.danger = false});
+  const _PanelNotice(
+    this.message, {
+    this.danger = false,
+    this.besideTrash = false,
+  });
 
   final String message;
   final bool danger;
 
+  /// 휴지통 옆의 첫 줄이면 휴지통 자리만큼 오른쪽을 비운다.
+  final bool besideTrash;
+
   @override
   Widget build(BuildContext context) {
-    return Text(
-      message,
-      style: AppTypography.sub.copyWith(
-        color: danger ? AppColors.danger : AppColors.textSub,
+    return Padding(
+      padding: EdgeInsets.only(right: besideTrash ? AppSizes.minTouch : 0),
+      child: Text(
+        message,
+        style: AppTypography.sub.copyWith(
+          color: danger ? AppColors.danger : AppColors.textSub,
+        ),
       ),
     );
   }

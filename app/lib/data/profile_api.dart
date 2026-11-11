@@ -194,6 +194,13 @@ class ProfileApi {
     return _read(() => ProfilePhoto.fromJson(body));
   }
 
+  /// 3-4 프로필 사진 한 장을 지운다. 되돌릴 수 없다.
+  ///
+  /// 카드를 만드는 중이면 `CARD_GENERATION_IN_PROGRESS`(409)로, 이미 없는
+  /// 사진이면 `PROFILE_PHOTO_NOT_FOUND`(404)로 거절한다.
+  Future<void> deletePhoto(String photoId) =>
+      _client.delete('$_photoBase/$photoId');
+
   /// 2-6 일대기에 이야기를 담는다. 서버가 만든 `factId` 를 돌려받는다.
   Future<LifeFact> createLifeFact(
     String profileId, {
