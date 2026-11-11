@@ -1,0 +1,18 @@
+# 운영 승인 후 설치. 실행 전 사진 버전 삭제 권한과 대기열을 확인한다.
+[Unit]
+Description=Saerok queued S3 audio and photo deletion
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/ktc4-chungnam-1/backend
+ExecStart=/usr/bin/docker compose -f compose.yml exec -T api python -m app.ops.storage_audit --enqueue-safe-expired --limit 100
+ExecStart=/usr/bin/docker compose -f compose.yml exec -T api python -m app.workers.storage_deletion --apply --allow-versioned-photos --limit 100
+TimeoutStartSec=30min
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+UMask=0077
