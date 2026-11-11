@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="다음 면회 카드 생성 에이전트">
+<defs>
+<marker id="ak" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0.5 L12 6 L0 11.5 z" fill="#5B6360"/></marker>
+<marker id="ag" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0.5 L12 6 L0 11.5 z" fill="#2F7A52"/></marker>
+<marker id="ao" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0.5 L12 6 L0 11.5 z" fill="#C8691C"/></marker>
+<style>text{font-family:'Pretendard','Noto Sans KR','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;}.title{font-size:30px;font-weight:800;fill:#25292A;}.subtitle{font-size:14.5px;fill:#767D7A;}.el{font-size:14px;font-weight:600;fill:#4B5250;paint-order:stroke;stroke-width:9px;stroke-linejoin:round;}.num{font-size:13px;font-weight:700;fill:#FFFFFF;}.pill{font-size:12.5px;font-weight:700;}.lg{font-size:14px;fill:#4B5250;}.phase{font-size:18px;font-weight:700;fill:#25292A;}.phased{font-size:14px;fill:#767D7A;}.bt{font-size:21px;font-weight:700;}.bb{font-size:14.5px;}.dt{font-size:19px;font-weight:800;}.ds{font-size:13.5px;}</style>
+</defs>
+<rect x="0" y="0" width="1600" height="900" fill="#FFFFFF"/>
+<text x="40" y="56" class="title" text-anchor="start">다음 면회 카드 생성 에이전트</text>
+<text x="40" y="86" class="subtitle" text-anchor="start">역할을 나눈 단계가 차례로 일하고, 검사에 걸리면 앞 단계로 되돌아가 고칩니다 · 2026.11</text>
+<rect x="40" y="112" width="1520" height="330" rx="18" fill="#F3F5F4" stroke="#D3D8D6" stroke-width="1.6"/>
+<text x="62" y="143" class="phase" text-anchor="start">자료 찾기</text>
+<text x="151.04" y="143" class="phased" text-anchor="start">에이전트가 조회 도구로 근거를 모으고, 주제가 충분한지 확인합니다</text>
+<rect x="40" y="490" width="1520" height="302" rx="18" fill="#F3F5F4" stroke="#D3D8D6" stroke-width="1.6"/>
+<text x="62" y="521" class="phase" text-anchor="start">카드 쓰기와 검증</text>
+<text x="210.08" y="521" class="phased" text-anchor="start">문안을 쓰고 코드 규칙으로 검사한 뒤 통과한 카드만 저장합니다</text>
+<path d="M350 291 L461 291" fill="none" stroke="#5B6360" stroke-width="2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<path d="M743 291 L854 291" fill="none" stroke="#5B6360" stroke-width="2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<path d="M1136 291 L1258 291" fill="none" stroke="#5B6360" stroke-width="2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<path d="M603 384 L603 414 L210 414 L210 386" fill="none" stroke="#C8691C" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 5" marker-end="url(#ao)"/>
+<rect x="251.9" y="402" width="309.2" height="24" fill="#F3F5F4"/>
+<text x="406.5" y="419" class="el" text-anchor="middle" style="stroke:#F3F5F4;fill:#C8691C;font-size:14px">형식 오류 · 없는 ID → 오류를 돌려주고 재제출</text>
+<path d="M1390 198 L1390 172 L210 172 L210 196" fill="none" stroke="#C8691C" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 5" marker-end="url(#ao)"/>
+<rect x="670.9" y="160" width="337.2" height="24" fill="#F3F5F4"/>
+<text x="839.5" y="177" class="el" text-anchor="middle" style="stroke:#F3F5F4;fill:#C8691C;font-size:14px">아니오 · 최대 2번 다시 찾기, 그래도 모자라면 실패</text>
+<path d="M1390 384 L1390 544" fill="none" stroke="#2F7A52" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#ag)"/>
+<rect x="1391.0" y="454.0" width="139.5" height="24" fill="#FFFFFF"/>
+<text x="1398" y="471.0" class="el" text-anchor="start" style="stroke:#FFFFFF;fill:#2F7A52;font-size:14px">예 · 주제 12개 이상</text>
+<path d="M1250 639 L1138 639" fill="none" stroke="#5B6360" stroke-width="2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<path d="M856 639 L745 639" fill="none" stroke="#5B6360" stroke-width="2" stroke-linejoin="round" marker-end="url(#ak)"/>
+<path d="M463 639 L352 639" fill="none" stroke="#2F7A52" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#ag)"/>
+<rect x="383.5" y="605" width="46.0" height="24" fill="#F3F5F4"/>
+<text x="406.5" y="622" class="el" text-anchor="middle" style="stroke:#F3F5F4;fill:#2F7A52;font-size:14px">통과</text>
+<path d="M996 732 L996 762 L1390 762 L1390 734" fill="none" stroke="#C8691C" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 5" marker-end="url(#ao)"/>
+<rect x="1065.4" y="750" width="255.2" height="24" fill="#F3F5F4"/>
+<text x="1193.0" y="767" class="el" text-anchor="middle" style="stroke:#F3F5F4;fill:#C8691C;font-size:14px">퀴즈형 · 치료 효과 문장 → 1회 재작성</text>
+<rect x="70" y="198" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="94" cy="222" r="13" fill="#25292A"/>
+<text x="94" y="227" class="num" text-anchor="middle">1</text>
+<rect x="250" y="210" width="84" height="24" rx="12" fill="#6B3BF0"/>
+<text x="292" y="227.5" class="pill" text-anchor="middle" style="fill:#FFFFFF;font-size:15px;font-family:Consolas,'Courier New',monospace;letter-spacing:0.5px">/*elice*/</text>
+<rect x="184.0" y="214" width="52" height="52" rx="13" fill="#6B3BF0"/>
+<g transform="translate(194.4 224.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/><path d="M8 10.5h5M10.5 8v5"/></g>
+<text x="210" y="296" class="bt" text-anchor="middle" style="fill:#25292A">Research Agent</text>
+<text x="210" y="324" class="bb" text-anchor="middle" style="fill:#4B5250">조회 도구 6개 · 최대 30턴</text>
+<text x="210" y="346" class="bb" text-anchor="middle" style="fill:#4B5250">최근 기억 시험 · 아픈 기억은</text>
+<text x="210" y="368" class="bb" text-anchor="middle" style="fill:#4B5250">프롬프트로 금지, 캐묻지 않음</text>
+<rect x="463" y="198" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="487" cy="222" r="13" fill="#25292A"/>
+<text x="487" y="227" class="num" text-anchor="middle">2</text>
+<rect x="655" y="210" width="72" height="24" rx="12" fill="#FFFFFF" stroke="#5B6360" stroke-width="1.2"/>
+<text x="691" y="226.5" class="pill" text-anchor="middle" style="fill:#25292A">규칙 검사</text>
+<rect x="577.0" y="214" width="52" height="52" rx="13" fill="#5B6360"/>
+<g transform="translate(587.4 224.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="m7.5 9 1.6 1.6L12 7.8M7.5 15l1.6 1.6L12 13.8M14.5 9.5h2.5M14.5 15.5h2.5"/></g>
+<text x="603" y="296" class="bt" text-anchor="middle" style="fill:#25292A">Schema Validator</text>
+<text x="603" y="324" class="bb" text-anchor="middle" style="fill:#4B5250">후보의 형식과</text>
+<text x="603" y="346" class="bb" text-anchor="middle" style="fill:#4B5250">근거 ID가 실제로 있는지 확인</text>
+<rect x="856" y="198" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="880" cy="222" r="13" fill="#25292A"/>
+<text x="880" y="227" class="num" text-anchor="middle">3</text>
+<rect x="1036" y="210" width="84" height="24" rx="12" fill="#6B3BF0"/>
+<text x="1078" y="227.5" class="pill" text-anchor="middle" style="fill:#FFFFFF;font-size:15px;font-family:Consolas,'Courier New',monospace;letter-spacing:0.5px">/*elice*/</text>
+<rect x="970.0" y="214" width="52" height="52" rx="13" fill="#6B3BF0"/>
+<g transform="translate(980.4 224.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/></g>
+<text x="996" y="296" class="bt" text-anchor="middle" style="fill:#25292A">Topic Matching</text>
+<text x="996" y="324" class="bb" text-anchor="middle" style="fill:#4B5250">같은 이야기를 하나로 묶어</text>
+<text x="996" y="346" class="bb" text-anchor="middle" style="fill:#4B5250">주제 수를 셈</text>
+<polygon points="1390,198 1520,291 1390,384 1260,291" fill="#FDF1E4" stroke="#C8691C" stroke-width="2" stroke-linejoin="round"/>
+<text x="1390" y="289" class="dt" text-anchor="middle" style="fill:#25292A">주제 12개 이상?</text>
+<text x="1390" y="313" class="ds" text-anchor="middle" style="fill:#4B5250">묶은 주제 수 판정</text>
+<rect x="1250" y="546" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="1274" cy="570" r="13" fill="#25292A"/>
+<text x="1274" y="575" class="num" text-anchor="middle">4</text>
+<rect x="1430" y="558" width="84" height="24" rx="12" fill="#6B3BF0"/>
+<text x="1472" y="575.5" class="pill" text-anchor="middle" style="fill:#FFFFFF;font-size:15px;font-family:Consolas,'Courier New',monospace;letter-spacing:0.5px">/*elice*/</text>
+<rect x="1364.0" y="562" width="52" height="52" rx="13" fill="#6B3BF0"/>
+<g transform="translate(1374.4 572.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="12" height="14" rx="2"/><path d="M7 3.5h10.5a2 2 0 0 1 2 2V17"/><path d="M5.5 12h6M5.5 15.5h4"/></g>
+<text x="1390" y="644" class="bt" text-anchor="middle" style="fill:#25292A">Card Writing</text>
+<text x="1390" y="672" class="bb" text-anchor="middle" style="fill:#4B5250">카드 12장 문안 작성</text>
+<text x="1390" y="694" class="bb" text-anchor="middle" style="fill:#4B5250">첫 질문과 꼬리 질문</text>
+<text x="1390" y="716" class="bb" text-anchor="middle" style="fill:#4B5250">전체 240초 넘으면 생성 실패</text>
+<rect x="856" y="546" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="880" cy="570" r="13" fill="#25292A"/>
+<text x="880" y="575" class="num" text-anchor="middle">5</text>
+<rect x="1048" y="558" width="72" height="24" rx="12" fill="#FFFFFF" stroke="#5B6360" stroke-width="1.2"/>
+<text x="1084" y="574.5" class="pill" text-anchor="middle" style="fill:#25292A">규칙 검사</text>
+<rect x="970.0" y="562" width="52" height="52" rx="13" fill="#5B6360"/>
+<g transform="translate(980.4 572.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6h15M3.5 11h10M3.5 16h6.5"/><path d="m15.5 14.5 5 5M20.5 14.5l-5 5"/></g>
+<text x="996" y="644" class="bt" text-anchor="middle" style="fill:#25292A">Text Checker</text>
+<text x="996" y="672" class="bb" text-anchor="middle" style="fill:#4B5250">금지 질문 · 의료 표현 검사</text>
+<text x="996" y="694" class="bb" text-anchor="middle" style="fill:#4B5250">재작성 뒤에도 걸리면 실패</text>
+<rect x="463" y="546" width="280" height="186" rx="14" fill="#FFFFFF" stroke="#D3D8D6" stroke-width="1.5"/>
+<circle cx="487" cy="570" r="13" fill="#25292A"/>
+<text x="487" y="575" class="num" text-anchor="middle">6</text>
+<rect x="655" y="558" width="72" height="24" rx="12" fill="#FFFFFF" stroke="#5B6360" stroke-width="1.2"/>
+<text x="691" y="574.5" class="pill" text-anchor="middle" style="fill:#25292A">규칙 검사</text>
+<rect x="577.0" y="562" width="52" height="52" rx="13" fill="#5B6360"/>
+<g transform="translate(587.4 572.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></g>
+<text x="603" y="644" class="bt" text-anchor="middle" style="fill:#25292A">저장 전 검증</text>
+<text x="603" y="672" class="bb" text-anchor="middle" style="fill:#4B5250">보호자가 뺀 주제 · 없는 근거 ID</text>
+<text x="603" y="694" class="bb" text-anchor="middle" style="fill:#4B5250">섞여 있으면 저장 거절</text>
+<rect x="70" y="546" width="280" height="186" rx="14" fill="#E9F3EA" stroke="#2F7A52" stroke-width="2.4"/>
+<circle cx="94" cy="570" r="13" fill="#2F7A52"/>
+<text x="94" y="575" class="num" text-anchor="middle">7</text>
+<rect x="184.0" y="562" width="52" height="52" rx="13" fill="#2F7A52"/>
+<g transform="translate(194.4 572.4) scale(1.3)" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g>
+<text x="210" y="644" class="bt" text-anchor="middle" style="fill:#25292A">대화 카드 저장</text>
+<text x="210" y="672" class="bb" text-anchor="middle" style="fill:#4B5250">모든 검사를 통과한 카드만</text>
+<text x="210" y="694" class="bb" text-anchor="middle" style="fill:#4B5250">보호자가 골라 면회 시작</text>
+<line x1="40" y1="840" x2="76" y2="840" stroke="#5B6360" stroke-width="2"/>
+<text x="86" y="845" class="lg" text-anchor="start">다음 단계로 진행</text>
+<line x1="227.84" y1="840" x2="263.84000000000003" y2="840" stroke="#C8691C" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="273.84000000000003" y="845" class="lg" text-anchor="start">검사에 걸려 되돌아가는 흐름</text>
+<rect x="489.6" y="828" width="84" height="24" rx="12" fill="#6B3BF0"/>
+<text x="531.6" y="845.5" class="pill" text-anchor="middle" style="fill:#FFFFFF;font-size:15px;font-family:Consolas,'Courier New',monospace;letter-spacing:0.5px">/*elice*/</text>
+<text x="583.6" y="845" class="lg" text-anchor="start">언어 모델을 호출하는 단계 (엘리스 ML API)</text>
+<rect x="895.96" y="828" width="72" height="24" rx="12" fill="#FFFFFF" stroke="#5B6360" stroke-width="1.2"/>
+<text x="931.96" y="844.5" class="pill" text-anchor="middle" style="fill:#25292A">규칙 검사</text>
+<text x="977.96" y="845" class="lg" text-anchor="start">코드로 검사하는 단계</text>
+<text x="40" y="878" class="lg" text-anchor="start" style="fill:#2F7A52;font-weight:700">검사를 끝내 통과하지 못하면 카드를 저장하지 않고, 앱에 다시 시도 버튼을 보여 줍니다</text>
+</svg>
