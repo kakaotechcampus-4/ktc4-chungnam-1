@@ -84,10 +84,11 @@ def resolve_target(
 
 
 class S3DeleteBackend:
-    """버전 관리 없는 버킷만 처리. DeleteObject 후 HeadObject 404를 확인한다."""
+    """사진 버전 영구 삭제는 명시적으로 켠 실행에서만 허용한다."""
 
-    def __init__(self, *, client_factory=None):
+    def __init__(self, *, client_factory=None, allow_versioned_photos=False):
         self._client_factory = client_factory or self._client
+        self._allow_versioned_photos = allow_versioned_photos
 
     @staticmethod
     def _client(region):
@@ -108,8 +109,17 @@ class S3DeleteBackend:
         try:
             state = client.get_bucket_versioning(Bucket=target.bucket)
             if state.get("Status") is not None:
-                raise DeletionError("VERSIONED_BUCKET_REQUIRES_REVIEW")
-            client.delete_object(Bucket=target.bucket, Key=object_key)
+                if not self._allow_versioned_photos or target.kind != "photo":
+                    raise DeletionError("VERSIONED_BUCKET_REQUIRES_REVIEW")
+                if state.get("MFADelete") == "Enabled":
+                    raise DeletionError("MFA_DELETE_REQUIRES_REVIEW")
+                # 대기열의 검증과 별개로 이 경로에서도 정확한 사진 키인지 확인한다.
+                validate_targets((target,))
+                if resolve_target(object_key, (target,)) != target:
+                    raise DeletionError("UNKNOWN_OBJECT_ROUTE")
+                self._delete_photo_versions(client, target.bucket, object_key)
+            else:
+                client.delete_object(Bucket=target.bucket, Key=object_key)
             try:
                 client.head_object(Bucket=target.bucket, Key=object_key)
             except ClientError as error:
@@ -125,6 +135,54 @@ class S3DeleteBackend:
         except Exception as error:
             # 예외 본문에 키나 버킷이 있을 수 있으므로 외부에는 코드만 전한다.
             raise DeletionError("STORAGE_UNAVAILABLE") from error
+
+    @staticmethod
+    def _versions(client, bucket, key):
+        items = {"Versions": [], "DeleteMarkers": []}
+        markers = {}
+        seen = set()
+        for _ in range(10):
+            page = client.list_object_versions(
+                Bucket=bucket, Prefix=key, MaxKeys=1000, **markers
+            )
+            for field in items:
+                for item in page.get(field, []):
+                    # Prefix는 파일 이름 전체와 같은지 보장하지 않는다.
+                    if item["Key"] == key:
+                        if not item.get("VersionId"):
+                            raise DeletionError("VERSION_LIST_INVALID")
+                        items[field].append(
+                            {"Key": key, "VersionId": item["VersionId"]}
+                        )
+            if sum(map(len, items.values())) > 1000:
+                raise DeletionError("VERSION_LIST_LIMIT")
+            if not page.get("IsTruncated", False):
+                return items
+            marker = (page.get("NextKeyMarker"), page.get("NextVersionIdMarker"))
+            if not all(marker) or marker in seen:
+                raise DeletionError("VERSION_LIST_INVALID")
+            seen.add(marker)
+            markers = {"KeyMarker": marker[0], "VersionIdMarker": marker[1]}
+        raise DeletionError("VERSION_LIST_LIMIT")
+
+    def _delete_photo_versions(self, client, bucket, key):
+        items = self._versions(client, bucket, key)
+        # 데이터 삭제 실패 때 삭제 표시를 먼저 지워 옛 사진이 다시 보이지 않게 한다.
+        for field in ("Versions", "DeleteMarkers"):
+            if not items[field]:
+                continue
+            result = client.delete_objects(
+                Bucket=bucket, Delete={"Objects": items[field], "Quiet": False}
+            )
+            expected = {(item["Key"], item["VersionId"]) for item in items[field]}
+            actual = {
+                (item["Key"], item.get("VersionId"))
+                for item in result.get("Deleted", [])
+            }
+            if result.get("Errors") or actual != expected:
+                raise DeletionError("VERSION_DELETE_NOT_CONFIRMED")
+        if any(self._versions(client, bucket, key).values()):
+            raise DeletionError("DELETE_NOT_CONFIRMED")
 
 
 async def _has_live_reference(connection, object_key):
