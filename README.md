@@ -304,6 +304,7 @@ https://github.com/user-attachments/assets/4e4f876d-a6fc-4a0e-8f9c-768875f680bb
 
 - [서비스 개발 결과 보고서](docs/pm/service-development-fidelity-20261110.md): 최초 기획, 변경 이유, 구현 결과, 실사용 개선과 후속 계획
 - [멘토 심사 항목별 근거](docs/pm/mentor-evidence.md): 기능별 테스트와 실행 기록
+- [S22 E2E 검증 보고서](docs/qa/s22-e2e-20261111/README.md): 두 회차 운영 연결, 실패 복구, 추가 검사와 미확인 범위
 - [상세 문서 안내](docs/README.md): 앱, 서버, AI, API와 기술 결정 문서
 
 ---
