@@ -125,6 +125,18 @@ class HomeScreen extends ConsumerWidget {
                                 analysisId: analysisId,
                               );
                             },
+                            // 심사나 테스트 중 남은 실패를 치울 수 있게 한다.
+                            // 지우면 알림 화면에서도 사라진다(2026-11-11 FE
+                            // 결정, 문구는 PM 확인 전).
+                            // 회차를 모르는 실패는 지울 회차가 없어 × 를 두지
+                            // 않는다.
+                            onDismiss: reportId == null
+                                ? null
+                                : () => _confirmDismissFailed(
+                                    context,
+                                    ref,
+                                    reportId,
+                                  ),
                           ),
                           // 앱을 다시 켠 뒤 서버의 회차로 면회 흐름을 이어간다.
                           // 서버의 알림이라 회차 ID 가 있다.
@@ -1055,6 +1067,24 @@ class _GeneratingNotice extends StatelessWidget {
   }
 }
 
+/// 실패 알림의 × 를 눌렀다. 지우면 그 회차의 리포트를 다시 요청할 곳이 없어
+/// 한 번 더 묻는다. 문구는 PM 확인 전이다.
+Future<void> _confirmDismissFailed(
+  BuildContext context,
+  WidgetRef ref,
+  String sessionId,
+) async {
+  final confirmed = await showChoiceDialog(
+    context,
+    title: '이 알림을 지울까요?',
+    detail: '지우면 이 면회의 리포트를\n다시 요청할 수 없어요.',
+    primaryLabel: '지우기',
+    secondaryLabel: '취소',
+  );
+  if (!confirmed || !context.mounted) return;
+  ref.read(reportNoticeProvider.notifier).dismissFailed(sessionId);
+}
+
 /// `2026-08-21` 을 `8월 21일 만남` 으로 바꾼다.
 String _friendlyDate(String isoDate) {
   final parts = isoDate.split('-');
@@ -1105,7 +1135,8 @@ class _ReportNotice extends StatelessWidget {
 
 /// 눌러서 이어갈 일이 있는 배너다. 앱을 떠난 사이 멈춘 면회 흐름
 /// (`api-spec.md` 5-4 의 `evaluationPending`, `audioPending`)을 그 회차의 화면에서
-/// 이어가고, 회차 상태를 묻지 못했으면 다시 묻는다.
+/// 이어가고, 회차 상태를 묻지 못했으면 다시 묻는다. 리포트를 만들지 못했으면
+/// 분석을 다시 요청한다.
 class _ResumeNotice extends StatelessWidget {
   const _ResumeNotice({
     required this.date,
@@ -1115,6 +1146,7 @@ class _ResumeNotice extends StatelessWidget {
     this.icon = Icons.history,
     this.reason,
     this.busy = false,
+    this.onDismiss,
   });
 
   final String? date;
@@ -1129,8 +1161,36 @@ class _ResumeNotice extends StatelessWidget {
   /// 누른 일을 하는 중이다. 화살표 자리에 도는 표시를 두고 누름을 받지 않는다.
   final bool busy;
 
+  /// 있으면 화살표 대신 오른쪽 위에 × 를 둔다. 배너를 누르는 것과 따로 받는다.
+  final VoidCallback? onDismiss;
+
   @override
   Widget build(BuildContext context) {
+    final dismiss = onDismiss;
+    final banner = _banner();
+    if (dismiss == null) return banner;
+    return Stack(
+      children: [
+        banner,
+        // 누르는 영역은 48 이고, × 는 배너 안쪽 여백(16)에 맞춰 선다.
+        Positioned(
+          top: AppSpacing.xs,
+          right: AppSpacing.xs,
+          child: IconButton(
+            onPressed: dismiss,
+            tooltip: '알림 지우기',
+            icon: const Icon(Icons.close, color: AppColors.textSub),
+            style: IconButton.styleFrom(
+              minimumSize: const Size.square(48),
+              padding: const EdgeInsets.all(AppSpacing.md),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _banner() {
     return InkWell(
       onTap: busy ? null : onTap,
       borderRadius: BorderRadius.circular(AppRadius.card),
@@ -1165,6 +1225,9 @@ class _ResumeNotice extends StatelessWidget {
                   ),
                 ),
               )
+            // × 가 설 자리를 비워 글이 그 아래로 들어가지 않게 한다.
+            else if (onDismiss != null)
+              const SizedBox(width: 24)
             else
               const Icon(Icons.chevron_right, color: AppColors.textSub),
           ],

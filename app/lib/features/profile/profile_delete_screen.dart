@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/routes.dart';
 import '../../data/auth_api.dart';
+import '../../data/dismissed_failed_report_store.dart';
 import '../../data/profile_birth_input_store.dart';
 import '../../data/profile_relationship_store.dart';
 import '../../data/providers.dart';
@@ -93,6 +94,7 @@ class _BodyState extends ConsumerState<_Body> {
     final localPhotos = ref.read(localPhotosProvider);
     final share = ref.read(recordingShareProvider);
     final selectedProfile = ref.read(selectedProfileStoreProvider);
+    final dismissedFailed = ref.read(dismissedFailedReportStoreProvider);
     final relationships = ref.read(profileRelationshipStoreProvider);
     final birthInputs = ref.read(profileBirthInputStoreProvider);
     final setupDrafts = ref.read(setupDraftKeeperProvider);
@@ -135,6 +137,8 @@ class _BodyState extends ConsumerState<_Body> {
       }
       // 마지막으로 고른 어르신 기억도 지운다. 저장소가 실패를 삼킨다.
       await selectedProfile.clear(accountId);
+      // 지운 실패 알림의 기억도 지운다. 저장소가 실패를 삼킨다.
+      await dismissedFailed.clear(accountId);
       // 단말에만 둔 관계도 지운다. 저장소가 실패를 삼킨다.
       await relationships.clear(accountId);
       // 나이로 입력했다는 표시도 지운다. 저장소가 실패를 삼킨다.

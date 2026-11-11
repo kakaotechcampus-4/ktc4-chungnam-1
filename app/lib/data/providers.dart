@@ -13,6 +13,7 @@ import '../features/auth/auth_providers.dart';
 import 'account_api.dart';
 import 'api_client.dart';
 import 'card_api.dart';
+import 'dismissed_failed_report_store.dart';
 import 'mock_repository.dart';
 import 'models.dart';
 import 'profile_api.dart';
@@ -1075,6 +1076,15 @@ class _ReportNoticesNotifier
   /// 앱을 다시 켜면 잊는다.
   final _acknowledged = <String>{};
 
+  /// 사용자가 지운 실패 알림의 회차. 서버가 그 회차를 계속 `failed` 로 주어도
+  /// 다시 띄우지 않는다. 로그인한 계정의 것은 단말에도 남겨
+  /// ([DismissedFailedReportStore]) 앱을 다시 켜도 기억한다.
+  final _dismissedFailed = <String>{};
+
+  /// 계정마다 단말에서 지운 실패 알림을 읽는 일. 여러 자리가 함께 물어도 한
+  /// 번만 읽고, 다 읽을 때까지 함께 기다린다.
+  final _dismissedLoads = <String, Future<void>>{};
+
   bool _gone = false;
 
   @override
@@ -1111,6 +1121,36 @@ class _ReportNoticesNotifier
     if (notice.reportId != null && notice.reportId != reportId) return;
     _nextRound(key);
     _set(key, null);
+  }
+
+  /// [sessionId] 의 실패 알림을 지운다. 그 회차의 실패는 다시 띄우지 않는다.
+  /// 확인 창을 띄운 사이 지금 알림이 다른 회차나 다른 알림으로 바뀌었으면 그
+  /// 알림은 지우지 않는다.
+  void dismissFailed(_NoticeKey key, String sessionId) {
+    _dismissedFailed.add(sessionId);
+    final accountId = key.accountId;
+    if (accountId != null) {
+      unawaited(
+        ref.read(dismissedFailedReportStoreProvider).add(accountId, sessionId),
+      );
+    }
+    final notice = state[key];
+    if (notice == null ||
+        notice.notice != ReportNotice.failed ||
+        notice.reportId != sessionId) {
+      return;
+    }
+    _nextRound(key);
+    _set(key, null);
+  }
+
+  /// 계정이 지운 실패 알림을 단말에서 한 번 읽는다. 읽지 못하면 비어 있다.
+  Future<void> _loadDismissed(String? accountId) {
+    if (accountId == null) return Future.value();
+    return _dismissedLoads[accountId] ??= ref
+        .read(dismissedFailedReportStoreProvider)
+        .read(accountId)
+        .then(_dismissedFailed.addAll);
   }
 
   void arrive(_NoticeKey key) {
@@ -1216,6 +1256,10 @@ class _ReportNoticesNotifier
     final api = ref.read(reportApiProvider);
     final interval = ref.read(reportPollIntervalProvider);
     var first = true;
+
+    // 지운 실패 알림을 다시 띄우지 않도록 먼저 읽는다.
+    await _loadDismissed(key.accountId);
+    if (_stale(key, round)) return;
 
     while (true) {
       if (!first) {
@@ -1361,8 +1405,8 @@ class _ReportNoticesNotifier
           (failure.retryable ||
               failure.statusCode >= 500 && failure.errorCode == null));
 
-  /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태와 확인을 마친 리포트는
-  /// `null` 이다.
+  /// 회차 상태를 홈 알림으로 옮긴다. 모르는 상태, 확인을 마친 리포트와 지운
+  /// 실패 알림은 `null` 이다.
   ReportNoticeInfo? _noticeOf(
     VisitProgress session,
     VisitStatus? status, {
@@ -1374,7 +1418,10 @@ class _ReportNoticesNotifier
       VisitStatus.processing => ReportNotice.generating,
       VisitStatus.completed =>
         _acknowledged.contains(session.sessionId) ? null : ReportNotice.ready,
-      VisitStatus.failed => ReportNotice.failed,
+      VisitStatus.failed =>
+        _dismissedFailed.contains(session.sessionId)
+            ? null
+            : ReportNotice.failed,
       null => null,
     };
     if (notice == null) return null;
@@ -1398,6 +1445,7 @@ class _ReportNoticesNotifier
       _nextRound(key);
     }
     _synced.removeWhere((k) => k.accountId == accountId);
+    _dismissedLoads.remove(accountId);
     state = {
       for (final e in state.entries)
         if (e.key.accountId != accountId) e.key: e.value,
@@ -1463,6 +1511,14 @@ class ReportNoticeNotifier extends Notifier<ReportNotice?> {
   void acknowledge(String reportId) {
     final key = _currentNoticeKey(ref);
     if (key != null) _notices.acknowledge(key, reportId);
+  }
+
+  /// 사용자가 [sessionId] 회차의 `리포트를 만들지 못했어요` 알림을 지웠다. 그
+  /// 회차의 실패는 앱을 다시 켜도 띄우지 않는다. 지금 알림이 그 회차의 실패가
+  /// 아니면 지금 알림은 그대로 둔다.
+  void dismissFailed(String sessionId) {
+    final key = _currentNoticeKey(ref);
+    if (key != null) _notices.dismissFailed(key, sessionId);
   }
 
   /// 리포트가 만들어졌다.
